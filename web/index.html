@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kiosk Timeline</title>
+<style>
+  :root {
+    --bg: #181b1f;          /* grafana panel bg */
+    --bg2: #22262b;
+    --border: #2c3235;
+    --text: #ccccdc;
+    --text-dim: #7b8087;
+    --accent: #f2cc0c;      /* grafana yellow */
+    --live: #73bf69;        /* grafana green */
+    --offline: #f2495c;     /* grafana red */
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 12px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ---------- header ---------- */
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    flex: 0 0 auto;
+  }
+  .site-label { font-weight: 600; }
+  .res-label { color: var(--text-dim); }
+  /* POC-only quick ranges — in Grafana the time picker owns this */
+  .ranges { display: flex; gap: 2px; margin-left: 6px; }
+  .ranges button {
+    background: var(--bg2); color: var(--text-dim);
+    border: 1px solid var(--border); border-radius: 3px;
+    padding: 1px 7px; cursor: pointer; font: inherit; font-size: 11px;
+  }
+  .ranges button:hover { color: var(--text); border-color: var(--text-dim); }
+  .ranges button.active { background: var(--accent); color: #111; border-color: var(--accent); font-weight: 600; }
+  .spacer { flex: 1; }
+  .cursor-time {
+    font-variant-numeric: tabular-nums; font-weight: 700;
+    color: var(--accent); min-width: 62px;
+  }
+  .window-label { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .live-badge {
+    display: none;
+    padding: 1px 7px; border-radius: 3px;
+    background: var(--live); color: #111; font-weight: 700; letter-spacing: .5px;
+  }
+  body.live .live-badge { display: inline-block; }
+
+  /* ---------- kiosk cards ---------- */
+  .cards {
+    flex: 1 1 auto; min-height: 0;
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 8px 10px;
+  }
+  .card {
+    flex: 1 1 0; min-height: 0;
+    display: flex; flex-direction: column;
+    background: var(--bg2);
+    border: 1px solid var(--border); border-radius: 4px;
+    overflow: hidden;
+    transition: opacity 120ms ease;
+  }
+  /* dim every card except the one under the cursor */
+  body.strip-hover .card:not(.hovered) { opacity: .45; }
+  .card-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 3px 8px; flex: 0 0 auto;
+    color: var(--text-dim);
+  }
+  .card-head .kiosk-name { font-weight: 600; color: var(--text); }
+  .card-head .frame-time { font-variant-numeric: tabular-nums; }
+  .card-head .stale { color: var(--offline); }
+  .card-head .cad { margin-left: auto; font-size: 10px; color: var(--text-dim); }
+  .card-head .site-tag {
+    font-size: 10px; color: var(--text-dim);
+    border: 1px solid var(--border); border-radius: 8px; padding: 0 6px;
+  }
+
+  /* ---------- tapestry strip (fixed grid — layout never changes) ---------- */
+  .strip {
+    flex: 1 1 auto; min-height: 0;
+    position: relative;
+    display: flex; align-items: stretch;
+    cursor: crosshair;
+    background: #111;
+  }
+  .slot {
+    flex: 1 1 0; min-width: 0;
+    position: relative; overflow: hidden;
+  }
+  .slot img {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    height: 100%; width: auto;                 /* center-crop column of the frame */
+  }
+  .slot.gap {
+    background: repeating-linear-gradient(45deg, #1b1215, #1b1215 5px, #2a171b 5px, #2a171b 10px);
+  }
+  .crosshair {
+    position: absolute; top: 0; bottom: 0; width: 1px;
+    background: var(--accent); opacity: .85;
+    pointer-events: none; z-index: 4;
+  }
+
+  /* magnifier: floats OVER the strip at the cursor — no layout mutation */
+  .mag {
+    position: absolute; top: 0; height: 100%;
+    aspect-ratio: 16 / 9;
+    max-width: 40%;                            /* tall viewports: don't dominate the strip */
+    border: 2px solid var(--accent); border-radius: 2px;
+    overflow: hidden; pointer-events: none; z-index: 3;
+    background: #000;
+    box-shadow: 0 0 12px rgba(0,0,0,.8);
+  }
+  .mag img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .mag.gap {
+    border-color: var(--offline);
+    background: repeating-linear-gradient(45deg, #1b1215, #1b1215 5px, #2a171b 5px, #2a171b 10px);
+  }
+  .mag.gap img { display: none; }
+  .mag .cap {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,.6); color: #fff; text-align: center;
+    font-size: 10px; font-variant-numeric: tabular-nums; padding: 1px 0;
+  }
+
+  /* ---------- time axis ---------- */
+  .time-axis {
+    flex: 0 0 26px;
+    position: relative;
+    margin: 0 11px 4px;           /* aligns with strip edges (cards padding + border) */
+    overflow: hidden;
+  }
+  .time-axis .baseline {
+    position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: var(--border);
+  }
+  .tick {
+    position: absolute; top: 0;
+    transform: translateX(-50%);
+    color: var(--text-dim); font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    padding-top: 7px; white-space: nowrap;
+  }
+  .tick::before {
+    content: ""; position: absolute; top: 0; left: 50%;
+    width: 1px; height: 5px; background: var(--text-dim);
+  }
+  .axis-cursor {
+    position: absolute; top: 0;
+    transform: translateX(-50%);
+    color: #111; background: var(--accent);
+    font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums;
+    padding: 1px 5px; border-radius: 2px; margin-top: 5px;
+    white-space: nowrap; z-index: 2;
+  }
+  .axis-cursor::before {
+    content: ""; position: absolute; top: -5px; left: 50%;
+    width: 1px; height: 5px; background: var(--accent);
+  }
+
+  /* ---------- lightbox ---------- */
+  .lightbox {
+    position: fixed; inset: 0; z-index: 10;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(0,0,0,.82); cursor: zoom-out;
+  }
+  .lightbox.open { display: flex; }
+  .lightbox img { max-width: 94%; max-height: 90%; }
+  .lightbox .cap {
+    position: absolute; bottom: 16px; left: 0; right: 0; text-align: center;
+    color: #fff; font-variant-numeric: tabular-nums;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <span class="site-label" id="siteLabel"></span>
+    <span class="res-label" id="resLabel"></span>
+    <nav class="ranges" id="ranges"></nav>
+    <span class="spacer"></span>
+    <span class="cursor-time" id="cursorTime"></span>
+    <span class="live-badge">LIVE</span>
+    <span class="window-label" id="windowLabel"></span>
+  </header>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="time-axis" id="timeAxis">
+    <div class="baseline"></div>
+    <div class="axis-cursor" id="axisCursor"></div>
+  </div>
+
+  <div class="lightbox" id="lightbox">
+    <img id="lightboxImg" alt="frame">
+    <div class="cap" id="lightboxCap"></div>
+  </div>
+
+<script>
+/* =========================================================================
+ * PARAMS — the contract with Grafana.
+ * Embedded as: /index.html?site=${site}&kiosk=${kiosk}&from=${__from}&to=${__to}
+ * ${__from}/${__to} are epoch MILLISECONDS; template vars may arrive as
+ * "All" or "{a,b}" (multi-value). The panel re-renders the iframe src on
+ * every time-picker / variable change — no state to sync.
+ * ========================================================================= */
+const qs = new URLSearchParams(location.search);
+const NOW = Date.now();
+
+function parseVar(v) {                    // grafana var → array | null (null = all)
+  if (!v || v === 'All' || v === '$__all') return null;
+  return v.replace(/^\{|\}$/g, '').split(',').map(s => s.trim()).filter(Boolean);
+}
+/* Grafana dashboard-link support: a link with "keep time range" + "include
+ * variables" appends from=now-1h&to=now&var-site=... — accept those forms
+ * alongside the direct site=/epoch-ms params the iframe embed uses. */
+function parseTimeParam(v, def) {
+  if (!v) return def;
+  if (/^\d+$/.test(v)) return Number(v);
+  const m = /^now(?:-(\d+)([smhdw]))?$/.exec(v);
+  if (m) {
+    const mult = { s: 1e3, m: 60e3, h: 3600e3, d: 864e5, w: 6048e5 };
+    return NOW - (m[1] ? Number(m[1]) * mult[m[2]] : 0);
+  }
+  return def;
+}
+function parseVarMulti(direct, linkVals) {
+  if (direct) return parseVar(direct);
+  if (!linkVals.length) return null;
+  const out = [];
+  for (const v of linkVals) {
+    const p = parseVar(v);
+    if (p === null) return null;             // any "All" value → all
+    out.push(...p);
+  }
+  return out.length ? out : null;
+}
+const P = {
+  site:  parseVarMulti(qs.get('site'), qs.getAll('var-site')),    // array | null = all sites
+  kiosk: parseVarMulti(qs.get('kiosk'), qs.getAll('var-kiosk')),  // null = all kiosks
+  from:  parseTimeParam(qs.get('from'), NOW - 60 * 60 * 1000),    // default: last hour
+  to:    parseTimeParam(qs.get('to'), NOW),
+};
+/* NOTE: no cadence param — cadence is DECLARED BY EACH KIOSK and arrives
+ * with the frame data (see data layer). */
+const SPAN = P.to - P.from;
+const LIVE = P.to > NOW - 2 * 60 * 1000;
+
+/* =========================================================================
+ * RESOLUTION MODEL — prometheus-style `step`, derived PER KIOSK.
+ * Slices thinner than MIN_SLICE_PX are useless to render and wasteful to
+ * fetch, so the pixel budget picks a bucket count, and the bucket span is
+ * snapped UP to a whole multiple of THAT KIOSK'S DECLARED CADENCE. One
+ * representative frame is fetched per bucket:
+ *   5 min  window @60s cadence, 800px → step = 60s   (raw, 5 slices)
+ *   24 hr  window @60s cadence, 800px → step = 720s  (every 12th frame)
+ *   24 hr  window @120s cadence,800px → step = 720s  (every 6th frame)
+ * Kiosks at one site may declare different cadences, so geometry (step,
+ * bucket grid, gap threshold, poll rate) is computed per card.
+ * ========================================================================= */
+const MIN_SLICE_PX = 7;
+const stripW = Math.max(200, window.innerWidth - 22);        // cards padding + border
+const pxBudget = Math.floor(stripW / MIN_SLICE_PX);
+function geomFor(cadence) {
+  const raw = Math.ceil(SPAN / cadence);
+  const step = Math.ceil(raw / Math.min(pxBudget, raw)) * cadence;
+  const bucketStart = Math.ceil(P.from / step) * step;
+  const nBuckets = Math.max(1, Math.floor((P.to - bucketStart) / step) + 1);
+  const idx = t => Math.max(0, Math.min(nBuckets - 1, Math.floor((t - bucketStart) / step + 0.5)));
+  return { cadence, step, bucketStart, nBuckets, idx };
+}
+
+const fmtTime = ts => new Date(ts).toLocaleTimeString('en-AU', { hour12: false });
+const fmtShort = ts => new Date(ts).toLocaleTimeString('en-AU', { hour12: false, hour: '2-digit', minute: '2-digit' });
+const fmtDur = ms => ms % 3600e3 === 0 ? `${ms / 3600e3}h` : ms % 60e3 === 0 ? `${ms / 60e3}m` : `${ms / 1e3}s`;
+
+/* =========================================================================
+ * DATA LAYER — swap for the Worker later.
+ * CADENCE CONTRACT: the kiosk is the source of truth. In production it
+ * sends `X-Cadence: <seconds>` with every frame upload; the Worker persists
+ * it to meta/{site}/{kiosk}.json (write only on change, with history
+ * [{since, cadence}] so key arithmetic works over old ranges), and
+ * GET /kiosks?site= echoes it back. The viewer never assumes a cadence.
+ * Real impl: GET /kiosks?site=            → [{id, cadence}]
+ *            GET /frames?...&step=        → [{kiosk, ts, url}]
+ * Mock: kiosk-3 declares 120s to prove mixed-cadence sites work; kiosk-2
+ * has a synthetic outage (35%–55% of window).
+ * ========================================================================= */
+const SITES = {
+  'lfac-south': [
+    { id: 'kiosk-1', cadence: 60e3 },
+    { id: 'kiosk-2', cadence: 60e3 },      // has the synthetic outage
+    { id: 'kiosk-3', cadence: 120e3 },     // declares a slower cadence
+  ],
+  'lfac-north': [
+    { id: 'kiosk-4', cadence: 60e3 },
+    { id: 'kiosk-5', cadence: 30e3 },      // declares a faster cadence
+  ],
+};
+const mockBackend = {
+  kiosks(sites) {                          // sites: array | null (null = all sites)
+    const all = Object.entries(SITES)
+      .filter(([s]) => !sites || sites.includes(s))
+      .flatMap(([s, ks]) => ks.map(k => ({ ...k, site: s })));
+    return P.kiosk ? all.filter(k => P.kiosk.includes(k.id)) : all;
+  },
+  async frames(site, kiosk, from, to, step) {
+    const out = [];
+    const gapA = P.from + SPAN * 0.35, gapB = P.from + SPAN * 0.55;
+    const first = Math.ceil(from / step) * step;
+    for (let ts = first; ts <= Math.min(to, Date.now()); ts += step) {
+      if (kiosk === 'kiosk-2' && ts > gapA && ts < gapB) continue;  // outage
+      out.push({ kiosk, ts, url: renderMockFrame(site, kiosk, ts, step) });
+    }
+    return out;
+  },
+};
+
+/* Worker-backed data layer (same shapes as the mock). `backend` is chosen at
+ * boot: ?backend=mock forces the mock; otherwise probe /kiosks and fall back
+ * to the mock when no Worker is serving this page (e.g. plain http.server). */
+const apiBackend = {
+  async kiosks(sites) {
+    const u = new URL('/sources', location.origin);
+    if (sites) u.searchParams.set('site', sites.join(','));
+    const r = await fetch(u);
+    if (!r.ok) throw new Error('kiosks ' + r.status);
+    const all = await r.json();
+    return P.kiosk ? all.filter(k => P.kiosk.includes(k.id)) : all;
+  },
+  async frames(site, kiosk, from, to, step) {
+    const u = new URL('/frames', location.origin);
+    for (const [k, v] of [['site', site], ['source', kiosk], ['from', Math.round(from)], ['to', Math.round(to)], ['step', step], ['variant', 'lo']])
+      u.searchParams.set(k, v);
+    const r = await fetch(u);
+    if (!r.ok) throw new Error('frames ' + r.status);
+    return r.json();
+  },
+};
+let backend = mockBackend;
+async function chooseBackend() {
+  if (qs.get('backend') === 'mock') return;
+  try {
+    const r = await fetch(new URL('/sources', location.origin));
+    if (r.ok) backend = apiBackend;
+    else console.warn('no /kiosks endpoint — using mock backend');
+  } catch { console.warn('no worker — using mock backend'); }
+}
+
+const HUES = { 'kiosk-1': 205, 'kiosk-2': 275, 'kiosk-3': 25, 'kiosk-4': 130, 'kiosk-5': 340 };
+function renderMockFrame(site, kiosk, ts, step) {
+  const c = document.createElement('canvas');
+  c.width = 384; c.height = 216;
+  const g = c.getContext('2d');
+  const hue = HUES[kiosk] ?? 130;
+  g.fillStyle = `hsl(${hue} 30% 14%)`; g.fillRect(0, 0, 384, 216);
+  g.fillStyle = `hsl(${hue} 60% 30%)`; g.fillRect(0, 0, 384, 30);
+  g.fillStyle = '#fff'; g.font = 'bold 14px sans-serif';
+  g.fillText(`${site} / ${kiosk}`, 10, 21);
+  g.font = 'bold 38px monospace';
+  g.fillStyle = `hsl(${hue} 70% 72%)`;
+  g.fillText(fmtTime(ts), 85, 120);
+  const phase = (ts / step) % 20 / 20;
+  g.fillStyle = `hsl(${hue} 80% 55%)`;
+  g.fillRect(15 + phase * 310, 155, 50, 34);
+  return c.toDataURL('image/jpeg', 0.7);
+}
+
+/* =========================================================================
+ * CARDS — fixed slot grid per kiosk; magnifier + crosshair overlays only.
+ * ========================================================================= */
+const $ = id => document.getElementById(id);
+
+let kiosks = [], cards = {};        // kiosks = declarations [{id, cadence}]; cards keyed by id
+let cursorT = P.to;
+
+function buildCard(decl, geom, frames) {
+  const kiosk = decl.id;
+  const byIdx = new Map(frames.map(f => [geom.idx(f.ts), f]));
+  const card = document.createElement('div');
+  card.className = 'card';
+  const downsampled = geom.step > geom.cadence;
+  card.innerHTML = `
+    <div class="card-head">
+      <span class="kiosk-name">${kiosk}</span>
+      <span class="site-tag">${decl.site}${decl.location ? ' · ' + decl.location : ''}</span>
+      <span class="frame-time"></span>
+      <span class="cad" title="cadence declared by the kiosk">⏱ ${fmtDur(geom.cadence)} · showing 1/${fmtDur(geom.step)}${downsampled ? ' ↓' : ''}</span>
+    </div>
+    <div class="strip">
+      <div class="crosshair"></div>
+      <div class="mag"><img alt=""><div class="cap"></div></div>
+    </div>`;
+  const strip = card.querySelector('.strip');
+  const slots = [];
+  for (let i = 0; i < geom.nBuckets; i++) {
+    const ts = geom.bucketStart + i * geom.step;
+    const frame = byIdx.get(i) ?? null;
+    const el = document.createElement('div');
+    el.className = 'slot' + (frame ? '' : ' gap');
+    if (frame) {
+      const img = document.createElement('img');
+      img.src = frame.url; img.alt = `${kiosk} ${fmtTime(ts)}`;
+      el.appendChild(img);
+    }
+    strip.appendChild(el);
+    slots.push({ ts, frame, el });
+  }
+
+  strip.addEventListener('mousemove', e => {
+    const r = strip.getBoundingClientRect();
+    setCursor(P.from + SPAN * ((e.clientX - r.left) / r.width), card);
+  });
+  strip.addEventListener('mouseenter', () => document.body.classList.add('strip-hover'));
+  strip.addEventListener('mouseleave', () => document.body.classList.remove('strip-hover'));
+  strip.addEventListener('click', () => {
+    const f = slots[geom.idx(cursorT)]?.frame;
+    if (f) openLightbox(kiosk, f);
+  });
+
+  $('cards').appendChild(card);
+  return {
+    card, geom, slots,
+    head: card.querySelector('.frame-time'),
+    strip,
+    cross: card.querySelector('.crosshair'),
+    mag: card.querySelector('.mag'),
+  };
+}
+
+/* ---------- time axis: nice ticks, grafana-style ---------- */
+const TICK_STEPS = [60e3, 5*60e3, 10*60e3, 15*60e3, 30*60e3,
+                    3600e3, 2*3600e3, 3*3600e3, 6*3600e3, 12*3600e3, 24*3600e3];
+function buildAxis() {
+  const axis = $('timeAxis');
+  const w = axis.clientWidth;
+  const maxTicks = Math.max(3, Math.floor(w / 90));
+  const tickStep = TICK_STEPS.find(s => SPAN / s <= maxTicks) ?? TICK_STEPS.at(-1);
+  const withDate = SPAN > 20 * 3600e3;
+  axis.querySelectorAll('.tick').forEach(t => t.remove());
+  for (let ts = Math.ceil(P.from / tickStep) * tickStep; ts <= P.to; ts += tickStep) {
+    const el = document.createElement('div');
+    el.className = 'tick';
+    el.style.left = ((ts - P.from) / SPAN * w) + 'px';
+    el.textContent = withDate
+      ? new Date(ts).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
+      : fmtShort(ts);
+    axis.appendChild(el);
+  }
+}
+
+/* Global time update. Overlays move; slot layout NEVER changes. */
+function setCursor(t, hoveredCard = null) {
+  cursorT = Math.max(P.from, Math.min(P.to, t));
+  const frac = (cursorT - P.from) / SPAN;
+  $('cursorTime').textContent = fmtTime(cursorT);
+
+  const axis = $('timeAxis'), ac = $('axisCursor');
+  const acW = ac.offsetWidth || 50;
+  ac.textContent = fmtTime(cursorT);
+  ac.style.left = Math.max(acW / 2, Math.min(axis.clientWidth - acW / 2, frac * axis.clientWidth)) + 'px';
+
+  for (const k of kiosks) {
+    const c = cards[k.id];
+    c.card.classList.toggle('hovered', hoveredCard === c.card);
+
+    const w = c.strip.clientWidth, x = frac * w;
+    c.cross.style.left = x + 'px';
+
+    const idx = c.geom.idx(cursorT);        // per-kiosk bucket grid
+    const slot = c.slots[idx];
+    const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
+    c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + 'px';
+
+    if (slot?.frame) {
+      c.mag.classList.remove('gap');
+      c.mag.querySelector('img').src = slot.frame.url;
+      c.mag.querySelector('.cap').textContent = fmtTime(slot.frame.ts);
+      c.head.textContent = fmtTime(slot.frame.ts);
+      c.head.classList.remove('stale');
+    } else {
+      c.mag.classList.add('gap');
+      const last = [...c.slots.slice(0, idx + 1)].reverse().find(s => s.frame);
+      const msg = last ? `offline — last seen ${fmtTime(last.frame.ts)}` : 'no data in window';
+      c.mag.querySelector('.cap').textContent = msg;
+      c.head.textContent = msg;
+      c.head.classList.add('stale');
+    }
+  }
+}
+window.addEventListener('resize', () => { buildAxis(); setCursor(cursorT); });
+
+/* ---------- lightbox ---------- */
+function openLightbox(kiosk, frame) {
+  const site = kiosks.find(k => k.id === kiosk)?.site ?? '';
+  $('lightboxImg').src = frame.url;
+  $('lightboxCap').textContent = `${site} / ${kiosk} — ${fmtTime(frame.ts)}`;
+  $('lightbox').classList.add('open');
+}
+$('lightbox').addEventListener('click', () => $('lightbox').classList.remove('open'));
+
+/* ---------- POC quick ranges ----------
+ * Simulates the Grafana time picker by doing exactly what the panel does:
+ * rewrite ?from=&to= in the iframe URL and reload. No internal state. */
+const QUICK_RANGES = [['5m', 5*60e3], ['15m', 15*60e3], ['1h', 3600e3], ['3h', 3*3600e3],
+                      ['6h', 6*3600e3], ['12h', 12*3600e3], ['24h', 24*3600e3]];
+function buildRanges() {
+  // Hide when from/to came from outside (i.e. Grafana's time picker owns time).
+  // Our own quick-range clicks tag the URL with poc=1 so the bar survives them.
+  if (qs.has('from') && !qs.has('poc')) { $('ranges').style.display = 'none'; return; }
+  $('ranges').innerHTML = QUICK_RANGES.map(([label, ms]) =>
+    `<button data-ms="${ms}" class="${Math.abs(SPAN - ms) < 1000 ? 'active' : ''}">${label}</button>`).join('');
+  $('ranges').addEventListener('click', e => {
+    const ms = Number(e.target.dataset.ms);
+    if (!ms) return;
+    const u = new URL(location.href);
+    const now = Date.now();
+    u.searchParams.set('from', now - ms);
+    u.searchParams.set('to', now);
+    u.searchParams.set('poc', '1');
+    location.href = u;             // full reload — same as Grafana re-rendering the iframe src
+  });
+}
+
+/* ---------- boot ---------- */
+(async function boot() {
+  await chooseBackend();
+  buildRanges();
+  document.body.classList.toggle('live', LIVE);
+  $('siteLabel').textContent = P.site ? P.site.join(' + ') : 'all sites';
+  $('windowLabel').textContent = `${fmtShort(P.from)} → ${fmtShort(P.to)}`;
+  $('resLabel').textContent = `≤${pxBudget} buckets/strip · cadence per kiosk`;
+
+  kiosks = await backend.kiosks(P.site);
+  for (const k of kiosks) {
+    const geom = geomFor(k.cadence);       // derived from the kiosk's declaration
+    cards[k.id] = buildCard(k, geom, await backend.frames(k.site, k.id, P.from, P.to, geom.step));
+  }
+
+  buildAxis();
+  setCursor(P.to);          // rest position: latest time
+
+  // live tail: fill the newest bucket as frames land; follow if cursor is at the tail
+  if (LIVE) {
+    const minStep = Math.min(...kiosks.map(k => cards[k.id].geom.step));
+    setInterval(async () => {
+      const following = cursorT >= P.to - 2 * minStep;
+      for (const k of kiosks) {
+        const c = cards[k.id];
+        const lastTs = [...c.slots].reverse().find(s => s.frame)?.ts ?? P.from;
+        const fresh = await backend.frames(k.site, k.id, lastTs + 1, Date.now(), c.geom.step);
+        for (const f of fresh) {
+          const slot = c.slots[c.geom.idx(f.ts)];
+          if (!slot) continue;
+          if (slot.frame && f.ts <= slot.frame.ts) continue;   // newer replaces → right edge slides
+          slot.frame = f;
+          slot.el.classList.remove('gap');
+          let img = slot.el.querySelector('img');
+          if (!img) { img = document.createElement('img'); slot.el.appendChild(img); }
+          img.src = f.url; img.alt = `${k.id} ${fmtTime(f.ts)}`;
+        }
+      }
+      if (following) setCursor(cursorT);
+    }, Math.min(minStep, 10_000));
+  }
+})();
+</script>
+</body>
+</html>

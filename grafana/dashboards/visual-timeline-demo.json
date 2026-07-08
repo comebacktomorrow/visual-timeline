@@ -1,0 +1,128 @@
+{
+  "uid": "visual-timeline-demo",
+  "title": "Visual Timeline demo",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "templating": {
+    "list": [
+      {
+        "name": "site",
+        "label": "Site",
+        "type": "custom",
+        "query": "site-a, site-b",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [
+          {
+            "text": "All",
+            "value": "$__all",
+            "selected": true
+          },
+          {
+            "text": "site-a",
+            "value": "site-a",
+            "selected": false
+          },
+          {
+            "text": "site-b",
+            "value": "site-b",
+            "selected": false
+          }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Visual timeline \u2014 hover to scrub, drag to zoom",
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "sites": "${site:csv}"
+      }
+    },
+    {
+      "id": 2,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Multiview \u2014 follows crosshair",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "options": {
+        "sites": "${site:csv}",
+        "mode": "grid",
+        "followCrosshair": true
+      }
+    },
+    {
+      "id": 3,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Multiview \u2014 latest only",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "options": {
+        "sites": "${site:csv}",
+        "mode": "grid",
+        "followCrosshair": false,
+        "imageFit": "fill"
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Random walk (crosshair sync demo)",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "testdata"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "scenarioId": "random_walk",
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "testdata"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 12
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

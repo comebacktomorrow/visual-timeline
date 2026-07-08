@@ -1,0 +1,4 @@
+plugin/grafana-*/
+worker/node_modules/
+worker/.wrangler/
+dist/

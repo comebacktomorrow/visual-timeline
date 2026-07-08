@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kiosk fleet simulator</title>
+<style>
+  body { background:#181b1f; color:#ccccdc; font:13px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; padding:16px; }
+  h1 { font-size:15px; margin-bottom:8px; }
+  button { background:#22262b; color:#ccccdc; border:1px solid #2c3235; border-radius:3px; padding:4px 12px; cursor:pointer; font:inherit; margin-right:6px; }
+  button:hover { border-color:#7b8087; }
+  #log { margin-top:12px; font:11px/1.5 monospace; white-space:pre-wrap; color:#7b8087; max-height:70vh; overflow-y:auto; }
+  .ok { color:#73bf69; }
+  .err { color:#f2495c; }
+</style>
+</head>
+<body>
+  <h1>Kiosk fleet simulator — POSTs mock frames through the real /upload path</h1>
+  <button id="btnBackfill">Backfill last 60 min</button>
+  <button id="btnLive">Start live ticking</button>
+  <button id="btnStop">Stop</button>
+  <div id="log"></div>
+
+<script>
+/* Simulates the kiosk agents: renders mock signage frames on canvas and
+ * uploads them with the real headers (X-Site/X-Kiosk/X-Cadence/X-Variant/
+ * X-Timestamp + bearer token). kiosk-2 has an outage in the backfill window;
+ * kiosk-1 also uploads a hi variant at a slower cadence. */
+const TOKENS = { 'lfac-south': 'dev-token', 'lfac-north': 'dev-token' };
+const KIOSKS = [
+  { id: 'kiosk-1', site: 'lfac-south', cadence: 60,  dims: [384, 216], hue: 205, hiCadence: 300, hiDims: [768, 432] },
+  { id: 'kiosk-2', site: 'lfac-south', cadence: 60,  dims: [384, 216], hue: 275, outage: [0.35, 0.55] },
+  { id: 'kiosk-3', site: 'lfac-south', cadence: 120, dims: [288, 216], hue: 25 },
+  { id: 'kiosk-4', site: 'lfac-north', cadence: 60,  dims: [384, 216], hue: 130 },
+  { id: 'kiosk-5', site: 'lfac-north', cadence: 30,  dims: [216, 384], hue: 340 },
+];
+const BACKFILL_MS = 60 * 60 * 1000;
+
+const logEl = document.getElementById('log');
+function log(msg, cls) {
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = new Date().toLocaleTimeString('en-AU', { hour12: false }) + '  ' + msg;
+  logEl.prepend(line);
+}
+
+const fmtTime = ts => new Date(ts).toLocaleTimeString('en-AU', { hour12: false });
+
+function renderFrame(k, ts, dims) {
+  const [w, h] = dims;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = `hsl(${k.hue} 30% 14%)`; g.fillRect(0, 0, w, h);
+  g.fillStyle = `hsl(${k.hue} 60% 30%)`; g.fillRect(0, 0, w, Math.round(h * 0.14));
+  g.fillStyle = '#fff'; g.font = `bold ${Math.round(h * 0.06)}px sans-serif`;
+  g.fillText(`${k.site} / ${k.id}`, 8, Math.round(h * 0.10));
+  g.font = `bold ${Math.round(Math.min(w * 0.16, h * 0.18))}px monospace`;
+  g.fillStyle = `hsl(${k.hue} 70% 72%)`;
+  g.textAlign = 'center';
+  g.fillText(fmtTime(ts), w / 2, h * 0.55);
+  g.textAlign = 'left';
+  const phase = (ts / (k.cadence * 1000)) % 20 / 20;
+  g.fillStyle = `hsl(${k.hue} 80% 55%)`;
+  g.fillRect(w * 0.04 + phase * (w * 0.8), h * 0.72, w * 0.13, h * 0.16);
+  return new Promise(res => c.toBlob(res, 'image/jpeg', 0.75));
+}
+
+async function upload(k, ts, variant) {
+  const cadence = variant === 'hi' ? k.hiCadence : k.cadence;
+  const blob = await renderFrame(k, ts, variant === 'hi' ? k.hiDims : k.dims);
+  const r = await fetch('/upload', {
+    method: 'POST',
+    headers: {
+      'authorization': 'Bearer ' + TOKENS[k.site],
+      'content-type': 'image/jpeg',
+      'x-site': k.site,
+      'x-source': k.id,
+      'x-cadence': String(cadence),
+      'x-variant': variant,
+      'x-timestamp': String(ts),
+    },
+    body: blob,
+  });
+  if (!r.ok) throw new Error(`${k.id} ${variant} ${r.status}: ${await r.text()}`);
+  return r.json();
+}
+
+window.backfill = async function backfill() {
+  const now = Date.now();
+  const from = now - BACKFILL_MS;
+  const jobs = [];
+  for (const k of KIOSKS) {
+    const cad = k.cadence * 1000;
+    const gapA = from + BACKFILL_MS * (k.outage?.[0] ?? 2);
+    const gapB = from + BACKFILL_MS * (k.outage?.[1] ?? 2);
+    for (let ts = Math.ceil(from / cad) * cad; ts <= now; ts += cad) {
+      if (ts > gapA && ts < gapB) continue;             // outage
+      jobs.push({ k, ts, variant: 'lo' });
+    }
+    if (k.hiCadence) {
+      const hcad = k.hiCadence * 1000;
+      for (let ts = Math.ceil(from / hcad) * hcad; ts <= now; ts += hcad) {
+        jobs.push({ k, ts, variant: 'hi' });
+      }
+    }
+  }
+  log(`backfilling ${jobs.length} frames…`);
+  let done = 0, failed = 0;
+  const workers = Array.from({ length: 6 }, async () => {
+    while (jobs.length) {
+      const j = jobs.shift();
+      try { await upload(j.k, j.ts, j.variant); done++; }
+      catch (e) { failed++; log(String(e), 'err'); }
+      if ((done + failed) % 50 === 0) log(`…${done + failed} uploaded`);
+    }
+  });
+  await Promise.all(workers);
+  log(`backfill complete: ${done} ok, ${failed} failed`, failed ? 'err' : 'ok');
+  return { done, failed };
+};
+
+let timers = [];
+window.startLive = function startLive() {
+  stopLive();
+  for (const k of KIOSKS) {
+    timers.push(setInterval(() => {
+      upload(k, Date.now(), 'lo').then(r => log(`${k.id} lo → ${r.key}`, 'ok'), e => log(String(e), 'err'));
+    }, k.cadence * 1000));
+    if (k.hiCadence) {
+      timers.push(setInterval(() => {
+        upload(k, Date.now(), 'hi').then(r => log(`${k.id} hi → ${r.key}`, 'ok'), e => log(String(e), 'err'));
+      }, k.hiCadence * 1000));
+    }
+  }
+  log(`live ticking ${KIOSKS.length} kiosks`, 'ok');
+};
+window.stopLive = function stopLive() {
+  timers.forEach(clearInterval);
+  timers = [];
+};
+
+document.getElementById('btnBackfill').onclick = () => window.backfill();
+document.getElementById('btnLive').onclick = () => window.startLive();
+document.getElementById('btnStop').onclick = () => { window.stopLive(); log('stopped'); };
+</script>
+</body>
+</html>
