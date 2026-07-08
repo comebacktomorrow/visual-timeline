@@ -54,6 +54,14 @@ var VTCore = (() => {
 .ktl .strip.sep .slot + .slot { border-left:1px solid rgba(255,255,255,.07); }
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
 .ktl .slot.gap { background:repeating-linear-gradient(45deg,#1b1215,#1b1215 5px,#2a171b 5px,#2a171b 10px); }
+.ktl .slot.paused { background:repeating-linear-gradient(45deg,#17191c,#17191c 7px,#1d2024 7px,#1d2024 14px); }
+.ktl .mag.paused { border-color:var(--ktl-dim); }
+.ktl .mag.paused img { display:none; }
+.ktl .card-head .ft.paused { color:var(--ktl-dim); }
+.ktl .tile.paused { border-color:var(--ktl-dim); }
+.ktl .tile.paused .t-off { display:flex; color:var(--ktl-dim);
+  background:repeating-linear-gradient(45deg,#17191c,#17191c 7px,#1d2024 7px,#1d2024 14px); }
+.ktl .tile.paused img, .ktl .tile.paused .t-ts { display:none; }
 .ktl .xh { position:absolute; top:0; bottom:0; width:1px; background:var(--ktl-accent); opacity:.85;
            pointer-events:none; z-index:4; }
 .ktl .sel { position:absolute; top:0; bottom:0; display:none; background:rgba(242,204,12,.14);
@@ -157,7 +165,23 @@ var VTCore = (() => {
     }
     return {
       kiosks(sites) {
-        return Object.entries(SITES).filter(([s]) => !sites || sites.includes(s)).flatMap(([s, ks]) => ks.map((k) => Object.assign({}, k, { site: s, location: "demo" })));
+        return Object.entries(SITES).filter(([s]) => !sites || sites.includes(s)).flatMap(([s, ks]) => ks.map((k) => {
+          const decl = Object.assign({}, k, { site: s, location: "demo" });
+          if (k.id === "source-3") {
+            decl.history = [
+              { since: P.from - 864e5, variant: "lo", cadence: 12e4 },
+              { since: P.from + SPAN * 0.5, variant: "lo", cadence: 24e4 }
+            ];
+            decl.cadence = 24e4;
+          }
+          if (k.id === "source-4") {
+            decl.history = [
+              { since: P.from - 864e5, variant: "lo", cadence: 6e4 },
+              { since: P.from + SPAN * 0.2, variant: "lo", paused: true }
+            ];
+          }
+          return decl;
+        }));
       },
       frames(site, kiosk, from, to, step) {
         const out = [];
@@ -165,6 +189,7 @@ var VTCore = (() => {
         const first = Math.ceil(from / step) * step;
         for (let ts = first; ts <= Math.min(to, Date.now()); ts += step) {
           if (kiosk === "source-2" && ts > gapA && ts < gapB) continue;
+          if (kiosk === "source-4" && ts > P.from + SPAN * 0.2 && ts < P.from + SPAN * 0.45) continue;
           out.push({ kiosk, ts, url: renderMockFrame(site, kiosk, ts, step) });
         }
         return Promise.resolve(out);
@@ -208,6 +233,74 @@ var VTCore = (() => {
   function parseVar(v) {
     if (!v || v === "All" || v === "$__all") return null;
     return v.replace(/^\{|\}$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  function erasFor(decl, P) {
+    const hist = (decl.history || []).filter((h) => (h.variant || "lo") === "lo").slice().sort((a, b) => a.since - b.since);
+    let runCad = decl.cadence || 6e4;
+    if (hist.length && hist[0].cadence) runCad = hist[0].cadence;
+    const evts = [{ since: -864e13, cadence: runCad, paused: false }];
+    for (const h of hist) evts.push({ since: h.since, cadence: h.cadence, paused: !!h.paused });
+    const eras = [];
+    for (let i = 0; i < evts.length; i++) {
+      const e = evts[i];
+      const next = evts[i + 1];
+      if (e.cadence) runCad = e.cadence;
+      const from = Math.max(e.since, P.from);
+      const to = Math.min(next ? next.since : P.to, P.to);
+      if (to <= from) continue;
+      const prev = eras[eras.length - 1];
+      if (prev && prev.paused === !!e.paused && prev.cadence === runCad) {
+        prev.to = to;
+        continue;
+      }
+      eras.push({ from, to, cadence: runCad, paused: !!e.paused });
+    }
+    if (!eras.length) eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false });
+    return eras;
+  }
+  async function buildSourceModel(decl, P, backend, budgetSlots) {
+    const eras = erasFor(decl, P);
+    const slots = [];
+    const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
+    async function pushActive(era) {
+      const eraSpan = era.to - era.from;
+      const share = Math.max(4, Math.round(budgetSlots * (eraSpan / totalActive)));
+      const raw = Math.max(1, Math.ceil(eraSpan / era.cadence));
+      const step = Math.ceil(raw / Math.min(share, raw)) * era.cadence;
+      const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
+      const start = Math.ceil(era.from / step) * step;
+      const n = Math.max(1, Math.floor((era.to - start) / step) + 1);
+      const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
+      for (let i = 0; i < n; i++) {
+        const ts = start + i * step;
+        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step });
+      }
+    }
+    for (const era of eras) {
+      if (!era.paused) {
+        await pushActive(era);
+        continue;
+      }
+      const probe = await backend.frames(decl.site, decl.id, era.from, era.to, era.cadence);
+      const resume = probe.find((f) => f.ts > era.from);
+      if (resume) {
+        const resumeTs = resume.ts;
+        slots.push({ ts: era.from, span: resumeTs - era.from, paused: true });
+        await pushActive({ from: resumeTs, to: era.to, cadence: era.cadence });
+      } else {
+        slots.push({ ts: era.from, span: era.to - era.from, paused: true });
+      }
+    }
+    function slotAt(t) {
+      for (const sl of slots) {
+        const from = sl.paused ? sl.ts : sl.ts - sl.span / 2;
+        const to = sl.paused ? sl.ts + sl.span : sl.ts + sl.span / 2;
+        if (t < to) return t >= from || sl === slots[0] ? sl : sl;
+      }
+      return slots[slots.length - 1] || null;
+    }
+    const lastActive = [...slots].reverse().find((sl) => !sl.paused) || null;
+    return { eras, slots, slotAt, lastActive };
   }
   function parseTagFilter(expr) {
     if (!expr) return null;
@@ -327,14 +420,6 @@ var VTCore = (() => {
     const hostWidth = cfg.width || root.clientWidth || 800;
     const pxBudget = Math.max(10, Math.floor((hostWidth - 20) / MIN_SLICE_PX));
     const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN);
-    function geomFor(cadence) {
-      const raw = Math.ceil(SPAN / cadence);
-      const step = Math.ceil(raw / Math.min(pxBudget, raw)) * cadence;
-      const bucketStart = Math.ceil(P.from / step) * step;
-      const nBuckets = Math.max(1, Math.floor((P.to - bucketStart) / step) + 1);
-      const idx = (t) => Math.max(0, Math.min(nBuckets - 1, Math.floor((t - bucketStart) / step + 0.5)));
-      return { cadence, step, bucketStart, nBuckets, idx };
-    }
     const wrap = makeWrapper(root);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="cards"></div><div class="axis"><div class="base"></div><div class="acur"></div></div>';
@@ -363,30 +448,28 @@ var VTCore = (() => {
     function hideSelection() {
       for (const k of kiosks) if (cards[k.id]) cards[k.id].sel.style.display = "none";
     }
-    function buildCard(decl, geom, frames) {
+    function buildCard(decl, model) {
       const kiosk = decl.id;
-      const byIdx = new Map(frames.map((f) => [geom.idx(f.ts), f]));
       const card = document.createElement("div");
       card.className = "card";
-      const down = geom.step > geom.cadence;
-      const cad = cfg.showDetails ? '<span class="cad">\u23F1 ' + fmtDur(geom.cadence) + " \xB7 1/" + fmtDur(geom.step) + (down ? " \u2193" : "") + "</span>" : "";
+      const la = model.lastActive;
+      const cad = cfg.showDetails && la ? '<span class="cad">\u23F1 ' + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + "</span>" : "";
       card.innerHTML = '<div class="card-head" title="' + headTitle(decl) + '"><span class="nm">' + kiosk + '</span><span class="st">' + decl.site + (decl.location ? " \xB7 " + decl.location : "") + "</span>" + tagChips(decl) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>';
       const strip = card.querySelector(".strip");
-      if (hostWidth / geom.nBuckets >= 12) strip.classList.add("sep");
-      const slots = [];
-      for (let i = 0; i < geom.nBuckets; i++) {
-        const ts = geom.bucketStart + i * geom.step;
-        const frame = byIdx.get(i) || null;
+      if (hostWidth / model.slots.length >= 12) strip.classList.add("sep");
+      const slots = model.slots;
+      for (const sl of slots) {
         const el = document.createElement("div");
-        el.className = "slot" + (frame ? "" : " gap");
-        if (frame) {
+        el.className = "slot" + (sl.paused ? " paused" : sl.frame ? "" : " gap");
+        el.style.flexGrow = String(sl.span / 1e3);
+        if (sl.frame) {
           const img = document.createElement("img");
-          img.src = frame.url;
-          img.alt = kiosk + " " + fmtTime(ts);
+          img.src = sl.frame.url;
+          img.alt = kiosk + " " + fmtTime(sl.ts);
           el.appendChild(img);
         }
         strip.appendChild(el);
-        slots.push({ ts, frame, el });
+        sl.el = el;
       }
       strip.addEventListener("mousemove", (e) => {
         const r = strip.getBoundingClientRect();
@@ -403,7 +486,8 @@ var VTCore = (() => {
           suppressClick = false;
           return;
         }
-        const f = slots[geom.idx(cursorT)] && slots[geom.idx(cursorT)].frame;
+        const sl = model.slotAt(cursorT);
+        const f = sl && sl.frame;
         if (f) pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, cfg.apiUrl, cfg.apiKey));
       });
       const magEl = card.querySelector(".mag");
@@ -445,8 +529,7 @@ var VTCore = (() => {
       q(".cards").appendChild(card);
       return {
         card,
-        geom,
-        slots,
+        model,
         head: card.querySelector(".ft"),
         strip,
         cross: card.querySelector(".xh"),
@@ -485,27 +568,36 @@ var VTCore = (() => {
         if (!external) c.card.classList.toggle("hovered", hoveredCard === c.card);
         const w = c.strip.clientWidth, x = frac * w;
         c.cross.style.left = x + "px";
-        const idx = c.geom.idx(cursorT);
-        const slot = c.slots[idx];
+        const slot = c.model.slotAt(cursorT);
         const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
         c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + "px";
         if (slot && slot.frame) {
-          c.mag.classList.remove("gap");
+          c.mag.classList.remove("gap", "paused");
           c.mag.querySelector("img").src = slot.frame.url;
           c.mag.querySelector(".cap").textContent = fmtTime(slot.frame.ts);
           c.head.textContent = "";
+          c.head.classList.remove("stale", "paused");
+        } else if (slot && slot.paused) {
+          c.mag.classList.add("paused");
+          c.mag.classList.remove("gap");
+          c.mag.querySelector(".cap").textContent = "paused";
+          c.head.textContent = "paused";
+          c.head.classList.add("paused");
           c.head.classList.remove("stale");
         } else {
           c.mag.classList.add("gap");
+          c.mag.classList.remove("paused");
+          const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
           let last = null;
-          for (let i = idx; i >= 0; i--) if (c.slots[i].frame) {
-            last = c.slots[i].frame;
+          for (let j = i; j >= 0; j--) if (c.model.slots[j].frame) {
+            last = c.model.slots[j].frame;
             break;
           }
           const msg = last ? "offline \u2014 last seen " + fmtTime(last.ts) : "no data in window";
           c.mag.querySelector(".cap").textContent = msg;
           c.head.textContent = msg;
           c.head.classList.add("stale");
+          c.head.classList.remove("paused");
         }
       }
       if (!external && cfg.onHover) cfg.onHover(cursorT);
@@ -514,32 +606,35 @@ var VTCore = (() => {
       kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
       for (const k of kiosks) {
         if (destroyed) return;
-        const geom = geomFor(k.cadence);
-        const frames = await backend.frames(k.site, k.id, P.from, P.to, geom.step);
+        const model = await buildSourceModel(k, P, backend, pxBudget);
         if (destroyed) return;
-        if (cfg.hideEmpty && !frames.length) continue;
-        cards[k.id] = buildCard(k, geom, frames);
+        if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame)) continue;
+        cards[k.id] = buildCard(k, model);
       }
       kiosks = kiosks.filter((k) => cards[k.id]);
       buildAxis();
       setCursor(cursorT, null, true);
       await revealWrapper(root, wrap);
       if (LIVE) {
-        const steps = kiosks.map((k) => cards[k.id].geom.step);
+        const steps = kiosks.map((k) => cards[k.id].model.lastActive && cards[k.id].model.lastActive.step).filter(Boolean);
         const minStep = steps.length ? Math.min.apply(null, steps) : 6e4;
         pollTimer = setInterval(async () => {
           for (const k of kiosks) {
             const c = cards[k.id];
+            const la = c.model.lastActive;
+            if (!la) continue;
             let lastTs = P.from;
-            for (let i = c.slots.length - 1; i >= 0; i--) if (c.slots[i].frame) {
-              lastTs = c.slots[i].ts;
-              break;
+            for (let i = c.model.slots.length - 1; i >= 0; i--) {
+              if (c.model.slots[i].frame) {
+                lastTs = c.model.slots[i].ts;
+                break;
+              }
             }
-            const fresh = await backend.frames(k.site, k.id, lastTs + 1, Date.now(), c.geom.step);
+            const fresh = await backend.frames(k.site, k.id, lastTs + 1, Date.now(), la.step);
             if (destroyed) return;
             for (const f of fresh) {
-              const slot = c.slots[c.geom.idx(f.ts)];
-              if (!slot) continue;
+              const slot = c.model.slotAt(f.ts);
+              if (!slot || slot.paused) continue;
               if (slot.frame && f.ts <= slot.frame.ts) continue;
               slot.frame = f;
               slot.el.classList.remove("gap");
@@ -577,30 +672,19 @@ var VTCore = (() => {
     const LIVE = P.to > Date.now() - 2 * 60 * 1e3;
     const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN);
     const budget = 120;
-    function geomFor(cadence) {
-      const raw = Math.ceil(SPAN / cadence);
-      const step = Math.ceil(raw / Math.min(budget, raw)) * cadence;
-      const bucketStart = Math.ceil(P.from / step) * step;
-      const nBuckets = Math.max(1, Math.floor((P.to - bucketStart) / step) + 1);
-      const idx = (t) => Math.max(0, Math.min(nBuckets - 1, Math.floor((t - bucketStart) / step + 0.5)));
-      return { cadence, step, bucketStart, nBuckets, idx };
-    }
     const wrap = makeWrapper(root);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="grid"></div>';
     const q = (sel) => wrap.querySelector(sel);
     let kiosks = [], tiles = {}, destroyed = false, pollTimer = null, shownT = null;
     const pv = makePreview();
-    function buildTile(decl, geom, frames) {
-      const slots = new Array(geom.nBuckets).fill(null);
-      for (const f of frames) slots[geom.idx(f.ts)] = f;
+    function buildTile(decl, model) {
       const el = document.createElement("div");
       el.className = "tile";
       el.innerHTML = '<div class="t-head" title="' + headTitle(decl) + '"><span class="nm">' + decl.id + '</span><span class="st">' + decl.site + (decl.location ? " \xB7 " + decl.location : "") + "</span>" + tagChips(decl) + '</div><div class="t-img"><img alt="' + decl.id + '"><span class="t-ts"></span><div class="t-off"></div></div>';
       const rec = {
         decl,
-        geom,
-        slots,
+        model,
         el,
         shown: null,
         img: el.querySelector("img"),
@@ -614,7 +698,9 @@ var VTCore = (() => {
       return rec;
     }
     function lastFrame(rec) {
-      for (let i = rec.slots.length - 1; i >= 0; i--) if (rec.slots[i]) return rec.slots[i];
+      for (let i = rec.model.slots.length - 1; i >= 0; i--) {
+        if (rec.model.slots[i].frame) return rec.model.slots[i].frame;
+      }
       return null;
     }
     function setShown(t) {
@@ -623,27 +709,37 @@ var VTCore = (() => {
       for (const k of kiosks) {
         const rec = tiles[k.id];
         if (!rec) continue;
-        let frame = null, offMsg = null;
+        let frame = null, offMsg = null, pausedMsg = null;
+        const la = rec.model.lastActive;
         if (t == null) {
+          const tailPaused = rec.model.slots.length && rec.model.slots[rec.model.slots.length - 1].paused;
           frame = lastFrame(rec);
-          if (!frame) offMsg = "no data in window";
-          else if (LIVE && Date.now() - frame.ts > 2 * rec.geom.step)
+          if (tailPaused) pausedMsg = "PAUSED" + (frame ? " \u2014 last frame " + fmtTime(frame.ts) : "");
+          else if (!frame) offMsg = "no data in window";
+          else if (LIVE && la && Date.now() - frame.ts > 2 * la.step)
             offMsg = "OFFLINE \u2014 last seen " + fmtTime(frame.ts);
         } else {
-          frame = rec.slots[rec.geom.idx(t)];
-          if (!frame) {
-            let last = null;
-            for (let i = rec.geom.idx(t); i >= 0; i--) if (rec.slots[i]) {
-              last = rec.slots[i];
-              break;
+          const slot = rec.model.slotAt(t);
+          if (slot && slot.paused) {
+            pausedMsg = "PAUSED";
+          } else {
+            frame = slot && slot.frame;
+            if (!frame) {
+              const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
+              let last = null;
+              for (let j = i; j >= 0; j--) if (rec.model.slots[j].frame) {
+                last = rec.model.slots[j].frame;
+                break;
+              }
+              offMsg = last ? "OFFLINE \u2014 last seen " + fmtTime(last.ts) : "no data";
             }
-            offMsg = last ? "OFFLINE \u2014 last seen " + fmtTime(last.ts) : "no data";
           }
         }
         rec.el.classList.toggle("offline", !!offMsg);
-        rec.off.textContent = offMsg || "";
+        rec.el.classList.toggle("paused", !!pausedMsg && !offMsg);
+        rec.off.textContent = offMsg || pausedMsg || "";
         rec.shown = frame;
-        if (frame && !offMsg) {
+        if (frame && !offMsg && !pausedMsg) {
           rec.img.src = frame.url;
           rec.ts.textContent = fmtTime(frame.ts);
         }
@@ -653,11 +749,10 @@ var VTCore = (() => {
       kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
       for (const k of kiosks) {
         if (destroyed) return;
-        const geom = geomFor(k.cadence);
-        const frames = await backend.frames(k.site, k.id, P.from, P.to, geom.step);
+        const model = await buildSourceModel(k, P, backend, budget);
         if (destroyed) return;
-        if (cfg.hideEmpty && !frames.length) continue;
-        tiles[k.id] = buildTile(k, geom, frames);
+        if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame)) continue;
+        tiles[k.id] = buildTile(k, model);
       }
       kiosks = kiosks.filter((k) => tiles[k.id]);
       setShown(null);
@@ -666,12 +761,15 @@ var VTCore = (() => {
         pollTimer = setInterval(async () => {
           for (const k of kiosks) {
             const rec = tiles[k.id];
+            const la = rec.model.lastActive;
+            if (!la) continue;
             const last = lastFrame(rec);
-            const fresh = await backend.frames(k.site, k.id, (last ? last.ts : P.from) + 1, Date.now(), rec.geom.step);
+            const fresh = await backend.frames(k.site, k.id, (last ? last.ts : P.from) + 1, Date.now(), la.step);
             if (destroyed) return;
             for (const f of fresh) {
-              const i = rec.geom.idx(f.ts);
-              if (!rec.slots[i] || f.ts > rec.slots[i].ts) rec.slots[i] = f;
+              const slot = rec.model.slotAt(f.ts);
+              if (!slot || slot.paused) continue;
+              if (!slot.frame || f.ts > slot.frame.ts) slot.frame = f;
             }
           }
           if (shownT == null) setShown(null);

@@ -39,8 +39,18 @@ const CORS = {
 };
 
 /* Per-isolate memo of (site/source/variant/cadence) registrations. Only an
- * optimization: a cold isolate re-checks index.json once per source. */
-const registered = new Set();
+ * optimization: a cold isolate re-checks index.json once per source. Entries
+ * expire so state the memo can't capture (a pause declared to another
+ * isolate) is re-read within minutes — that recheck is what lets a resumed
+ * source close its paused era in the registry. */
+const REGISTERED_TTL = 5 * 60 * 1000;
+const registered = new Map();
+const isRegistered = (memo) => {
+  const at = registered.get(memo);
+  if (at && Date.now() - at < REGISTERED_TTL) return true;
+  registered.delete(memo);
+  return false;
+};
 
 export default {
   async fetch(request, env, ctx) {
@@ -48,6 +58,7 @@ export default {
     try {
       if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
       if (url.pathname === '/upload' && request.method === 'POST') return await handleUpload(request, env);
+      if (url.pathname === '/declare' && request.method === 'POST') return await handleDeclare(request, env);
       const isData = url.pathname === '/sources' || url.pathname === '/kiosks' ||
                      url.pathname === '/frames' || url.pathname.startsWith('/frame/');
       if (isData && request.method === 'GET') {
@@ -161,7 +172,7 @@ function parseTags(raw) {
  * declaration changed; concurrent writers resolved by verify-after-write. */
 async function ensureRegistered(env, site, source, variant, cadence, ts, location, tags) {
   const memo = `${site}/${source}/${variant}/${cadence}/${location || ''}/${JSON.stringify(tags || {})}`;
-  if (registered.has(memo)) return;
+  if (isRegistered(memo)) return;
   const field = variant === 'hi' ? 'hiCadence' : 'cadence';
 
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -169,14 +180,16 @@ async function ensureRegistered(env, site, source, variant, cadence, ts, locatio
     const index = cur ? await cur.json() : { sites: {} };
     const sources = (index.sites[site] ||= {});
     const entry = (sources[source] ||= { history: [] });
+    const lastEvt = entry.history[entry.history.length - 1];
+    const wasPaused = !!(lastEvt && lastEvt.paused);
     const cadChanged = entry[field] !== cadence;
     const locChanged = !!location && entry.location !== location;
     const tagsChanged = !!tags && JSON.stringify(entry.tags || null) !== JSON.stringify(tags);
-    if (!cadChanged && !locChanged && !tagsChanged) { registered.add(memo); return; }
+    if (!cadChanged && !locChanged && !tagsChanged && !wasPaused) { registered.set(memo, Date.now()); return; }
 
-    if (cadChanged) {
+    if (cadChanged || wasPaused) {
       entry[field] = cadence;
-      entry.history.push({ since: ts, variant, cadence });
+      entry.history.push({ since: ts, variant, cadence });   // resume and/or pace change
     }
     if (locChanged) entry.location = location;
     if (tagsChanged) entry.tags = tags;
@@ -189,11 +202,44 @@ async function ensureRegistered(env, site, source, variant, cadence, ts, locatio
     const seen = check && (await check.json()).sites?.[site]?.[source];
     if (seen && seen[field] === cadence && (!location || seen.location === location) &&
         (!tags || JSON.stringify(seen.tags || null) === JSON.stringify(tags))) {
-      registered.add(memo);
+      registered.set(memo, Date.now());
       return;
     }
   }
   console.warn(JSON.stringify({ msg: 'index registration retries exhausted', site, source, variant }));
+}
+
+/* Cadence-event declaration: a source about to go deliberately silent says
+ * so WHILE IT CAN STILL SPEAK — POST /declare with X-Event: pause. Resume
+ * needs no declaration: the next frame is the resume, inferred client-side.
+ * A source that dies unexpectedly never declares, so its silence renders as
+ * offline — the heartbeat semantics survive. */
+async function handleDeclare(request, env) {
+  const site = (request.headers.get('x-site') || '').toLowerCase();
+  const source = (request.headers.get('x-source') || request.headers.get('x-kiosk') || '').toLowerCase();
+  const event = (request.headers.get('x-event') || '').toLowerCase();
+  if (!ID_RE.test(site) || !ID_RE.test(source)) return json({ error: 'bad site/source' }, 400);
+  if (event !== 'pause') return json({ error: 'unknown event' }, 400);
+  if (!(await authorize(request, env, site))) return json({ error: 'unauthorized' }, 401);
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const cur = await env.FRAMES.get(INDEX_KEY);
+    const index = cur ? await cur.json() : { sites: {} };
+    const entry = index.sites?.[site]?.[source];
+    if (!entry) return json({ error: 'unknown source' }, 404);
+    const last = entry.history[entry.history.length - 1];
+    if (last && last.paused) return json({ ok: true, note: 'already paused' });
+    entry.history.push({ since: Date.now(), variant: 'lo', paused: true });
+    const put = await env.FRAMES.put(INDEX_KEY, JSON.stringify(index), { onlyIf: { etagMatches: cur.etag } });
+    if (put) {
+      // drop this isolate's memos so the next upload re-checks wasPaused
+      for (const memo of registered.keys()) {
+        if (memo.startsWith(`${site}/${source}/`)) registered.delete(memo);
+      }
+      return json({ ok: true });
+    }
+  }
+  return json({ error: 'conflict' }, 409);
 }
 
 /* ---------------- sources ---------------- */
@@ -222,7 +268,7 @@ async function handleSources(url, env, ctx) {
   for (const [site, sources] of Object.entries(index.sites || {})) {
     if (filter && !filter.includes(site)) continue;
     for (const [id, meta] of Object.entries(sources)) {
-      out.push({ id, site, location: meta.location, tags: meta.tags, cadence: meta.cadence, hiCadence: meta.hiCadence });
+      out.push({ id, site, location: meta.location, tags: meta.tags, cadence: meta.cadence, hiCadence: meta.hiCadence, history: meta.history });
     }
   }
   out.sort((a, b) => a.site.localeCompare(b.site) || a.id.localeCompare(b.id));
