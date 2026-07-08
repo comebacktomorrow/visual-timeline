@@ -18,11 +18,15 @@ const CSS = `
 .ktl .card { flex:1 1 0; min-height:76px; display:flex; flex-direction:column; background:var(--ktl-bg2);
              border:1px solid var(--ktl-border); border-radius:4px; overflow:hidden; transition:opacity 120ms ease; }
 .ktl.strip-hover .card:not(.hovered) { opacity:.45; }
-.ktl .card-head { display:flex; align-items:center; gap:8px; padding:2px 8px; flex:0 0 auto; color:var(--ktl-dim); }
+.ktl .card-head { display:flex; align-items:center; gap:8px; padding:2px 8px; flex:0 0 auto; color:var(--ktl-dim);
+                   flex-wrap:nowrap; overflow:hidden; min-width:0; }
+.ktl .card-head .nm { flex:0 0 auto; }
+.ktl .card-head .tags { display:flex; gap:4px; overflow:hidden; min-width:0; flex-shrink:10; }
+.ktl .card-head .tags .st { flex:0 0 auto; }
 .ktl .card-head .nm { font-weight:600; color:var(--ktl-text); }
 .ktl .card-head .st { font-size:10px; color:var(--ktl-dim); border:1px solid var(--ktl-border);
                       border-radius:8px; padding:0 6px; }
-.ktl .card-head .ft { font-variant-numeric:tabular-nums; }
+.ktl .card-head .ft { font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex-shrink:1; }
 .ktl .card-head .ft.stale { color:var(--ktl-off); }
 .ktl .card-head .cad { margin-left:auto; font-size:10px; color:var(--ktl-dim); }
 .ktl .strip { flex:1 1 auto; min-height:0; position:relative; display:flex; align-items:stretch;
@@ -59,7 +63,11 @@ const CSS = `
              grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); grid-auto-rows:minmax(110px, 1fr); }
 .ktl .tile { display:flex; flex-direction:column; background:var(--ktl-bg2);
              border:1px solid var(--ktl-border); border-radius:4px; overflow:hidden; cursor:zoom-in; }
-.ktl .tile .t-head { display:flex; gap:6px; align-items:center; padding:2px 6px; color:var(--ktl-dim); flex:0 0 auto; }
+.ktl .tile .t-head { display:flex; gap:6px; align-items:center; padding:2px 6px; color:var(--ktl-dim); flex:0 0 auto;
+                     flex-wrap:nowrap; overflow:hidden; min-width:0; }
+.ktl .tile .t-head .nm { flex:0 0 auto; }
+.ktl .tile .t-head .tags { display:flex; gap:4px; overflow:hidden; min-width:0; flex-shrink:10; }
+.ktl .tile .t-head .tags .st { flex:0 0 auto; }
 .ktl .tile .t-head .nm { font-weight:600; color:var(--ktl-text); }
 .ktl .tile .t-img { flex:1 1 auto; min-height:0; position:relative; background:#111; }
 .ktl .tile .t-img img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
@@ -212,9 +220,16 @@ function matchesTags(tags, filter) {
 }
 function tagChips(decl) {
   if (!decl.tags) return '';
-  return Object.entries(decl.tags)
+  const chips = Object.entries(decl.tags)
     .map(([k, v]) => '<span class="st">' + k + ':' + v + '</span>')
     .join('');
+  return '<span class="tags">' + chips + '</span>';
+}
+function headTitle(decl) {
+  const parts = [decl.site];
+  if (decl.location) parts.push(decl.location);
+  if (decl.tags) for (const [k, v] of Object.entries(decl.tags)) parts.push(k + ':' + v);
+  return parts.join(' · ');
 }
 
 const TICK_STEPS = [60e3, 5 * 60e3, 10 * 60e3, 15 * 60e3, 30 * 60e3,
@@ -358,7 +373,7 @@ export function mountTimeline(root, cfg) {
       ? '<span class="cad">⏱ ' + fmtDur(geom.cadence) + ' · 1/' + fmtDur(geom.step) + (down ? ' ↓' : '') + '</span>'
       : '';
     card.innerHTML =
-      '<div class="card-head"><span class="nm">' + kiosk + '</span>' +
+      '<div class="card-head" title="' + headTitle(decl) + '"><span class="nm">' + kiosk + '</span>' +
       '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span>' + tagChips(decl) + '<span class="ft"></span>' +
       cad + '</div>' +
       '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>';
@@ -592,7 +607,7 @@ export function mountGrid(root, cfg) {
     const el = document.createElement('div');
     el.className = 'tile';
     el.innerHTML =
-      '<div class="t-head"><span class="nm">' + decl.id + '</span>' +
+      '<div class="t-head" title="' + headTitle(decl) + '"><span class="nm">' + decl.id + '</span>' +
       '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span>' + tagChips(decl) + '</div>' +
       '<div class="t-img"><img alt="' + decl.id + '"><span class="t-ts"></span><div class="t-off"></div></div>';
     const rec = {
