@@ -9,6 +9,8 @@ interface VisualTimelineOptions {
   followCrosshair?: boolean;
   imageFit?: 'fit' | 'fill';
   showDetails?: boolean;
+  hideEmpty?: boolean;
+  tagFilter?: string;
 }
 
 interface MountInstance {
@@ -37,12 +39,14 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const fit = options.imageFit || 'fit';
   const apiUrl = (options.apiUrl || '').trim();
   const showDetails = options.showDetails === true;
+  const hideEmpty = options.hideEmpty === true;
+  const tagFilter = (options.tagFilter || '').trim();
 
   useEffect(() => {
     if (!ref.current) {
       return;
     }
-    const common = { site, from, to, width: props.width, fit, apiUrl, showDetails };
+    const common = { site, from, to, width: props.width, fit, apiUrl, showDetails, hideEmpty, tagFilter };
     const inst: MountInstance =
       mode === 'grid'
         ? mountGrid(ref.current, common)
@@ -66,7 +70,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, fit, apiUrl, showDetails, site, from, to, props.width, props.height]);
+  }, [mode, fit, apiUrl, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height]);
 
   useEffect(() => {
     const subs = [
@@ -137,6 +141,18 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel).setP
         'Show the frame at the crosshair time from other panels; otherwise the most recent frame in range',
       defaultValue: true,
       showIf: (o) => o.mode === 'grid',
+    })
+    .addBooleanSwitch({
+      path: 'hideEmpty',
+      name: 'Hide sources with no data in window',
+      description: 'Sources with zero frames in the current time range are omitted instead of shown as offline',
+      defaultValue: false,
+    })
+    .addTextInput({
+      path: 'tagFilter',
+      name: 'Tag filter',
+      description: 'Only show sources whose declared tags match ALL pairs, e.g. env=prod, room=lobby',
+      defaultValue: '',
     })
     .addBooleanSwitch({
       path: 'showDetails',

@@ -93,7 +93,7 @@ function injectStyles() {
  * source-2 has a synthetic outage. */
 const SITES = {
   'site-a': [
-    { id: 'source-1', cadence: 60e3 },
+    { id: 'source-1', cadence: 60e3, tags: { env: 'prod' } },
     { id: 'source-2', cadence: 60e3 },
     { id: 'source-3', cadence: 120e3 },
   ],
@@ -190,6 +190,31 @@ function hiUrlFor(frame, decl, apiUrl) {
 function parseVar(v) {
   if (!v || v === 'All' || v === '$__all') return null;
   return v.replace(/^\{|\}$/g, '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+/* panel-side tag filtering: "env=prod, room=lobby" must ALL match */
+function parseTagFilter(expr) {
+  if (!expr) return null;
+  const out = {};
+  for (const part of String(expr).split(',')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim().toLowerCase()] = part.slice(i + 1).trim().toLowerCase();
+  }
+  return Object.keys(out).length ? out : null;
+}
+function matchesTags(tags, filter) {
+  if (!filter) return true;
+  if (!tags) return false;
+  for (const k in filter) {
+    if (String(tags[k] == null ? '' : tags[k]).toLowerCase() !== filter[k]) return false;
+  }
+  return true;
+}
+function tagChips(decl) {
+  if (!decl.tags) return '';
+  return Object.entries(decl.tags)
+    .map(([k, v]) => '<span class="st">' + k + ':' + v + '</span>')
+    .join('');
 }
 
 const TICK_STEPS = [60e3, 5 * 60e3, 10 * 60e3, 15 * 60e3, 30 * 60e3,
@@ -334,7 +359,7 @@ export function mountTimeline(root, cfg) {
       : '';
     card.innerHTML =
       '<div class="card-head"><span class="nm">' + kiosk + '</span>' +
-      '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span><span class="ft"></span>' +
+      '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span>' + tagChips(decl) + '<span class="ft"></span>' +
       cad + '</div>' +
       '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>';
     const strip = card.querySelector('.strip');
@@ -478,14 +503,16 @@ export function mountTimeline(root, cfg) {
   }
 
   (async function boot() {
-    kiosks = await backend.kiosks(P.site);
+    kiosks = (await backend.kiosks(P.site)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
     for (const k of kiosks) {
       if (destroyed) return;
       const geom = geomFor(k.cadence);
       const frames = await backend.frames(k.site, k.id, P.from, P.to, geom.step);
       if (destroyed) return;
+      if (cfg.hideEmpty && !frames.length) continue;   // hide sources with no data in window
       cards[k.id] = buildCard(k, geom, frames);
     }
+    kiosks = kiosks.filter((k) => cards[k.id]);
     buildAxis();
     setCursor(cursorT, null, true);   // rest position; don't publish
     await revealWrapper(root, wrap);  // swap in only once images decoded
@@ -566,7 +593,7 @@ export function mountGrid(root, cfg) {
     el.className = 'tile';
     el.innerHTML =
       '<div class="t-head"><span class="nm">' + decl.id + '</span>' +
-      '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span></div>' +
+      '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span>' + tagChips(decl) + '</div>' +
       '<div class="t-img"><img alt="' + decl.id + '"><span class="t-ts"></span><div class="t-off"></div></div>';
     const rec = {
       decl, geom, slots, el, shown: null,
@@ -617,14 +644,16 @@ export function mountGrid(root, cfg) {
   }
 
   (async function boot() {
-    kiosks = await backend.kiosks(P.site);
+    kiosks = (await backend.kiosks(P.site)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
     for (const k of kiosks) {
       if (destroyed) return;
       const geom = geomFor(k.cadence);
       const frames = await backend.frames(k.site, k.id, P.from, P.to, geom.step);
       if (destroyed) return;
+      if (cfg.hideEmpty && !frames.length) continue;   // hide sources with no data in window
       tiles[k.id] = buildTile(k, geom, frames);
     }
+    kiosks = kiosks.filter((k) => tiles[k.id]);
     setShown(null);
     await revealWrapper(root, wrap);
 

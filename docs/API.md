@@ -35,6 +35,7 @@ JPEG body. Headers:
 | `X-Variant` | no | `lo` (default) or `hi` |
 | `X-Timestamp` | no | epoch ms (backfill); default now; snapped to the cadence grid |
 | `X-Location` | no | area/zone label within the site |
+| `X-Tags` | no | free-form labels: `env=prod,room=lobby` (≤8 pairs; keys `[a-z0-9_-]`, values `[a-z0-9 ._-]`) |
 
 Response: `{"ok":true,"key":"lo/<site>/<source>/<ts>.jpg","ts":<snapped ms>}`
 
@@ -44,7 +45,7 @@ Registry of known sources (built from upload declarations; cadence changes
 are recorded with history). `site` omitted/`All` = every site.
 
 ```json
-[{"id":"source-1","site":"site-a","location":"lobby","cadence":60000,"hiCadence":300000}]
+[{"id":"source-1","site":"site-a","location":"lobby","tags":{"env":"prod"},"cadence":60000,"hiCadence":300000}]
 ```
 Cadences are milliseconds.
 

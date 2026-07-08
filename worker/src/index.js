@@ -34,7 +34,7 @@ const INDEX_KEY = 'index.json';
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
-  'access-control-allow-headers': 'authorization, content-type, x-site, x-source, x-kiosk, x-cadence, x-variant, x-timestamp, x-location',
+  'access-control-allow-headers': 'authorization, content-type, x-site, x-source, x-kiosk, x-cadence, x-variant, x-timestamp, x-location, x-tags',
   'access-control-max-age': '86400',
 };
 
@@ -100,6 +100,7 @@ async function handleUpload(request, env) {
   const cadenceS = Number(request.headers.get('x-cadence'));
   const variant = (request.headers.get('x-variant') || 'lo').toLowerCase();
   const location = (request.headers.get('x-location') || '').toLowerCase().trim().slice(0, 64);
+  const tags = parseTags(request.headers.get('x-tags'));
 
   if (!ID_RE.test(site) || !ID_RE.test(source)) return json({ error: 'bad site/source' }, 400);
   if (location && !/^[a-z0-9 _.-]+$/.test(location)) return json({ error: 'bad location' }, 400);
@@ -124,14 +125,29 @@ async function handleUpload(request, env) {
   await env.FRAMES.put(key, body, {
     httpMetadata: { contentType: 'image/jpeg', cacheControl: FRAME_CACHE },
   });
-  await ensureRegistered(env, site, source, variant, cadence, ts, location);
+  await ensureRegistered(env, site, source, variant, cadence, ts, location, tags);
   return json({ ok: true, key, ts });
+}
+
+/* Free-form source tags: "env=prod,room=lobby" → {env: 'prod', room: 'lobby'}.
+ * Keys [a-z0-9_-]{1,32}, values [a-z0-9 ._-]{1,64}, at most 8 pairs. */
+function parseTags(raw) {
+  if (!raw) return null;
+  const tags = {};
+  for (const part of String(raw).split(',').slice(0, 8)) {
+    const i = part.indexOf('=');
+    if (i <= 0) continue;
+    const k = part.slice(0, i).trim().toLowerCase();
+    const v = part.slice(i + 1).trim().toLowerCase();
+    if (/^[a-z0-9_-]{1,32}$/.test(k) && /^[a-z0-9 ._-]{1,64}$/.test(v)) tags[k] = v;
+  }
+  return Object.keys(tags).length ? tags : null;
 }
 
 /* Register the source's declared cadence in index.json. Writes only when the
  * declaration changed; concurrent writers resolved by verify-after-write. */
-async function ensureRegistered(env, site, source, variant, cadence, ts, location) {
-  const memo = `${site}/${source}/${variant}/${cadence}/${location || ''}`;
+async function ensureRegistered(env, site, source, variant, cadence, ts, location, tags) {
+  const memo = `${site}/${source}/${variant}/${cadence}/${location || ''}/${JSON.stringify(tags || {})}`;
   if (registered.has(memo)) return;
   const field = variant === 'hi' ? 'hiCadence' : 'cadence';
 
@@ -142,13 +158,15 @@ async function ensureRegistered(env, site, source, variant, cadence, ts, locatio
     const entry = (sources[source] ||= { history: [] });
     const cadChanged = entry[field] !== cadence;
     const locChanged = !!location && entry.location !== location;
-    if (!cadChanged && !locChanged) { registered.add(memo); return; }
+    const tagsChanged = !!tags && JSON.stringify(entry.tags || null) !== JSON.stringify(tags);
+    if (!cadChanged && !locChanged && !tagsChanged) { registered.add(memo); return; }
 
     if (cadChanged) {
       entry[field] = cadence;
       entry.history.push({ since: ts, variant, cadence });
     }
     if (locChanged) entry.location = location;
+    if (tagsChanged) entry.tags = tags;
     const opts = cur ? { onlyIf: { etagMatches: cur.etag } } : {};
     const put = await env.FRAMES.put(INDEX_KEY, JSON.stringify(index), opts);
     if (!put) continue;   // etag raced — reread and retry
@@ -156,7 +174,8 @@ async function ensureRegistered(env, site, source, variant, cadence, ts, locatio
     // creation race has no etag guard: verify our entry actually survived
     const check = await env.FRAMES.get(INDEX_KEY);
     const seen = check && (await check.json()).sites?.[site]?.[source];
-    if (seen && seen[field] === cadence && (!location || seen.location === location)) {
+    if (seen && seen[field] === cadence && (!location || seen.location === location) &&
+        (!tags || JSON.stringify(seen.tags || null) === JSON.stringify(tags))) {
       registered.add(memo);
       return;
     }
@@ -190,7 +209,7 @@ async function handleSources(url, env, ctx) {
   for (const [site, sources] of Object.entries(index.sites || {})) {
     if (filter && !filter.includes(site)) continue;
     for (const [id, meta] of Object.entries(sources)) {
-      out.push({ id, site, location: meta.location, cadence: meta.cadence, hiCadence: meta.hiCadence });
+      out.push({ id, site, location: meta.location, tags: meta.tags, cadence: meta.cadence, hiCadence: meta.hiCadence });
     }
   }
   out.sort((a, b) => a.site.localeCompare(b.site) || a.id.localeCompare(b.id));
