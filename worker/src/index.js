@@ -48,11 +48,16 @@ export default {
     try {
       if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
       if (url.pathname === '/upload' && request.method === 'POST') return await handleUpload(request, env);
-      if ((url.pathname === '/sources' || url.pathname === '/kiosks') && request.method === 'GET') {
+      const isData = url.pathname === '/sources' || url.pathname === '/kiosks' ||
+                     url.pathname === '/frames' || url.pathname.startsWith('/frame/');
+      if (isData && request.method === 'GET') {
+        // viewer auth: when VIEWER_TOKEN is set, all data reads require it
+        // (?k= for <img> URLs, Bearer for API calls). Unset = open (dev/demo).
+        if (!(await viewerAuthorized(request, env, url))) return json({ error: 'unauthorized' }, 401);
+        if (url.pathname === '/frames') return await handleFrames(url, env, ctx);
+        if (url.pathname.startsWith('/frame/')) return await handleFrame(url, env, ctx);
         return await handleSources(url, env, ctx);   // /kiosks = deprecated alias
       }
-      if (url.pathname === '/frames' && request.method === 'GET') return await handleFrames(url, env, ctx);
-      if (url.pathname.startsWith('/frame/') && request.method === 'GET') return await handleFrame(url, env, ctx);
       return env.ASSETS.fetch(request);
     } catch (err) {
       console.error(JSON.stringify({ msg: 'unhandled', path: url.pathname, error: String((err && err.stack) || err) }));
@@ -69,6 +74,14 @@ function json(body, status = 200, extra = {}) {
 }
 
 /* ---------------- auth ---------------- */
+
+async function viewerAuthorized(request, env, url) {
+  if (!env.VIEWER_TOKEN) return true;
+  const got = url.searchParams.get('k') ||
+    (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  if (!got) return false;
+  return timingSafeEqual(env.VIEWER_TOKEN, got);
+}
 
 async function authorize(request, env, site) {
   let tokens;

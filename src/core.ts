@@ -313,7 +313,7 @@ export function mountTimeline(root, cfg) {
   const LIVE = P.to > Date.now() - 2 * 60 * 1000;
   const MIN_SLICE_PX = 7;
   const pxBudget = Math.max(10, Math.floor((cfg.width - 20) / MIN_SLICE_PX));
-  const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl) : makeBackend(P, SPAN);
+  const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN);
 
   function geomFor(cadence) {
     const raw = Math.ceil(SPAN / cadence);
@@ -405,7 +405,7 @@ export function mountTimeline(root, cfg) {
     strip.addEventListener('click', e => {
       if (suppressClick) { suppressClick = false; return; }
       const f = slots[geom.idx(cursorT)] && slots[geom.idx(cursorT)].frame;
-      if (f) pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, cfg.apiUrl));
+      if (f) pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, cfg.apiUrl, cfg.apiKey));
     });
     /* magnifier takes the aspect of the actual frames (portrait screens etc.) */
     const magEl = card.querySelector('.mag');
@@ -581,7 +581,7 @@ export function mountGrid(root, cfg) {
   const P = { site: parseVar(cfg.site), from: cfg.from, to: cfg.to };
   const SPAN = Math.max(1, P.to - P.from);
   const LIVE = P.to > Date.now() - 2 * 60 * 1000;
-  const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl) : makeBackend(P, SPAN);
+  const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN);
   const budget = 120;   // temporal buckets for crosshair-follow resolution
 
   function geomFor(cadence) {
@@ -617,7 +617,7 @@ export function mountGrid(root, cfg) {
       off: el.querySelector('.t-off'),
     };
     el.addEventListener('click', e => {
-      if (rec.shown) pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, cfg.apiUrl));
+      if (rec.shown) pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, cfg.apiUrl, cfg.apiKey));
     });
     q('.grid').appendChild(el);
     return rec;

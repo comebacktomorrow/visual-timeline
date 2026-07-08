@@ -4,6 +4,7 @@ import { mountTimeline, mountGrid } from './core';
 
 interface VisualTimelineOptions {
   apiUrl?: string;
+  apiKey?: string;
   sites?: string;
   mode?: 'timeline' | 'grid';
   followCrosshair?: boolean;
@@ -38,6 +39,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const follow = options.followCrosshair !== false;
   const fit = options.imageFit || 'fit';
   const apiUrl = (options.apiUrl || '').trim();
+  const apiKey = (options.apiKey || '').trim();
   const showDetails = options.showDetails === true;
   const hideEmpty = options.hideEmpty === true;
   const tagFilter = (options.tagFilter || '').trim();
@@ -46,7 +48,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     if (!ref.current) {
       return;
     }
-    const common = { site, from, to, width: props.width, fit, apiUrl, showDetails, hideEmpty, tagFilter };
+    const common = { site, from, to, width: props.width, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter };
     const inst: MountInstance =
       mode === 'grid'
         ? mountGrid(ref.current, common)
@@ -70,7 +72,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, fit, apiUrl, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height]);
+  }, [mode, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height]);
 
   useEffect(() => {
     const subs = [
@@ -114,6 +116,12 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel).setP
       path: 'apiUrl',
       name: 'API URL',
       description: 'Frames API base URL (see docs/API.md in the repository). Empty = built-in demo data.',
+      defaultValue: '',
+    })
+    .addTextInput({
+      path: 'apiKey',
+      name: 'API key',
+      description: 'Viewer token for the frames API, if it requires one. Sent as a Bearer header on API calls and as ?k= on image URLs.',
       defaultValue: '',
     })
     .addTextInput({

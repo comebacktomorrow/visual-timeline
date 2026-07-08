@@ -328,11 +328,14 @@ const mockBackend = {
 /* Worker-backed data layer (same shapes as the mock). `backend` is chosen at
  * boot: ?backend=mock forces the mock; otherwise probe /kiosks and fall back
  * to the mock when no Worker is serving this page (e.g. plain http.server). */
+const API_KEY = qs.get('k') || '';
+const AUTHH = API_KEY ? { headers: { authorization: 'Bearer ' + API_KEY } } : undefined;
+function withKey(u) { return API_KEY ? u + (u.includes('?') ? '&' : '?') + 'k=' + encodeURIComponent(API_KEY) : u; }
 const apiBackend = {
   async kiosks(sites) {
     const u = new URL('/sources', location.origin);
     if (sites) u.searchParams.set('site', sites.join(','));
-    const r = await fetch(u);
+    const r = await fetch(u, AUTHH);
     if (!r.ok) throw new Error('kiosks ' + r.status);
     const all = await r.json();
     return P.kiosk ? all.filter(k => P.kiosk.includes(k.id)) : all;
@@ -341,16 +344,18 @@ const apiBackend = {
     const u = new URL('/frames', location.origin);
     for (const [k, v] of [['site', site], ['source', kiosk], ['from', Math.round(from)], ['to', Math.round(to)], ['step', step], ['variant', 'lo']])
       u.searchParams.set(k, v);
-    const r = await fetch(u);
+    const r = await fetch(u, AUTHH);
     if (!r.ok) throw new Error('frames ' + r.status);
-    return r.json();
+    const frames = await r.json();
+    for (const f of frames) f.url = withKey(f.url);
+    return frames;
   },
 };
 let backend = mockBackend;
 async function chooseBackend() {
   if (qs.get('backend') === 'mock') return;
   try {
-    const r = await fetch(new URL('/sources', location.origin));
+    const r = await fetch(new URL('/sources', location.origin), AUTHH);
     if (r.ok) backend = apiBackend;
     else console.warn('no /kiosks endpoint — using mock backend');
   } catch { console.warn('no worker — using mock backend'); }
