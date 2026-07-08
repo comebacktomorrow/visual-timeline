@@ -32,6 +32,7 @@ const CSS = `
 .ktl .strip { flex:1 1 auto; min-height:0; position:relative; display:flex; align-items:stretch;
               cursor:crosshair; background:#111; }
 .ktl .slot { flex:1 1 0; min-width:0; position:relative; overflow:hidden; }
+.ktl .strip.sep .slot + .slot { border-left:1px solid rgba(255,255,255,.07); }
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
 .ktl .slot.gap { background:repeating-linear-gradient(45deg,#1b1215,#1b1215 5px,#2a171b 5px,#2a171b 10px); }
 .ktl .xh { position:absolute; top:0; bottom:0; width:1px; background:var(--ktl-accent); opacity:.85;
@@ -107,7 +108,7 @@ const SITES = {
   ],
   'site-b': [
     { id: 'source-4', cadence: 60e3 },
-    { id: 'source-5', cadence: 30e3 },
+    { id: 'source-5', cadence: 30e3, tags: { orient: 'portrait' } },
   ],
 };
 const HUES = { 'source-1': 205, 'source-2': 275, 'source-3': 25, 'source-4': 130, 'source-5': 340 };
@@ -317,11 +318,12 @@ function retireWrapper(wrap) {
 /* cfg: { site, from, to, width, onHover(t), onHoverClear() } */
 export function mountTimeline(root, cfg) {
   injectStyles();
-  const P = { site: parseVar(cfg.site), from: cfg.from, to: cfg.to };
+  const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
   const SPAN = Math.max(1, P.to - P.from);
   const LIVE = P.to > Date.now() - 2 * 60 * 1000;
   const MIN_SLICE_PX = 7;
-  const pxBudget = Math.max(10, Math.floor((cfg.width - 20) / MIN_SLICE_PX));
+  const hostWidth = cfg.width || root.clientWidth || 800;   // plugin passes width; web mounts measure
+  const pxBudget = Math.max(10, Math.floor((hostWidth - 20) / MIN_SLICE_PX));
   const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN);
 
   function geomFor(cadence) {
@@ -387,6 +389,9 @@ export function mountTimeline(root, cfg) {
       cad + '</div>' +
       '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>';
     const strip = card.querySelector('.strip');
+    // hairline frame boundaries only when slices are wide enough — below
+    // ~12px they read as zebra noise rather than structure
+    if (hostWidth / geom.nBuckets >= 12) strip.classList.add('sep');
     const slots = [];
     for (let i = 0; i < geom.nBuckets; i++) {
       const ts = geom.bucketStart + i * geom.step;
@@ -488,6 +493,7 @@ export function mountTimeline(root, cfg) {
     cursorT = Math.max(P.from, Math.min(P.to, t));
     root.dataset.ktlCursor = String(cursorT);
     if (!external) root.dataset.ktlPinned = '1';
+    if (cfg.onCursor) cfg.onCursor(cursorT);        // host chrome hook (standalone app)
     const frac = (cursorT - P.from) / SPAN;
 
     const axis = q('.axis'), ac = q('.acur');
@@ -527,7 +533,9 @@ export function mountTimeline(root, cfg) {
   }
 
   (async function boot() {
-    kiosks = (await backend.kiosks(P.site)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
+    kiosks = (await backend.kiosks(P.site))
+      .filter((k) => !P.source || P.source.includes(k.id))
+      .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
     for (const k of kiosks) {
       if (destroyed) return;
       const geom = geomFor(k.cadence);
@@ -587,7 +595,7 @@ export function mountTimeline(root, cfg) {
  * crosshair time while another panel is hovered, reverting on clear. */
 export function mountGrid(root, cfg) {
   injectStyles();
-  const P = { site: parseVar(cfg.site), from: cfg.from, to: cfg.to };
+  const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
   const SPAN = Math.max(1, P.to - P.from);
   const LIVE = P.to > Date.now() - 2 * 60 * 1000;
   const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN);
@@ -640,6 +648,7 @@ export function mountGrid(root, cfg) {
   /* t = null → most recent in window; otherwise frame at crosshair time */
   function setShown(t) {
     shownT = t;
+    if (cfg.onShown) cfg.onShown(t);                // host chrome hook (standalone app)
     for (const k of kiosks) {
       const rec = tiles[k.id];
       if (!rec) continue;
@@ -668,7 +677,9 @@ export function mountGrid(root, cfg) {
   }
 
   (async function boot() {
-    kiosks = (await backend.kiosks(P.site)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
+    kiosks = (await backend.kiosks(P.site))
+      .filter((k) => !P.source || P.source.includes(k.id))
+      .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
     for (const k of kiosks) {
       if (destroyed) return;
       const geom = geomFor(k.cadence);

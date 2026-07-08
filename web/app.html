@@ -8,7 +8,7 @@
   :root {
     --bg: #181b1f; --bg2: #22262b; --border: #2c3235;
     --text: #ccccdc; --dim: #7b8087;
-    --accent: #f2cc0c; --live: #73bf69; --off: #f2495c;
+    --accent: #f2cc0c; --live: #73bf69;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -17,8 +17,6 @@
     font: 12px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif;
     display: flex; flex-direction: column; overflow: hidden;
   }
-
-  /* ---------------- app chrome ---------------- */
   .topbar {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     padding: 8px 12px; border-bottom: 1px solid var(--border); flex: 0 0 auto;
@@ -43,8 +41,6 @@
   body.is-live .live-badge { display: inline-block; }
   .win { color: var(--dim); font-variant-numeric: tabular-nums; }
   .note { color: var(--dim); font-size: 11px; }
-
-  /* ---------------- panels ---------------- */
   .panels { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 8px 12px; }
   .panel { min-height: 0; display: flex; flex-direction: column; }
   body[data-mode="both"] .panel.timeline { flex: 3 1 0; }
@@ -53,73 +49,6 @@
   body[data-mode="timeline"] .panel.timeline { flex: 1 1 auto; }
   body[data-mode="grid"] .panel.timeline { display: none; }
   body[data-mode="grid"] .panel.grid-panel { flex: 1 1 auto; }
-
-  /* ---------------- shared core (ported from the Grafana panel) ---------------- */
-  .ktl { display:flex; flex-direction:column; width:100%; height:100%; overflow:hidden; }
-  .ktl .hdr { display:flex; align-items:center; gap:10px; padding:2px 2px 6px; flex:0 0 auto; }
-  .ktl .hdr .res { color:var(--dim); }
-  .ktl .hdr .sp { flex:1; }
-  .ktl .cards { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:6px; overflow-y:auto; }
-  .ktl .card { flex:1 1 0; min-height:76px; display:flex; flex-direction:column; background:var(--bg2);
-               border:1px solid var(--border); border-radius:4px; overflow:hidden; transition:opacity 120ms ease; }
-  .ktl.strip-hover .card:not(.hovered) { opacity:.45; }
-  .ktl .card-head { display:flex; align-items:center; gap:8px; padding:2px 8px; flex:0 0 auto; color:var(--dim); }
-  .ktl .card-head .nm { font-weight:600; color:var(--text); }
-  .ktl .card-head .st { font-size:10px; color:var(--dim); border:1px solid var(--border); border-radius:8px; padding:0 6px; }
-  .ktl .card-head .ft { font-variant-numeric:tabular-nums; }
-  .ktl .card-head .ft.stale { color:var(--off); }
-  .ktl .card-head .cad { margin-left:auto; font-size:10px; color:var(--dim); }
-  .ktl .strip { flex:1 1 auto; min-height:0; position:relative; display:flex; align-items:stretch;
-                cursor:crosshair; background:#111; }
-  .ktl .slot { flex:1 1 0; min-width:0; position:relative; overflow:hidden; }
-  .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
-  .ktl .slot.gap { background:repeating-linear-gradient(45deg,#1b1215,#1b1215 5px,#2a171b 5px,#2a171b 10px); }
-  .ktl .xh { position:absolute; top:0; bottom:0; width:1px; background:var(--accent); opacity:.85;
-             pointer-events:none; z-index:4; }
-  .ktl .sel { position:absolute; top:0; bottom:0; display:none; background:rgba(242,204,12,.14);
-              border-left:1px solid var(--accent); border-right:1px solid var(--accent);
-              pointer-events:none; z-index:2; }
-  .ktl .mag { position:absolute; top:0; height:100%; aspect-ratio:16/9; max-width:40%;
-              border:2px solid var(--accent); border-radius:2px; overflow:hidden; pointer-events:none;
-              z-index:3; background:#000; box-shadow:0 0 12px rgba(0,0,0,.8); }
-  .ktl .mag img { width:100%; height:100%; object-fit:contain; display:block; background:#000; }
-  .ktl.fill .mag img { object-fit:cover; }
-  .ktl.fill .tile .t-img img { object-fit:cover; }
-  .ktl .mag.gap { border-color:var(--off);
-                  background:repeating-linear-gradient(45deg,#1b1215,#1b1215 5px,#2a171b 5px,#2a171b 10px); }
-  .ktl .mag.gap img { display:none; }
-  .ktl .mag .cap { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.6); color:#fff;
-                   text-align:center; font-size:10px; font-variant-numeric:tabular-nums; padding:1px 0; }
-  .ktl .axis { flex:0 0 24px; position:relative; margin:4px 1px 0; overflow:hidden; }
-  .ktl .axis .base { position:absolute; top:0; left:0; right:0; height:1px; background:var(--border); }
-  .ktl .tick { position:absolute; top:0; transform:translateX(-50%); color:var(--dim); font-size:10px;
-               font-variant-numeric:tabular-nums; padding-top:6px; white-space:nowrap; }
-  .ktl .tick::before { content:""; position:absolute; top:0; left:50%; width:1px; height:5px; background:var(--dim); }
-  .ktl .acur { position:absolute; top:0; transform:translateX(-50%); color:#111; background:var(--accent);
-               font-size:10px; font-weight:700; font-variant-numeric:tabular-nums; padding:0 5px;
-               border-radius:2px; margin-top:5px; white-space:nowrap; z-index:2; }
-  .ktl .acur::before { content:""; position:absolute; top:-5px; left:50%; width:1px; height:5px; background:var(--accent); }
-  .ktl .grid { flex:1 1 auto; min-height:0; display:grid; gap:8px; overflow:auto;
-               grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); grid-auto-rows:minmax(110px, 1fr); }
-  .ktl .tile { display:flex; flex-direction:column; background:var(--bg2);
-               border:1px solid var(--border); border-radius:4px; overflow:hidden; cursor:zoom-in; }
-  .ktl .tile .t-head { display:flex; gap:6px; align-items:center; padding:2px 6px; color:var(--dim); flex:0 0 auto; }
-  .ktl .tile .t-head .nm { font-weight:600; color:var(--text); }
-  .ktl .tile .t-img { flex:1 1 auto; min-height:0; position:relative; background:#111; }
-  .ktl .tile .t-img img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
-  .ktl .tile .t-ts { position:absolute; right:4px; bottom:4px; background:rgba(0,0,0,.65); color:#fff;
-                     padding:0 5px; border-radius:2px; font-size:10px; font-variant-numeric:tabular-nums; z-index:1; }
-  .ktl .tile .t-off { display:none; position:absolute; inset:0; align-items:center; justify-content:center;
-                      flex-direction:column; gap:2px; color:var(--off); font-weight:700; text-align:center;
-                      background:repeating-linear-gradient(45deg,#1b1215,#1b1215 5px,#2a171b 5px,#2a171b 10px); }
-  .ktl .tile.offline { border-color:var(--off); }
-  .ktl .tile.offline .t-off { display:flex; }
-  .ktl .tile.offline img, .ktl .tile.offline .t-ts { display:none; }
-  .ktl-pop { position:fixed; z-index:1060; background:#0b0c0e; border:1px solid var(--accent);
-             border-radius:4px; padding:4px; cursor:zoom-out; box-shadow:0 8px 32px rgba(0,0,0,.7); }
-  .ktl-pop img { display:block; max-width:min(560px, 50vw); max-height:55vh; border-radius:2px; }
-  .ktl-pop .cap { text-align:center; color:var(--text); font-size:11px; padding:3px 0 0;
-                  font-variant-numeric:tabular-nums; }
 </style>
 </head>
 <body data-mode="both">
@@ -147,20 +76,19 @@
     <div class="panel grid-panel"><div id="gridMount" style="flex:1;min-height:0"></div></div>
   </div>
 
+<script src="vt-core.js"></script>
 <script>
 'use strict';
-/* Visual Timeline — standalone app. Everything the Grafana panel does, plus
- * app chrome for what Grafana normally provides: site filter, display mode,
- * fit/fill, time ranges, drag-zoom, and WITHIN-PAGE cursor sync (hovering
- * the timeline drives the grid — the standalone answer to Grafana's shared
- * crosshair). State lives in the URL, so views are shareable links.
- * Data: the frames API on this origin, or built-in demo data (?backend=mock
- * or automatically when no API answers). */
+/* Visual Timeline — standalone app. All rendering lives in the shared core
+ * (vt-core.js, built from src/core.ts — the same code the Grafana panel
+ * runs). This file is only chrome and glue: URL state, site chips, mode and
+ * fit toggles, quick ranges, and the within-page cursor sync that stands in
+ * for Grafana's shared crosshair. */
 
 const qs = new URLSearchParams(location.search);
 const NOW = Date.now();
 
-/* ---------------- URL state ---------------- */
+/* ---------------- URL state (accepts Grafana dashboard-link params) ------- */
 function parseVar(v) {
   if (!v || v === 'All' || v === '$__all') return null;
   return v.replace(/^\{|\}$/g, '').split(',').map(s => s.trim()).filter(Boolean);
@@ -188,11 +116,13 @@ function parseTimeParam(v, def) {
 }
 const P = {
   site:  parseVarMulti(qs.get('site'), qs.getAll('var-site')),
-  kiosk: parseVarMulti(qs.get('kiosk'), qs.getAll('var-kiosk')),
   from:  parseTimeParam(qs.get('from'), NOW - 3600e3),
   to:    parseTimeParam(qs.get('to'), NOW),
   mode:  ['timeline', 'grid', 'both'].includes(qs.get('mode')) ? qs.get('mode') : 'both',
   fit:   qs.get('fit') === 'fill' ? 'fill' : 'fit',
+  key:   qs.get('k') || '',
+  tags:  qs.get('tags') || '',
+  hideEmpty: qs.get('hideEmpty') === '1',
 };
 const SPAN = Math.max(1, P.to - P.from);
 const LIVE = P.to > NOW - 2 * 60 * 1000;
@@ -203,520 +133,58 @@ function navigate(updates) {
     if (v === null || v === undefined || v === '') u.searchParams.delete(k);
     else u.searchParams.set(k, v);
   }
-  u.searchParams.delete('var-site'); u.searchParams.delete('var-kiosk');  // normalized into site=
+  u.searchParams.delete('var-site');
   location.href = u;
 }
 
-/* ---------------- data layers ---------------- */
-const API_KEY = qs.get('k') || '';
-const AUTHH = API_KEY ? { headers: { authorization: 'Bearer ' + API_KEY } } : undefined;
-function withKey(u) { return API_KEY ? u + (u.includes('?') ? '&' : '?') + 'k=' + encodeURIComponent(API_KEY) : u; }
-const apiBackend = {
-  async kiosks(sites) {
-    const u = new URL('/sources', location.origin);
-    if (sites) u.searchParams.set('site', sites.join(','));
-    const r = await fetch(u, AUTHH);
-    if (!r.ok) throw new Error('kiosks ' + r.status);
-    return r.json();
-  },
-  async frames(site, kiosk, from, to, step) {
-    const u = new URL('/frames', location.origin);
-    for (const [k, v] of [['site', site], ['source', kiosk], ['from', Math.round(from)],
-                          ['to', Math.round(to)], ['step', step], ['variant', 'lo']]) u.searchParams.set(k, v);
-    const r = await fetch(u, AUTHH);
-    if (!r.ok) throw new Error('frames ' + r.status);
-    const frames = await r.json();
-    for (const f of frames) f.url = withKey(f.url);
-    return frames;
-  },
-};
-
-/* demo data: three sites' worth of variety, kiosk-2 has an outage */
-const DEMO_SITES = {
-  'site-a': [
-    { id: 'source-1', cadence: 60e3, hue: 205, dims: [384, 216] },
-    { id: 'source-2', cadence: 60e3, hue: 275, dims: [384, 216], outage: true },
-    { id: 'source-3', cadence: 120e3, hue: 25, dims: [288, 216] },
-  ],
-  'site-b': [
-    { id: 'source-4', cadence: 60e3, hue: 130, dims: [384, 216] },
-    { id: 'source-5', cadence: 30e3, hue: 340, dims: [216, 384] },
-  ],
-};
 const fmtTime = ts => new Date(ts).toLocaleTimeString('en-AU', { hour12: false });
 const fmtShort = ts => new Date(ts).toLocaleTimeString('en-AU', { hour12: false, hour: '2-digit', minute: '2-digit' });
-const fmtDur = ms => ms % 3600e3 === 0 ? (ms / 3600e3) + 'h' : ms % 60e3 === 0 ? (ms / 60e3) + 'm' : (ms / 1e3) + 's';
 
-const mockBackend = {
-  kiosks(sites) {
-    return Object.entries(DEMO_SITES)
-      .filter(([s]) => !sites || sites.includes(s))
-      .flatMap(([s, ks]) => ks.map(k => ({ ...k, site: s, location: 'demo' })));
-  },
-  async frames(site, kiosk, from, to, step) {
-    const decl = Object.values(DEMO_SITES).flat().find(k => k.id === kiosk);
-    const out = [];
-    const gapA = P.from + SPAN * 0.35, gapB = P.from + SPAN * 0.55;
-    for (let ts = Math.ceil(from / step) * step; ts <= Math.min(to, Date.now()); ts += step) {
-      if (decl && decl.outage && ts > gapA && ts < gapB) continue;
-      out.push({ kiosk, ts, url: renderDemoFrame(site, kiosk, ts, step, decl) });
-    }
-    return out;
-  },
-};
-function renderDemoFrame(site, kiosk, ts, step, decl) {
-  const [w, h] = (decl && decl.dims) || [384, 216];
-  const hue = (decl && decl.hue) || 130;
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  const g = c.getContext('2d');
-  g.fillStyle = `hsl(${hue} 30% 14%)`; g.fillRect(0, 0, w, h);
-  g.fillStyle = `hsl(${hue} 60% 30%)`; g.fillRect(0, 0, w, Math.round(h * 0.14));
-  g.fillStyle = '#fff'; g.font = `bold ${Math.round(h * 0.06)}px sans-serif`;
-  g.fillText(`${site} / ${kiosk}`, 8, Math.round(h * 0.10));
-  g.font = `bold ${Math.round(Math.min(w * 0.16, h * 0.18))}px monospace`;
-  g.fillStyle = `hsl(${hue} 70% 72%)`;
-  g.textAlign = 'center'; g.fillText(fmtTime(ts), w / 2, h * 0.55); g.textAlign = 'left';
-  const phase = (ts / step) % 20 / 20;
-  g.fillStyle = `hsl(${hue} 80% 55%)`;
-  g.fillRect(w * 0.04 + phase * (w * 0.8), h * 0.72, w * 0.13, h * 0.16);
-  return c.toDataURL('image/jpeg', 0.72);
-}
-
-let backend = mockBackend, API = false;
-async function chooseBackend() {
-  if (qs.get('backend') === 'mock') return;
+const AUTHH = P.key ? { headers: { authorization: 'Bearer ' + P.key } } : undefined;
+async function probeApi() {
+  if (qs.get('backend') === 'mock') return false;
   try {
     const r = await fetch(new URL('/sources', location.origin), AUTHH);
-    if (r.ok) { backend = apiBackend; API = true; }
-  } catch { /* demo mode */ }
+    return r.ok;
+  } catch { return false; }
 }
 
-/* Nearest hi-variant URL for the preview (API mode only; 404 → lo fallback). */
-function hiUrlFor(frame, decl) {
-  if (!API || !decl.hiCadence) return null;
-  const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
-  return withKey(location.origin + '/frame/hi/' + decl.site + '/' + decl.id + '/' + hiTs + '.jpg');
-}
-
-/* ---------------- preview popover ---------------- */
-function makePreview() {
-  let el = null, keyH = null;
-  const close = () => {
-    if (el) { el.remove(); el = null; }
-    if (keyH) { document.removeEventListener('keydown', keyH); keyH = null; }
-  };
-  return {
-    open(site, kiosk, frame, x, y, hiUrl) {
-      close();
-      el = document.createElement('div');
-      el.className = 'ktl-pop';
-      el.innerHTML = '<img alt="frame"><div class="cap"></div>';
-      const img = el.querySelector('img');
-      el.querySelector('.cap').textContent = site + ' / ' + kiosk + ' — ' + fmtTime(frame.ts);
-      el.addEventListener('click', close);
-      document.body.appendChild(el);
-      const place = () => {
-        if (!el) return;
-        const r = el.getBoundingClientRect();
-        el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x + 14)) + 'px';
-        el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y - r.height / 2)) + 'px';
-      };
-      img.onload = place;
-      img.onerror = () => { img.onerror = null; img.src = frame.url; };
-      img.src = hiUrl || frame.url;
-      place();
-      keyH = e => { if (e.key === 'Escape') close(); };
-      document.addEventListener('keydown', keyH);
-    },
-    close,
-  };
-}
-const pv = makePreview();
-
-const TICK_STEPS = [60e3, 5 * 60e3, 10 * 60e3, 15 * 60e3, 30 * 60e3,
-                    3600e3, 2 * 3600e3, 3 * 3600e3, 6 * 3600e3, 12 * 3600e3, 24 * 3600e3];
-const MIN_SLICE_PX = 7;
-
-/* ---------------- timeline mount ---------------- */
-function mountTimeline(root, cfg) {
-  const pxBudget = Math.max(10, Math.floor((root.clientWidth - 20) / MIN_SLICE_PX));
-  function geomFor(cadence) {
-    const raw = Math.ceil(SPAN / cadence);
-    const step = Math.ceil(raw / Math.min(pxBudget, raw)) * cadence;
-    const bucketStart = Math.ceil(P.from / step) * step;
-    const nBuckets = Math.max(1, Math.floor((P.to - bucketStart) / step) + 1);
-    const idx = t => Math.max(0, Math.min(nBuckets - 1, Math.floor((t - bucketStart) / step + 0.5)));
-    return { cadence, step, bucketStart, nBuckets, idx };
-  }
-
-  root.classList.add('ktl');
-  root.classList.toggle('fill', P.fit === 'fill');
-  root.innerHTML =
-    '<div class="cards"></div>' +
-    '<div class="axis"><div class="base"></div><div class="acur"></div></div>';
-  const q = sel => root.querySelector(sel);
-
-  /* a pinned cursor (user hovered/scrubbed) survives resize remounts */
-  function restoreCursor() {
-    const saved = Number(root.dataset.vtCursor);
-    if (root.dataset.vtPinned === '1' && Number.isFinite(saved)) {
-      return Math.max(P.from, Math.min(P.to, saved));
-    }
-    return Math.min(P.to, Date.now());
-  }
-  let kiosks = [], cards = {}, cursorT = restoreCursor(),
-      destroyed = false, pollTimer = null, suppressClick = false;
-
-  function showSelection(fa, fb) {
-    const a = Math.min(fa, fb), b = Math.max(fa, fb);
-    for (const k of kiosks) {
-      const c = cards[k.id];
-      if (!c) continue;
-      const w = c.strip.clientWidth;
-      c.sel.style.display = 'block';
-      c.sel.style.left = (a * w) + 'px';
-      c.sel.style.width = ((b - a) * w) + 'px';
-    }
-  }
-  function hideSelection() {
-    for (const k of kiosks) if (cards[k.id]) cards[k.id].sel.style.display = 'none';
-  }
-
-  function buildCard(decl, geom, frames) {
-    const kiosk = decl.id;
-    const byIdx = new Map(frames.map(f => [geom.idx(f.ts), f]));
-    const card = document.createElement('div');
-    card.className = 'card';
-    const down = geom.step > geom.cadence;
-    card.innerHTML =
-      '<div class="card-head"><span class="nm">' + kiosk + '</span>' +
-      '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span><span class="ft"></span>' +
-      '<span class="cad">⏱ ' + fmtDur(geom.cadence) + ' · 1/' + fmtDur(geom.step) + (down ? ' ↓' : '') + '</span></div>' +
-      '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>';
-    const strip = card.querySelector('.strip');
-    const slots = [];
-    for (let i = 0; i < geom.nBuckets; i++) {
-      const ts = geom.bucketStart + i * geom.step;
-      const frame = byIdx.get(i) || null;
-      const el = document.createElement('div');
-      el.className = 'slot' + (frame ? '' : ' gap');
-      if (frame) {
-        const img = document.createElement('img');
-        img.src = frame.url; img.alt = kiosk + ' ' + fmtTime(ts);
-        el.appendChild(img);
-      }
-      strip.appendChild(el);
-      slots.push({ ts, frame, el });
-    }
-
-    strip.addEventListener('mousemove', e => {
-      const r = strip.getBoundingClientRect();
-      setCursor(P.from + SPAN * ((e.clientX - r.left) / r.width), card, false);
-    });
-    strip.addEventListener('mouseenter', () => root.classList.add('strip-hover'));
-    strip.addEventListener('mouseleave', () => {
-      root.classList.remove('strip-hover');
-      if (cfg.onHoverClear) cfg.onHoverClear();
-    });
-    strip.addEventListener('click', e => {
-      if (suppressClick) { suppressClick = false; return; }
-      const f = slots[geom.idx(cursorT)] && slots[geom.idx(cursorT)].frame;
-      if (f) pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl));
-    });
-    strip.addEventListener('mousedown', e => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      const r = strip.getBoundingClientRect();
-      const fracOf = x => Math.max(0, Math.min(1, (x - r.left) / r.width));
-      const f0 = fracOf(e.clientX);
-      let dragged = false;
-      const move = ev => {
-        const f1 = fracOf(ev.clientX);
-        if (Math.abs(f1 - f0) * r.width > 5) dragged = true;
-        if (dragged) { showSelection(f0, f1); setCursor(P.from + SPAN * f1, card, false); }
-      };
-      const up = ev => {
-        document.removeEventListener('mousemove', move);
-        document.removeEventListener('mouseup', up);
-        hideSelection();
-        if (dragged) {
-          suppressClick = true;
-          const f1 = fracOf(ev.clientX);
-          const a = Math.min(f0, f1), b = Math.max(f0, f1);
-          if (b > a && cfg.onZoom) cfg.onZoom(Math.round(P.from + SPAN * a), Math.round(P.from + SPAN * b));
-        }
-      };
-      document.addEventListener('mousemove', move);
-      document.addEventListener('mouseup', up);
-    });
-
-    const magEl = card.querySelector('.mag');
-    const magImg = magEl.querySelector('img');
-    magImg.addEventListener('load', () => {
-      if (magImg.naturalWidth && magImg.naturalHeight)
-        magEl.style.aspectRatio = String(magImg.naturalWidth / magImg.naturalHeight);
-    });
-
-    q('.cards').appendChild(card);
-    return {
-      card, geom, slots,
-      head: card.querySelector('.ft'),
-      strip,
-      cross: card.querySelector('.xh'),
-      sel: card.querySelector('.sel'),
-      mag: magEl,
-    };
-  }
-
-  function buildAxis() {
-    const axis = q('.axis');
-    const w = axis.clientWidth;
-    const maxTicks = Math.max(3, Math.floor(w / 90));
-    const tickStep = TICK_STEPS.find(s => SPAN / s <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-    const withDate = SPAN > 20 * 3600e3;
-    axis.querySelectorAll('.tick').forEach(t => t.remove());
-    for (let ts = Math.ceil(P.from / tickStep) * tickStep; ts <= P.to; ts += tickStep) {
-      const el = document.createElement('div');
-      el.className = 'tick';
-      el.style.left = ((ts - P.from) / SPAN * w) + 'px';
-      el.textContent = withDate
-        ? new Date(ts).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
-        : fmtShort(ts);
-      axis.appendChild(el);
-    }
-  }
-
-  function setCursor(t, hoveredCard, external) {
-    cursorT = Math.max(P.from, Math.min(P.to, t));
-    root.dataset.vtCursor = String(cursorT);
-    if (!external) root.dataset.vtPinned = '1';
-    const frac = (cursorT - P.from) / SPAN;
-    document.getElementById('cursorTime').textContent = fmtTime(cursorT);
-
-    const axis = q('.axis'), ac = q('.acur');
-    const acW = ac.offsetWidth || 50;
-    ac.textContent = fmtTime(cursorT);
-    ac.style.left = Math.max(acW / 2, Math.min(axis.clientWidth - acW / 2, frac * axis.clientWidth)) + 'px';
-
-    for (const k of kiosks) {
-      const c = cards[k.id];
-      if (!c) continue;
-      c.card.classList.toggle('hovered', hoveredCard === c.card);
-      const w = c.strip.clientWidth, x = frac * w;
-      c.cross.style.left = x + 'px';
-      const idx = c.geom.idx(cursorT);
-      const slot = c.slots[idx];
-      const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
-      c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + 'px';
-      if (slot && slot.frame) {
-        c.mag.classList.remove('gap');
-        c.mag.querySelector('img').src = slot.frame.url;
-        c.mag.querySelector('.cap').textContent = fmtTime(slot.frame.ts);
-        c.head.textContent = fmtTime(slot.frame.ts);
-        c.head.classList.remove('stale');
-      } else {
-        c.mag.classList.add('gap');
-        let last = null;
-        for (let i = idx; i >= 0; i--) if (c.slots[i].frame) { last = c.slots[i].frame; break; }
-        const msg = last ? 'offline — last seen ' + fmtTime(last.ts) : 'no data in window';
-        c.mag.querySelector('.cap').textContent = msg;
-        c.head.textContent = msg;
-        c.head.classList.add('stale');
-      }
-    }
-    if (!external && cfg.onHover) cfg.onHover(cursorT);
-  }
-
-  (async function boot() {
-    kiosks = (await backend.kiosks(P.site)).filter(k => !P.kiosk || P.kiosk.includes(k.id));
-    for (const k of kiosks) {
-      if (destroyed) return;
-      const geom = geomFor(k.cadence);
-      const frames = await backend.frames(k.site, k.id, P.from, P.to, geom.step);
-      if (destroyed) return;
-      cards[k.id] = buildCard(k, geom, frames);
-    }
-    buildAxis();
-    setCursor(cursorT, null, true);
-
-    if (LIVE) {
-      const steps = kiosks.map(k => cards[k.id].geom.step);
-      const minStep = steps.length ? Math.min.apply(null, steps) : 60e3;
-      pollTimer = setInterval(async () => {
-        for (const k of kiosks) {
-          const c = cards[k.id];
-          let lastTs = P.from;
-          for (let i = c.slots.length - 1; i >= 0; i--) if (c.slots[i].frame) { lastTs = c.slots[i].ts; break; }
-          const fresh = await backend.frames(k.site, k.id, lastTs + 1, Date.now(), c.geom.step);
-          if (destroyed) return;
-          for (const f of fresh) {
-            const slot = c.slots[c.geom.idx(f.ts)];
-            if (!slot) continue;
-            if (slot.frame && f.ts <= slot.frame.ts) continue;   // newer replaces → right edge slides
-            slot.frame = f;
-            slot.el.classList.remove('gap');
-            let img = slot.el.querySelector('img');
-            if (!img) { img = document.createElement('img'); slot.el.appendChild(img); }
-            img.src = f.url; img.alt = k.id + ' ' + fmtTime(f.ts);
-          }
-        }
-      }, Math.min(minStep, 10000));
-    }
-  })();
-
-  return {
-    setExternalCursor(t) { if (!destroyed) setCursor(t, null, true); },
-    destroy() {
-      destroyed = true;
-      if (pollTimer) clearInterval(pollTimer);
-      root.classList.remove('ktl', 'strip-hover', 'fill');
-      root.innerHTML = '';
-    },
-  };
-}
-
-/* ---------------- grid mount ---------------- */
-function mountGrid(root, cfg) {
-  const budget = 120;
-  function geomFor(cadence) {
-    const raw = Math.ceil(SPAN / cadence);
-    const step = Math.ceil(raw / Math.min(budget, raw)) * cadence;
-    const bucketStart = Math.ceil(P.from / step) * step;
-    const nBuckets = Math.max(1, Math.floor((P.to - bucketStart) / step) + 1);
-    const idx = t => Math.max(0, Math.min(nBuckets - 1, Math.floor((t - bucketStart) / step + 0.5)));
-    return { cadence, step, bucketStart, nBuckets, idx };
-  }
-
-  root.classList.add('ktl');
-  root.classList.toggle('fill', P.fit === 'fill');
-  root.innerHTML = '<div class="grid"></div>';
-  const q = sel => root.querySelector(sel);
-
-  let kiosks = [], tiles = {}, destroyed = false, pollTimer = null, shownT = null;
-
-  function buildTile(decl, geom, frames) {
-    const slots = new Array(geom.nBuckets).fill(null);
-    for (const f of frames) slots[geom.idx(f.ts)] = f;
-    const el = document.createElement('div');
-    el.className = 'tile';
-    el.innerHTML =
-      '<div class="t-head"><span class="nm">' + decl.id + '</span>' +
-      '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span></div>' +
-      '<div class="t-img"><img alt="' + decl.id + '"><span class="t-ts"></span><div class="t-off"></div></div>';
-    const rec = {
-      decl, geom, slots, el, shown: null,
-      img: el.querySelector('img'),
-      ts: el.querySelector('.t-ts'),
-      off: el.querySelector('.t-off'),
-    };
-    el.addEventListener('click', e => {
-      if (rec.shown) pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl));
-    });
-    q('.grid').appendChild(el);
-    return rec;
-  }
-
-  function lastFrame(rec) {
-    for (let i = rec.slots.length - 1; i >= 0; i--) if (rec.slots[i]) return rec.slots[i];
-    return null;
-  }
-
-  function setShown(t) {
-    shownT = t;
-    for (const k of kiosks) {
-      const rec = tiles[k.id];
-      if (!rec) continue;
-      let frame = null, offMsg = null;
-      if (t == null) {
-        frame = lastFrame(rec);
-        if (!frame) offMsg = 'no data in window';
-        else if (LIVE && Date.now() - frame.ts > 2 * rec.geom.step)
-          offMsg = 'OFFLINE — last seen ' + fmtTime(frame.ts);
-      } else {
-        frame = rec.slots[rec.geom.idx(t)];
-        if (!frame) {
-          let last = null;
-          for (let i = rec.geom.idx(t); i >= 0; i--) if (rec.slots[i]) { last = rec.slots[i]; break; }
-          offMsg = last ? 'OFFLINE — last seen ' + fmtTime(last.ts) : 'no data';
-        }
-      }
-      rec.el.classList.toggle('offline', !!offMsg);
-      rec.off.textContent = offMsg || '';
-      rec.shown = frame;
-      if (frame && !offMsg) {
-        rec.img.src = frame.url;
-        rec.ts.textContent = fmtTime(frame.ts);
-      }
-    }
-  }
-
-  (async function boot() {
-    kiosks = (await backend.kiosks(P.site)).filter(k => !P.kiosk || P.kiosk.includes(k.id));
-    for (const k of kiosks) {
-      if (destroyed) return;
-      const geom = geomFor(k.cadence);
-      const frames = await backend.frames(k.site, k.id, P.from, P.to, geom.step);
-      if (destroyed) return;
-      tiles[k.id] = buildTile(k, geom, frames);
-    }
-    setShown(null);
-
-    if (LIVE) {
-      pollTimer = setInterval(async () => {
-        for (const k of kiosks) {
-          const rec = tiles[k.id];
-          const last = lastFrame(rec);
-          const fresh = await backend.frames(k.site, k.id, (last ? last.ts : P.from) + 1, Date.now(), rec.geom.step);
-          if (destroyed) return;
-          for (const f of fresh) {
-            const i = rec.geom.idx(f.ts);
-            if (!rec.slots[i] || f.ts > rec.slots[i].ts) rec.slots[i] = f;
-          }
-        }
-        if (shownT == null) setShown(null);
-      }, 10000);
-    }
-  })();
-
-  return {
-    setExternalCursor(t) { if (!destroyed) setShown(Math.max(P.from, Math.min(P.to, t))); },
-    clearExternal() { if (!destroyed) setShown(null); },
-    destroy() {
-      destroyed = true;
-      if (pollTimer) clearInterval(pollTimer);
-      root.classList.remove('ktl', 'fill');
-      root.innerHTML = '';
-    },
-  };
-}
-
-/* ---------------- app chrome wiring ---------------- */
 const QUICK_RANGES = [['5m', 5 * 60e3], ['15m', 15 * 60e3], ['1h', 3600e3], ['3h', 3 * 3600e3],
                       ['6h', 6 * 3600e3], ['12h', 12 * 3600e3], ['24h', 24 * 3600e3]];
 
 (async function boot() {
-  await chooseBackend();
+  const useApi = await probeApi();
+  const apiUrl = useApi ? location.origin : '';
   document.body.dataset.mode = P.mode;
   document.body.classList.toggle('is-live', LIVE);
   document.getElementById('winLabel').textContent =
-    fmtShort(P.from) + ' → ' + fmtShort(P.to) + (API ? '' : ' · demo data');
+    fmtShort(P.from) + ' → ' + fmtShort(P.to) + (useApi ? '' : ' · demo data');
+  document.getElementById('cursorTime').textContent = fmtTime(Math.min(P.to, NOW));
 
-  // site chips from the full registry (unfiltered), current filter highlighted
-  const all = await backend.kiosks(null);
-  const sites = [...new Set(all.map(k => k.site))].sort();
-  document.getElementById('siteChips').innerHTML =
-    sites.map(s => `<span class="chip ${!P.site || P.site.includes(s) ? 'on' : ''}" data-site="${s}">${s}</span>`).join('');
-  document.getElementById('siteChips').addEventListener('click', e => {
-    const s = e.target.dataset.site;
-    if (!s) return;
-    let sel = P.site ? [...P.site] : [...sites];
-    sel = sel.includes(s) ? sel.filter(x => x !== s) : [...sel, s];
-    if (!sel.length) sel = [s];                     // never zero sites
-    navigate({ site: sel.length === sites.length ? null : sel.join(',') });
-  });
+  const common = {
+    site: P.site ? P.site.join(',') : '',
+    from: P.from, to: P.to,
+    fit: P.fit, apiUrl, apiKey: P.key,
+    tagFilter: P.tags, hideEmpty: P.hideEmpty,
+  };
 
-  // mode + fit segments
+  // site chips: distinct sites from the registry (or the demo set)
+  try {
+    const sites = useApi
+      ? [...new Set((await (await fetch(new URL('/sources', location.origin), AUTHH)).json()).map(k => k.site))].sort()
+      : ['site-a', 'site-b'];
+    document.getElementById('siteChips').innerHTML =
+      sites.map(s => `<span class="chip ${!P.site || P.site.includes(s) ? 'on' : ''}" data-site="${s}">${s}</span>`).join('');
+    document.getElementById('siteChips').addEventListener('click', e => {
+      const s = e.target.dataset.site;
+      if (!s) return;
+      let sel = P.site ? [...P.site] : [...sites];
+      sel = sel.includes(s) ? sel.filter(x => x !== s) : [...sel, s];
+      if (!sel.length) sel = [s];
+      navigate({ site: sel.length === sites.length ? null : sel.join(',') });
+    });
+  } catch { /* chips are best-effort */ }
+
   for (const btn of document.querySelectorAll('#modeSeg button')) {
     btn.classList.toggle('on', btn.dataset.mode === P.mode);
     btn.onclick = () => navigate({ mode: btn.dataset.mode === 'both' ? null : btn.dataset.mode });
@@ -725,40 +193,37 @@ const QUICK_RANGES = [['5m', 5 * 60e3], ['15m', 15 * 60e3], ['1h', 3600e3], ['3h
     btn.classList.toggle('on', btn.dataset.fit === P.fit);
     btn.onclick = () => navigate({ fit: btn.dataset.fit === 'fit' ? null : btn.dataset.fit });
   }
-
-  // quick ranges + drag-zoom both navigate
   document.getElementById('ranges').innerHTML = QUICK_RANGES.map(([label, ms]) =>
     `<button data-ms="${ms}" class="${Math.abs(SPAN - ms) < 1000 ? 'on' : ''}">${label}</button>`).join('');
   document.getElementById('ranges').addEventListener('click', e => {
     const ms = Number(e.target.dataset.ms);
     if (ms) navigate({ from: Date.now() - ms, to: Date.now() });
   });
-  const onZoom = (from, to) => navigate({ from, to });
 
   // mounts + within-page cursor sync (timeline hover drives the grid)
   let grid = null, timeline = null;
-  if (P.mode !== 'timeline') {
-    grid = mountGrid(document.getElementById('gridMount'), {});
-  }
-  if (P.mode !== 'grid') {
-    timeline = mountTimeline(document.getElementById('timelineMount'), {
-      onZoom,
-      onHover: t => { if (grid) grid.setExternalCursor(t); },
-      onHoverClear: () => { if (grid) grid.clearExternal(); },
-    });
-  }
+  const mountAll = () => {
+    if (grid) grid.destroy();
+    if (timeline) timeline.destroy();
+    grid = P.mode !== 'timeline'
+      ? VTCore.mountGrid(document.getElementById('gridMount'), { ...common })
+      : null;
+    timeline = P.mode !== 'grid'
+      ? VTCore.mountTimeline(document.getElementById('timelineMount'), {
+          ...common,
+          onZoom: (from, to) => navigate({ from, to }),
+          onCursor: t => { document.getElementById('cursorTime').textContent = fmtTime(t); },
+          onHover: t => { if (grid) grid.setExternalCursor(t); },
+          onHoverClear: () => { if (grid) grid.clearExternal(); },
+        })
+      : null;
+  };
+  mountAll();
 
-  // resize → re-derive pixel budgets
   let rt = null;
   window.addEventListener('resize', () => {
     clearTimeout(rt);
-    rt = setTimeout(() => {
-      if (timeline) { timeline.destroy(); timeline = mountTimeline(document.getElementById('timelineMount'), {
-        onZoom,
-        onHover: t => { if (grid) grid.setExternalCursor(t); },
-        onHoverClear: () => { if (grid) grid.clearExternal(); },
-      }); }
-    }, 300);
+    rt = setTimeout(mountAll, 300);
   });
 })();
 </script>
