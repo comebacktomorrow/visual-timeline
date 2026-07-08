@@ -161,13 +161,14 @@ function makeBackend(P, SPAN) {
 
 /* API-backed data layer — same shapes as the mock. Used when the panel's
  * apiUrl option points at the kiosk-timeline Worker (CORS is served). */
-function makeApiBackend(apiUrl) {
+function makeApiBackend(apiUrl, apiKey) {
   const base = apiUrl.replace(/\/+$/, '');
+  const auth = apiKey ? { headers: { authorization: 'Bearer ' + apiKey } } : undefined;
   return {
     async kiosks(sites) {
       const u = new URL(base + '/sources');
       if (sites) u.searchParams.set('site', sites.join(','));
-      const r = await fetch(u);
+      const r = await fetch(u, auth);
       if (!r.ok) throw new Error('kiosks ' + r.status);
       return r.json();
     },
@@ -179,19 +180,27 @@ function makeApiBackend(apiUrl) {
       u.searchParams.set('to', String(Math.round(to)));
       u.searchParams.set('step', String(step));
       u.searchParams.set('variant', 'lo');
-      const r = await fetch(u);
+      const r = await fetch(u, auth);
       if (!r.ok) throw new Error('frames ' + r.status);
-      return r.json();
+      const frames = await r.json();
+      // <img> elements can't send headers — the key rides the frame URLs
+      if (apiKey) {
+        for (const f of frames) f.url += (f.url.includes('?') ? '&' : '?') + 'k=' + encodeURIComponent(apiKey);
+      }
+      return frames;
     },
   };
 }
 
 /* Nearest hi-variant URL for the click-in preview (API mode only); the
  * preview falls back to the lo frame if the hi key 404s. */
-function hiUrlFor(frame, decl, apiUrl) {
+function hiUrlFor(frame, decl, apiUrl, apiKey) {
   if (!apiUrl || !decl.hiCadence) return null;
   const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
-  return apiUrl.replace(/\/+$/, '') + '/frame/hi/' + decl.site + '/' + decl.id + '/' + hiTs + '.jpg';
+  return (
+    apiUrl.replace(/\/+$/, '') + '/frame/hi/' + decl.site + '/' + decl.id + '/' + hiTs + '.jpg' +
+    (apiKey ? '?k=' + encodeURIComponent(apiKey) : '')
+  );
 }
 
 /* ======================= timeline core ======================= */
