@@ -30,7 +30,12 @@
         "url": "https://github.com/comebacktomorrow/visual-timeline/blob/main/LICENSE"
       }
     ],
-    "screenshots": [],
+    "screenshots": [
+      {
+        "name": "Timeline and multiview on a dashboard",
+        "path": "img/screenshot-dashboard.png"
+      }
+    ],
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },

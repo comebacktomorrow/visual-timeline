@@ -5,9 +5,9 @@ security cameras, website thumbnails, anything that can post a JPEG on a
 heartbeat. Hover to set a global time cursor across every source; gaps show
 offline periods at their true temporal width; drag to zoom.
 
-Three frontends, one small HTTP contract ([docs/API.md](docs/API.md)):
+Three frontends, one small HTTP contract ([docs/API.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md)):
 
-- `plugin/` — **Grafana panel** (timeline + multiview grid modes, two-way
+- `src/` — **Grafana panel** (timeline + multiview grid modes, two-way
   shared-crosshair sync with other panels, drag-zoom drives the dashboard
   time range). Ships with built-in demo data — drop it on a dashboard and
   it works with zero infrastructure.
@@ -46,7 +46,7 @@ npx wrangler dev --port 8787        # local Worker + local R2, dev tokens in .de
 2. `http://localhost:8787/app.html` — the standalone app on that data.
 3. No backend at all? `web/app.html?backend=mock` renders built-in demo data.
 
-Upload real frames with curl: see [docs/API.md](docs/API.md).
+Upload real frames with curl: see [docs/API.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md).
 
 ## Grafana demo
 
@@ -64,7 +64,7 @@ set each panel's **API URL** option to a backend for live frames.
 
 | Path | What |
 |---|---|
-| `plugin/savvycocoa1919-visualtimeline-panel/` | Grafana panel plugin (no build step — plugin.json + module.js) |
+| `src/` | Grafana panel plugin source (create-plugin scaffold; `npm run build` → `dist/`) |
 | `web/` | standalone app, embeddable viewer, fleet simulator |
 | `worker/` | Cloudflare Worker + R2 reference backend |
 | `grafana/` | provisioning for the Grafana demo |
