@@ -20,6 +20,6 @@ services:
     volumes:
       - ../grafana/provisioning:/etc/grafana/provisioning
       - ../grafana/dashboards:/var/lib/grafana/dashboards
-      # mount only our panel — Grafana preinstalls its own apps into the
-      # plugins dir and would pollute the repo through a broad mount
-      - ../plugin/savvycocoa1919-visualtimeline-panel:/var/lib/grafana/plugins/savvycocoa1919-visualtimeline-panel
+      # mount only the BUILT panel (run `npm run build` first) — Grafana
+      # preinstalls its own apps into the plugins dir, so no broad mounts
+      - ../dist:/var/lib/grafana/plugins/savvycocoa1919-visualtimeline-panel

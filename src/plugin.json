@@ -1,0 +1,42 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "panel",
+  "name": "Visual Timeline",
+  "id": "savvycocoa1919-visualtimeline-panel",
+  "info": {
+    "keywords": [
+      "timeline",
+      "screenshot",
+      "camera",
+      "kiosk",
+      "multiview",
+      "visual monitoring"
+    ],
+    "description": "Scrub-able visual timeline and multiview for image feeds \u2014 kiosk screens, security cameras, website thumbnails \u2014 with shared-crosshair sync and offline-gap semantics",
+    "author": {
+      "name": "Xzibit"
+    },
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "links": [
+      {
+        "name": "Repository",
+        "url": "https://github.com/comebacktomorrow/visual-timeline"
+      },
+      {
+        "name": "License",
+        "url": "https://github.com/comebacktomorrow/visual-timeline/blob/main/LICENSE"
+      }
+    ],
+    "screenshots": [],
+    "version": "%VERSION%",
+    "updated": "%TODAY%"
+  },
+  "dependencies": {
+    "grafanaDependency": ">=10.4.0",
+    "plugins": []
+  },
+  "skipDataQuery": true
+}
