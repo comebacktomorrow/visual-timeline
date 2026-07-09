@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.3
+
+- Cluster markers show a count badge (×N) instead of only growing
+  slightly; the tooltip still lists every member chronologically.
+- Demo data now exercises the full annotation matrix: global point,
+  source-pinned point, global region, a color-coded source-scoped region
+  explaining source-2's outage, and an alert burst tight enough to
+  cluster.
+
 ## 0.8.2
 
 - Frame delineation now tints the frame instead of exposing the strip

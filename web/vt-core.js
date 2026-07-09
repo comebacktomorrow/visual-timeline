@@ -96,7 +96,10 @@ var VTCore = (() => {
 .ktl .card-lane .ann-region { top:2px; bottom:2px; }
 .ktl .ann { position:absolute; width:7px; height:7px; transform:translate(-50%,-50%) rotate(45deg);
             background:#5794F2; border:1px solid #0b0c0e; cursor:pointer; z-index:6; }
-.ktl .ann.multi { width:9px; height:9px; }
+.ktl .ann.multi { width:11px; height:11px; }
+.ktl .ann .n { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  transform:rotate(-45deg); font:700 8px/1 -apple-system,"Segoe UI",Roboto,sans-serif; color:#fff;
+  text-shadow:0 0 2px #000,0 0 2px #000; pointer-events:none; }
 .ktl .ann-lane .ann { top:50%; }
 .ktl .strip .ann { top:auto; bottom:0; transform:translate(-50%,50%) rotate(45deg); }
 .ktl .ann-region { position:absolute; top:0; bottom:0; background:rgba(87,148,242,.12);
@@ -231,12 +234,26 @@ var VTCore = (() => {
         return Promise.resolve(out);
       },
       /* demo annotations — in Grafana these come from the dashboard's own
-       * annotation queries (any data source); this is only the mock seam */
+       * annotation queries (any data source); this is only the mock seam.
+       * Deliberately one of each supported shape: global point, source point,
+       * global region, source-scoped region (explains source-2's red outage),
+       * and a colored burst tight enough to cluster into one ×3 marker. */
       annotations() {
         return [
           { ts: P.from + SPAN * 0.3, title: "deploy v2.4.1", text: "rollout to site-a", tags: ["deploy"] },
           { ts: P.from + SPAN * 0.6, title: "app restart", text: "watchdog restarted the shell", tags: ["source:source-1"] },
-          { ts: P.from + SPAN * 0.68, timeEnd: P.from + SPAN * 0.78, title: "content sync", text: "nightly asset refresh", tags: ["maintenance"] }
+          { ts: P.from + SPAN * 0.68, timeEnd: P.from + SPAN * 0.78, title: "content sync", text: "nightly asset refresh", tags: ["maintenance"] },
+          {
+            ts: P.from + SPAN * 0.35,
+            timeEnd: P.from + SPAN * 0.55,
+            title: "backend outage",
+            text: "upstream API down \u2014 source-2 dark",
+            tags: ["source:source-2", "incident"],
+            color: "#ff9830"
+          },
+          { ts: P.from + SPAN * 0.52, title: "alert: high CPU", text: "firing", tags: ["alert"], color: "#f2495c" },
+          { ts: P.from + SPAN * 0.522, title: "alert: high CPU", text: "still firing", tags: ["alert"], color: "#f2495c" },
+          { ts: P.from + SPAN * 0.524, title: "alert: high CPU", text: "resolved", tags: ["alert"], color: "#f2495c" }
         ];
       }
     };
@@ -697,6 +714,12 @@ var VTCore = (() => {
           el.style.left = pct(fracOf(g[0].ts));
           if (g[0].color) el.style.background = g[0].color;
           el.title = "";
+          if (g.length > 1) {
+            const n = document.createElement("span");
+            n.className = "n";
+            n.textContent = String(g.length);
+            el.appendChild(n);
+          }
           el.addEventListener("mouseenter", () => {
             const r = el.getBoundingClientRect();
             tip.show(g, r.left + r.width / 2, r.top);
