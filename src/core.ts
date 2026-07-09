@@ -16,24 +16,73 @@ const CSS = `
 /* cards share panel height equally (fewer kiosks → taller strips), but
    never crush below a usable minimum — past that the list scrolls */
 .ktl .card { flex:1 1 0; min-height:76px; display:flex; flex-direction:column; background:var(--ktl-bg2);
-             border:1px solid var(--ktl-border); border-radius:4px; overflow:hidden; transition:opacity 120ms ease; }
+             border:1px solid var(--ktl-border); border-radius:4px; overflow:hidden; transition:opacity 120ms ease;
+             position:relative; }
+/* inline header: free-floating chip bubbles over the image's top-left —
+   hostname bubble on line one, the meta chips on line two — no scrim
+   block. The optional gradient variant backs them with a full-height
+   left-to-right fade for busy frames. Sits under the magnifier/crosshair
+   and lets all pointer events through. */
+.ktl .card.inline-head .card-head, .ktl .tile.inline-head .t-head {
+  position:absolute; top:0; left:0; z-index:2; max-width:85%;
+  flex-wrap:wrap; row-gap:2px; pointer-events:none; overflow:hidden; }
+.ktl .card.inline-head .card-head { padding:5px 0 0 6px; max-height:46px; }
+.ktl .tile.inline-head .t-head { padding:4px 0 0 5px; max-height:44px; }
+.ktl .inline-brk { display:none; }
+.ktl .card.inline-head .card-head .inline-brk, .ktl .tile.inline-head .t-head .inline-brk {
+  display:block; width:100%; height:0; }
+.ktl .card.inline-head .card-head .nm, .ktl .tile.inline-head .t-head .nm {
+  background:#181b1f; border-radius:9px; padding:0 8px; }
+.ktl .card.inline-head .card-head .st, .ktl .tile.inline-head .t-head .st {
+  background:#181b1f; color:#b9bec6; }
+.ktl .card.inline-head .card-head .ft:not(:empty) { background:#181b1f; border-radius:9px; padding:0 8px; }
+/* gradient backing: strips fade left-to-right (header hugs the left
+   edge); tiles fade top-to-bottom (the header spans the tile's top) */
+.ktl .card.inline-grad .strip::before {
+  content:""; position:absolute; top:0; bottom:0; left:0; width:42%;
+  background:linear-gradient(90deg, rgba(0,0,0,.6), rgba(0,0,0,0));
+  z-index:1; pointer-events:none; }
+.ktl .tile.inline-grad .t-img::before {
+  content:""; position:absolute; top:0; left:0; right:0; height:48%;
+  background:linear-gradient(180deg, rgba(0,0,0,.6), rgba(0,0,0,0));
+  z-index:1; pointer-events:none; }
 .ktl.strip-hover .card:not(.hovered) { opacity:.45; }
 .ktl .card-head { display:flex; align-items:center; gap:8px; padding:2px 8px; flex:0 0 auto; color:var(--ktl-dim);
                    flex-wrap:nowrap; overflow:hidden; min-width:0; }
 .ktl .card-head .nm { flex:0 0 auto; }
-.ktl .card-head .tags { display:flex; gap:4px; overflow:hidden; min-width:0; flex-shrink:10; }
+/* chips never wrap: the container wraps instead and clamps to one row,
+   so a chip either fits whole or drops out of view (title has it all) */
+.ktl .card-head .tags { display:flex; gap:4px; overflow:hidden; min-width:0; flex-shrink:10;
+                        flex-wrap:wrap; max-height:17px; align-content:flex-start; }
 .ktl .card-head .tags .st { flex:0 0 auto; }
 .ktl .card-head .nm { font-weight:600; color:var(--ktl-text); }
-.ktl .card-head .st { font-size:10px; color:var(--ktl-dim); border:1px solid var(--ktl-border);
-                      border-radius:8px; padding:0 6px; }
+.ktl .card-head .st, .ktl .t-head .st { font-size:10px; color:var(--ktl-dim); border:1px solid var(--ktl-border);
+                      border-radius:8px; padding:0 6px; white-space:nowrap; }
 .ktl .card-head .ft { font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex-shrink:1; }
 .ktl .card-head .ft.stale { color:var(--ktl-off); }
 .ktl .card-head .cad { margin-left:auto; font-size:10px; color:var(--ktl-dim); }
 .ktl .strip { flex:1 1 auto; min-height:0; position:relative; display:flex; align-items:stretch;
               cursor:crosshair; background:#111; }
 .ktl .slot { flex:1 1 0; min-width:0; position:relative; overflow:hidden; }
+/* Frame delineation tints the FRAME: overflow clips the img to the padding
+   box, so a border column would expose the #111 strip bg underneath and
+   read as a hard black line on any content. An ::after overlay stacks above
+   the image instead. Emboss: dark line + light inner edge — each half only
+   reads against opposing content, so the seam shades light frames and
+   highlights dark ones. */
+.ktl .strip.sep .slot + .slot::after { content:""; position:absolute; top:0; bottom:0; left:0;
+  width:1px; background:rgba(0,0,0,.05); box-shadow:1px 0 0 rgba(255,255,255,.12);
+  pointer-events:none; z-index:1; }
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
 .ktl .slot.gap { background:repeating-linear-gradient(45deg,#1b1215,#1b1215 5px,#2a171b 5px,#2a171b 10px); }
+.ktl .slot.paused { background:repeating-linear-gradient(45deg,#17191c,#17191c 7px,#1d2024 7px,#1d2024 14px); }
+.ktl .mag.paused { border-color:var(--ktl-dim); }
+.ktl .mag.paused img { display:none; }
+.ktl .card-head .ft.paused { color:var(--ktl-dim); }
+.ktl .tile.paused { border-color:var(--ktl-dim); }
+.ktl .tile.paused .t-off { display:flex; color:var(--ktl-dim);
+  background:repeating-linear-gradient(45deg,#17191c,#17191c 7px,#1d2024 7px,#1d2024 14px); }
+.ktl .tile.paused img, .ktl .tile.paused .t-ts { display:none; }
 .ktl .xh { position:absolute; top:0; bottom:0; width:1px; background:var(--ktl-accent); opacity:.85;
            pointer-events:none; z-index:4; }
 .ktl .sel { position:absolute; top:0; bottom:0; display:none; background:rgba(242,204,12,.14);
@@ -50,6 +99,35 @@ const CSS = `
 .ktl .mag.gap img { display:none; }
 .ktl .mag .cap { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.6); color:#fff;
                  text-align:center; font-size:10px; font-variant-numeric:tabular-nums; padding:1px 0; }
+.ktl .ann-lane { flex:0 0 13px; position:relative; margin:2px 1px 0; }
+.ktl .card-lane { flex:0 0 12px; position:relative; display:none; border-top:1px solid var(--ktl-border); }
+.ktl .card.has-lane .card-lane { display:block; }
+.ktl .card-lane .ann { top:50%; }
+.ktl .card-lane .ann-region { top:2px; bottom:2px; }
+.ktl .ann { position:absolute; width:7px; height:7px; transform:translate(-50%,-50%) rotate(45deg);
+            background:#5794F2; border:1px solid #0b0c0e; cursor:pointer; z-index:6; }
+.ktl .ann.multi { width:11px; height:11px; }
+.ktl .ann .n { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  transform:rotate(-45deg); font:700 8px/1 -apple-system,"Segoe UI",Roboto,sans-serif; color:#fff;
+  text-shadow:0 0 2px #000,0 0 2px #000; pointer-events:none; }
+.ktl .ann-lane .ann { top:50%; }
+.ktl .strip .ann { top:auto; bottom:0; transform:translate(-50%,50%) rotate(45deg); }
+.ktl .ann-region { position:absolute; top:0; bottom:0; background:rgba(87,148,242,.12);
+                   border-left:1px dashed rgba(87,148,242,.55); border-right:1px dashed rgba(87,148,242,.55);
+                   pointer-events:none; z-index:1; }
+.ktl .ann-lane .ann-region { top:3px; bottom:3px; }
+.ktl-ann-tip { position:fixed; z-index:1070; background:#0b0c0e; border:1px solid #2c3235; border-radius:4px;
+               padding:6px 9px; max-width:340px; color:#ccccdc; box-shadow:0 8px 32px rgba(0,0,0,.7);
+               font:11px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; pointer-events:none; }
+.ktl-ann-tip.pinned { pointer-events:auto; border-color:#f2cc0c; user-select:text; }
+.ktl-ann-tip a { color:#6e9fff; text-decoration:underline; }
+.ktl-ann-tip .at { display:flex; gap:8px; align-items:baseline; }
+.ktl-ann-tip .at b { color:#fff; }
+.ktl-ann-tip .at .tm { color:#7b8087; font-variant-numeric:tabular-nums; margin-left:auto; }
+.ktl-ann-tip .ax { color:#9aa0a6; white-space:pre-wrap; }
+.ktl-ann-tip .ag { display:flex; gap:4px; flex-wrap:wrap; margin-top:2px; }
+.ktl-ann-tip .ag span { font-size:10px; color:#7b8087; border:1px solid #2c3235; border-radius:8px; padding:0 6px; }
+.ktl-ann-tip .item + .item { border-top:1px solid #1d2024; margin-top:5px; padding-top:5px; }
 .ktl .axis { flex:0 0 24px; position:relative; margin:4px 1px 0; overflow:hidden; }
 .ktl .axis .base { position:absolute; top:0; left:0; right:0; height:1px; background:var(--ktl-border); }
 .ktl .tick { position:absolute; top:0; transform:translateX(-50%); color:var(--ktl-dim); font-size:10px;
@@ -62,11 +140,13 @@ const CSS = `
 .ktl .grid { flex:1 1 auto; min-height:0; display:grid; gap:8px; overflow:auto;
              grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); grid-auto-rows:minmax(110px, 1fr); }
 .ktl .tile { display:flex; flex-direction:column; background:var(--ktl-bg2);
-             border:1px solid var(--ktl-border); border-radius:4px; overflow:hidden; cursor:zoom-in; }
+             border:1px solid var(--ktl-border); border-radius:4px; overflow:hidden; cursor:zoom-in;
+             position:relative; }
 .ktl .tile .t-head { display:flex; gap:6px; align-items:center; padding:2px 6px; color:var(--ktl-dim); flex:0 0 auto;
                      flex-wrap:nowrap; overflow:hidden; min-width:0; }
 .ktl .tile .t-head .nm { flex:0 0 auto; }
-.ktl .tile .t-head .tags { display:flex; gap:4px; overflow:hidden; min-width:0; flex-shrink:10; }
+.ktl .tile .t-head .tags { display:flex; gap:4px; overflow:hidden; min-width:0; flex-shrink:10;
+                           flex-wrap:wrap; max-height:17px; align-content:flex-start; }
 .ktl .tile .t-head .tags .st { flex:0 0 auto; }
 .ktl .tile .t-head .nm { font-weight:600; color:var(--ktl-text); }
 .ktl .tile .t-img { flex:1 1 auto; min-height:0; position:relative; background:#111; }
@@ -107,7 +187,7 @@ const SITES = {
   ],
   'site-b': [
     { id: 'source-4', cadence: 60e3 },
-    { id: 'source-5', cadence: 30e3 },
+    { id: 'source-5', cadence: 30e3, tags: { orient: 'portrait' } },
   ],
 };
 const HUES = { 'source-1': 205, 'source-2': 275, 'source-3': 25, 'source-4': 130, 'source-5': 340 };
@@ -144,7 +224,27 @@ function makeBackend(P, SPAN) {
     kiosks(sites) {
       return Object.entries(SITES)
         .filter(([s]) => !sites || sites.includes(s))
-        .flatMap(([s, ks]) => ks.map(k => Object.assign({}, k, { site: s, location: 'demo' })));
+        .flatMap(([s, ks]) => ks.map(k => {
+          const decl = Object.assign({}, k, { site: s, location: 'demo' });
+          // demo cadence events: source-3 slows 120s→240s mid-window (pace
+          // change era); source-4 declares a pause for 20%–45% of the window
+          // (resume inferred from its frames). source-2 keeps its UNDECLARED
+          // outage — the red-vs-neutral contrast is the point of the demo.
+          if (k.id === 'source-3') {
+            decl.history = [
+              { since: P.from - 864e5, variant: 'lo', cadence: 120e3 },
+              { since: P.from + SPAN * 0.5, variant: 'lo', cadence: 240e3 },
+            ];
+            decl.cadence = 240e3;
+          }
+          if (k.id === 'source-4') {
+            decl.history = [
+              { since: P.from - 864e5, variant: 'lo', cadence: 60e3 },
+              { since: P.from + SPAN * 0.2, variant: 'lo', paused: true },
+            ];
+          }
+          return decl;
+        }));
     },
     frames(site, kiosk, from, to, step) {
       const out = [];
@@ -152,10 +252,153 @@ function makeBackend(P, SPAN) {
       const first = Math.ceil(from / step) * step;
       for (let ts = first; ts <= Math.min(to, Date.now()); ts += step) {
         if (kiosk === 'source-2' && ts > gapA && ts < gapB) continue;
+      if (kiosk === 'source-4' && ts > P.from + SPAN * 0.2 && ts < P.from + SPAN * 0.45) continue;
         out.push({ kiosk, ts, url: renderMockFrame(site, kiosk, ts, step) });
       }
       return Promise.resolve(out);
     },
+    /* demo annotations — in Grafana these come from the dashboard's own
+     * annotation queries (any data source); this is only the mock seam.
+     * Deliberately one of each supported shape: global point, source point,
+     * global region, source-scoped region (explains source-2's red outage),
+     * and a colored burst tight enough to cluster into one ×3 marker. */
+    annotations() {
+      return [
+        { ts: P.from + SPAN * 0.30, title: 'deploy v2.4.1', text: 'rollout to site-a — https://example.com/releases/v2.4.1', tags: ['deploy'] },
+        { ts: P.from + SPAN * 0.60, title: 'app restart', text: 'watchdog restarted the shell', tags: ['source:source-1'] },
+        { ts: P.from + SPAN * 0.85, title: 'gateway reboot', text: 'site-b uplink flapped during carrier work', tags: ['site:site-b', 'network'] },
+        { ts: P.from + SPAN * 0.68, timeEnd: P.from + SPAN * 0.78, title: 'content sync', text: 'nightly asset refresh', tags: ['maintenance'] },
+        { ts: P.from + SPAN * 0.35, timeEnd: P.from + SPAN * 0.55, title: 'backend outage',
+          text: 'upstream API down — source-2 dark', tags: ['source:source-2', 'incident'], color: '#ff9830' },
+        { ts: P.from + SPAN * 0.520, title: 'alert: high CPU', text: 'firing', tags: ['alert'], color: '#f2495c' },
+        { ts: P.from + SPAN * 0.522, title: 'alert: high CPU', text: 'still firing', tags: ['alert'], color: '#f2495c' },
+        { ts: P.from + SPAN * 0.524, title: 'alert: high CPU', text: 'resolved', tags: ['alert'], color: '#f2495c' },
+      ];
+    },
+  };
+}
+
+/* Normalize annotations from any provider (Grafana annotation frames, the
+ * mock seam, a host page) into { ts, timeEnd?, title, text, tags[], color,
+ * source, siteScope }. A `source:<id>` (or legacy `kiosk:<id>`) tag pins the
+ * marker to that source's strip; a `site:<id>` tag scopes it to every source
+ * at that site; everything else renders on the shared lane. Events from
+ * wider time windows are kept if they OVERLAP ours and clamp-render. */
+function normAnnotations(raw, P) {
+  const out = [];
+  for (const a of raw || []) {
+    const ts = Number(a.ts != null ? a.ts : a.time);
+    if (!Number.isFinite(ts)) continue;
+    let end = a.timeEnd != null ? Number(a.timeEnd) : NaN;
+    if (!Number.isFinite(end) || end <= ts) end = null;
+    if ((end || ts) < P.from || ts > P.to) continue;
+    const tags = Array.isArray(a.tags) ? a.tags.map(String)
+      : a.tags ? String(a.tags).split(',').map((s) => s.trim()).filter(Boolean) : [];
+    let source = a.source || null;
+    let siteScope = null;
+    for (const t of tags) {
+      const m = /^(?:source|kiosk):(.+)$/.exec(t);
+      if (m) source = m[1];
+      const ms = /^site:(.+)$/.exec(t);
+      if (ms) siteScope = ms[1];
+    }
+    out.push({ ts, timeEnd: end, title: a.title || '', text: a.text || '', tags, color: a.color || '', source, siteScope });
+  }
+  return out.sort((x, y) => x.ts - y.ts);
+}
+
+/* Shared fixed-position tooltip for annotation markers (one per document,
+ * like the injected styles). Built with textContent — annotation text is
+ * foreign data, never markup; only http(s) URLs inside it are promoted to
+ * real anchors. Hover shows it; CLICK PINS it (selectable text, clickable
+ * links) until a click elsewhere or Escape. */
+let annTipEl = null;
+let annTipPinned = false;
+function annTip() {
+  if (!annTipEl) {
+    annTipEl = document.createElement('div');
+    annTipEl.className = 'ktl-ann-tip';
+    annTipEl.style.display = 'none';
+    document.body.appendChild(annTipEl);
+    document.addEventListener('click', (e) => {
+      if (annTipPinned && !annTipEl.contains(e.target)) close();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && annTipPinned) close();
+    });
+  }
+  const el = annTipEl;
+
+  function linkify(host, text) {
+    const parts = String(text).split(/(https?:\/\/[^\s]+)/g);
+    for (const part of parts) {
+      if (/^https?:\/\//.test(part)) {
+        const a = document.createElement('a');
+        a.href = part;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = part;
+        host.appendChild(a);
+      } else if (part) {
+        host.appendChild(document.createTextNode(part));
+      }
+    }
+  }
+
+  function render(items, x, y) {
+    el.textContent = '';
+    for (const a of items) {
+      const item = document.createElement('div');
+      item.className = 'item';
+      const head = document.createElement('div');
+      head.className = 'at';
+      const b = document.createElement('b');
+      b.textContent = a.title || 'annotation';
+      const tm = document.createElement('span');
+      tm.className = 'tm';
+      tm.textContent = fmtTime(a.ts) + (a.timeEnd ? ' → ' + fmtTime(a.timeEnd) : '');
+      head.appendChild(b); head.appendChild(tm);
+      item.appendChild(head);
+      if (a.text) {
+        const tx = document.createElement('div');
+        tx.className = 'ax';
+        linkify(tx, a.text);
+        item.appendChild(tx);
+      }
+      const shown = a.tags.filter((t) => !/^(?:source|kiosk|site):/.test(t));
+      if (shown.length) {
+        const tg = document.createElement('div');
+        tg.className = 'ag';
+        for (const t of shown) {
+          const s = document.createElement('span');
+          s.textContent = t;
+          tg.appendChild(s);
+        }
+        item.appendChild(tg);
+      }
+      el.appendChild(item);
+    }
+    el.style.display = 'block';
+    const r = el.getBoundingClientRect();
+    el.style.left = Math.max(4, Math.min(window.innerWidth - r.width - 4, x - r.width / 2)) + 'px';
+    el.style.top = Math.max(4, y - r.height - 10) + 'px';
+  }
+
+  function close() {
+    annTipPinned = false;
+    el.classList.remove('pinned');
+    el.style.display = 'none';
+  }
+
+  return {
+    show(items, x, y) { if (!annTipPinned) render(items, x, y); },
+    pin(items, x, y) {
+      annTipPinned = true;
+      el.classList.add('pinned');
+      render(items, x, y);
+    },
+    hide() { if (!annTipPinned) el.style.display = 'none'; },
+    close,
   };
 }
 
@@ -207,6 +450,91 @@ function hiUrlFor(frame, decl, apiUrl, apiKey) {
 function parseVar(v) {
   if (!v || v === 'All' || v === '$__all') return null;
   return v.replace(/^\{|\}$/g, '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+/* ======================= cadence events → eras =======================
+ * A source's registry history is a stream of CADENCE EVENTS — declarations
+ * that change the contract in force from that moment on: a new pace, or a
+ * pause ("I will deliberately send nothing"). Eras are the spans between
+ * events; the timeline renders each era on its own grid, so sparse frames
+ * during a slow era aren't gaps and declared pauses render as neutral
+ * silence rather than the red offline hatch. Resume is inferred from data:
+ * a frame arriving inside a paused era ends it (crash-safe — a source that
+ * dies unexpectedly never declares, so its silence stays "offline"). */
+function erasFor(decl, P) {
+  const hist = (decl.history || [])
+    .filter((h) => (h.variant || 'lo') === 'lo')
+    .slice()
+    .sort((a, b) => a.since - b.since);
+  let runCad = decl.cadence || 60e3;
+  if (hist.length && hist[0].cadence) runCad = hist[0].cadence;
+  const evts = [{ since: -8.64e15, cadence: runCad, paused: false }];
+  for (const h of hist) evts.push({ since: h.since, cadence: h.cadence, paused: !!h.paused });
+  const eras = [];
+  for (let i = 0; i < evts.length; i++) {
+    const e = evts[i];
+    const next = evts[i + 1];
+    if (e.cadence) runCad = e.cadence;
+    const from = Math.max(e.since, P.from);
+    const to = Math.min(next ? next.since : P.to, P.to);
+    if (to <= from) continue;
+    const prev = eras[eras.length - 1];
+    if (prev && prev.paused === !!e.paused && prev.cadence === runCad) { prev.to = to; continue; }
+    eras.push({ from, to, cadence: runCad, paused: !!e.paused });
+  }
+  if (!eras.length) eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false });
+  return eras;
+}
+
+/* One flat slot list across all eras. Each slot knows its time span (for
+ * proportional width — x↔time stays linear across era boundaries), its
+ * era's cadence/step (gap + staleness thresholds), or paused:true. */
+async function buildSourceModel(decl, P, backend, budgetSlots) {
+  const eras = erasFor(decl, P);
+  const slots = [];
+  const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
+
+  async function pushActive(era) {
+    const eraSpan = era.to - era.from;
+    const share = Math.max(4, Math.round(budgetSlots * (eraSpan / totalActive)));
+    const raw = Math.max(1, Math.ceil(eraSpan / era.cadence));
+    const step = Math.ceil(raw / Math.min(share, raw)) * era.cadence;
+    const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
+    const start = Math.ceil(era.from / step) * step;
+    const n = Math.max(1, Math.floor((era.to - start) / step) + 1);
+    const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
+    for (let i = 0; i < n; i++) {
+      const ts = start + i * step;
+      slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step });
+    }
+  }
+
+  for (const era of eras) {
+    if (!era.paused) { await pushActive(era); continue; }
+    // paused era: probe for frames — data inside it means the source resumed.
+    // Step-snapping can surface the last pre-pause frame at a grid key just
+    // before era.from; only frames strictly inside the era count as a resume.
+    const probe = await backend.frames(decl.site, decl.id, era.from, era.to, era.cadence);
+    const resume = probe.find((f) => f.ts > era.from);
+    if (resume) {
+      const resumeTs = resume.ts;
+      slots.push({ ts: era.from, span: resumeTs - era.from, paused: true });
+      await pushActive({ from: resumeTs, to: era.to, cadence: era.cadence });
+    } else {
+      slots.push({ ts: era.from, span: era.to - era.from, paused: true });
+    }
+  }
+
+  function slotAt(t) {
+    for (const sl of slots) {
+      const from = sl.paused ? sl.ts : sl.ts - sl.span / 2;
+      const to = sl.paused ? sl.ts + sl.span : sl.ts + sl.span / 2;
+      if (t < to) return t >= from || sl === slots[0] ? sl : sl;
+    }
+    return slots[slots.length - 1] || null;
+  }
+  const lastActive = [...slots].reverse().find((sl) => !sl.paused) || null;
+  return { eras, slots, slotAt, lastActive };
 }
 
 /* panel-side tag filtering: "env=prod, room=lobby" must ALL match */
@@ -317,26 +645,19 @@ function retireWrapper(wrap) {
 /* cfg: { site, from, to, width, onHover(t), onHoverClear() } */
 export function mountTimeline(root, cfg) {
   injectStyles();
-  const P = { site: parseVar(cfg.site), from: cfg.from, to: cfg.to };
+  const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
   const SPAN = Math.max(1, P.to - P.from);
   const LIVE = P.to > Date.now() - 2 * 60 * 1000;
   const MIN_SLICE_PX = 7;
-  const pxBudget = Math.max(10, Math.floor((cfg.width - 20) / MIN_SLICE_PX));
+  const hostWidth = cfg.width || root.clientWidth || 800;   // plugin passes width; web mounts measure
+  const pxBudget = Math.max(10, Math.floor((hostWidth - 20) / MIN_SLICE_PX));
   const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN);
-
-  function geomFor(cadence) {
-    const raw = Math.ceil(SPAN / cadence);
-    const step = Math.ceil(raw / Math.min(pxBudget, raw)) * cadence;
-    const bucketStart = Math.ceil(P.from / step) * step;
-    const nBuckets = Math.max(1, Math.floor((P.to - bucketStart) / step) + 1);
-    const idx = t => Math.max(0, Math.min(nBuckets - 1, Math.floor((t - bucketStart) / step + 0.5)));
-    return { cadence, step, bucketStart, nBuckets, idx };
-  }
 
   const wrap = makeWrapper(root);
   wrap.classList.toggle('fill', cfg.fit === 'fill');
   wrap.innerHTML =
     '<div class="cards"></div>' +
+    '<div class="ann-lane" style="display:none"></div>' +
     '<div class="axis"><div class="base"></div><div class="acur"></div></div>';
   const q = sel => wrap.querySelector(sel);
 
@@ -372,34 +693,40 @@ export function mountTimeline(root, cfg) {
   }
 
 
-  function buildCard(decl, geom, frames) {
+  function buildCard(decl, model) {
     const kiosk = decl.id;
-    const byIdx = new Map(frames.map(f => [geom.idx(f.ts), f]));
     const card = document.createElement('div');
-    card.className = 'card';
-    const down = geom.step > geom.cadence;
-    const cad = cfg.showDetails
-      ? '<span class="cad">⏱ ' + fmtDur(geom.cadence) + ' · 1/' + fmtDur(geom.step) + (down ? ' ↓' : '') + '</span>'
+    const inline = cfg.headerMode === 'inline' || cfg.headerMode === 'inline-gradient';
+    card.className = 'card' + (inline ? ' inline-head' : '') +
+      (cfg.headerMode === 'inline-gradient' ? ' inline-grad' : '');
+    const la = model.lastActive;
+    const cad = cfg.showDetails && la
+      ? '<span class="cad">⏱ ' + fmtDur(la.cadence) + ' · 1/' + fmtDur(la.step) + (la.step > la.cadence ? ' ↓' : '') + '</span>'
       : '';
     card.innerHTML =
       '<div class="card-head" title="' + headTitle(decl) + '"><span class="nm">' + kiosk + '</span>' +
+      '<span class="inline-brk"></span>' +
       '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span>' + tagChips(decl) + '<span class="ft"></span>' +
       cad + '</div>' +
-      '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>';
+      '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>' +
+      '<div class="card-lane"></div>';
     const strip = card.querySelector('.strip');
-    const slots = [];
-    for (let i = 0; i < geom.nBuckets; i++) {
-      const ts = geom.bucketStart + i * geom.step;
-      const frame = byIdx.get(i) || null;
+    // hairline frame boundaries only when slices are wide enough — below
+    // ~12px they read as zebra noise rather than structure
+    if (hostWidth / model.slots.length >= 12) strip.classList.add('sep');
+    const slots = model.slots;
+    for (const sl of slots) {
       const el = document.createElement('div');
-      el.className = 'slot' + (frame ? '' : ' gap');
-      if (frame) {
+      el.className = 'slot' + (sl.paused ? ' paused' : sl.frame ? '' : ' gap');
+      // width ∝ time span, so x↔time stays linear across era boundaries
+      el.style.flexGrow = String(sl.span / 1000);
+      if (sl.frame) {
         const img = document.createElement('img');
-        img.src = frame.url; img.alt = kiosk + ' ' + fmtTime(ts);
+        img.src = sl.frame.url; img.alt = kiosk + ' ' + fmtTime(sl.ts);
         el.appendChild(img);
       }
       strip.appendChild(el);
-      slots.push({ ts, frame, el });
+      sl.el = el;
     }
     strip.addEventListener('mousemove', e => {
       const r = strip.getBoundingClientRect();
@@ -413,7 +740,8 @@ export function mountTimeline(root, cfg) {
     });
     strip.addEventListener('click', e => {
       if (suppressClick) { suppressClick = false; return; }
-      const f = slots[geom.idx(cursorT)] && slots[geom.idx(cursorT)].frame;
+      const sl = model.slotAt(cursorT);
+      const f = sl && sl.frame;
       if (f) pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, cfg.apiUrl, cfg.apiKey));
     });
     /* magnifier takes the aspect of the actual frames (portrait screens etc.) */
@@ -456,12 +784,13 @@ export function mountTimeline(root, cfg) {
     });
     q('.cards').appendChild(card);
     return {
-      card, geom, slots,
+      card, model,
       head: card.querySelector('.ft'),
       strip,
       cross: card.querySelector('.xh'),
       sel: card.querySelector('.sel'),
       mag: card.querySelector('.mag'),
+      lane: card.querySelector('.card-lane'),
     };
   }
 
@@ -483,11 +812,103 @@ export function mountTimeline(root, cfg) {
     }
   }
 
+  /* Annotations: per-source markers ride that source's strip; the rest
+   * share one lane above the axis. Regions shade their span; markers
+   * cluster when closer than ~10px. Positions are %-based so they survive
+   * flexbox resizes without a re-render. */
+  function renderAnnotations(anns) {
+    const tip = annTip();
+    const fracOf = (t) => (Math.max(P.from, Math.min(P.to, t)) - P.from) / SPAN;
+    const pct = (f) => (f * 100).toFixed(3) + '%';
+
+    function addRegion(host, a) {
+      const el = document.createElement('div');
+      el.className = 'ann-region';
+      el.style.left = pct(fracOf(a.ts));
+      el.style.width = pct(fracOf(a.timeEnd) - fracOf(a.ts));
+      if (a.color) { el.style.background = a.color + '22'; el.style.borderColor = a.color + '88'; }
+      host.appendChild(el);
+    }
+    function addMarkers(host, items) {
+      // cluster markers closer than ~10px so dense event bursts stay legible
+      const groups = [];
+      for (const a of items) {
+        const g = groups[groups.length - 1];
+        if (g && (fracOf(a.ts) - fracOf(g[0].ts)) * hostWidth < 10) g.push(a);
+        else groups.push([a]);
+      }
+      for (const g of groups) {
+        const el = document.createElement('div');
+        el.className = 'ann' + (g.length > 1 ? ' multi' : '');
+        el.style.left = pct(fracOf(g[0].ts));
+        if (g[0].color) el.style.background = g[0].color;
+        el.title = '';   // suppress native tooltip; ours carries the detail
+        if (g.length > 1) {
+          const n = document.createElement('span');
+          n.className = 'n';
+          n.textContent = String(g.length);
+          el.appendChild(n);
+        }
+        el.addEventListener('mouseenter', () => {
+          const r = el.getBoundingClientRect();
+          tip.show(g, r.left + r.width / 2, r.top);
+        });
+        el.addEventListener('mouseleave', () => tip.hide());
+        el.addEventListener('click', (e) => {
+          // pin: selectable text + clickable links; don't open the frame
+          // preview underneath, and don't let the document unpin us
+          e.stopPropagation();
+          const r = el.getBoundingClientRect();
+          tip.pin(g, r.left + r.width / 2, r.top);
+        });
+        host.appendChild(el);
+      }
+    }
+
+    // scoping: source:<id> pins to one card, site:<id> to every card at
+    // that site, neither = global. A scoped annotation whose target isn't
+    // on this panel is DROPPED, not shown global — its context is absent.
+    const appliesTo = (a, k) =>
+      (!a.source || a.source === k.id) && (!a.siteScope || a.siteScope === k.site);
+    const isGlobal = (a) => !a.source && !a.siteScope;
+
+    if (cfg.annotationLanes === 'per-source') {
+      // one lane per card: its own scoped events plus every global, so each
+      // timeline reads in context — stacked windows never share one bar
+      for (const k of kiosks) {
+        const c = cards[k.id];
+        const items = anns.filter((a) => appliesTo(a, k));
+        if (!items.length) continue;
+        c.card.classList.add('has-lane');
+        for (const a of items) if (a.timeEnd) { addRegion(c.strip, a); addRegion(c.lane, a); }
+        addMarkers(c.lane, items);
+      }
+      return;
+    }
+
+    const laneItems = [], perCard = {};
+    for (const a of anns) {
+      if (isGlobal(a)) laneItems.push(a);
+      else for (const k of kiosks) if (appliesTo(a, k)) (perCard[k.id] ||= []).push(a);
+      if (a.timeEnd) {
+        // regions shade the strips they scope to; globals also shade the lane
+        const hosts = isGlobal(a)
+          ? kiosks.map((k) => cards[k.id].strip).concat([q('.ann-lane')])
+          : kiosks.filter((k) => appliesTo(a, k)).map((k) => cards[k.id].strip);
+        for (const h of hosts) addRegion(h, a);
+      }
+    }
+    for (const [id, items] of Object.entries(perCard)) addMarkers(cards[id].strip, items);
+    if (laneItems.length) addMarkers(q('.ann-lane'), laneItems);
+    if (laneItems.length || anns.some((a) => a.timeEnd && isGlobal(a))) q('.ann-lane').style.display = '';
+  }
+
   /* external=true → came from the event bus; don't re-publish (no loop) */
   function setCursor(t, hoveredCard, external) {
     cursorT = Math.max(P.from, Math.min(P.to, t));
     root.dataset.ktlCursor = String(cursorT);
     if (!external) root.dataset.ktlPinned = '1';
+    if (cfg.onCursor) cfg.onCursor(cursorT);        // host chrome hook (standalone app)
     const frac = (cursorT - P.from) / SPAN;
 
     const axis = q('.axis'), ac = q('.acur');
@@ -503,57 +924,79 @@ export function mountTimeline(root, cfg) {
       if (!external) c.card.classList.toggle('hovered', hoveredCard === c.card);
       const w = c.strip.clientWidth, x = frac * w;
       c.cross.style.left = x + 'px';
-      const idx = c.geom.idx(cursorT);
-      const slot = c.slots[idx];
+      const slot = c.model.slotAt(cursorT);
       const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
       c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + 'px';
       if (slot && slot.frame) {
-        c.mag.classList.remove('gap');
+        c.mag.classList.remove('gap', 'paused');
         c.mag.querySelector('img').src = slot.frame.url;
         c.mag.querySelector('.cap').textContent = fmtTime(slot.frame.ts);
         c.head.textContent = '';                 // healthy: time lives on the magnifier
+        c.head.classList.remove('stale', 'paused');
+      } else if (slot && slot.paused) {
+        // declared silence — neutral, not the red offline treatment
+        c.mag.classList.add('paused');
+        c.mag.classList.remove('gap');
+        c.mag.querySelector('.cap').textContent = 'paused';
+        c.head.textContent = 'paused';
+        c.head.classList.add('paused');
         c.head.classList.remove('stale');
       } else {
         c.mag.classList.add('gap');
+        c.mag.classList.remove('paused');
+        const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
         let last = null;
-        for (let i = idx; i >= 0; i--) if (c.slots[i].frame) { last = c.slots[i].frame; break; }
+        for (let j = i; j >= 0; j--) if (c.model.slots[j].frame) { last = c.model.slots[j].frame; break; }
         const msg = last ? 'offline — last seen ' + fmtTime(last.ts) : 'no data in window';
         c.mag.querySelector('.cap').textContent = msg;
         c.head.textContent = msg;
         c.head.classList.add('stale');
+        c.head.classList.remove('paused');
       }
     }
     if (!external && cfg.onHover) cfg.onHover(cursorT);
   }
 
   (async function boot() {
-    kiosks = (await backend.kiosks(P.site)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
+    kiosks = (await backend.kiosks(P.site))
+      .filter((k) => !P.source || P.source.includes(k.id))
+      .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
     for (const k of kiosks) {
       if (destroyed) return;
-      const geom = geomFor(k.cadence);
-      const frames = await backend.frames(k.site, k.id, P.from, P.to, geom.step);
+      const model = await buildSourceModel(k, P, backend, pxBudget);
       if (destroyed) return;
-      if (cfg.hideEmpty && !frames.length) continue;   // hide sources with no data in window
-      cards[k.id] = buildCard(k, geom, frames);
+      if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame)) continue;   // hide sources with no data
+      cards[k.id] = buildCard(k, model);
     }
     kiosks = kiosks.filter((k) => cards[k.id]);
     buildAxis();
+    // host-provided annotations (Grafana: the dashboard's own annotation
+    // queries, whatever data source they run on) win; the mock seam only
+    // fills demo mode so the feature is visible without a backend
+    const rawAnns = (cfg.annotations && cfg.annotations.length)
+      ? cfg.annotations
+      : (backend.annotations ? backend.annotations() : []);
+    if (cfg.showAnnotations !== false) renderAnnotations(normAnnotations(rawAnns, P));
     setCursor(cursorT, null, true);   // rest position; don't publish
     await revealWrapper(root, wrap);  // swap in only once images decoded
 
     if (LIVE) {
-      const steps = kiosks.map(k => cards[k.id].geom.step);
+      const steps = kiosks.map(k => cards[k.id].model.lastActive && cards[k.id].model.lastActive.step).filter(Boolean);
       const minStep = steps.length ? Math.min.apply(null, steps) : 60e3;
       pollTimer = setInterval(async () => {
         for (const k of kiosks) {
           const c = cards[k.id];
+          const la = c.model.lastActive;
+          if (!la) continue;                    // tail era is a declared pause
           let lastTs = P.from;
-          for (let i = c.slots.length - 1; i >= 0; i--) if (c.slots[i].frame) { lastTs = c.slots[i].ts; break; }
-          const fresh = await backend.frames(k.site, k.id, lastTs + 1, Date.now(), c.geom.step);
+          for (let i = c.model.slots.length - 1; i >= 0; i--) {
+            if (c.model.slots[i].frame) { lastTs = c.model.slots[i].ts; break; }
+          }
+          const fresh = await backend.frames(k.site, k.id, lastTs + 1, Date.now(), la.step);
           if (destroyed) return;
           for (const f of fresh) {
-            const slot = c.slots[c.geom.idx(f.ts)];
-            if (!slot) continue;
+            const slot = c.model.slotAt(f.ts);
+            if (!slot || slot.paused) continue;
             // newer frames REPLACE the bucket representative (frames past
             // the window end clamp into the last bucket) so the right edge
             // keeps sliding between dashboard refreshes — grid parity
@@ -576,6 +1019,7 @@ export function mountTimeline(root, cfg) {
       destroyed = true;
       if (pollTimer) clearInterval(pollTimer);
       pv.close();
+      annTip().close();   // a hovered or pinned tip at teardown would strand
       retireWrapper(wrap);
     },
   };
@@ -587,20 +1031,11 @@ export function mountTimeline(root, cfg) {
  * crosshair time while another panel is hovered, reverting on clear. */
 export function mountGrid(root, cfg) {
   injectStyles();
-  const P = { site: parseVar(cfg.site), from: cfg.from, to: cfg.to };
+  const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
   const SPAN = Math.max(1, P.to - P.from);
   const LIVE = P.to > Date.now() - 2 * 60 * 1000;
   const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN);
   const budget = 120;   // temporal buckets for crosshair-follow resolution
-
-  function geomFor(cadence) {
-    const raw = Math.ceil(SPAN / cadence);
-    const step = Math.ceil(raw / Math.min(budget, raw)) * cadence;
-    const bucketStart = Math.ceil(P.from / step) * step;
-    const nBuckets = Math.max(1, Math.floor((P.to - bucketStart) / step) + 1);
-    const idx = t => Math.max(0, Math.min(nBuckets - 1, Math.floor((t - bucketStart) / step + 0.5)));
-    return { cadence, step, bucketStart, nBuckets, idx };
-  }
 
   const wrap = makeWrapper(root);
   wrap.classList.toggle('fill', cfg.fit === 'fill');
@@ -610,17 +1045,18 @@ export function mountGrid(root, cfg) {
   let kiosks = [], tiles = {}, destroyed = false, pollTimer = null, shownT = null;
   const pv = makePreview();
 
-  function buildTile(decl, geom, frames) {
-    const slots = new Array(geom.nBuckets).fill(null);
-    for (const f of frames) slots[geom.idx(f.ts)] = f;
+  function buildTile(decl, model) {
     const el = document.createElement('div');
-    el.className = 'tile';
+    const inline = cfg.headerMode === 'inline' || cfg.headerMode === 'inline-gradient';
+    el.className = 'tile' + (inline ? ' inline-head' : '') +
+      (cfg.headerMode === 'inline-gradient' ? ' inline-grad' : '');
     el.innerHTML =
       '<div class="t-head" title="' + headTitle(decl) + '"><span class="nm">' + decl.id + '</span>' +
+      '<span class="inline-brk"></span>' +
       '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span>' + tagChips(decl) + '</div>' +
       '<div class="t-img"><img alt="' + decl.id + '"><span class="t-ts"></span><div class="t-off"></div></div>';
     const rec = {
-      decl, geom, slots, el, shown: null,
+      decl, model, el, shown: null,
       img: el.querySelector('img'),
       ts: el.querySelector('.t-ts'),
       off: el.querySelector('.t-off'),
@@ -633,34 +1069,47 @@ export function mountGrid(root, cfg) {
   }
 
   function lastFrame(rec) {
-    for (let i = rec.slots.length - 1; i >= 0; i--) if (rec.slots[i]) return rec.slots[i];
+    for (let i = rec.model.slots.length - 1; i >= 0; i--) {
+      if (rec.model.slots[i].frame) return rec.model.slots[i].frame;
+    }
     return null;
   }
 
   /* t = null → most recent in window; otherwise frame at crosshair time */
   function setShown(t) {
     shownT = t;
+    if (cfg.onShown) cfg.onShown(t);                // host chrome hook (standalone app)
     for (const k of kiosks) {
       const rec = tiles[k.id];
       if (!rec) continue;
-      let frame = null, offMsg = null;
+      let frame = null, offMsg = null, pausedMsg = null;
+      const la = rec.model.lastActive;
       if (t == null) {
+        const tailPaused = rec.model.slots.length && rec.model.slots[rec.model.slots.length - 1].paused;
         frame = lastFrame(rec);
-        if (!frame) offMsg = 'no data in window';
-        else if (LIVE && Date.now() - frame.ts > 2 * rec.geom.step)
+        if (tailPaused) pausedMsg = 'PAUSED' + (frame ? ' — last frame ' + fmtTime(frame.ts) : '');
+        else if (!frame) offMsg = 'no data in window';
+        else if (LIVE && la && Date.now() - frame.ts > 2 * la.step)
           offMsg = 'OFFLINE — last seen ' + fmtTime(frame.ts);
       } else {
-        frame = rec.slots[rec.geom.idx(t)];
-        if (!frame) {
-          let last = null;
-          for (let i = rec.geom.idx(t); i >= 0; i--) if (rec.slots[i]) { last = rec.slots[i]; break; }
-          offMsg = last ? 'OFFLINE — last seen ' + fmtTime(last.ts) : 'no data';
+        const slot = rec.model.slotAt(t);
+        if (slot && slot.paused) {
+          pausedMsg = 'PAUSED';
+        } else {
+          frame = slot && slot.frame;
+          if (!frame) {
+            const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
+            let last = null;
+            for (let j = i; j >= 0; j--) if (rec.model.slots[j].frame) { last = rec.model.slots[j].frame; break; }
+            offMsg = last ? 'OFFLINE — last seen ' + fmtTime(last.ts) : 'no data';
+          }
         }
       }
       rec.el.classList.toggle('offline', !!offMsg);
-      rec.off.textContent = offMsg || '';
+      rec.el.classList.toggle('paused', !!pausedMsg && !offMsg);
+      rec.off.textContent = offMsg || pausedMsg || '';
       rec.shown = frame;
-      if (frame && !offMsg) {
+      if (frame && !offMsg && !pausedMsg) {
         rec.img.src = frame.url;
         rec.ts.textContent = fmtTime(frame.ts);
       }
@@ -668,14 +1117,15 @@ export function mountGrid(root, cfg) {
   }
 
   (async function boot() {
-    kiosks = (await backend.kiosks(P.site)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
+    kiosks = (await backend.kiosks(P.site))
+      .filter((k) => !P.source || P.source.includes(k.id))
+      .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
     for (const k of kiosks) {
       if (destroyed) return;
-      const geom = geomFor(k.cadence);
-      const frames = await backend.frames(k.site, k.id, P.from, P.to, geom.step);
+      const model = await buildSourceModel(k, P, backend, budget);
       if (destroyed) return;
-      if (cfg.hideEmpty && !frames.length) continue;   // hide sources with no data in window
-      tiles[k.id] = buildTile(k, geom, frames);
+      if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame)) continue;   // hide sources with no data
+      tiles[k.id] = buildTile(k, model);
     }
     kiosks = kiosks.filter((k) => tiles[k.id]);
     setShown(null);
@@ -685,13 +1135,16 @@ export function mountGrid(root, cfg) {
       pollTimer = setInterval(async () => {
         for (const k of kiosks) {
           const rec = tiles[k.id];
+          const la = rec.model.lastActive;
+          if (!la) continue;                   // tail era is a declared pause
           const last = lastFrame(rec);
-          const fresh = await backend.frames(k.site, k.id, (last ? last.ts : P.from) + 1, Date.now(), rec.geom.step);
+          const fresh = await backend.frames(k.site, k.id, (last ? last.ts : P.from) + 1, Date.now(), la.step);
           if (destroyed) return;
           for (const f of fresh) {
-            const i = rec.geom.idx(f.ts);
+            const slot = rec.model.slotAt(f.ts);
+            if (!slot || slot.paused) continue;
             // newer frames replace the bucket representative so "latest" slides
-            if (!rec.slots[i] || f.ts > rec.slots[i].ts) rec.slots[i] = f;
+            if (!slot.frame || f.ts > slot.frame.ts) slot.frame = f;
           }
         }
         if (shownT == null) setShown(null);   // keep "latest" tiles fresh

@@ -19,6 +19,11 @@ query param, and `/kiosks` endpoint remain as deprecated aliases.)
 - **Two variants.** `lo` (small, every capture — feeds timelines/tiles) and
   optional `hi` (larger, usually slower cadence — feeds the click-in
   preview, which falls back to `lo` on 404).
+- **Cadence events.** Pace changes and deliberate pauses are structural
+  events recorded in each source's `history`. Clients render each era on
+  its own grid: sparse frames during a slow era aren't gaps, and a declared
+  pause is neutral silence, not the red offline treatment. A source that
+  dies unexpectedly never declares anything — its silence stays *offline*.
 
 ## Endpoints
 
@@ -39,15 +44,33 @@ JPEG body. Headers:
 
 Response: `{"ok":true,"key":"lo/<site>/<source>/<ts>.jpg","ts":<snapped ms>}`
 
+### `POST /declare`
+
+A source about to go deliberately silent (quiet hours, display off,
+maintenance) says so **while it can still speak**. Headers:
+`Authorization` (same per-site upload token), `X-Site`, `X-Source`,
+`X-Event: pause`. Appends a paused entry to the source's `history`.
+Idempotent (`{"ok":true,"note":"already paused"}` if already paused).
+
+Resume needs no declaration — the next upload is the resume. The server
+closes the paused era in the registry on that upload (best-effort); clients
+also infer resume directly from frames appearing inside a paused era, so a
+source that crashes *while paused* still renders correctly.
+
 ### `GET /sources?site=<csv>`
 
 Registry of known sources (built from upload declarations; cadence changes
-are recorded with history). `site` omitted/`All` = every site.
+and pauses are recorded in `history`). `site` omitted/`All` = every site.
 
 ```json
-[{"id":"source-1","site":"site-a","location":"lobby","tags":{"env":"prod"},"cadence":60000,"hiCadence":300000}]
+[{"id":"source-1","site":"site-a","location":"lobby","tags":{"env":"prod"},
+  "cadence":60000,"hiCadence":300000,
+  "history":[{"since":1783488360000,"variant":"lo","cadence":60000},
+             {"since":1783524213946,"variant":"lo","paused":true}]}]
 ```
-Cadences are milliseconds.
+Cadences are milliseconds. `history` entries mark eras: a `cadence` entry
+starts a new pace, a `paused:true` entry starts declared silence, and the
+next non-paused upload ends it.
 
 ### `GET /frames?site=&source=&from=&to=&step=&variant=`
 
@@ -94,6 +117,18 @@ curl -X POST $BASE/upload \
 
 # what sources exist?
 curl "$BASE/sources?site=site-a"
+
+# change pace (quiet hours): just declare the new cadence on the next
+# upload — the registry records the change and viewers re-grid that era
+curl -X POST $BASE/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Site: site-a" -H "X-Source: source-1" -H "X-Cadence: 600" \
+  --data-binary @some-frame.jpg
+
+# going quiet on purpose (quiet hours, display off)
+curl -X POST $BASE/declare \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Site: site-a" -H "X-Source: source-1" -H "X-Event: pause"
 
 # frames for the last hour, one per minute
 NOW=$(date +%s%3N)
