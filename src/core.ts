@@ -90,6 +90,8 @@ const CSS = `
 .ktl-ann-tip { position:fixed; z-index:1070; background:#0b0c0e; border:1px solid #2c3235; border-radius:4px;
                padding:6px 9px; max-width:340px; color:#ccccdc; box-shadow:0 8px 32px rgba(0,0,0,.7);
                font:11px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; pointer-events:none; }
+.ktl-ann-tip.pinned { pointer-events:auto; border-color:#f2cc0c; user-select:text; }
+.ktl-ann-tip a { color:#6e9fff; text-decoration:underline; }
 .ktl-ann-tip .at { display:flex; gap:8px; align-items:baseline; }
 .ktl-ann-tip .at b { color:#fff; }
 .ktl-ann-tip .at .tm { color:#7b8087; font-variant-numeric:tabular-nums; margin-left:auto; }
@@ -232,8 +234,9 @@ function makeBackend(P, SPAN) {
      * and a colored burst tight enough to cluster into one ×3 marker. */
     annotations() {
       return [
-        { ts: P.from + SPAN * 0.30, title: 'deploy v2.4.1', text: 'rollout to site-a', tags: ['deploy'] },
+        { ts: P.from + SPAN * 0.30, title: 'deploy v2.4.1', text: 'rollout to site-a — https://example.com/releases/v2.4.1', tags: ['deploy'] },
         { ts: P.from + SPAN * 0.60, title: 'app restart', text: 'watchdog restarted the shell', tags: ['source:source-1'] },
+        { ts: P.from + SPAN * 0.85, title: 'gateway reboot', text: 'site-b uplink flapped during carrier work', tags: ['site:site-b', 'network'] },
         { ts: P.from + SPAN * 0.68, timeEnd: P.from + SPAN * 0.78, title: 'content sync', text: 'nightly asset refresh', tags: ['maintenance'] },
         { ts: P.from + SPAN * 0.35, timeEnd: P.from + SPAN * 0.55, title: 'backend outage',
           text: 'upstream API down — source-2 dark', tags: ['source:source-2', 'incident'], color: '#ff9830' },
@@ -247,9 +250,10 @@ function makeBackend(P, SPAN) {
 
 /* Normalize annotations from any provider (Grafana annotation frames, the
  * mock seam, a host page) into { ts, timeEnd?, title, text, tags[], color,
- * source }. A `source:<id>` (or legacy `kiosk:<id>`) tag pins the marker to
- * that source's strip; everything else renders on the shared lane. Events
- * from wider time windows are kept if they OVERLAP ours and clamp-render. */
+ * source, siteScope }. A `source:<id>` (or legacy `kiosk:<id>`) tag pins the
+ * marker to that source's strip; a `site:<id>` tag scopes it to every source
+ * at that site; everything else renders on the shared lane. Events from
+ * wider time windows are kept if they OVERLAP ours and clamp-render. */
 function normAnnotations(raw, P) {
   const out = [];
   for (const a of raw || []) {
@@ -261,66 +265,110 @@ function normAnnotations(raw, P) {
     const tags = Array.isArray(a.tags) ? a.tags.map(String)
       : a.tags ? String(a.tags).split(',').map((s) => s.trim()).filter(Boolean) : [];
     let source = a.source || null;
+    let siteScope = null;
     for (const t of tags) {
       const m = /^(?:source|kiosk):(.+)$/.exec(t);
       if (m) source = m[1];
+      const ms = /^site:(.+)$/.exec(t);
+      if (ms) siteScope = ms[1];
     }
-    out.push({ ts, timeEnd: end, title: a.title || '', text: a.text || '', tags, color: a.color || '', source });
+    out.push({ ts, timeEnd: end, title: a.title || '', text: a.text || '', tags, color: a.color || '', source, siteScope });
   }
   return out.sort((x, y) => x.ts - y.ts);
 }
 
 /* Shared fixed-position tooltip for annotation markers (one per document,
  * like the injected styles). Built with textContent — annotation text is
- * foreign data, never markup. */
+ * foreign data, never markup; only http(s) URLs inside it are promoted to
+ * real anchors. Hover shows it; CLICK PINS it (selectable text, clickable
+ * links) until a click elsewhere or Escape. */
+let annTipEl = null;
+let annTipPinned = false;
 function annTip() {
-  let el = document.querySelector('.ktl-ann-tip');
-  if (!el) {
-    el = document.createElement('div');
-    el.className = 'ktl-ann-tip';
-    el.style.display = 'none';
-    document.body.appendChild(el);
+  if (!annTipEl) {
+    annTipEl = document.createElement('div');
+    annTipEl.className = 'ktl-ann-tip';
+    annTipEl.style.display = 'none';
+    document.body.appendChild(annTipEl);
+    document.addEventListener('click', (e) => {
+      if (annTipPinned && !annTipEl.contains(e.target)) close();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && annTipPinned) close();
+    });
   }
-  return {
-    show(items, x, y) {
-      el.textContent = '';
-      for (const a of items) {
-        const item = document.createElement('div');
-        item.className = 'item';
-        const head = document.createElement('div');
-        head.className = 'at';
-        const b = document.createElement('b');
-        b.textContent = a.title || 'annotation';
-        const tm = document.createElement('span');
-        tm.className = 'tm';
-        tm.textContent = fmtTime(a.ts) + (a.timeEnd ? ' → ' + fmtTime(a.timeEnd) : '');
-        head.appendChild(b); head.appendChild(tm);
-        item.appendChild(head);
-        if (a.text) {
-          const tx = document.createElement('div');
-          tx.className = 'ax';
-          tx.textContent = a.text;
-          item.appendChild(tx);
-        }
-        const shown = a.tags.filter((t) => !/^(?:source|kiosk):/.test(t));
-        if (shown.length) {
-          const tg = document.createElement('div');
-          tg.className = 'ag';
-          for (const t of shown) {
-            const s = document.createElement('span');
-            s.textContent = t;
-            tg.appendChild(s);
-          }
-          item.appendChild(tg);
-        }
-        el.appendChild(item);
+  const el = annTipEl;
+
+  function linkify(host, text) {
+    const parts = String(text).split(/(https?:\/\/[^\s]+)/g);
+    for (const part of parts) {
+      if (/^https?:\/\//.test(part)) {
+        const a = document.createElement('a');
+        a.href = part;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = part;
+        host.appendChild(a);
+      } else if (part) {
+        host.appendChild(document.createTextNode(part));
       }
-      el.style.display = 'block';
-      const r = el.getBoundingClientRect();
-      el.style.left = Math.max(4, Math.min(window.innerWidth - r.width - 4, x - r.width / 2)) + 'px';
-      el.style.top = Math.max(4, y - r.height - 10) + 'px';
+    }
+  }
+
+  function render(items, x, y) {
+    el.textContent = '';
+    for (const a of items) {
+      const item = document.createElement('div');
+      item.className = 'item';
+      const head = document.createElement('div');
+      head.className = 'at';
+      const b = document.createElement('b');
+      b.textContent = a.title || 'annotation';
+      const tm = document.createElement('span');
+      tm.className = 'tm';
+      tm.textContent = fmtTime(a.ts) + (a.timeEnd ? ' → ' + fmtTime(a.timeEnd) : '');
+      head.appendChild(b); head.appendChild(tm);
+      item.appendChild(head);
+      if (a.text) {
+        const tx = document.createElement('div');
+        tx.className = 'ax';
+        linkify(tx, a.text);
+        item.appendChild(tx);
+      }
+      const shown = a.tags.filter((t) => !/^(?:source|kiosk|site):/.test(t));
+      if (shown.length) {
+        const tg = document.createElement('div');
+        tg.className = 'ag';
+        for (const t of shown) {
+          const s = document.createElement('span');
+          s.textContent = t;
+          tg.appendChild(s);
+        }
+        item.appendChild(tg);
+      }
+      el.appendChild(item);
+    }
+    el.style.display = 'block';
+    const r = el.getBoundingClientRect();
+    el.style.left = Math.max(4, Math.min(window.innerWidth - r.width - 4, x - r.width / 2)) + 'px';
+    el.style.top = Math.max(4, y - r.height - 10) + 'px';
+  }
+
+  function close() {
+    annTipPinned = false;
+    el.classList.remove('pinned');
+    el.style.display = 'none';
+  }
+
+  return {
+    show(items, x, y) { if (!annTipPinned) render(items, x, y); },
+    pin(items, x, y) {
+      annTipPinned = true;
+      el.classList.add('pinned');
+      render(items, x, y);
     },
-    hide() { el.style.display = 'none'; },
+    hide() { if (!annTipPinned) el.style.display = 'none'; },
+    close,
   };
 }
 
@@ -773,17 +821,30 @@ export function mountTimeline(root, cfg) {
           tip.show(g, r.left + r.width / 2, r.top);
         });
         el.addEventListener('mouseleave', () => tip.hide());
+        el.addEventListener('click', (e) => {
+          // pin: selectable text + clickable links; don't open the frame
+          // preview underneath, and don't let the document unpin us
+          e.stopPropagation();
+          const r = el.getBoundingClientRect();
+          tip.pin(g, r.left + r.width / 2, r.top);
+        });
         host.appendChild(el);
       }
     }
 
+    // scoping: source:<id> pins to one card, site:<id> to every card at
+    // that site, neither = global. A scoped annotation whose target isn't
+    // on this panel is DROPPED, not shown global — its context is absent.
+    const appliesTo = (a, k) =>
+      (!a.source || a.source === k.id) && (!a.siteScope || a.siteScope === k.site);
+    const isGlobal = (a) => !a.source && !a.siteScope;
+
     if (cfg.annotationLanes === 'per-source') {
-      // one lane per card: its own source-tagged events plus every global,
-      // so each timeline reads in context — stacked windows never share a
-      // single collapsed bar
+      // one lane per card: its own scoped events plus every global, so each
+      // timeline reads in context — stacked windows never share one bar
       for (const k of kiosks) {
         const c = cards[k.id];
-        const items = anns.filter((a) => !a.source || a.source === k.id);
+        const items = anns.filter((a) => appliesTo(a, k));
         if (!items.length) continue;
         c.card.classList.add('has-lane');
         for (const a of items) if (a.timeEnd) { addRegion(c.strip, a); addRegion(c.lane, a); }
@@ -794,19 +855,19 @@ export function mountTimeline(root, cfg) {
 
     const laneItems = [], perCard = {};
     for (const a of anns) {
-      if (a.source && cards[a.source]) (perCard[a.source] ||= []).push(a);
-      else laneItems.push(a);
+      if (isGlobal(a)) laneItems.push(a);
+      else for (const k of kiosks) if (appliesTo(a, k)) (perCard[k.id] ||= []).push(a);
       if (a.timeEnd) {
-        // regions shade the matched strip, or every strip + the lane
-        const hosts = a.source && cards[a.source]
-          ? [cards[a.source].strip]
-          : kiosks.map((k) => cards[k.id].strip).concat([q('.ann-lane')]);
+        // regions shade the strips they scope to; globals also shade the lane
+        const hosts = isGlobal(a)
+          ? kiosks.map((k) => cards[k.id].strip).concat([q('.ann-lane')])
+          : kiosks.filter((k) => appliesTo(a, k)).map((k) => cards[k.id].strip);
         for (const h of hosts) addRegion(h, a);
       }
     }
     for (const [id, items] of Object.entries(perCard)) addMarkers(cards[id].strip, items);
     if (laneItems.length) addMarkers(q('.ann-lane'), laneItems);
-    if (laneItems.length || anns.some((a) => a.timeEnd && !a.source)) q('.ann-lane').style.display = '';
+    if (laneItems.length || anns.some((a) => a.timeEnd && isGlobal(a))) q('.ann-lane').style.display = '';
   }
 
   /* external=true → came from the event bus; don't re-publish (no loop) */
@@ -925,7 +986,7 @@ export function mountTimeline(root, cfg) {
       destroyed = true;
       if (pollTimer) clearInterval(pollTimer);
       pv.close();
-      annTip().hide();   // a marker being hovered at teardown would strand the tip
+      annTip().close();   // a hovered or pinned tip at teardown would strand
       retireWrapper(wrap);
     },
   };

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.4
+
+- `site:<id>` annotation tag scopes an event to every source at that site
+  (points and regions). Scoped annotations whose target isn't on the panel
+  are dropped rather than shown as global — their context is absent.
+- Click a marker to PIN its tooltip: text becomes selectable and http(s)
+  URLs in annotation text render as real links (opens in a new tab).
+  Click elsewhere or press Escape to release.
+- Demo dashboards ship their annotation layer with `hide: false`, so
+  Grafana's native per-layer toggle appears in the dashboard controls.
+- Demo data: a site-scoped `site:site-b` event and a URL in the deploy
+  annotation exercise both features.
+
 ## 0.8.3
 
 - Cluster markers show a count badge (×N) instead of only growing
