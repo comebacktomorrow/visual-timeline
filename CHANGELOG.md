@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0
+
+- **Inline header mode**: a `Header` option (Bar / Inline overlay). Inline
+  renders each source's header as a two-line scrim badge over the top-left
+  of the strip or tile — hostname first, details second — instead of
+  spending a row of card height. The badge clamps to two lines, lets all
+  pointer events through, and sits under the magnifier and crosshair.
+  Web app/embed: `?header=inline`.
+
 ## 0.8.4
 
 - `site:<id>` annotation tag scopes an event to every source at that site

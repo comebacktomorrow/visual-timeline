@@ -76,6 +76,7 @@ const key = qs.get('k') || '';
     tagFilter: qs.get('tags') || '',
     hideEmpty: qs.get('hideEmpty') === '1',
     annotationLanes: qs.get('annLanes') === 'per-source' ? 'per-source' : 'shared',
+    headerMode: qs.get('header') === 'inline' ? 'inline' : 'bar',
   });
 })();
 </script>

@@ -14,6 +14,7 @@ interface VisualTimelineOptions {
   tagFilter?: string;
   showAnnotations?: boolean;
   annotationLanes?: 'shared' | 'per-source';
+  headerMode?: 'bar' | 'inline';
 }
 
 interface PanelAnnotation {
@@ -97,6 +98,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     const common = {
       site, from, to, width: props.width, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter,
       annotations, showAnnotations, annotationLanes: options.annotationLanes || 'shared',
+      headerMode: options.headerMode || 'bar',
     };
     const inst: MountInstance =
       mode === 'grid'
@@ -121,7 +123,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey, options.annotationLanes]);
+  }, [mode, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey, options.annotationLanes, options.headerMode]);
 
   useEffect(() => {
     const subs = [
@@ -242,6 +244,19 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       name: 'Show cadence details',
       description: 'Per-source capture cadence and display resolution (debug/tuning info)',
       defaultValue: false,
+    })
+    .addRadio({
+      path: 'headerMode',
+      name: 'Header',
+      description:
+        'Bar: each source gets a header row above its strip/tile. Inline: the header overlays the top-left of the image as a two-line badge (hostname, then details) — buys back vertical space.',
+      defaultValue: 'bar',
+      settings: {
+        options: [
+          { value: 'bar', label: 'Bar' },
+          { value: 'inline', label: 'Inline overlay' },
+        ],
+      },
     })
     .addRadio({
       path: 'imageFit',
