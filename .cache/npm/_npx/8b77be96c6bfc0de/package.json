@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@grafana/react-detect": "^0.6.4"
+  },
+  "_npx": {
+    "packages": [
+      "@grafana/react-detect@0.6.4"
+    ]
+  }
+}

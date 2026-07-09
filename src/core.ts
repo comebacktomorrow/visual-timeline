@@ -495,6 +495,7 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
   const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
 
   async function pushActive(era) {
+    if (era.to - era.from <= 0) return;   // degenerate span — nothing to render
     const eraSpan = era.to - era.from;
     const share = Math.max(4, Math.round(budgetSlots * (eraSpan / totalActive)));
     const raw = Math.max(1, Math.ceil(eraSpan / era.cadence));
@@ -512,10 +513,12 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
   for (const era of eras) {
     if (!era.paused) { await pushActive(era); continue; }
     // paused era: probe for frames — data inside it means the source resumed.
-    // Step-snapping can surface the last pre-pause frame at a grid key just
-    // before era.from; only frames strictly inside the era count as a resume.
+    // Step-snapping can surface boundary frames at grid keys just outside the
+    // era (the last pre-pause frame before era.from, or the resume frame AT
+    // era.to when a resume entry bounds the era); only frames STRICTLY inside
+    // count — a frame at era.to belongs to the next era, which renders it.
     const probe = await backend.frames(decl.site, decl.id, era.from, era.to, era.cadence);
-    const resume = probe.find((f) => f.ts > era.from);
+    const resume = probe.find((f) => f.ts > era.from && f.ts < era.to);
     if (resume) {
       const resumeTs = resume.ts;
       slots.push({ ts: era.from, span: resumeTs - era.from, paused: true });
@@ -963,7 +966,15 @@ export function mountTimeline(root, cfg) {
       .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
     for (const k of kiosks) {
       if (destroyed) return;
-      const model = await buildSourceModel(k, P, backend, pxBudget);
+      let model;
+      try {
+        model = await buildSourceModel(k, P, backend, pxBudget);
+      } catch (e) {
+        // one source's backend hiccup must not black out the whole panel;
+        // the next refresh retries it
+        console.warn('[visual-timeline] model build failed for ' + k.id + ':', e);
+        continue;
+      }
       if (destroyed) return;
       if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame)) continue;   // hide sources with no data
       cards[k.id] = buildCard(k, model);
@@ -1122,7 +1133,13 @@ export function mountGrid(root, cfg) {
       .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
     for (const k of kiosks) {
       if (destroyed) return;
-      const model = await buildSourceModel(k, P, backend, budget);
+      let model;
+      try {
+        model = await buildSourceModel(k, P, backend, budget);
+      } catch (e) {
+        console.warn('[visual-timeline] model build failed for ' + k.id + ':', e);
+        continue;
+      }
       if (destroyed) return;
       if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame)) continue;   // hide sources with no data
       tiles[k.id] = buildTile(k, model);

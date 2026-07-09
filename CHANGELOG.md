@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.3
+
+- A resume frame landing exactly on a paused era's end boundary produced
+  a zero-width active era and a degenerate `/frames?from==to` call that
+  killed the whole panel. The resume probe now only accepts frames
+  strictly inside the era, degenerate spans are skipped, and the
+  reference worker answers zero-width windows with `[]` instead of 400.
+- Boot resilience: one source's backend error no longer blacks out the
+  panel — the source is skipped with a console warning and retried on
+  the next refresh.
+
 ## 0.9.2
 
 - Multiview tiles run the inline-header gradient vertically (top fade)

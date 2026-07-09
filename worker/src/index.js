@@ -286,7 +286,8 @@ async function handleFrames(url, env, ctx) {
   const step = Number(url.searchParams.get('step'));
 
   if (!ID_RE.test(site) || !ID_RE.test(source) || !VARIANTS.has(variant)) return json({ error: 'bad params' }, 400);
-  if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return json({ error: 'bad range' }, 400);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return json({ error: 'bad range' }, 400);
+  if (to === from) return json([]);   // zero-width window: legitimate degenerate ask, not an error
   if (!Number.isInteger(step) || step < 1000) return json({ error: 'bad step' }, 400);
 
   // snap the window to the step grid → auto-refresh jitter hits the same cache entry

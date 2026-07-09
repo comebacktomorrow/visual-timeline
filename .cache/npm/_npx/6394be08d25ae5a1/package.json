@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@grafana/plugin-validator": "^0.44.0"
+  },
+  "_npx": {
+    "packages": [
+      "@grafana/plugin-validator@latest"
+    ]
+  }
+}

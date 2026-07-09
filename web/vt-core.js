@@ -469,6 +469,7 @@ var VTCore = (() => {
     const slots = [];
     const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
     async function pushActive(era) {
+      if (era.to - era.from <= 0) return;
       const eraSpan = era.to - era.from;
       const share = Math.max(4, Math.round(budgetSlots * (eraSpan / totalActive)));
       const raw = Math.max(1, Math.ceil(eraSpan / era.cadence));
@@ -488,7 +489,7 @@ var VTCore = (() => {
         continue;
       }
       const probe = await backend.frames(decl.site, decl.id, era.from, era.to, era.cadence);
-      const resume = probe.find((f) => f.ts > era.from);
+      const resume = probe.find((f) => f.ts > era.from && f.ts < era.to);
       if (resume) {
         const resumeTs = resume.ts;
         slots.push({ ts: era.from, span: resumeTs - era.from, paused: true });
@@ -890,7 +891,13 @@ var VTCore = (() => {
       kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
       for (const k of kiosks) {
         if (destroyed) return;
-        const model = await buildSourceModel(k, P, backend, pxBudget);
+        let model;
+        try {
+          model = await buildSourceModel(k, P, backend, pxBudget);
+        } catch (e) {
+          console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
+          continue;
+        }
         if (destroyed) return;
         if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame)) continue;
         cards[k.id] = buildCard(k, model);
@@ -1037,7 +1044,13 @@ var VTCore = (() => {
       kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
       for (const k of kiosks) {
         if (destroyed) return;
-        const model = await buildSourceModel(k, P, backend, budget);
+        let model;
+        try {
+          model = await buildSourceModel(k, P, backend, budget);
+        } catch (e) {
+          console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
+          continue;
+        }
         if (destroyed) return;
         if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame)) continue;
         tiles[k.id] = buildTile(k, model);
