@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.2
+
+- Multiview tiles run the inline-header gradient vertically (top fade)
+  — the horizontal fade only makes sense on wide timeline strips.
+
 ## 0.9.1
 
 - Inline header redesigned per feedback: no scrim block. The hostname

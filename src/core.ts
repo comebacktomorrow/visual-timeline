@@ -36,9 +36,15 @@ const CSS = `
 .ktl .card.inline-head .card-head .st, .ktl .tile.inline-head .t-head .st {
   background:#181b1f; color:#b9bec6; }
 .ktl .card.inline-head .card-head .ft:not(:empty) { background:#181b1f; border-radius:9px; padding:0 8px; }
-.ktl .card.inline-grad .strip::before, .ktl .tile.inline-grad .t-img::before {
+/* gradient backing: strips fade left-to-right (header hugs the left
+   edge); tiles fade top-to-bottom (the header spans the tile's top) */
+.ktl .card.inline-grad .strip::before {
   content:""; position:absolute; top:0; bottom:0; left:0; width:42%;
   background:linear-gradient(90deg, rgba(0,0,0,.6), rgba(0,0,0,0));
+  z-index:1; pointer-events:none; }
+.ktl .tile.inline-grad .t-img::before {
+  content:""; position:absolute; top:0; left:0; right:0; height:48%;
+  background:linear-gradient(180deg, rgba(0,0,0,.6), rgba(0,0,0,0));
   z-index:1; pointer-events:none; }
 .ktl.strip-hover .card:not(.hovered) { opacity:.45; }
 .ktl .card-head { display:flex; align-items:center; gap:8px; padding:2px 8px; flex:0 0 auto; color:var(--ktl-dim);
