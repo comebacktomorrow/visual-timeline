@@ -38,3 +38,4 @@ pids
 work/
 yarn-debug.log*
 yarn-error.log*
+*.zip
