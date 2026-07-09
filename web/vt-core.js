@@ -54,7 +54,15 @@ var VTCore = (() => {
 .ktl .strip { flex:1 1 auto; min-height:0; position:relative; display:flex; align-items:stretch;
               cursor:crosshair; background:#111; }
 .ktl .slot { flex:1 1 0; min-width:0; position:relative; overflow:hidden; }
-.ktl .strip.sep .slot + .slot { border-left:1px solid rgba(255,255,255,.07); }
+/* Frame delineation tints the FRAME: overflow clips the img to the padding
+   box, so a border column would expose the #111 strip bg underneath and
+   read as a hard black line on any content. An ::after overlay stacks above
+   the image instead. Emboss: dark line + light inner edge \u2014 each half only
+   reads against opposing content, so the seam shades light frames and
+   highlights dark ones. */
+.ktl .strip.sep .slot + .slot::after { content:""; position:absolute; top:0; bottom:0; left:0;
+  width:1px; background:rgba(0,0,0,.05); box-shadow:1px 0 0 rgba(255,255,255,.12);
+  pointer-events:none; z-index:1; }
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
 .ktl .slot.gap { background:repeating-linear-gradient(45deg,#1b1215,#1b1215 5px,#2a171b 5px,#2a171b 10px); }
 .ktl .slot.paused { background:repeating-linear-gradient(45deg,#17191c,#17191c 7px,#1d2024 7px,#1d2024 14px); }

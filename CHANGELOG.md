@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.2
+
+- Frame delineation now tints the frame instead of exposing the strip
+  background. The old 1px `border-left` could never be covered by the
+  frame image (overflow clips to the padding box), so every separator
+  rendered as a hard near-black line over the `#111` background no matter
+  the color set. It's now an `::after` overlay above the image: a whisper
+  of shade (black 5%) plus a light inner edge (white 12%) — the seam
+  shades light frames and highlights dark ones.
+
 ## 0.8.1
 
 - **Annotation lanes** option: `Shared` (one lane above the axis, the
