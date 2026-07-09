@@ -12,6 +12,47 @@ interface VisualTimelineOptions {
   showDetails?: boolean;
   hideEmpty?: boolean;
   tagFilter?: string;
+  showAnnotations?: boolean;
+}
+
+interface PanelAnnotation {
+  ts: number;
+  timeEnd?: number;
+  title?: string;
+  text?: string;
+  tags?: string[] | string;
+  color?: string;
+}
+
+/* Flatten the dashboard's annotation frames (whatever data sources its
+ * annotation queries run on — the built-in store, alerts, Loki, anything)
+ * into plain objects for the core. The panel is only a renderer here. */
+function extractAnnotations(frames: any[] | undefined): PanelAnnotation[] {
+  const out: PanelAnnotation[] = [];
+  for (const frame of frames || []) {
+    const field = (name: string) => (frame.fields || []).find((f: any) => f.name === name);
+    const val = (f: any, i: number) =>
+      f ? (typeof f.values?.get === 'function' ? f.values.get(i) : f.values?.[i]) : undefined;
+    const time = field('time');
+    if (!time) continue;
+    const timeEnd = field('timeEnd');
+    const title = field('title');
+    const text = field('text');
+    const tags = field('tags');
+    const color = field('color');
+    const n = frame.length ?? (typeof time.values?.length === 'number' ? time.values.length : 0);
+    for (let i = 0; i < n; i++) {
+      out.push({
+        ts: val(time, i),
+        timeEnd: val(timeEnd, i),
+        title: val(title, i),
+        text: val(text, i),
+        tags: val(tags, i),
+        color: val(color, i),
+      });
+    }
+  }
+  return out;
 }
 
 interface MountInstance {
@@ -43,12 +84,19 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const showDetails = options.showDetails === true;
   const hideEmpty = options.hideEmpty === true;
   const tagFilter = (options.tagFilter || '').trim();
+  const showAnnotations = options.showAnnotations !== false;
+  const annotations = showAnnotations ? extractAnnotations(props.data?.annotations as any[]) : [];
+  // remount only when annotation CONTENT changes, not on every data-object identity flip
+  const annKey = JSON.stringify(annotations);
 
   useEffect(() => {
     if (!ref.current) {
       return;
     }
-    const common = { site, from, to, width: props.width, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter };
+    const common = {
+      site, from, to, width: props.width, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter,
+      annotations, showAnnotations,
+    };
     const inst: MountInstance =
       mode === 'grid'
         ? mountGrid(ref.current, common)
@@ -72,7 +120,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height]);
+  }, [mode, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey]);
 
   useEffect(() => {
     const subs = [
@@ -110,7 +158,11 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   });
 };
 
-export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel).setPanelOptions((builder) => {
+export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
+  // without this Grafana strips annotations out of PanelData before the
+  // panel sees them — declaring support is what turns the stream on
+  .setDataSupport({ annotations: true })
+  .setPanelOptions((builder) => {
   builder
     .addTextInput({
       path: 'apiUrl',
@@ -151,6 +203,14 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel).setP
       showIf: (o) => o.mode === 'grid',
     })
     .addBooleanSwitch({
+      path: 'showAnnotations',
+      name: 'Show annotations',
+      description:
+        'Render the dashboard\'s annotations on the timeline: source:<id>-tagged ones as diamonds on that source\'s strip, others on a shared lane; regions shade their span. Data comes from the dashboard\'s annotation queries (any data source).',
+      defaultValue: true,
+      showIf: (o) => o.mode !== 'grid',
+    })
+    .addBooleanSwitch({
       path: 'hideEmpty',
       name: 'Hide sources with no data in window',
       description: 'Sources with zero frames in the current time range are omitted instead of shown as offline',
@@ -180,4 +240,4 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel).setP
         ],
       },
     });
-});
+  });

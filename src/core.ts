@@ -59,6 +59,26 @@ const CSS = `
 .ktl .mag.gap img { display:none; }
 .ktl .mag .cap { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.6); color:#fff;
                  text-align:center; font-size:10px; font-variant-numeric:tabular-nums; padding:1px 0; }
+.ktl .ann-lane { flex:0 0 13px; position:relative; margin:2px 1px 0; }
+.ktl .ann { position:absolute; width:7px; height:7px; transform:translate(-50%,-50%) rotate(45deg);
+            background:#5794F2; border:1px solid #0b0c0e; cursor:pointer; z-index:6; }
+.ktl .ann.multi { width:9px; height:9px; }
+.ktl .ann-lane .ann { top:50%; }
+.ktl .strip .ann { top:auto; bottom:0; transform:translate(-50%,50%) rotate(45deg); }
+.ktl .ann-region { position:absolute; top:0; bottom:0; background:rgba(87,148,242,.12);
+                   border-left:1px dashed rgba(87,148,242,.55); border-right:1px dashed rgba(87,148,242,.55);
+                   pointer-events:none; z-index:1; }
+.ktl .ann-lane .ann-region { top:3px; bottom:3px; }
+.ktl-ann-tip { position:fixed; z-index:1070; background:#0b0c0e; border:1px solid #2c3235; border-radius:4px;
+               padding:6px 9px; max-width:340px; color:#ccccdc; box-shadow:0 8px 32px rgba(0,0,0,.7);
+               font:11px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; pointer-events:none; }
+.ktl-ann-tip .at { display:flex; gap:8px; align-items:baseline; }
+.ktl-ann-tip .at b { color:#fff; }
+.ktl-ann-tip .at .tm { color:#7b8087; font-variant-numeric:tabular-nums; margin-left:auto; }
+.ktl-ann-tip .ax { color:#9aa0a6; white-space:pre-wrap; }
+.ktl-ann-tip .ag { display:flex; gap:4px; flex-wrap:wrap; margin-top:2px; }
+.ktl-ann-tip .ag span { font-size:10px; color:#7b8087; border:1px solid #2c3235; border-radius:8px; padding:0 6px; }
+.ktl-ann-tip .item + .item { border-top:1px solid #1d2024; margin-top:5px; padding-top:5px; }
 .ktl .axis { flex:0 0 24px; position:relative; margin:4px 1px 0; overflow:hidden; }
 .ktl .axis .base { position:absolute; top:0; left:0; right:0; height:1px; background:var(--ktl-border); }
 .ktl .tick { position:absolute; top:0; transform:translateX(-50%); color:var(--ktl-dim); font-size:10px;
@@ -186,6 +206,94 @@ function makeBackend(P, SPAN) {
       }
       return Promise.resolve(out);
     },
+    /* demo annotations — in Grafana these come from the dashboard's own
+     * annotation queries (any data source); this is only the mock seam */
+    annotations() {
+      return [
+        { ts: P.from + SPAN * 0.30, title: 'deploy v2.4.1', text: 'rollout to site-a', tags: ['deploy'] },
+        { ts: P.from + SPAN * 0.60, title: 'app restart', text: 'watchdog restarted the shell', tags: ['source:source-1'] },
+        { ts: P.from + SPAN * 0.68, timeEnd: P.from + SPAN * 0.78, title: 'content sync', text: 'nightly asset refresh', tags: ['maintenance'] },
+      ];
+    },
+  };
+}
+
+/* Normalize annotations from any provider (Grafana annotation frames, the
+ * mock seam, a host page) into { ts, timeEnd?, title, text, tags[], color,
+ * source }. A `source:<id>` (or legacy `kiosk:<id>`) tag pins the marker to
+ * that source's strip; everything else renders on the shared lane. Events
+ * from wider time windows are kept if they OVERLAP ours and clamp-render. */
+function normAnnotations(raw, P) {
+  const out = [];
+  for (const a of raw || []) {
+    const ts = Number(a.ts != null ? a.ts : a.time);
+    if (!Number.isFinite(ts)) continue;
+    let end = a.timeEnd != null ? Number(a.timeEnd) : NaN;
+    if (!Number.isFinite(end) || end <= ts) end = null;
+    if ((end || ts) < P.from || ts > P.to) continue;
+    const tags = Array.isArray(a.tags) ? a.tags.map(String)
+      : a.tags ? String(a.tags).split(',').map((s) => s.trim()).filter(Boolean) : [];
+    let source = a.source || null;
+    for (const t of tags) {
+      const m = /^(?:source|kiosk):(.+)$/.exec(t);
+      if (m) source = m[1];
+    }
+    out.push({ ts, timeEnd: end, title: a.title || '', text: a.text || '', tags, color: a.color || '', source });
+  }
+  return out.sort((x, y) => x.ts - y.ts);
+}
+
+/* Shared fixed-position tooltip for annotation markers (one per document,
+ * like the injected styles). Built with textContent — annotation text is
+ * foreign data, never markup. */
+function annTip() {
+  let el = document.querySelector('.ktl-ann-tip');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'ktl-ann-tip';
+    el.style.display = 'none';
+    document.body.appendChild(el);
+  }
+  return {
+    show(items, x, y) {
+      el.textContent = '';
+      for (const a of items) {
+        const item = document.createElement('div');
+        item.className = 'item';
+        const head = document.createElement('div');
+        head.className = 'at';
+        const b = document.createElement('b');
+        b.textContent = a.title || 'annotation';
+        const tm = document.createElement('span');
+        tm.className = 'tm';
+        tm.textContent = fmtTime(a.ts) + (a.timeEnd ? ' → ' + fmtTime(a.timeEnd) : '');
+        head.appendChild(b); head.appendChild(tm);
+        item.appendChild(head);
+        if (a.text) {
+          const tx = document.createElement('div');
+          tx.className = 'ax';
+          tx.textContent = a.text;
+          item.appendChild(tx);
+        }
+        const shown = a.tags.filter((t) => !/^(?:source|kiosk):/.test(t));
+        if (shown.length) {
+          const tg = document.createElement('div');
+          tg.className = 'ag';
+          for (const t of shown) {
+            const s = document.createElement('span');
+            s.textContent = t;
+            tg.appendChild(s);
+          }
+          item.appendChild(tg);
+        }
+        el.appendChild(item);
+      }
+      el.style.display = 'block';
+      const r = el.getBoundingClientRect();
+      el.style.left = Math.max(4, Math.min(window.innerWidth - r.width - 4, x - r.width / 2)) + 'px';
+      el.style.top = Math.max(4, y - r.height - 10) + 'px';
+    },
+    hide() { el.style.display = 'none'; },
   };
 }
 
@@ -444,6 +552,7 @@ export function mountTimeline(root, cfg) {
   wrap.classList.toggle('fill', cfg.fit === 'fill');
   wrap.innerHTML =
     '<div class="cards"></div>' +
+    '<div class="ann-lane" style="display:none"></div>' +
     '<div class="axis"><div class="base"></div><div class="acur"></div></div>';
   const q = sel => wrap.querySelector(sel);
 
@@ -593,6 +702,63 @@ export function mountTimeline(root, cfg) {
     }
   }
 
+  /* Annotations: per-source markers ride that source's strip; the rest
+   * share one lane above the axis. Regions shade their span; markers
+   * cluster when closer than ~10px. Positions are %-based so they survive
+   * flexbox resizes without a re-render. */
+  function renderAnnotations(anns) {
+    const tip = annTip();
+    const fracOf = (t) => (Math.max(P.from, Math.min(P.to, t)) - P.from) / SPAN;
+    const pct = (f) => (f * 100).toFixed(3) + '%';
+
+    function addRegion(host, a) {
+      const el = document.createElement('div');
+      el.className = 'ann-region';
+      el.style.left = pct(fracOf(a.ts));
+      el.style.width = pct(fracOf(a.timeEnd) - fracOf(a.ts));
+      if (a.color) { el.style.background = a.color + '22'; el.style.borderColor = a.color + '88'; }
+      host.appendChild(el);
+    }
+    function addMarkers(host, items) {
+      // cluster markers closer than ~10px so dense event bursts stay legible
+      const groups = [];
+      for (const a of items) {
+        const g = groups[groups.length - 1];
+        if (g && (fracOf(a.ts) - fracOf(g[0].ts)) * hostWidth < 10) g.push(a);
+        else groups.push([a]);
+      }
+      for (const g of groups) {
+        const el = document.createElement('div');
+        el.className = 'ann' + (g.length > 1 ? ' multi' : '');
+        el.style.left = pct(fracOf(g[0].ts));
+        if (g[0].color) el.style.background = g[0].color;
+        el.title = '';   // suppress native tooltip; ours carries the detail
+        el.addEventListener('mouseenter', () => {
+          const r = el.getBoundingClientRect();
+          tip.show(g, r.left + r.width / 2, r.top);
+        });
+        el.addEventListener('mouseleave', () => tip.hide());
+        host.appendChild(el);
+      }
+    }
+
+    const laneItems = [], perCard = {};
+    for (const a of anns) {
+      if (a.source && cards[a.source]) (perCard[a.source] ||= []).push(a);
+      else laneItems.push(a);
+      if (a.timeEnd) {
+        // regions shade the matched strip, or every strip + the lane
+        const hosts = a.source && cards[a.source]
+          ? [cards[a.source].strip]
+          : kiosks.map((k) => cards[k.id].strip).concat([q('.ann-lane')]);
+        for (const h of hosts) addRegion(h, a);
+      }
+    }
+    for (const [id, items] of Object.entries(perCard)) addMarkers(cards[id].strip, items);
+    if (laneItems.length) addMarkers(q('.ann-lane'), laneItems);
+    if (laneItems.length || anns.some((a) => a.timeEnd && !a.source)) q('.ann-lane').style.display = '';
+  }
+
   /* external=true → came from the event bus; don't re-publish (no loop) */
   function setCursor(t, hoveredCard, external) {
     cursorT = Math.max(P.from, Math.min(P.to, t));
@@ -660,6 +826,13 @@ export function mountTimeline(root, cfg) {
     }
     kiosks = kiosks.filter((k) => cards[k.id]);
     buildAxis();
+    // host-provided annotations (Grafana: the dashboard's own annotation
+    // queries, whatever data source they run on) win; the mock seam only
+    // fills demo mode so the feature is visible without a backend
+    const rawAnns = (cfg.annotations && cfg.annotations.length)
+      ? cfg.annotations
+      : (backend.annotations ? backend.annotations() : []);
+    if (cfg.showAnnotations !== false) renderAnnotations(normAnnotations(rawAnns, P));
     setCursor(cursorT, null, true);   // rest position; don't publish
     await revealWrapper(root, wrap);  // swap in only once images decoded
 
@@ -702,6 +875,7 @@ export function mountTimeline(root, cfg) {
       destroyed = true;
       if (pollTimer) clearInterval(pollTimer);
       pv.close();
+      annTip().hide();   // a marker being hovered at teardown would strand the tip
       retireWrapper(wrap);
     },
   };

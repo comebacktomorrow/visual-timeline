@@ -32,6 +32,21 @@ that grid, storage keys become deterministic, and a *missing* frame means
 and an offline tile in the multiview. Uploaders drop failed frames rather
 than queueing them: the gap **is** the signal.
 
+Cadence changes and declared pauses are first-class: the timeline renders
+each era on its own grid, so a source that slows for quiet hours isn't a
+wall of false gaps, and a deliberate pause (`POST /declare`) shows as
+neutral silence — while an unexpected crash still renders as offline.
+
+## Annotations
+
+The panel renders the dashboard's own annotations — from any annotation
+query on any data source (the built-in store, alerts, Loki, …). Point
+annotations become diamond markers, regions shade their time span, and an
+annotation tagged `source:<id>` pins to that source's strip while the rest
+share a lane above the axis. Hover a marker for the details. The panel is
+purely a renderer here: bring events from whatever system already has
+them.
+
 ## Demo in two minutes (no cloud account)
 
 ```bash

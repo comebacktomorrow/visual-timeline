@@ -43,5 +43,5 @@
     "grafanaDependency": ">=10.4.0",
     "plugins": []
   },
-  "skipDataQuery": true
+  "skipDataQuery": false
 }

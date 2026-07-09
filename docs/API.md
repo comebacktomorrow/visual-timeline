@@ -118,6 +118,13 @@ curl -X POST $BASE/upload \
 # what sources exist?
 curl "$BASE/sources?site=site-a"
 
+# change pace (quiet hours): just declare the new cadence on the next
+# upload — the registry records the change and viewers re-grid that era
+curl -X POST $BASE/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Site: site-a" -H "X-Source: source-1" -H "X-Cadence: 600" \
+  --data-binary @some-frame.jpg
+
 # going quiet on purpose (quiet hours, display off)
 curl -X POST $BASE/declare \
   -H "Authorization: Bearer $TOKEN" \

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0
+
+- Annotations: the panel renders the dashboard's annotations (any
+  annotation query, any data source). Points are diamond markers —
+  `source:<id>`-tagged ones on that source's strip, the rest on a shared
+  lane above the axis; regions shade their span; markers cluster when
+  dense; hover for details. Toggle with the **Show annotations** option.
+- `skipDataQuery` is now off so annotation data reaches the panel; the
+  panel declares annotation support via `setDataSupport`.
+
 ## 0.7.0
 
 - Cadence events: sources can change pace (a new `X-Cadence` on upload) or
