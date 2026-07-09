@@ -75,6 +75,7 @@ const key = qs.get('k') || '';
     apiKey: key,
     tagFilter: qs.get('tags') || '',
     hideEmpty: qs.get('hideEmpty') === '1',
+    annotationLanes: qs.get('annLanes') === 'per-source' ? 'per-source' : 'shared',
   });
 })();
 </script>

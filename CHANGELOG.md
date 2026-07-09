@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.1
+
+- **Annotation lanes** option: `Shared` (one lane above the axis, the
+  default) or `Per source` — every source gets its own lane under its
+  strip carrying its events plus the globals, which reads better when
+  many stacked timelines each have their own story. Web app/embed:
+  `?annLanes=per-source`.
+- Header chips (timeline cards and multiview tiles) never wrap or
+  half-clip: a chip either fits whole on its single line or drops out of
+  view; the head tooltip always carries the full set.
+
 ## 0.8.0
 
 - Annotations: the panel renders the dashboard's annotations (any

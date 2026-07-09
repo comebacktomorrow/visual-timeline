@@ -13,6 +13,7 @@ interface VisualTimelineOptions {
   hideEmpty?: boolean;
   tagFilter?: string;
   showAnnotations?: boolean;
+  annotationLanes?: 'shared' | 'per-source';
 }
 
 interface PanelAnnotation {
@@ -95,7 +96,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     }
     const common = {
       site, from, to, width: props.width, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter,
-      annotations, showAnnotations,
+      annotations, showAnnotations, annotationLanes: options.annotationLanes || 'shared',
     };
     const inst: MountInstance =
       mode === 'grid'
@@ -120,7 +121,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey]);
+  }, [mode, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey, options.annotationLanes]);
 
   useEffect(() => {
     const subs = [
@@ -209,6 +210,20 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
         'Render the dashboard\'s annotations on the timeline: source:<id>-tagged ones as diamonds on that source\'s strip, others on a shared lane; regions shade their span. Data comes from the dashboard\'s annotation queries (any data source).',
       defaultValue: true,
       showIf: (o) => o.mode !== 'grid',
+    })
+    .addRadio({
+      path: 'annotationLanes',
+      name: 'Annotation lanes',
+      description:
+        'Shared: untagged annotations collapse onto one lane above the axis. Per source: every source gets its own lane under its strip, carrying its events plus the globals — easier to read with many stacked timelines.',
+      defaultValue: 'shared',
+      settings: {
+        options: [
+          { value: 'shared', label: 'Shared lane' },
+          { value: 'per-source', label: 'Per source' },
+        ],
+      },
+      showIf: (o) => o.mode !== 'grid' && o.showAnnotations !== false,
     })
     .addBooleanSwitch({
       path: 'hideEmpty',

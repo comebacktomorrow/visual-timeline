@@ -123,6 +123,7 @@ const P = {
   key:   qs.get('k') || '',
   tags:  qs.get('tags') || '',
   hideEmpty: qs.get('hideEmpty') === '1',
+  annLanes: qs.get('annLanes') === 'per-source' ? 'per-source' : 'shared',
 };
 const SPAN = Math.max(1, P.to - P.from);
 const LIVE = P.to > NOW - 2 * 60 * 1000;
@@ -166,6 +167,7 @@ const QUICK_RANGES = [['5m', 5 * 60e3], ['15m', 15 * 60e3], ['1h', 3600e3], ['3h
     from: P.from, to: P.to,
     fit: P.fit, apiUrl, apiKey: P.key,
     tagFilter: P.tags, hideEmpty: P.hideEmpty,
+    annotationLanes: P.annLanes,
   };
 
   // site chips: distinct sites from the registry (or the demo set)

@@ -21,11 +21,14 @@ const CSS = `
 .ktl .card-head { display:flex; align-items:center; gap:8px; padding:2px 8px; flex:0 0 auto; color:var(--ktl-dim);
                    flex-wrap:nowrap; overflow:hidden; min-width:0; }
 .ktl .card-head .nm { flex:0 0 auto; }
-.ktl .card-head .tags { display:flex; gap:4px; overflow:hidden; min-width:0; flex-shrink:10; }
+/* chips never wrap: the container wraps instead and clamps to one row,
+   so a chip either fits whole or drops out of view (title has it all) */
+.ktl .card-head .tags { display:flex; gap:4px; overflow:hidden; min-width:0; flex-shrink:10;
+                        flex-wrap:wrap; max-height:17px; align-content:flex-start; }
 .ktl .card-head .tags .st { flex:0 0 auto; }
 .ktl .card-head .nm { font-weight:600; color:var(--ktl-text); }
-.ktl .card-head .st { font-size:10px; color:var(--ktl-dim); border:1px solid var(--ktl-border);
-                      border-radius:8px; padding:0 6px; }
+.ktl .card-head .st, .ktl .t-head .st { font-size:10px; color:var(--ktl-dim); border:1px solid var(--ktl-border);
+                      border-radius:8px; padding:0 6px; white-space:nowrap; }
 .ktl .card-head .ft { font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex-shrink:1; }
 .ktl .card-head .ft.stale { color:var(--ktl-off); }
 .ktl .card-head .cad { margin-left:auto; font-size:10px; color:var(--ktl-dim); }
@@ -60,6 +63,10 @@ const CSS = `
 .ktl .mag .cap { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.6); color:#fff;
                  text-align:center; font-size:10px; font-variant-numeric:tabular-nums; padding:1px 0; }
 .ktl .ann-lane { flex:0 0 13px; position:relative; margin:2px 1px 0; }
+.ktl .card-lane { flex:0 0 12px; position:relative; display:none; border-top:1px solid var(--ktl-border); }
+.ktl .card.has-lane .card-lane { display:block; }
+.ktl .card-lane .ann { top:50%; }
+.ktl .card-lane .ann-region { top:2px; bottom:2px; }
 .ktl .ann { position:absolute; width:7px; height:7px; transform:translate(-50%,-50%) rotate(45deg);
             background:#5794F2; border:1px solid #0b0c0e; cursor:pointer; z-index:6; }
 .ktl .ann.multi { width:9px; height:9px; }
@@ -95,7 +102,8 @@ const CSS = `
 .ktl .tile .t-head { display:flex; gap:6px; align-items:center; padding:2px 6px; color:var(--ktl-dim); flex:0 0 auto;
                      flex-wrap:nowrap; overflow:hidden; min-width:0; }
 .ktl .tile .t-head .nm { flex:0 0 auto; }
-.ktl .tile .t-head .tags { display:flex; gap:4px; overflow:hidden; min-width:0; flex-shrink:10; }
+.ktl .tile .t-head .tags { display:flex; gap:4px; overflow:hidden; min-width:0; flex-shrink:10;
+                           flex-wrap:wrap; max-height:17px; align-content:flex-start; }
 .ktl .tile .t-head .tags .st { flex:0 0 auto; }
 .ktl .tile .t-head .nm { font-weight:600; color:var(--ktl-text); }
 .ktl .tile .t-img { flex:1 1 auto; min-height:0; position:relative; background:#111; }
@@ -600,7 +608,8 @@ export function mountTimeline(root, cfg) {
       '<div class="card-head" title="' + headTitle(decl) + '"><span class="nm">' + kiosk + '</span>' +
       '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span>' + tagChips(decl) + '<span class="ft"></span>' +
       cad + '</div>' +
-      '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>';
+      '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>' +
+      '<div class="card-lane"></div>';
     const strip = card.querySelector('.strip');
     // hairline frame boundaries only when slices are wide enough — below
     // ~12px they read as zebra noise rather than structure
@@ -681,6 +690,7 @@ export function mountTimeline(root, cfg) {
       cross: card.querySelector('.xh'),
       sel: card.querySelector('.sel'),
       mag: card.querySelector('.mag'),
+      lane: card.querySelector('.card-lane'),
     };
   }
 
@@ -740,6 +750,21 @@ export function mountTimeline(root, cfg) {
         el.addEventListener('mouseleave', () => tip.hide());
         host.appendChild(el);
       }
+    }
+
+    if (cfg.annotationLanes === 'per-source') {
+      // one lane per card: its own source-tagged events plus every global,
+      // so each timeline reads in context — stacked windows never share a
+      // single collapsed bar
+      for (const k of kiosks) {
+        const c = cards[k.id];
+        const items = anns.filter((a) => !a.source || a.source === k.id);
+        if (!items.length) continue;
+        c.card.classList.add('has-lane');
+        for (const a of items) if (a.timeEnd) { addRegion(c.strip, a); addRegion(c.lane, a); }
+        addMarkers(c.lane, items);
+      }
+      return;
     }
 
     const laneItems = [], perCard = {};
