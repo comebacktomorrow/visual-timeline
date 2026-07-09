@@ -14,7 +14,7 @@ interface VisualTimelineOptions {
   tagFilter?: string;
   showAnnotations?: boolean;
   annotationLanes?: 'shared' | 'per-source';
-  headerMode?: 'bar' | 'inline';
+  headerMode?: 'bar' | 'inline' | 'inline-gradient';
 }
 
 interface PanelAnnotation {
@@ -249,12 +249,13 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       path: 'headerMode',
       name: 'Header',
       description:
-        'Bar: each source gets a header row above its strip/tile. Inline: the header overlays the top-left of the image as a two-line badge (hostname, then details) — buys back vertical space.',
+        'Bar: each source gets a header row above its strip/tile. Inline: hostname and details float over the image\'s top-left as chip bubbles on two lines — buys back vertical space. Gradient adds a left-to-right fade behind them for busy frames.',
       defaultValue: 'bar',
       settings: {
         options: [
           { value: 'bar', label: 'Bar' },
-          { value: 'inline', label: 'Inline overlay' },
+          { value: 'inline', label: 'Inline' },
+          { value: 'inline-gradient', label: 'Inline · gradient' },
         ],
       },
     })

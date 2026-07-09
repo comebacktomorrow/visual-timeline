@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.1
+
+- Inline header redesigned per feedback: no scrim block. The hostname
+  gets its own solid chip bubble, the meta chips keep theirs, all
+  floating free over the image. A third `Header` choice — Inline ·
+  gradient — backs them with a full-height left-to-right fade for busy
+  frames. Web: `?header=inline` or `?header=inline-gradient`.
+
 ## 0.9.0
 
 - **Inline header mode**: a `Header` option (Bar / Inline overlay). Inline

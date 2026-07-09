@@ -124,7 +124,7 @@ const P = {
   tags:  qs.get('tags') || '',
   hideEmpty: qs.get('hideEmpty') === '1',
   annLanes: qs.get('annLanes') === 'per-source' ? 'per-source' : 'shared',
-  header: qs.get('header') === 'inline' ? 'inline' : 'bar',
+  header: ['inline', 'inline-gradient'].includes(qs.get('header')) ? qs.get('header') : 'bar',
 };
 const SPAN = Math.max(1, P.to - P.from);
 const LIVE = P.to > NOW - 2 * 60 * 1000;

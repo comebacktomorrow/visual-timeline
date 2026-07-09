@@ -18,18 +18,28 @@ const CSS = `
 .ktl .card { flex:1 1 0; min-height:76px; display:flex; flex-direction:column; background:var(--ktl-bg2);
              border:1px solid var(--ktl-border); border-radius:4px; overflow:hidden; transition:opacity 120ms ease;
              position:relative; }
-/* inline header: the bar overlays the strip's top-left as a two-line scrim
-   badge (hostname, then the rest) instead of spending card height. It sits
-   under the magnifier/crosshair and lets all pointer events through. */
+/* inline header: free-floating chip bubbles over the image's top-left —
+   hostname bubble on line one, the meta chips on line two — no scrim
+   block. The optional gradient variant backs them with a full-height
+   left-to-right fade for busy frames. Sits under the magnifier/crosshair
+   and lets all pointer events through. */
 .ktl .card.inline-head .card-head, .ktl .tile.inline-head .t-head {
   position:absolute; top:0; left:0; z-index:2; max-width:85%;
-  background:rgba(0,0,0,.65); border-radius:0 0 6px 0;
-  flex-wrap:wrap; row-gap:1px; pointer-events:none;
-  text-shadow:0 1px 2px rgba(0,0,0,.8); }
-.ktl .card.inline-head .card-head .st, .ktl .tile.inline-head .t-head .st { color:#b9bec6; border-color:#4a4f55; }
-.ktl .card.inline-head .card-head { padding:3px 9px 4px; max-height:42px; overflow:hidden; }
-.ktl .tile.inline-head .t-head { padding:2px 7px 3px; max-height:40px; overflow:hidden; }
-.ktl .card.inline-head .card-head .nm, .ktl .tile.inline-head .t-head .nm { width:100%; }
+  flex-wrap:wrap; row-gap:2px; pointer-events:none; overflow:hidden; }
+.ktl .card.inline-head .card-head { padding:5px 0 0 6px; max-height:46px; }
+.ktl .tile.inline-head .t-head { padding:4px 0 0 5px; max-height:44px; }
+.ktl .inline-brk { display:none; }
+.ktl .card.inline-head .card-head .inline-brk, .ktl .tile.inline-head .t-head .inline-brk {
+  display:block; width:100%; height:0; }
+.ktl .card.inline-head .card-head .nm, .ktl .tile.inline-head .t-head .nm {
+  background:#181b1f; border-radius:9px; padding:0 8px; }
+.ktl .card.inline-head .card-head .st, .ktl .tile.inline-head .t-head .st {
+  background:#181b1f; color:#b9bec6; }
+.ktl .card.inline-head .card-head .ft:not(:empty) { background:#181b1f; border-radius:9px; padding:0 8px; }
+.ktl .card.inline-grad .strip::before, .ktl .tile.inline-grad .t-img::before {
+  content:""; position:absolute; top:0; bottom:0; left:0; width:42%;
+  background:linear-gradient(90deg, rgba(0,0,0,.6), rgba(0,0,0,0));
+  z-index:1; pointer-events:none; }
 .ktl.strip-hover .card:not(.hovered) { opacity:.45; }
 .ktl .card-head { display:flex; align-items:center; gap:8px; padding:2px 8px; flex:0 0 auto; color:var(--ktl-dim);
                    flex-wrap:nowrap; overflow:hidden; min-width:0; }
@@ -680,13 +690,16 @@ export function mountTimeline(root, cfg) {
   function buildCard(decl, model) {
     const kiosk = decl.id;
     const card = document.createElement('div');
-    card.className = 'card' + (cfg.headerMode === 'inline' ? ' inline-head' : '');
+    const inline = cfg.headerMode === 'inline' || cfg.headerMode === 'inline-gradient';
+    card.className = 'card' + (inline ? ' inline-head' : '') +
+      (cfg.headerMode === 'inline-gradient' ? ' inline-grad' : '');
     const la = model.lastActive;
     const cad = cfg.showDetails && la
       ? '<span class="cad">⏱ ' + fmtDur(la.cadence) + ' · 1/' + fmtDur(la.step) + (la.step > la.cadence ? ' ↓' : '') + '</span>'
       : '';
     card.innerHTML =
       '<div class="card-head" title="' + headTitle(decl) + '"><span class="nm">' + kiosk + '</span>' +
+      '<span class="inline-brk"></span>' +
       '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span>' + tagChips(decl) + '<span class="ft"></span>' +
       cad + '</div>' +
       '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>' +
@@ -1028,9 +1041,12 @@ export function mountGrid(root, cfg) {
 
   function buildTile(decl, model) {
     const el = document.createElement('div');
-    el.className = 'tile' + (cfg.headerMode === 'inline' ? ' inline-head' : '');
+    const inline = cfg.headerMode === 'inline' || cfg.headerMode === 'inline-gradient';
+    el.className = 'tile' + (inline ? ' inline-head' : '') +
+      (cfg.headerMode === 'inline-gradient' ? ' inline-grad' : '');
     el.innerHTML =
       '<div class="t-head" title="' + headTitle(decl) + '"><span class="nm">' + decl.id + '</span>' +
+      '<span class="inline-brk"></span>' +
       '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span>' + tagChips(decl) + '</div>' +
       '<div class="t-img"><img alt="' + decl.id + '"><span class="t-ts"></span><div class="t-off"></div></div>';
     const rec = {
