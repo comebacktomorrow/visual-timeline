@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.8
+
+- A hung backend (e.g. a dead dev worker still holding its port) left the
+  panel blank forever: the registry fetch never resolved, so boot never
+  finished and nothing said why. API requests now carry a 15s timeout,
+  and a failed/timed-out registry fetch renders "frames API unreachable"
+  in the panel instead of silence.
+
 ## 0.9.7
 
 Four fixes from live fleet use:

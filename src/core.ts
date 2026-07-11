@@ -93,6 +93,8 @@ const CSS = `
 /* future slots: the window extends past now — nothing has happened yet, so
  * neither offline-red nor any hatch; the strip's own dark shows through */
 .ktl .slot.future { background:transparent; }
+.ktl .boot-err { flex:1 1 auto; display:flex; align-items:center; justify-content:center;
+                 color:var(--ktl-off); font-size:12px; text-align:center; padding:14px; }
 .ktl .mag.future { border-color:var(--ktl-dim); }
 .ktl .mag.future img { display:none; }
 .ktl .card-head .ft.paused.r-screen-sleep, .ktl .tile.paused.r-screen-sleep .t-off { color:#8fb0e8; }
@@ -431,12 +433,18 @@ function annTip() {
  * apiUrl option points at the kiosk-timeline Worker (CORS is served). */
 function makeApiBackend(apiUrl, apiKey) {
   const base = apiUrl.replace(/\/+$/, '');
-  const auth = apiKey ? { headers: { authorization: 'Bearer ' + apiKey } } : undefined;
+  // fresh options per request: a HUNG backend (dead dev worker still holding
+  // its port, half-open connection) must become a catchable timeout error,
+  // not a boot that silently never finishes
+  const opts = () => ({
+    headers: apiKey ? { authorization: 'Bearer ' + apiKey } : undefined,
+    signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined,
+  });
   return {
     async kiosks(sites) {
       const u = new URL(base + '/sources');
       if (sites) u.searchParams.set('site', sites.join(','));
-      const r = await fetch(u, auth);
+      const r = await fetch(u, opts());
       if (!r.ok) throw new Error('kiosks ' + r.status);
       return r.json();
     },
@@ -448,7 +456,7 @@ function makeApiBackend(apiUrl, apiKey) {
       u.searchParams.set('to', String(Math.round(to)));
       u.searchParams.set('step', String(step));
       u.searchParams.set('variant', 'lo');
-      const r = await fetch(u, auth);
+      const r = await fetch(u, opts());
       if (!r.ok) throw new Error('frames ' + r.status);
       const frames = await r.json();
       // <img> elements can't send headers — the key rides the frame URLs
@@ -1043,9 +1051,22 @@ export function mountTimeline(root, cfg) {
   }
 
   (async function boot() {
-    kiosks = (await backend.kiosks(P.site))
-      .filter((k) => !P.source || P.source.includes(k.id))
-      .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
+    try {
+      kiosks = (await backend.kiosks(P.site))
+        .filter((k) => !P.source || P.source.includes(k.id))
+        .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
+    } catch (e) {
+      // registry unreachable (or hung past the fetch timeout): SAY so —
+      // an eternally blank panel points the blame at the wrong layer
+      console.warn('[visual-timeline] sources fetch failed:', e);
+      if (destroyed) return;
+      const err = document.createElement('div');
+      err.className = 'boot-err';
+      err.textContent = 'frames API unreachable — ' + (e && e.message ? e.message : e);
+      q('.cards').appendChild(err);
+      await revealWrapper(root, wrap);
+      return;
+    }
     for (const k of kiosks) {
       if (destroyed) return;
       let model;
@@ -1230,9 +1251,20 @@ export function mountGrid(root, cfg) {
   }
 
   (async function boot() {
-    kiosks = (await backend.kiosks(P.site))
-      .filter((k) => !P.source || P.source.includes(k.id))
-      .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
+    try {
+      kiosks = (await backend.kiosks(P.site))
+        .filter((k) => !P.source || P.source.includes(k.id))
+        .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
+    } catch (e) {
+      console.warn('[visual-timeline] sources fetch failed:', e);
+      if (destroyed) return;
+      const err = document.createElement('div');
+      err.className = 'boot-err';
+      err.textContent = 'frames API unreachable — ' + (e && e.message ? e.message : e);
+      q('.grid').appendChild(err);
+      await revealWrapper(root, wrap);
+      return;
+    }
     for (const k of kiosks) {
       if (destroyed) return;
       let model;
