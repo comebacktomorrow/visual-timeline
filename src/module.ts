@@ -77,7 +77,11 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
    * on variable change — resolving it only via replaceVariables() would be
    * invisible to the scanner and the panel would go stale until refresh. */
   const siteExpr = options.sites || '${site:csv}';
-  const site = props.replaceVariables ? props.replaceVariables(siteExpr) : '';
+  const siteRaw = props.replaceVariables ? props.replaceVariables(siteExpr) : '';
+  // a dashboard WITHOUT the variable leaves the expression literal — that
+  // must mean "all sites", not "filter to a site named ${site:csv}" (a
+  // fresh dashboard would otherwise render an axis and zero cards)
+  const site = /\$[{a-zA-Z_]/.test(siteRaw) ? '' : siteRaw;
   const mode = options.mode || 'timeline';
   const follow = options.followCrosshair !== false;
   const fit = options.imageFit || 'fit';

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.17
+
+- A dashboard WITHOUT a `site` variable rendered an axis and zero cards:
+  the default `${site:csv}` expression stayed literal and filtered out
+  every source. Unresolved variable expressions now mean "all sites" —
+  the panel works out of the box on a fresh dashboard.
+- e2e tests are real and green: page-level locators (plugin-e2e's panel
+  locator test-id doesn't exist in every Grafana version's edit pane)
+  asserting demo-data rendering in both modes.
+
 ## 0.9.16
 
 - Repository CI is green: the scaffold's lint config is now satisfied

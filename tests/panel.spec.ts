@@ -6,21 +6,23 @@ import { test, expect } from '@grafana/plugin-e2e';
 test('timeline mode renders source cards with frames from demo data', async ({
   gotoPanelEditPage,
   readProvisionedDashboard,
+  page,
 }) => {
   const dashboard = await readProvisionedDashboard({ fileName: 'dashboard.json' });
-  const panelEditPage = await gotoPanelEditPage({ dashboard, id: '1' });
-  const panel = panelEditPage.panel.locator;
-  await expect(panel.locator('.ktl .card').first()).toBeVisible({ timeout: 20000 });
-  await expect(panel.locator('.ktl .slot img').first()).toBeVisible();
-  await expect(panel.locator('.ktl .axis .tick').first()).toBeVisible();
+  await gotoPanelEditPage({ dashboard, id: '1' });
+  // page-level locators: plugin-e2e's panel.locator test-id doesn't match
+  // every Grafana version's edit pane, and there is only one panel here
+  await expect(page.locator('.ktl .card').first()).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('.ktl .slot img').first()).toBeVisible();
+  await expect(page.locator('.ktl .axis .tick').first()).toBeVisible();
 });
 
 test('multiview grid mode renders tiles from demo data', async ({
   gotoPanelEditPage,
   readProvisionedDashboard,
+  page,
 }) => {
   const dashboard = await readProvisionedDashboard({ fileName: 'dashboard.json' });
-  const panelEditPage = await gotoPanelEditPage({ dashboard, id: '2' });
-  const panel = panelEditPage.panel.locator;
-  await expect(panel.locator('.ktl .tile').first()).toBeVisible({ timeout: 20000 });
+  await gotoPanelEditPage({ dashboard, id: '2' });
+  await expect(page.locator('.ktl .tile').first()).toBeVisible({ timeout: 20000 });
 });
