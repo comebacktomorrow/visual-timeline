@@ -84,6 +84,17 @@ const CSS = `
 .ktl .slot.paused.r-system-down { background:repeating-linear-gradient(45deg,#28204a,#28204a 7px,#372c66 7px,#372c66 14px); }
 .ktl .slot.paused.r-app-stopped { background:repeating-linear-gradient(45deg,#123832,#123832 7px,#1a4c44 7px,#1a4c44 14px); }
 .ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,#4a350e,#4a350e 7px,#614614 7px,#614614 14px); }
+/* hatch continuity: each slot is its own element, so a per-element gradient
+ * restarts at every slot edge — a run of narrow slots shows only the first
+ * stripe color and reads as a SOLID block. Fixed attachment samples one
+ * viewport-anchored pattern, so the diagonals run continuously across
+ * adjacent slots at any slot width. */
+.ktl .slot.gap, .ktl .slot.paused { background-attachment:fixed !important; }
+/* future slots: the window extends past now — nothing has happened yet, so
+ * neither offline-red nor any hatch; the strip's own dark shows through */
+.ktl .slot.future { background:transparent; }
+.ktl .mag.future { border-color:var(--ktl-dim); }
+.ktl .mag.future img { display:none; }
 .ktl .card-head .ft.paused.r-screen-sleep, .ktl .tile.paused.r-screen-sleep .t-off { color:#8fb0e8; }
 .ktl .card-head .ft.paused.r-system-down, .ktl .tile.paused.r-system-down .t-off { color:#a897e0; }
 .ktl .card-head .ft.paused.r-app-stopped, .ktl .tile.paused.r-app-stopped .t-off { color:#6fc4b4; }
@@ -538,9 +549,12 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
     const start = Math.ceil(era.from / step) * step;
     const n = Math.max(1, Math.floor((era.to - start) / step) + 1);
     const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
+    const nowMs = Date.now();
     for (let i = 0; i < n; i++) {
       const ts = start + i * step;
-      slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step });
+      // a slot whose tick hasn't arrived is FUTURE, not offline — an empty
+      // window ahead of now hasn't broken any heartbeat promise yet
+      slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts > nowMs });
     }
   }
 
@@ -612,24 +626,33 @@ const TICK_STEPS = [60e3, 5 * 60e3, 10 * 60e3, 15 * 60e3, 30 * 60e3,
 /* cursor-anchored larger preview (not full-screen), shared by both modes.
  * Shows the frame at native upload resolution — capture size is the only
  * quality knob; no separate hi-res fetch. Esc / click dismisses. */
+/* Click-in preview. ONE per document, leased across the double-buffered
+ * remounts a dashboard refresh causes: destroy() RETIRES it (delayed close)
+ * and the successor mount adopts it by cancelling that close — so an open
+ * preview survives refresh ticks instead of vanishing mid-inspection. A
+ * real unmount (navigating away) has no successor, and the delayed close
+ * fires. */
+const popState = { el: null, keyH: null, retireTimer: null };
+function closePreview() {
+  if (popState.retireTimer) { clearTimeout(popState.retireTimer); popState.retireTimer = null; }
+  if (popState.el) { popState.el.remove(); popState.el = null; }
+  if (popState.keyH) { document.removeEventListener('keydown', popState.keyH); popState.keyH = null; }
+}
 function makePreview() {
-  let el = null, keyH = null;
-  const close = () => {
-    if (el) { el.remove(); el = null; }
-    if (keyH) { document.removeEventListener('keydown', keyH); keyH = null; }
-  };
+  // adopt: a mount created while a retire is pending cancels the close
+  if (popState.retireTimer) { clearTimeout(popState.retireTimer); popState.retireTimer = null; }
   return {
     open(site, kiosk, frame, x, y, hiUrl) {
-      close();
-      el = document.createElement('div');
+      closePreview();
+      const el = document.createElement('div');
       el.className = 'ktl-pop';
       el.innerHTML = '<img alt="frame"><div class="cap"></div>';
       const img = el.querySelector('img');
       el.querySelector('.cap').textContent = site + ' / ' + kiosk + ' — ' + fmtTime(frame.ts);
-      el.addEventListener('click', close);
+      el.addEventListener('click', closePreview);
       document.body.appendChild(el);
       const place = () => {
-        if (!el) return;
+        if (!el.isConnected) return;
         const r = el.getBoundingClientRect();
         el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x + 14)) + 'px';
         el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y - r.height / 2)) + 'px';
@@ -638,10 +661,18 @@ function makePreview() {
       img.onerror = () => { img.onerror = null; img.src = frame.url; };  // hi 404 → lo
       img.src = hiUrl || frame.url;
       place();
-      keyH = e => { if (e.key === 'Escape') close(); };
-      document.addEventListener('keydown', keyH);
+      popState.el = el;
+      popState.keyH = e => { if (e.key === 'Escape') closePreview(); };
+      document.addEventListener('keydown', popState.keyH);
     },
-    close,
+    close: closePreview,
+    retire() {
+      // destroy() path: don't kill an open preview a refresh remount is
+      // about to adopt; no successor within the grace = real unmount
+      if (popState.el && !popState.retireTimer) {
+        popState.retireTimer = setTimeout(closePreview, 1500);
+      }
+    },
   };
 }
 
@@ -754,7 +785,7 @@ export function mountTimeline(root, cfg) {
     const slots = model.slots;
     for (const sl of slots) {
       const el = document.createElement('div');
-      el.className = 'slot' + (sl.paused ? ' ' + pauseInfo(sl).classes.join(' ') : sl.frame ? '' : ' gap');
+      el.className = 'slot' + (sl.paused ? ' ' + pauseInfo(sl).classes.join(' ') : sl.frame ? '' : sl.future ? ' future' : ' gap');
       if (sl.paused) el.title = pauseInfo(sl).label.toLowerCase();
       // width ∝ time span, so x↔time stays linear across era boundaries
       el.style.flexGrow = String(sl.span / 1000);
@@ -766,12 +797,20 @@ export function mountTimeline(root, cfg) {
       strip.appendChild(el);
       sl.el = el;
     }
-    strip.addEventListener('mousemove', e => {
+    const hoverAt = e => {
       const r = strip.getBoundingClientRect();
       const t = P.from + SPAN * ((e.clientX - r.left) / r.width);
       setCursor(t, card, false);
+    };
+    strip.addEventListener('mousemove', hoverAt);
+    strip.addEventListener('mouseenter', e => {
+      wrap.classList.add('strip-hover');
+      // a refresh swaps the DOM under a STATIONARY cursor: the browser fires
+      // mouseenter on the new strip but no mousemove, so without this the
+      // dim class lands with no card marked hovered — everything dims,
+      // including the strip under the mouse
+      hoverAt(e);
     });
-    strip.addEventListener('mouseenter', () => wrap.classList.add('strip-hover'));
     strip.addEventListener('mouseleave', () => {
       wrap.classList.remove('strip-hover');
       if (cfg.onHoverClear) cfg.onHoverClear();
@@ -966,7 +1005,7 @@ export function mountTimeline(root, cfg) {
       const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
       c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + 'px';
       if (slot && slot.frame) {
-        c.mag.classList.remove('gap', ...PAUSE_CLASSES);
+        c.mag.classList.remove('gap', 'future', ...PAUSE_CLASSES);
         c.mag.querySelector('img').src = slot.frame.url;
         c.mag.querySelector('.cap').textContent = fmtTime(slot.frame.ts);
         c.head.textContent = '';                 // healthy: time lives on the magnifier
@@ -974,15 +1013,22 @@ export function mountTimeline(root, cfg) {
       } else if (slot && slot.paused) {
         // declared silence — neutral (or amber when unintended), not offline-red
         const pi = pauseInfo(slot);
-        c.mag.classList.remove('gap', ...PAUSE_CLASSES);
+        c.mag.classList.remove('gap', 'future', ...PAUSE_CLASSES);
         c.mag.classList.add(...pi.classes);
         c.mag.querySelector('.cap').textContent = pi.label.toLowerCase();
         c.head.textContent = pi.label.toLowerCase();
         c.head.classList.remove('stale', ...PAUSE_CLASSES);
         c.head.classList.add(...pi.classes);
+      } else if (slot && slot.future) {
+        // ahead of now: nothing has happened yet — not offline, not stale
+        c.mag.classList.remove('gap', ...PAUSE_CLASSES);
+        c.mag.classList.add('future');
+        c.mag.querySelector('.cap').textContent = 'upcoming — ' + fmtShort(slot.ts);
+        c.head.textContent = 'upcoming';
+        c.head.classList.remove('stale', ...PAUSE_CLASSES);
       } else {
         c.mag.classList.add('gap');
-        c.mag.classList.remove(...PAUSE_CLASSES);
+        c.mag.classList.remove('future', ...PAUSE_CLASSES);
         const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
         let last = null;
         for (let j = i; j >= 0; j--) if (c.model.slots[j].frame) { last = c.model.slots[j].frame; break; }
@@ -1049,10 +1095,20 @@ export function mountTimeline(root, cfg) {
             // keeps sliding between dashboard refreshes — grid parity
             if (slot.frame && f.ts <= slot.frame.ts) continue;
             slot.frame = f;
-            slot.el.classList.remove('gap');
+            slot.future = false;
+            slot.el.classList.remove('gap', 'future');
             let img = slot.el.querySelector('img');
             if (!img) { img = document.createElement('img'); slot.el.appendChild(img); }
             img.src = f.url; img.alt = k.id + ' ' + fmtTime(f.ts);
+          }
+          // future slots age into the present; one still empty a full step
+          // past its tick has now genuinely missed its heartbeat
+          const overdue = Date.now();
+          for (const sl of c.model.slots) {
+            if (sl.future && !sl.frame && sl.ts + sl.step < overdue) {
+              sl.future = false;
+              if (sl.el) { sl.el.classList.remove('future'); sl.el.classList.add('gap'); }
+            }
           }
         }
       }, Math.min(minStep, 10000));
@@ -1065,7 +1121,7 @@ export function mountTimeline(root, cfg) {
     destroy() {
       destroyed = true;
       if (pollTimer) clearInterval(pollTimer);
-      pv.close();
+      pv.retire();   // an open preview survives refresh remounts (adopted by the successor)
       annTip().close();   // a hovered or pinned tip at teardown would strand
       retireWrapper(wrap);
     },
@@ -1150,10 +1206,14 @@ export function mountGrid(root, cfg) {
         } else {
           frame = slot && slot.frame;
           if (!frame) {
-            const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
-            let last = null;
-            for (let j = i; j >= 0; j--) if (rec.model.slots[j].frame) { last = rec.model.slots[j].frame; break; }
-            offMsg = last ? 'OFFLINE — last seen ' + fmtTime(last.ts) : 'no data';
+            if (slot && slot.future) {
+              offMsg = 'UPCOMING — ' + fmtShort(slot.ts);   // ahead of now, not a failure
+            } else {
+              const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
+              let last = null;
+              for (let j = i; j >= 0; j--) if (rec.model.slots[j].frame) { last = rec.model.slots[j].frame; break; }
+              offMsg = last ? 'OFFLINE — last seen ' + fmtTime(last.ts) : 'no data';
+            }
           }
         }
       }
@@ -1217,7 +1277,7 @@ export function mountGrid(root, cfg) {
     destroy() {
       destroyed = true;
       if (pollTimer) clearInterval(pollTimer);
-      pv.close();
+      pv.retire();   // an open preview survives refresh remounts (adopted by the successor)
       retireWrapper(wrap);
     },
   };

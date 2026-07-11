@@ -103,6 +103,17 @@ var VTCore = (() => {
 .ktl .slot.paused.r-system-down { background:repeating-linear-gradient(45deg,#28204a,#28204a 7px,#372c66 7px,#372c66 14px); }
 .ktl .slot.paused.r-app-stopped { background:repeating-linear-gradient(45deg,#123832,#123832 7px,#1a4c44 7px,#1a4c44 14px); }
 .ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,#4a350e,#4a350e 7px,#614614 7px,#614614 14px); }
+/* hatch continuity: each slot is its own element, so a per-element gradient
+ * restarts at every slot edge \u2014 a run of narrow slots shows only the first
+ * stripe color and reads as a SOLID block. Fixed attachment samples one
+ * viewport-anchored pattern, so the diagonals run continuously across
+ * adjacent slots at any slot width. */
+.ktl .slot.gap, .ktl .slot.paused { background-attachment:fixed !important; }
+/* future slots: the window extends past now \u2014 nothing has happened yet, so
+ * neither offline-red nor any hatch; the strip's own dark shows through */
+.ktl .slot.future { background:transparent; }
+.ktl .mag.future { border-color:var(--ktl-dim); }
+.ktl .mag.future img { display:none; }
 .ktl .card-head .ft.paused.r-screen-sleep, .ktl .tile.paused.r-screen-sleep .t-off { color:#8fb0e8; }
 .ktl .card-head .ft.paused.r-system-down, .ktl .tile.paused.r-system-down .t-off { color:#a897e0; }
 .ktl .card-head .ft.paused.r-app-stopped, .ktl .tile.paused.r-app-stopped .t-off { color:#6fc4b4; }
@@ -502,9 +513,10 @@ var VTCore = (() => {
       const start = Math.ceil(era.from / step) * step;
       const n = Math.max(1, Math.floor((era.to - start) / step) + 1);
       const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
+      const nowMs = Date.now();
       for (let i = 0; i < n; i++) {
         const ts = start + i * step;
-        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step });
+        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts > nowMs });
       }
     }
     for (const era of eras) {
@@ -574,30 +586,38 @@ var VTCore = (() => {
     12 * 36e5,
     24 * 36e5
   ];
+  var popState = { el: null, keyH: null, retireTimer: null };
+  function closePreview() {
+    if (popState.retireTimer) {
+      clearTimeout(popState.retireTimer);
+      popState.retireTimer = null;
+    }
+    if (popState.el) {
+      popState.el.remove();
+      popState.el = null;
+    }
+    if (popState.keyH) {
+      document.removeEventListener("keydown", popState.keyH);
+      popState.keyH = null;
+    }
+  }
   function makePreview() {
-    let el = null, keyH = null;
-    const close = () => {
-      if (el) {
-        el.remove();
-        el = null;
-      }
-      if (keyH) {
-        document.removeEventListener("keydown", keyH);
-        keyH = null;
-      }
-    };
+    if (popState.retireTimer) {
+      clearTimeout(popState.retireTimer);
+      popState.retireTimer = null;
+    }
     return {
       open(site, kiosk, frame, x, y, hiUrl) {
-        close();
-        el = document.createElement("div");
+        closePreview();
+        const el = document.createElement("div");
         el.className = "ktl-pop";
         el.innerHTML = '<img alt="frame"><div class="cap"></div>';
         const img = el.querySelector("img");
         el.querySelector(".cap").textContent = site + " / " + kiosk + " \u2014 " + fmtTime(frame.ts);
-        el.addEventListener("click", close);
+        el.addEventListener("click", closePreview);
         document.body.appendChild(el);
         const place = () => {
-          if (!el) return;
+          if (!el.isConnected) return;
           const r = el.getBoundingClientRect();
           el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x + 14)) + "px";
           el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y - r.height / 2)) + "px";
@@ -609,12 +629,18 @@ var VTCore = (() => {
         };
         img.src = hiUrl || frame.url;
         place();
-        keyH = (e) => {
-          if (e.key === "Escape") close();
+        popState.el = el;
+        popState.keyH = (e) => {
+          if (e.key === "Escape") closePreview();
         };
-        document.addEventListener("keydown", keyH);
+        document.addEventListener("keydown", popState.keyH);
       },
-      close
+      close: closePreview,
+      retire() {
+        if (popState.el && !popState.retireTimer) {
+          popState.retireTimer = setTimeout(closePreview, 1500);
+        }
+      }
     };
   }
   function makeWrapper(root) {
@@ -692,7 +718,7 @@ var VTCore = (() => {
       const slots = model.slots;
       for (const sl of slots) {
         const el = document.createElement("div");
-        el.className = "slot" + (sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.frame ? "" : " gap");
+        el.className = "slot" + (sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.frame ? "" : sl.future ? " future" : " gap");
         if (sl.paused) el.title = pauseInfo(sl).label.toLowerCase();
         el.style.flexGrow = String(sl.span / 1e3);
         if (sl.frame) {
@@ -704,12 +730,16 @@ var VTCore = (() => {
         strip.appendChild(el);
         sl.el = el;
       }
-      strip.addEventListener("mousemove", (e) => {
+      const hoverAt = (e) => {
         const r = strip.getBoundingClientRect();
         const t = P.from + SPAN * ((e.clientX - r.left) / r.width);
         setCursor(t, card, false);
+      };
+      strip.addEventListener("mousemove", hoverAt);
+      strip.addEventListener("mouseenter", (e) => {
+        wrap.classList.add("strip-hover");
+        hoverAt(e);
       });
-      strip.addEventListener("mouseenter", () => wrap.classList.add("strip-hover"));
       strip.addEventListener("mouseleave", () => {
         wrap.classList.remove("strip-hover");
         if (cfg.onHoverClear) cfg.onHoverClear();
@@ -882,22 +912,28 @@ var VTCore = (() => {
         const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
         c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + "px";
         if (slot && slot.frame) {
-          c.mag.classList.remove("gap", ...PAUSE_CLASSES);
+          c.mag.classList.remove("gap", "future", ...PAUSE_CLASSES);
           c.mag.querySelector("img").src = slot.frame.url;
           c.mag.querySelector(".cap").textContent = fmtTime(slot.frame.ts);
           c.head.textContent = "";
           c.head.classList.remove("stale", ...PAUSE_CLASSES);
         } else if (slot && slot.paused) {
           const pi = pauseInfo(slot);
-          c.mag.classList.remove("gap", ...PAUSE_CLASSES);
+          c.mag.classList.remove("gap", "future", ...PAUSE_CLASSES);
           c.mag.classList.add(...pi.classes);
           c.mag.querySelector(".cap").textContent = pi.label.toLowerCase();
           c.head.textContent = pi.label.toLowerCase();
           c.head.classList.remove("stale", ...PAUSE_CLASSES);
           c.head.classList.add(...pi.classes);
+        } else if (slot && slot.future) {
+          c.mag.classList.remove("gap", ...PAUSE_CLASSES);
+          c.mag.classList.add("future");
+          c.mag.querySelector(".cap").textContent = "upcoming \u2014 " + fmtShort(slot.ts);
+          c.head.textContent = "upcoming";
+          c.head.classList.remove("stale", ...PAUSE_CLASSES);
         } else {
           c.mag.classList.add("gap");
-          c.mag.classList.remove(...PAUSE_CLASSES);
+          c.mag.classList.remove("future", ...PAUSE_CLASSES);
           const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
           let last = null;
           for (let j = i; j >= 0; j--) if (c.model.slots[j].frame) {
@@ -956,7 +992,8 @@ var VTCore = (() => {
               if (!slot || slot.paused) continue;
               if (slot.frame && f.ts <= slot.frame.ts) continue;
               slot.frame = f;
-              slot.el.classList.remove("gap");
+              slot.future = false;
+              slot.el.classList.remove("gap", "future");
               let img = slot.el.querySelector("img");
               if (!img) {
                 img = document.createElement("img");
@@ -964,6 +1001,16 @@ var VTCore = (() => {
               }
               img.src = f.url;
               img.alt = k.id + " " + fmtTime(f.ts);
+            }
+            const overdue = Date.now();
+            for (const sl of c.model.slots) {
+              if (sl.future && !sl.frame && sl.ts + sl.step < overdue) {
+                sl.future = false;
+                if (sl.el) {
+                  sl.el.classList.remove("future");
+                  sl.el.classList.add("gap");
+                }
+              }
             }
           }
         }, Math.min(minStep, 1e4));
@@ -979,7 +1026,7 @@ var VTCore = (() => {
       destroy() {
         destroyed = true;
         if (pollTimer) clearInterval(pollTimer);
-        pv.close();
+        pv.retire();
         annTip().close();
         retireWrapper(wrap);
       }
@@ -1050,13 +1097,17 @@ var VTCore = (() => {
           } else {
             frame = slot && slot.frame;
             if (!frame) {
-              const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
-              let last = null;
-              for (let j = i; j >= 0; j--) if (rec.model.slots[j].frame) {
-                last = rec.model.slots[j].frame;
-                break;
+              if (slot && slot.future) {
+                offMsg = "UPCOMING \u2014 " + fmtShort(slot.ts);
+              } else {
+                const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
+                let last = null;
+                for (let j = i; j >= 0; j--) if (rec.model.slots[j].frame) {
+                  last = rec.model.slots[j].frame;
+                  break;
+                }
+                offMsg = last ? "OFFLINE \u2014 last seen " + fmtTime(last.ts) : "no data";
               }
-              offMsg = last ? "OFFLINE \u2014 last seen " + fmtTime(last.ts) : "no data";
             }
           }
         }
@@ -1118,7 +1169,7 @@ var VTCore = (() => {
       destroy() {
         destroyed = true;
         if (pollTimer) clearInterval(pollTimer);
-        pv.close();
+        pv.retire();
         retireWrapper(wrap);
       }
     };

@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.9.7
+
+Four fixes from live fleet use:
+
+- A refresh that swapped the DOM under a stationary cursor dimmed every
+  card, including the hovered one — the browser fires `mouseenter` on the
+  new strip but no `mousemove`, so the dim class landed with no card
+  marked hovered. Enter now positions the cursor too.
+- The click-in hi-res preview no longer closes on every dashboard
+  refresh: it's leased across the double-buffered remounts (the successor
+  mount adopts it; a real unmount closes it after a grace).
+- Hatch patterns (offline, paused, reasons) are painted with fixed
+  attachment so the diagonals run continuously across adjacent slots —
+  per-slot gradients restarted at every slot edge, and narrow-slot runs
+  showed only the first stripe color (a solid block).
+- Slots ahead of *now* are `future`, not offline: plain dark instead of
+  red hatch, "upcoming" instead of "offline — last seen", and they age
+  into real gaps only a full step past their tick with no frame.
+
+## 0.9.4 – 0.9.6
+
+- **Pause reasons + intent**: `POST /declare` accepts `X-Reason`
+  (`quiet | screen-sleep | app-stopped | system-down`) and `X-Intended`
+  (0/1); both ride the history event. Re-declaring with a different
+  reason while paused splits the band. Planned reasons render as
+  distinct cool-hue hatches with their own labels (SCREEN ASLEEP /
+  SYSTEM DOWN (PLANNED) / APP STOPPED / QUIET HOURS); `intended=false`
+  gets the amber triage hatch and SCREEN DARK (UNEXPECTED). Undeclared
+  silence stays offline-red: red means nobody said goodbye.
+
 ## 0.9.3
 
 - A resume frame landing exactly on a paused era's end boundary produced
