@@ -95,14 +95,18 @@ var VTCore = (() => {
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
 .ktl .slot.gap { background:repeating-linear-gradient(45deg,#1b1215,#1b1215 5px,#2a171b 5px,#2a171b 10px); }
 .ktl .slot.paused { background:repeating-linear-gradient(45deg,#17191c,#17191c 7px,#1d2024 7px,#1d2024 14px); }
-/* pause REASONS: one color grammar with the dashboards \u2014 planned = cool
- * blue-grey tints, unintended = amber, undeclared silence stays the red
- * .gap. Reason classes tint the hatch; .unintended overrides them all. */
-.ktl .slot.paused.r-screen-sleep { background:repeating-linear-gradient(45deg,#131a24,#131a24 7px,#19222f 7px,#19222f 14px); }
-.ktl .slot.paused.r-system-down { background:repeating-linear-gradient(45deg,#10151d,#10151d 7px,#161d28 7px,#161d28 14px); }
-.ktl .slot.paused.r-app-stopped { background:repeating-linear-gradient(45deg,#151c1a,#151c1a 7px,#1b2421 7px,#1b2421 14px); }
-.ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,#241b0f,#241b0f 7px,#2f2312 7px,#2f2312 14px); }
-.ktl .card-head .ft.paused.unintended, .ktl .tile.paused.unintended .t-off { color:#c9963f; }
+/* pause REASONS: one color grammar with the dashboards \u2014 planned = distinct
+ * cool hues (indigo = screen asleep, violet-slate = system down, teal = app
+ * stopped), unintended = amber, undeclared silence stays the red .gap.
+ * Reason classes replace the hatch; .unintended overrides them all. */
+.ktl .slot.paused.r-screen-sleep { background:repeating-linear-gradient(45deg,#182a4e,#182a4e 7px,#223c6e 7px,#223c6e 14px); }
+.ktl .slot.paused.r-system-down { background:repeating-linear-gradient(45deg,#28204a,#28204a 7px,#372c66 7px,#372c66 14px); }
+.ktl .slot.paused.r-app-stopped { background:repeating-linear-gradient(45deg,#123832,#123832 7px,#1a4c44 7px,#1a4c44 14px); }
+.ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,#4a350e,#4a350e 7px,#614614 7px,#614614 14px); }
+.ktl .card-head .ft.paused.r-screen-sleep, .ktl .tile.paused.r-screen-sleep .t-off { color:#8fb0e8; }
+.ktl .card-head .ft.paused.r-system-down, .ktl .tile.paused.r-system-down .t-off { color:#a897e0; }
+.ktl .card-head .ft.paused.r-app-stopped, .ktl .tile.paused.r-app-stopped .t-off { color:#6fc4b4; }
+.ktl .card-head .ft.paused.unintended, .ktl .tile.paused.unintended .t-off { color:#e8b155; }
 .ktl .mag.paused { border-color:var(--ktl-dim); }
 .ktl .mag.paused img { display:none; }
 .ktl .card-head .ft.paused { color:var(--ktl-dim); }
