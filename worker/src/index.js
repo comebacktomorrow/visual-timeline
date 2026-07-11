@@ -214,12 +214,22 @@ async function ensureRegistered(env, site, source, variant, cadence, ts, locatio
  * needs no declaration: the next frame is the resume, inferred client-side.
  * A source that dies unexpectedly never declares, so its silence renders as
  * offline — the heartbeat semantics survive. */
+// pause REASONS: the pause is the cadence MECHANIC; the reason says what in
+// the world caused it, and `intended` whether anyone asked for it. The
+// timeline renders each differently — and unintended dark gets the amber
+// triage treatment instead of the neutral hatch.
+const PAUSE_REASONS = new Set(['quiet', 'screen-sleep', 'app-stopped', 'system-down']);
+
 async function handleDeclare(request, env) {
   const site = (request.headers.get('x-site') || '').toLowerCase();
   const source = (request.headers.get('x-source') || request.headers.get('x-kiosk') || '').toLowerCase();
   const event = (request.headers.get('x-event') || '').toLowerCase();
+  const reasonRaw = (request.headers.get('x-reason') || '').toLowerCase();
+  const intendedRaw = (request.headers.get('x-intended') || '').trim();
   if (!ID_RE.test(site) || !ID_RE.test(source)) return json({ error: 'bad site/source' }, 400);
   if (event !== 'pause') return json({ error: 'unknown event' }, 400);
+  const reason = PAUSE_REASONS.has(reasonRaw) ? reasonRaw : undefined;
+  const intended = intendedRaw === '1' ? true : intendedRaw === '0' ? false : undefined;
   if (!(await authorize(request, env, site))) return json({ error: 'unauthorized' }, 401);
 
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -228,8 +238,14 @@ async function handleDeclare(request, env) {
     const entry = index.sites?.[site]?.[source];
     if (!entry) return json({ error: 'unknown source' }, 404);
     const last = entry.history[entry.history.length - 1];
-    if (last && last.paused) return json({ ok: true, note: 'already paused' });
-    entry.history.push({ since: Date.now(), variant: 'lo', paused: true });
+    // same pause re-declared = no-op; a DIFFERENT reason/intent while paused
+    // pushes a new event so the band splits (quiet hours -> box shut down)
+    if (last && last.paused && last.reason === reason && last.intended === intended)
+      return json({ ok: true, note: 'already paused' });
+    const evt = { since: Date.now(), variant: 'lo', paused: true };
+    if (reason !== undefined) evt.reason = reason;
+    if (intended !== undefined) evt.intended = intended;
+    entry.history.push(evt);
     const put = await env.FRAMES.put(INDEX_KEY, JSON.stringify(index), { onlyIf: { etagMatches: cur.etag } });
     if (put) {
       // drop this isolate's memos so the next upload re-checks wasPaused

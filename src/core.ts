@@ -76,6 +76,14 @@ const CSS = `
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
 .ktl .slot.gap { background:repeating-linear-gradient(45deg,#1b1215,#1b1215 5px,#2a171b 5px,#2a171b 10px); }
 .ktl .slot.paused { background:repeating-linear-gradient(45deg,#17191c,#17191c 7px,#1d2024 7px,#1d2024 14px); }
+/* pause REASONS: one color grammar with the dashboards — planned = cool
+ * blue-grey tints, unintended = amber, undeclared silence stays the red
+ * .gap. Reason classes tint the hatch; .unintended overrides them all. */
+.ktl .slot.paused.r-screen-sleep { background:repeating-linear-gradient(45deg,#131a24,#131a24 7px,#19222f 7px,#19222f 14px); }
+.ktl .slot.paused.r-system-down { background:repeating-linear-gradient(45deg,#10151d,#10151d 7px,#161d28 7px,#161d28 14px); }
+.ktl .slot.paused.r-app-stopped { background:repeating-linear-gradient(45deg,#151c1a,#151c1a 7px,#1b2421 7px,#1b2421 14px); }
+.ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,#241b0f,#241b0f 7px,#2f2312 7px,#2f2312 14px); }
+.ktl .card-head .ft.paused.unintended, .ktl .tile.paused.unintended .t-off { color:#c9963f; }
 .ktl .mag.paused { border-color:var(--ktl-dim); }
 .ktl .mag.paused img { display:none; }
 .ktl .card-head .ft.paused { color:var(--ktl-dim); }
@@ -240,7 +248,9 @@ function makeBackend(P, SPAN) {
           if (k.id === 'source-4') {
             decl.history = [
               { since: P.from - 864e5, variant: 'lo', cadence: 60e3 },
-              { since: P.from + SPAN * 0.2, variant: 'lo', paused: true },
+              // demo the reason+intent vocabulary: an UNINTENDED screen-off
+              // (power-policy blank) renders amber, not neutral
+              { since: P.from + SPAN * 0.2, variant: 'lo', paused: true, reason: 'screen-sleep', intended: false },
             ];
           }
           return decl;
@@ -468,8 +478,8 @@ function erasFor(decl, P) {
     .sort((a, b) => a.since - b.since);
   let runCad = decl.cadence || 60e3;
   if (hist.length && hist[0].cadence) runCad = hist[0].cadence;
-  const evts = [{ since: -8.64e15, cadence: runCad, paused: false }];
-  for (const h of hist) evts.push({ since: h.since, cadence: h.cadence, paused: !!h.paused });
+  const evts = [{ since: -8.64e15, cadence: runCad, paused: false, reason: undefined, intended: undefined }];
+  for (const h of hist) evts.push({ since: h.since, cadence: h.cadence, paused: !!h.paused, reason: h.reason, intended: h.intended });
   const eras = [];
   for (let i = 0; i < evts.length; i++) {
     const e = evts[i];
@@ -479,11 +489,31 @@ function erasFor(decl, P) {
     const to = Math.min(next ? next.since : P.to, P.to);
     if (to <= from) continue;
     const prev = eras[eras.length - 1];
-    if (prev && prev.paused === !!e.paused && prev.cadence === runCad) { prev.to = to; continue; }
-    eras.push({ from, to, cadence: runCad, paused: !!e.paused });
+    if (prev && prev.paused === !!e.paused && prev.cadence === runCad &&
+        prev.reason === e.reason && prev.intended === e.intended) { prev.to = to; continue; }
+    eras.push({ from, to, cadence: runCad, paused: !!e.paused, reason: e.reason, intended: e.intended });
   }
   if (!eras.length) eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false });
   return eras;
+}
+
+/* Presentation of a paused era/slot: the pause is the MECHANIC, the reason
+ * carries the meaning ("screen asleep" is a world-state; "paused" is what the
+ * uploader did about it). intended === false is the triage color: explained
+ * but nobody asked for it (power-policy blank, display handoff failure). */
+const PAUSE_CLASSES = ['paused', 'unintended', 'r-quiet', 'r-screen-sleep', 'r-app-stopped', 'r-system-down'];
+function pauseInfo(x) {
+  const r = x && x.reason;
+  const unintended = !!x && x.intended === false;
+  const label =
+    r === 'screen-sleep' ? (unintended ? 'SCREEN DARK (UNEXPECTED)' : 'SCREEN ASLEEP') :
+    r === 'system-down'  ? 'SYSTEM DOWN (PLANNED)' :
+    r === 'app-stopped'  ? 'APP STOPPED' :
+    r === 'quiet'        ? 'QUIET HOURS' : 'PAUSED';
+  const classes = ['paused'];
+  if (r) classes.push('r-' + r);
+  if (unintended) classes.push('unintended');
+  return { label, classes };
 }
 
 /* One flat slot list across all eras. Each slot knows its time span (for
@@ -521,10 +551,10 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
     const resume = probe.find((f) => f.ts > era.from && f.ts < era.to);
     if (resume) {
       const resumeTs = resume.ts;
-      slots.push({ ts: era.from, span: resumeTs - era.from, paused: true });
+      slots.push({ ts: era.from, span: resumeTs - era.from, paused: true, reason: era.reason, intended: era.intended });
       await pushActive({ from: resumeTs, to: era.to, cadence: era.cadence });
     } else {
-      slots.push({ ts: era.from, span: era.to - era.from, paused: true });
+      slots.push({ ts: era.from, span: era.to - era.from, paused: true, reason: era.reason, intended: era.intended });
     }
   }
 
@@ -720,7 +750,8 @@ export function mountTimeline(root, cfg) {
     const slots = model.slots;
     for (const sl of slots) {
       const el = document.createElement('div');
-      el.className = 'slot' + (sl.paused ? ' paused' : sl.frame ? '' : ' gap');
+      el.className = 'slot' + (sl.paused ? ' ' + pauseInfo(sl).classes.join(' ') : sl.frame ? '' : ' gap');
+      if (sl.paused) el.title = pauseInfo(sl).label.toLowerCase();
       // width ∝ time span, so x↔time stays linear across era boundaries
       el.style.flexGrow = String(sl.span / 1000);
       if (sl.frame) {
@@ -931,22 +962,23 @@ export function mountTimeline(root, cfg) {
       const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
       c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + 'px';
       if (slot && slot.frame) {
-        c.mag.classList.remove('gap', 'paused');
+        c.mag.classList.remove('gap', ...PAUSE_CLASSES);
         c.mag.querySelector('img').src = slot.frame.url;
         c.mag.querySelector('.cap').textContent = fmtTime(slot.frame.ts);
         c.head.textContent = '';                 // healthy: time lives on the magnifier
-        c.head.classList.remove('stale', 'paused');
+        c.head.classList.remove('stale', ...PAUSE_CLASSES);
       } else if (slot && slot.paused) {
-        // declared silence — neutral, not the red offline treatment
-        c.mag.classList.add('paused');
-        c.mag.classList.remove('gap');
-        c.mag.querySelector('.cap').textContent = 'paused';
-        c.head.textContent = 'paused';
-        c.head.classList.add('paused');
-        c.head.classList.remove('stale');
+        // declared silence — neutral (or amber when unintended), not offline-red
+        const pi = pauseInfo(slot);
+        c.mag.classList.remove('gap', ...PAUSE_CLASSES);
+        c.mag.classList.add(...pi.classes);
+        c.mag.querySelector('.cap').textContent = pi.label.toLowerCase();
+        c.head.textContent = pi.label.toLowerCase();
+        c.head.classList.remove('stale', ...PAUSE_CLASSES);
+        c.head.classList.add(...pi.classes);
       } else {
         c.mag.classList.add('gap');
-        c.mag.classList.remove('paused');
+        c.mag.classList.remove(...PAUSE_CLASSES);
         const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
         let last = null;
         for (let j = i; j >= 0; j--) if (c.model.slots[j].frame) { last = c.model.slots[j].frame; break; }
@@ -954,7 +986,7 @@ export function mountTimeline(root, cfg) {
         c.mag.querySelector('.cap').textContent = msg;
         c.head.textContent = msg;
         c.head.classList.add('stale');
-        c.head.classList.remove('paused');
+        c.head.classList.remove(...PAUSE_CLASSES);
       }
     }
     if (!external && cfg.onHover) cfg.onHover(cursorT);
@@ -1093,19 +1125,24 @@ export function mountGrid(root, cfg) {
     for (const k of kiosks) {
       const rec = tiles[k.id];
       if (!rec) continue;
-      let frame = null, offMsg = null, pausedMsg = null;
+      let frame = null, offMsg = null, pausedMsg = null, pausedSlot = null;
       const la = rec.model.lastActive;
       if (t == null) {
-        const tailPaused = rec.model.slots.length && rec.model.slots[rec.model.slots.length - 1].paused;
+        const tail = rec.model.slots.length ? rec.model.slots[rec.model.slots.length - 1] : null;
+        const tailPaused = tail && tail.paused;
         frame = lastFrame(rec);
-        if (tailPaused) pausedMsg = 'PAUSED' + (frame ? ' — last frame ' + fmtTime(frame.ts) : '');
+        if (tailPaused) {
+          pausedSlot = tail;
+          pausedMsg = pauseInfo(tail).label + (frame ? ' — last frame ' + fmtTime(frame.ts) : '');
+        }
         else if (!frame) offMsg = 'no data in window';
         else if (LIVE && la && Date.now() - frame.ts > 2 * la.step)
           offMsg = 'OFFLINE — last seen ' + fmtTime(frame.ts);
       } else {
         const slot = rec.model.slotAt(t);
         if (slot && slot.paused) {
-          pausedMsg = 'PAUSED';
+          pausedSlot = slot;
+          pausedMsg = pauseInfo(slot).label;
         } else {
           frame = slot && slot.frame;
           if (!frame) {
@@ -1117,7 +1154,8 @@ export function mountGrid(root, cfg) {
         }
       }
       rec.el.classList.toggle('offline', !!offMsg);
-      rec.el.classList.toggle('paused', !!pausedMsg && !offMsg);
+      rec.el.classList.remove(...PAUSE_CLASSES);
+      if (pausedMsg && !offMsg) rec.el.classList.add(...pauseInfo(pausedSlot).classes);
       rec.off.textContent = offMsg || pausedMsg || '';
       rec.shown = frame;
       if (frame && !offMsg && !pausedMsg) {
