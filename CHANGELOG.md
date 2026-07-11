@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.13
+
+- Time axis ticks now behave like Grafana's own panels. Increments span
+  the full range uPlot uses (minutes through years, not capped at 1 day)
+  and snap to local calendar boundaries — midnight, the top of the hour,
+  the 1st of the month — instead of raw epoch-multiple offsets, so grids
+  no longer drift off local `:00`/midnight in non-UTC timezones.
+- Tick spacing is sized from the actual rendered label width (canvas
+  `measureText`, same idea as Grafana's `calculateSpace`) instead of a
+  flat 90px guess, and each zoom tier gets its own label format
+  (minute/hour/day/year) instead of one whole-axis binary switch. A
+  30-day view went from 4 ticks to a Grafana-matching 15.
+- Axis text and tick marks now match Grafana's native dark-theme styling
+  exactly: 12px Inter, `rgb(204,204,220)` labels, `rgba(240,250,255,.09)`
+  grid/tick color — pulled straight from `@grafana/data`'s theme source
+  rather than eyeballed.
+
 ## 0.9.12
 
 - The future is now rendered as unknown, not predicted: every era is

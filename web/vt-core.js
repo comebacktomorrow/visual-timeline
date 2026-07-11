@@ -29,6 +29,7 @@ var VTCore = (() => {
 .ktl { display:flex; flex-direction:column; width:100%; height:100%; overflow:hidden;
        --ktl-bg:#181b1f; --ktl-bg2:#22262b; --ktl-border:#2c3235; --ktl-text:#ccccdc;
        --ktl-dim:#7b8087; --ktl-accent:#f2cc0c; --ktl-live:#73bf69; --ktl-off:#f2495c;
+       --ktl-axis-grid:rgba(240,250,255,.09);
        color:var(--ktl-text); font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif; }
 .ktl * { box-sizing:border-box; margin:0; padding:0; }
 .ktl .cards { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:6px; overflow-y:auto; }
@@ -187,10 +188,11 @@ var VTCore = (() => {
 .ktl-ann-tip .ag span { font-size:10px; color:#7b8087; border:1px solid #2c3235; border-radius:8px; padding:0 6px; }
 .ktl-ann-tip .item + .item { border-top:1px solid #1d2024; margin-top:5px; padding-top:5px; }
 .ktl .axis { flex:0 0 24px; position:relative; margin:4px 1px 0; overflow:hidden; }
-.ktl .axis .base { position:absolute; top:0; left:0; right:0; height:1px; background:var(--ktl-border); }
-.ktl .tick { position:absolute; top:0; transform:translateX(-50%); color:var(--ktl-dim); font-size:10px;
-             font-variant-numeric:tabular-nums; padding-top:6px; white-space:nowrap; }
-.ktl .tick::before { content:""; position:absolute; top:0; left:50%; width:1px; height:5px; background:var(--ktl-dim); }
+.ktl .axis .base { position:absolute; top:0; left:0; right:0; height:1px; background:var(--ktl-axis-grid); }
+.ktl .tick { position:absolute; top:0; transform:translateX(-50%); color:var(--ktl-text); font-size:12px;
+             font-family:'Inter','Helvetica','Arial',sans-serif;
+             font-variant-numeric:tabular-nums; padding-top:5px; white-space:nowrap; }
+.ktl .tick::before { content:""; position:absolute; top:0; left:50%; width:1px; height:4px; background:var(--ktl-axis-grid); }
 .ktl .acur { position:absolute; top:0; transform:translateX(-50%); color:#111; background:var(--ktl-accent);
              font-size:10px; font-weight:700; font-variant-numeric:tabular-nums; padding:0 5px;
              border-radius:2px; margin-top:5px; white-space:nowrap; z-index:2; }
@@ -627,8 +629,58 @@ var VTCore = (() => {
     3 * 36e5,
     6 * 36e5,
     12 * 36e5,
-    24 * 36e5
+    24 * 36e5,
+    2 * 864e5,
+    3 * 864e5,
+    4 * 864e5,
+    5 * 864e5,
+    6 * 864e5,
+    7 * 864e5,
+    8 * 864e5,
+    9 * 864e5,
+    10 * 864e5,
+    15 * 864e5,
+    30 * 864e5,
+    90 * 864e5,
+    365 * 864e5
   ];
+  function alignedStart(ts, stepMs) {
+    const d = new Date(ts);
+    if (stepMs >= 30 * 864e5) {
+      d.setHours(0, 0, 0, 0), d.setDate(1);
+    } else if (stepMs >= 864e5) {
+      d.setHours(0, 0, 0, 0);
+    } else if (stepMs >= 36e5) {
+      const stepHr = stepMs / 36e5;
+      d.setHours(Math.floor(d.getHours() / stepHr) * stepHr, 0, 0, 0);
+    } else {
+      const stepMin = stepMs / 6e4;
+      d.setMinutes(Math.floor(d.getMinutes() / stepMin) * stepMin, 0, 0);
+    }
+    return d;
+  }
+  function nextTick(d, stepMs) {
+    if (stepMs >= 30 * 864e5) d.setMonth(d.getMonth() + Math.round(stepMs / (30 * 864e5)));
+    else if (stepMs >= 864e5) d.setDate(d.getDate() + stepMs / 864e5);
+    else d.setTime(+d + stepMs);
+    return d;
+  }
+  function tickFormat(stepMs) {
+    if (stepMs < 36e5) return fmtShort;
+    if (stepMs < 24 * 36e5)
+      return (ts) => new Date(ts).toLocaleString("en-AU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+    if (stepMs < 365 * 864e5)
+      return (ts) => new Date(ts).toLocaleDateString("en-AU", { day: "2-digit", month: "2-digit" });
+    return (ts) => String(new Date(ts).getFullYear());
+  }
+  var TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
+  var TICK_LABEL_GAP = 14;
+  var measureCtx;
+  function measureTickWidth(text) {
+    if (!measureCtx) measureCtx = document.createElement("canvas").getContext("2d");
+    measureCtx.font = TICK_FONT;
+    return measureCtx.measureText(text).width;
+  }
   var popState = { el: null, keyH: null, retireTimer: null };
   function closePreview() {
     if (popState.retireTimer) {
@@ -869,15 +921,21 @@ var VTCore = (() => {
     function buildAxis() {
       const axis = q(".axis");
       const w = axis.clientWidth;
-      const maxTicks = Math.max(3, Math.floor(w / 90));
+      const roughMaxTicks = Math.max(3, Math.floor(w / 90));
+      const roughStep = TICK_STEPS.find((s) => SPAN / s <= roughMaxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
+      const sampleWidth = measureTickWidth(tickFormat(roughStep)(P.to));
+      const maxTicks = Math.max(3, Math.floor(w / (sampleWidth + TICK_LABEL_GAP)));
       const tickStep = TICK_STEPS.find((s) => SPAN / s <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-      const withDate = SPAN > 20 * 36e5;
+      const fmt = tickFormat(tickStep);
       axis.querySelectorAll(".tick").forEach((t) => t.remove());
-      for (let ts = Math.ceil(P.from / tickStep) * tickStep; ts <= P.to; ts += tickStep) {
+      let d = alignedStart(P.from, tickStep);
+      while (+d < P.from) d = nextTick(d, tickStep);
+      for (; +d <= P.to; d = nextTick(d, tickStep)) {
+        const ts = +d;
         const el = document.createElement("div");
         el.className = "tick";
         el.style.left = (ts - P.from) / SPAN * w + "px";
-        el.textContent = withDate ? new Date(ts).toLocaleString("en-AU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : fmtShort(ts);
+        el.textContent = fmt(ts);
         axis.appendChild(el);
       }
     }

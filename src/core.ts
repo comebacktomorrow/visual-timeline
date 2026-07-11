@@ -10,6 +10,7 @@ const CSS = `
 .ktl { display:flex; flex-direction:column; width:100%; height:100%; overflow:hidden;
        --ktl-bg:#181b1f; --ktl-bg2:#22262b; --ktl-border:#2c3235; --ktl-text:#ccccdc;
        --ktl-dim:#7b8087; --ktl-accent:#f2cc0c; --ktl-live:#73bf69; --ktl-off:#f2495c;
+       --ktl-axis-grid:rgba(240,250,255,.09);
        color:var(--ktl-text); font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif; }
 .ktl * { box-sizing:border-box; margin:0; padding:0; }
 .ktl .cards { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:6px; overflow-y:auto; }
@@ -168,10 +169,11 @@ const CSS = `
 .ktl-ann-tip .ag span { font-size:10px; color:#7b8087; border:1px solid #2c3235; border-radius:8px; padding:0 6px; }
 .ktl-ann-tip .item + .item { border-top:1px solid #1d2024; margin-top:5px; padding-top:5px; }
 .ktl .axis { flex:0 0 24px; position:relative; margin:4px 1px 0; overflow:hidden; }
-.ktl .axis .base { position:absolute; top:0; left:0; right:0; height:1px; background:var(--ktl-border); }
-.ktl .tick { position:absolute; top:0; transform:translateX(-50%); color:var(--ktl-dim); font-size:10px;
-             font-variant-numeric:tabular-nums; padding-top:6px; white-space:nowrap; }
-.ktl .tick::before { content:""; position:absolute; top:0; left:50%; width:1px; height:5px; background:var(--ktl-dim); }
+.ktl .axis .base { position:absolute; top:0; left:0; right:0; height:1px; background:var(--ktl-axis-grid); }
+.ktl .tick { position:absolute; top:0; transform:translateX(-50%); color:var(--ktl-text); font-size:12px;
+             font-family:'Inter','Helvetica','Arial',sans-serif;
+             font-variant-numeric:tabular-nums; padding-top:5px; white-space:nowrap; }
+.ktl .tick::before { content:""; position:absolute; top:0; left:50%; width:1px; height:4px; background:var(--ktl-axis-grid); }
 .ktl .acur { position:absolute; top:0; transform:translateX(-50%); color:#111; background:var(--ktl-accent);
              font-size:10px; font-weight:700; font-variant-numeric:tabular-nums; padding:0 5px;
              border-radius:2px; margin-top:5px; white-space:nowrap; z-index:2; }
@@ -694,7 +696,60 @@ function headTitle(decl) {
 }
 
 const TICK_STEPS = [60e3, 5 * 60e3, 10 * 60e3, 15 * 60e3, 30 * 60e3,
-                    3600e3, 2 * 3600e3, 3 * 3600e3, 6 * 3600e3, 12 * 3600e3, 24 * 3600e3];
+                    3600e3, 2 * 3600e3, 3 * 3600e3, 6 * 3600e3, 12 * 3600e3,
+                    24 * 3600e3, 2 * 86400e3, 3 * 86400e3, 4 * 86400e3,
+                    5 * 86400e3, 6 * 86400e3, 7 * 86400e3, 8 * 86400e3,
+                    9 * 86400e3, 10 * 86400e3, 15 * 86400e3,
+                    30 * 86400e3, 90 * 86400e3, 365 * 86400e3];
+
+/* snaps down to the nearest local calendar boundary at or before `ts` for the
+ * given step's granularity (minute/hour/midnight/1st-of-month), so ticks land
+ * on :00 and local midnight instead of arbitrary epoch-multiple offsets */
+function alignedStart(ts, stepMs) {
+  const d = new Date(ts);
+  if (stepMs >= 30 * 86400e3) {
+    d.setHours(0, 0, 0, 0), d.setDate(1);
+  } else if (stepMs >= 86400e3) {
+    d.setHours(0, 0, 0, 0);
+  } else if (stepMs >= 3600e3) {
+    const stepHr = stepMs / 3600e3;
+    d.setHours(Math.floor(d.getHours() / stepHr) * stepHr, 0, 0, 0);
+  } else {
+    const stepMin = stepMs / 60e3;
+    d.setMinutes(Math.floor(d.getMinutes() / stepMin) * stepMin, 0, 0);
+  }
+  return d;
+}
+
+/* advances by calendar units (not raw ms) at day+ granularity so DST and
+ * variable month lengths don't drift the grid */
+function nextTick(d, stepMs) {
+  if (stepMs >= 30 * 86400e3) d.setMonth(d.getMonth() + Math.round(stepMs / (30 * 86400e3)));
+  else if (stepMs >= 86400e3) d.setDate(d.getDate() + stepMs / 86400e3);
+  else d.setTime(+d + stepMs);
+  return d;
+}
+
+/* one format per zoom tier (not a whole-axis binary switch), matching
+ * Grafana's per-increment axis labels */
+function tickFormat(stepMs) {
+  if (stepMs < 3600e3) return fmtShort;
+  if (stepMs < 24 * 3600e3)
+    return ts => new Date(ts).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+  if (stepMs < 365 * 86400e3)
+    return ts => new Date(ts).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit' });
+  return ts => String(new Date(ts).getFullYear());
+}
+
+const TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
+const TICK_LABEL_GAP = 14;
+let measureCtx;
+
+function measureTickWidth(text) {
+  if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+  measureCtx.font = TICK_FONT;
+  return measureCtx.measureText(text).width;
+}
 
 /* cursor-anchored larger preview (not full-screen), shared by both modes.
  * Shows the frame at native upload resolution — capture size is the only
@@ -978,17 +1033,27 @@ export function mountTimeline(root, cfg) {
   function buildAxis() {
     const axis = q('.axis');
     const w = axis.clientWidth;
-    const maxTicks = Math.max(3, Math.floor(w / 90));
+
+    // pass 1: rough step from a flat guess, just to pick a representative
+    // label to measure (mirrors Grafana's calculateSpace bootstrap)
+    const roughMaxTicks = Math.max(3, Math.floor(w / 90));
+    const roughStep = TICK_STEPS.find(s => SPAN / s <= roughMaxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
+    const sampleWidth = measureTickWidth(tickFormat(roughStep)(P.to));
+
+    // pass 2: real step, sized to the label width that will actually render
+    const maxTicks = Math.max(3, Math.floor(w / (sampleWidth + TICK_LABEL_GAP)));
     const tickStep = TICK_STEPS.find(s => SPAN / s <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-    const withDate = SPAN > 20 * 3600e3;
+    const fmt = tickFormat(tickStep);
+
     axis.querySelectorAll('.tick').forEach(t => t.remove());
-    for (let ts = Math.ceil(P.from / tickStep) * tickStep; ts <= P.to; ts += tickStep) {
+    let d = alignedStart(P.from, tickStep);
+    while (+d < P.from) d = nextTick(d, tickStep);
+    for (; +d <= P.to; d = nextTick(d, tickStep)) {
+      const ts = +d;
       const el = document.createElement('div');
       el.className = 'tick';
       el.style.left = ((ts - P.from) / SPAN * w) + 'px';
-      el.textContent = withDate
-        ? new Date(ts).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
-        : fmtShort(ts);
+      el.textContent = fmt(ts);
       axis.appendChild(el);
     }
   }
