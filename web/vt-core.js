@@ -228,12 +228,15 @@ var VTCore = (() => {
 .ktl-pop .cap { text-align:center; color:#ccccdc; font-size:11px; padding:3px 0 0;
                 font-variant-numeric:tabular-nums; }`;
   function injectStyles() {
-    if (!document.getElementById(STYLE_ID)) {
-      const s = document.createElement("style");
-      s.id = STYLE_ID;
-      s.textContent = CSS;
-      document.head.appendChild(s);
+    const existing = document.getElementById(STYLE_ID);
+    if (existing) {
+      if (existing.textContent !== CSS) existing.textContent = CSS;
+      return;
     }
+    const s = document.createElement("style");
+    s.id = STYLE_ID;
+    s.textContent = CSS;
+    document.head.appendChild(s);
   }
   var SITES = {
     "site-a": [

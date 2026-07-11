@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.15
+
+- injectStyles refreshes the shared style tag when a newer module version
+  executes in a long-lived page — previously the first-injected CSS won
+  forever, so a plugin update could render with the previous version's
+  styles until a hard reload.
+
 ## 0.9.14
 
 - The future looks EMPTY, not black: the beyond-now region renders as

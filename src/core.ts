@@ -210,12 +210,17 @@ const CSS = `
                 font-variant-numeric:tabular-nums; }`;
 
 function injectStyles() {
-  if (!document.getElementById(STYLE_ID)) {
-    const s = document.createElement('style');
-    s.id = STYLE_ID;
-    s.textContent = CSS;
-    document.head.appendChild(s);
+  const existing = document.getElementById(STYLE_ID);
+  if (existing) {
+    // a NEWER module version executing in a long-lived page (SPA navigation,
+    // cached bundles) must refresh the shared styles, not defer to stale ones
+    if (existing.textContent !== CSS) existing.textContent = CSS;
+    return;
   }
+  const s = document.createElement('style');
+  s.id = STYLE_ID;
+  s.textContent = CSS;
+  document.head.appendChild(s);
 }
 
 /* ================== built-in demo data (backend seam) ==================
