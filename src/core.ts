@@ -99,9 +99,14 @@ const CSS = `
 .ktl .slot.r-system-down .band-label { color:#a897e0; }
 .ktl .slot.r-app-stopped .band-label { color:#6fc4b4; }
 .ktl .slot.unintended .band-label { color:#e8b155; }
-/* future slots: the window extends past now — nothing has happened yet, so
- * neither offline-red nor any hatch; the strip's own dark shows through */
-.ktl .slot.future { background:transparent; }
+/* the ONE pending slot (its tick passed, frame in flight) pulses gently —
+ * in limbo, not offline. Everything further ahead is one inert .beyond
+ * filler: the future is unknown, so it gets no shading at all. */
+.ktl .slot.future { background:transparent; position:relative; }
+.ktl .slot.future::before { content:""; position:absolute; inset:0; background:#232830;
+  animation:ktl-limbo 2.2s ease-in-out infinite; }
+@keyframes ktl-limbo { 0%,100% { opacity:.15 } 50% { opacity:.55 } }
+.ktl .slot.beyond { background:transparent; }
 .ktl .boot-err { flex:1 1 auto; display:flex; align-items:center; justify-content:center;
                  color:var(--ktl-off); font-size:12px; text-align:center; padding:14px; }
 .ktl .mag.future { border-color:var(--ktl-dim); }
@@ -578,44 +583,81 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
     }
   }
 
+  // Beyond-now horizon: the window can extend past now, but nothing is
+  // KNOWN there — every era is clamped to min(now, P.to) and ONE inert
+  // .beyond spacer covers the remainder (keeps x↔time linear; the poll
+  // carves real slots out of it, or grows a tail pause band into it, as
+  // time actually passes). Bands that painted prediction as knowledge
+  // ("system down forever into the future") stop at now — and so do
+  // active eras bounded by FUTURE events (a scheduled cadence change
+  // must not spray pending slots across the next 45 minutes).
+  const nowAtBuild = Date.now();
+  const horizon = Math.min(P.to, nowAtBuild);
   for (const era of eras) {
-    if (!era.paused) { await pushActive(era); continue; }
+    const eFrom = era.from;
+    const eTo = Math.min(era.to, horizon);
+    const isTail = era === eras[eras.length - 1];
+    if (!era.paused) {
+      if (eTo > eFrom) await pushActive({ from: eFrom, to: eTo, cadence: era.cadence });
+      continue;
+    }
     // BOUNDED paused era (a later history event closes it): the registry is
     // the truth — render the whole span paused, no probe. Probing here is
     // what broke sandwiched pauses: uploads snap to the NEAREST grid point,
     // so the goodbye frame sent just before the declare can carry a key up
     // to cadence/2 AFTER era.from — a phantom "resume" that split the era
     // into a sliver of pause plus a frameless "active" run of offline-red.
-    const isTail = era === eras[eras.length - 1];
     if (!isTail) {
-      slots.push({ ts: era.from, span: era.to - era.from, paused: true, reason: era.reason, intended: era.intended });
+      if (eTo > eFrom) slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
       continue;
     }
     // TAIL paused era: no closing event yet — infer resume from frames
     // (crash-safe: a source that dies while paused never resumes). Ignore
     // the first cadence of the era: that's where the round-half-up goodbye
     // straggler lands; a real resume that fast is indistinguishable anyway
-    // and costs at most one cadence of detection lag.
-    const probe = await backend.frames(decl.site, decl.id, era.from, era.to, era.cadence);
-    const resume = probe.find((f) => f.ts >= era.from + era.cadence && f.ts < era.to);
+    // and costs at most one cadence of detection lag. The band is clamped
+    // to NOW — the future portion of the window is unknown, not paused.
+    if (eTo <= eFrom) continue;
+    const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, era.cadence);
+    const resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
     if (resume) {
       const resumeTs = resume.ts;
-      slots.push({ ts: era.from, span: resumeTs - era.from, paused: true, reason: era.reason, intended: era.intended });
-      await pushActive({ from: resumeTs, to: era.to, cadence: era.cadence });
+      slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended });
+      if (eTo > resumeTs) await pushActive({ from: resumeTs, to: eTo, cadence: era.cadence });
     } else {
-      slots.push({ ts: era.from, span: era.to - era.from, paused: true, reason: era.reason, intended: era.intended });
+      slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
     }
+  }
+  // one spacer for everything past the horizon
+  if (P.to > horizon) {
+    const last = slots[slots.length - 1];
+    const covered = !last ? horizon
+      : (last.paused || last.beyond) ? last.ts + last.span
+      : last.ts + last.step / 2;
+    const fillerFrom = Math.min(Math.max(covered, horizon - 1), P.to);
+    if (P.to - fillerFrom > 0) slots.push({ ts: fillerFrom, span: P.to - fillerFrom, beyond: true });
   }
 
   function slotAt(t) {
     for (const sl of slots) {
-      const from = sl.paused ? sl.ts : sl.ts - sl.span / 2;
-      const to = sl.paused ? sl.ts + sl.span : sl.ts + sl.span / 2;
-      if (t < to) return t >= from || sl === slots[0] ? sl : sl;
+      const edge = sl.paused || sl.beyond;   // bands/fillers span [ts, ts+span); ticks are centered
+      const from = edge ? sl.ts : sl.ts - sl.span / 2;
+      const to = edge ? sl.ts + sl.span : sl.ts + sl.span / 2;
+      if (t < to) {
+        if (sl.beyond) {
+          // the filler's leading half-step is the tail of the last real
+          // slot's coverage — resolve to it so the live-edge rest cursor
+          // shows the latest frame instead of the unknown-future dash
+          const i = slots.indexOf(sl);
+          const prev = i > 0 ? slots[i - 1] : null;
+          if (prev && !prev.beyond && t < sl.ts + (prev.step || 0) / 2) return prev;
+        }
+        return t >= from || sl === slots[0] ? sl : sl;
+      }
     }
     return slots[slots.length - 1] || null;
   }
-  const lastActive = [...slots].reverse().find((sl) => !sl.paused) || null;
+  const lastActive = [...slots].reverse().find((sl) => !sl.paused && !sl.beyond) || null;
   return { eras, slots, slotAt, lastActive };
 }
 
@@ -845,7 +887,7 @@ export function mountTimeline(root, cfg) {
     const slots = model.slots;
     for (const sl of slots) {
       const el = document.createElement('div');
-      el.className = 'slot' + (sl.paused ? ' ' + pauseInfo(sl).classes.join(' ') : sl.frame ? '' : sl.future ? ' future' : ' gap');
+      el.className = 'slot' + (sl.paused ? ' ' + pauseInfo(sl).classes.join(' ') : sl.beyond ? ' beyond' : sl.frame ? '' : sl.future ? ' future' : ' gap');
       if (sl.paused) el.title = pauseInfo(sl).label.toLowerCase();
       // width ∝ time span, so x↔time stays linear across era boundaries
       el.style.flexGrow = String(sl.span / 1000);
@@ -860,6 +902,7 @@ export function mountTimeline(root, cfg) {
     dressStrip(model);   // hatch alignment + band labels (re-run post-reveal)
     const hoverAt = e => {
       const r = strip.getBoundingClientRect();
+      if (!r.width) return;   // stale wrapper mid-swap: no geometry, no cursor
       const t = P.from + SPAN * ((e.clientX - r.left) / r.width);
       setCursor(t, card, false);
     };
@@ -1080,6 +1123,13 @@ export function mountTimeline(root, cfg) {
         c.head.textContent = pi.label.toLowerCase();
         c.head.classList.remove('stale', ...PAUSE_CLASSES);
         c.head.classList.add(...pi.classes);
+      } else if (slot && slot.beyond) {
+        // ahead of now: unknown, deliberately unlabeled
+        c.mag.classList.remove('gap', ...PAUSE_CLASSES);
+        c.mag.classList.add('future');
+        c.mag.querySelector('.cap').textContent = '—';
+        c.head.textContent = '';
+        c.head.classList.remove('stale', ...PAUSE_CLASSES);
       } else if (slot && slot.future) {
         // not offline, not stale: either the tick is ahead of now, or it
         // just passed and its frame is still in flight (one-step grace)
@@ -1158,6 +1208,42 @@ export function mountTimeline(root, cfg) {
       pollTimer = setInterval(async () => {
         for (const k of kiosks) {
           const c = cards[k.id];
+          // advance the live edge: newly-elapsed ticks are carved out of the
+          // beyond filler (active tail), or a tail pause band GROWS into it —
+          // the strip keeps sliding between dashboard refreshes without ever
+          // shading time that hasn't happened
+          const mSlots = c.model.slots;
+          const filler = mSlots.length && mSlots[mSlots.length - 1].beyond ? mSlots[mSlots.length - 1] : null;
+          if (filler) {
+            const nowP = Date.now();
+            const prev = mSlots.length > 1 ? mSlots[mSlots.length - 2] : null;
+            if (prev && prev.paused) {
+              const grow = Math.min(nowP, filler.ts + filler.span) - filler.ts;
+              if (grow > 0) {
+                prev.span += grow;
+                filler.ts += grow; filler.span -= grow;
+                if (prev.el) prev.el.style.flexGrow = String(prev.span / 1000);
+                if (filler.span <= 0) { if (filler.el) filler.el.remove(); mSlots.pop(); }
+                else if (filler.el) filler.el.style.flexGrow = String(filler.span / 1000);
+              }
+            } else if (prev && prev.step) {
+              let nextTs = prev.ts + prev.step;
+              while (mSlots[mSlots.length - 1] && mSlots[mSlots.length - 1].beyond && nextTs <= nowP) {
+                const f = mSlots[mSlots.length - 1];
+                const sl = { ts: nextTs, span: prev.step, frame: null, cadence: prev.cadence, step: prev.step, future: true };
+                const el = document.createElement('div');
+                el.className = 'slot future';
+                el.style.flexGrow = String(sl.span / 1000);
+                if (f.el && f.el.parentNode) f.el.parentNode.insertBefore(el, f.el);
+                sl.el = el;
+                mSlots.splice(mSlots.length - 1, 0, sl);
+                f.span -= sl.span; f.ts += sl.span;
+                if (f.span <= 0) { if (f.el) f.el.remove(); mSlots.pop(); }
+                else if (f.el) f.el.style.flexGrow = String(f.span / 1000);
+                nextTs += prev.step;
+              }
+            }
+          }
           const la = c.model.lastActive;
           if (!la) continue;                    // tail era is a declared pause
           let lastTs = P.from;
@@ -1168,7 +1254,7 @@ export function mountTimeline(root, cfg) {
           if (destroyed) return;
           for (const f of fresh) {
             const slot = c.model.slotAt(f.ts);
-            if (!slot || slot.paused) continue;
+            if (!slot || slot.paused || slot.beyond) continue;
             // newer frames REPLACE the bucket representative (frames past
             // the window end clamp into the last bucket) so the right edge
             // keeps sliding between dashboard refreshes — grid parity
@@ -1285,9 +1371,11 @@ export function mountGrid(root, cfg) {
         } else {
           frame = slot && slot.frame;
           if (!frame) {
-            if (slot && slot.future) {
-              // ahead of now, or just-passed with the frame in flight
-              offMsg = (slot.ts <= Date.now() ? 'EXPECTED — ' : 'UPCOMING — ') + fmtShort(slot.ts);
+            if (slot && slot.beyond) {
+              offMsg = '—';   // ahead of now: unknown, not a failure
+            } else if (slot && slot.future) {
+              // just-passed tick, frame in flight
+              offMsg = 'EXPECTED — ' + fmtShort(slot.ts);
             } else {
               const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
               let last = null;
@@ -1354,7 +1442,7 @@ export function mountGrid(root, cfg) {
           if (destroyed) return;
           for (const f of fresh) {
             const slot = rec.model.slotAt(f.ts);
-            if (!slot || slot.paused) continue;
+            if (!slot || slot.paused || slot.beyond) continue;
             // newer frames replace the bucket representative so "latest" slides
             if (!slot.frame || f.ts > slot.frame.ts) slot.frame = f;
           }

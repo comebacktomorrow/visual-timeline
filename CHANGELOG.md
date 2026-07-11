@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.12
+
+- The future is now rendered as unknown, not predicted: every era is
+  clamped to now, so pause bands (SYSTEM DOWN, SCREEN DARK, ...) stop at
+  the present instead of shading the rest of the window, and only ONE
+  pending slot exists — the tick whose frame is in flight — pulsing
+  gently as an in-limbo indicator. Everything past now is a single inert
+  spacer: no shading, no labels, hover shows a plain dash.
+- The live edge still slides between dashboard refreshes: the poll
+  carves newly-elapsed ticks out of the spacer (or grows a tail pause
+  band into it) as time actually passes.
+- Cursor guard against zero-width stale wrappers mid-swap, and the
+  live-edge rest cursor resolves to the latest frame rather than the
+  spacer boundary.
+
 ## 0.9.11
 
 - The live edge no longer flashes "offline — last seen" while the newest

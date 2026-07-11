@@ -118,9 +118,14 @@ var VTCore = (() => {
 .ktl .slot.r-system-down .band-label { color:#a897e0; }
 .ktl .slot.r-app-stopped .band-label { color:#6fc4b4; }
 .ktl .slot.unintended .band-label { color:#e8b155; }
-/* future slots: the window extends past now \u2014 nothing has happened yet, so
- * neither offline-red nor any hatch; the strip's own dark shows through */
-.ktl .slot.future { background:transparent; }
+/* the ONE pending slot (its tick passed, frame in flight) pulses gently \u2014
+ * in limbo, not offline. Everything further ahead is one inert .beyond
+ * filler: the future is unknown, so it gets no shading at all. */
+.ktl .slot.future { background:transparent; position:relative; }
+.ktl .slot.future::before { content:""; position:absolute; inset:0; background:#232830;
+  animation:ktl-limbo 2.2s ease-in-out infinite; }
+@keyframes ktl-limbo { 0%,100% { opacity:.15 } 50% { opacity:.55 } }
+.ktl .slot.beyond { background:transparent; }
 .ktl .boot-err { flex:1 1 auto; display:flex; align-items:center; justify-content:center;
                  color:var(--ktl-off); font-size:12px; text-align:center; padding:14px; }
 .ktl .mag.future { border-color:var(--ktl-dim); }
@@ -533,35 +538,54 @@ var VTCore = (() => {
         slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step > nowMs });
       }
     }
+    const nowAtBuild = Date.now();
+    const horizon = Math.min(P.to, nowAtBuild);
     for (const era of eras) {
-      if (!era.paused) {
-        await pushActive(era);
-        continue;
-      }
+      const eFrom = era.from;
+      const eTo = Math.min(era.to, horizon);
       const isTail = era === eras[eras.length - 1];
-      if (!isTail) {
-        slots.push({ ts: era.from, span: era.to - era.from, paused: true, reason: era.reason, intended: era.intended });
+      if (!era.paused) {
+        if (eTo > eFrom) await pushActive({ from: eFrom, to: eTo, cadence: era.cadence });
         continue;
       }
-      const probe = await backend.frames(decl.site, decl.id, era.from, era.to, era.cadence);
-      const resume = probe.find((f) => f.ts >= era.from + era.cadence && f.ts < era.to);
+      if (!isTail) {
+        if (eTo > eFrom) slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
+        continue;
+      }
+      if (eTo <= eFrom) continue;
+      const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, era.cadence);
+      const resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
       if (resume) {
         const resumeTs = resume.ts;
-        slots.push({ ts: era.from, span: resumeTs - era.from, paused: true, reason: era.reason, intended: era.intended });
-        await pushActive({ from: resumeTs, to: era.to, cadence: era.cadence });
+        slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended });
+        if (eTo > resumeTs) await pushActive({ from: resumeTs, to: eTo, cadence: era.cadence });
       } else {
-        slots.push({ ts: era.from, span: era.to - era.from, paused: true, reason: era.reason, intended: era.intended });
+        slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
       }
+    }
+    if (P.to > horizon) {
+      const last = slots[slots.length - 1];
+      const covered = !last ? horizon : last.paused || last.beyond ? last.ts + last.span : last.ts + last.step / 2;
+      const fillerFrom = Math.min(Math.max(covered, horizon - 1), P.to);
+      if (P.to - fillerFrom > 0) slots.push({ ts: fillerFrom, span: P.to - fillerFrom, beyond: true });
     }
     function slotAt(t) {
       for (const sl of slots) {
-        const from = sl.paused ? sl.ts : sl.ts - sl.span / 2;
-        const to = sl.paused ? sl.ts + sl.span : sl.ts + sl.span / 2;
-        if (t < to) return t >= from || sl === slots[0] ? sl : sl;
+        const edge = sl.paused || sl.beyond;
+        const from = edge ? sl.ts : sl.ts - sl.span / 2;
+        const to = edge ? sl.ts + sl.span : sl.ts + sl.span / 2;
+        if (t < to) {
+          if (sl.beyond) {
+            const i = slots.indexOf(sl);
+            const prev = i > 0 ? slots[i - 1] : null;
+            if (prev && !prev.beyond && t < sl.ts + (prev.step || 0) / 2) return prev;
+          }
+          return t >= from || sl === slots[0] ? sl : sl;
+        }
       }
       return slots[slots.length - 1] || null;
     }
-    const lastActive = [...slots].reverse().find((sl) => !sl.paused) || null;
+    const lastActive = [...slots].reverse().find((sl) => !sl.paused && !sl.beyond) || null;
     return { eras, slots, slotAt, lastActive };
   }
   function parseTagFilter(expr) {
@@ -757,7 +781,7 @@ var VTCore = (() => {
       const slots = model.slots;
       for (const sl of slots) {
         const el = document.createElement("div");
-        el.className = "slot" + (sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.frame ? "" : sl.future ? " future" : " gap");
+        el.className = "slot" + (sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? "" : sl.future ? " future" : " gap");
         if (sl.paused) el.title = pauseInfo(sl).label.toLowerCase();
         el.style.flexGrow = String(sl.span / 1e3);
         if (sl.frame) {
@@ -772,6 +796,7 @@ var VTCore = (() => {
       dressStrip(model);
       const hoverAt = (e) => {
         const r = strip.getBoundingClientRect();
+        if (!r.width) return;
         const t = P.from + SPAN * ((e.clientX - r.left) / r.width);
         setCursor(t, card, false);
       };
@@ -965,6 +990,12 @@ var VTCore = (() => {
           c.head.textContent = pi.label.toLowerCase();
           c.head.classList.remove("stale", ...PAUSE_CLASSES);
           c.head.classList.add(...pi.classes);
+        } else if (slot && slot.beyond) {
+          c.mag.classList.remove("gap", ...PAUSE_CLASSES);
+          c.mag.classList.add("future");
+          c.mag.querySelector(".cap").textContent = "\u2014";
+          c.head.textContent = "";
+          c.head.classList.remove("stale", ...PAUSE_CLASSES);
         } else if (slot && slot.future) {
           const inFlight = slot.ts <= Date.now();
           c.mag.classList.remove("gap", ...PAUSE_CLASSES);
@@ -1029,6 +1060,44 @@ var VTCore = (() => {
         pollTimer = setInterval(async () => {
           for (const k of kiosks) {
             const c = cards[k.id];
+            const mSlots = c.model.slots;
+            const filler = mSlots.length && mSlots[mSlots.length - 1].beyond ? mSlots[mSlots.length - 1] : null;
+            if (filler) {
+              const nowP = Date.now();
+              const prev = mSlots.length > 1 ? mSlots[mSlots.length - 2] : null;
+              if (prev && prev.paused) {
+                const grow = Math.min(nowP, filler.ts + filler.span) - filler.ts;
+                if (grow > 0) {
+                  prev.span += grow;
+                  filler.ts += grow;
+                  filler.span -= grow;
+                  if (prev.el) prev.el.style.flexGrow = String(prev.span / 1e3);
+                  if (filler.span <= 0) {
+                    if (filler.el) filler.el.remove();
+                    mSlots.pop();
+                  } else if (filler.el) filler.el.style.flexGrow = String(filler.span / 1e3);
+                }
+              } else if (prev && prev.step) {
+                let nextTs = prev.ts + prev.step;
+                while (mSlots[mSlots.length - 1] && mSlots[mSlots.length - 1].beyond && nextTs <= nowP) {
+                  const f = mSlots[mSlots.length - 1];
+                  const sl = { ts: nextTs, span: prev.step, frame: null, cadence: prev.cadence, step: prev.step, future: true };
+                  const el = document.createElement("div");
+                  el.className = "slot future";
+                  el.style.flexGrow = String(sl.span / 1e3);
+                  if (f.el && f.el.parentNode) f.el.parentNode.insertBefore(el, f.el);
+                  sl.el = el;
+                  mSlots.splice(mSlots.length - 1, 0, sl);
+                  f.span -= sl.span;
+                  f.ts += sl.span;
+                  if (f.span <= 0) {
+                    if (f.el) f.el.remove();
+                    mSlots.pop();
+                  } else if (f.el) f.el.style.flexGrow = String(f.span / 1e3);
+                  nextTs += prev.step;
+                }
+              }
+            }
             const la = c.model.lastActive;
             if (!la) continue;
             let lastTs = P.from;
@@ -1042,7 +1111,7 @@ var VTCore = (() => {
             if (destroyed) return;
             for (const f of fresh) {
               const slot = c.model.slotAt(f.ts);
-              if (!slot || slot.paused) continue;
+              if (!slot || slot.paused || slot.beyond) continue;
               if (slot.frame && f.ts <= slot.frame.ts) continue;
               slot.frame = f;
               slot.future = false;
@@ -1150,8 +1219,10 @@ var VTCore = (() => {
           } else {
             frame = slot && slot.frame;
             if (!frame) {
-              if (slot && slot.future) {
-                offMsg = (slot.ts <= Date.now() ? "EXPECTED \u2014 " : "UPCOMING \u2014 ") + fmtShort(slot.ts);
+              if (slot && slot.beyond) {
+                offMsg = "\u2014";
+              } else if (slot && slot.future) {
+                offMsg = "EXPECTED \u2014 " + fmtShort(slot.ts);
               } else {
                 const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
                 let last = null;
@@ -1215,7 +1286,7 @@ var VTCore = (() => {
             if (destroyed) return;
             for (const f of fresh) {
               const slot = rec.model.slotAt(f.ts);
-              if (!slot || slot.paused) continue;
+              if (!slot || slot.paused || slot.beyond) continue;
               if (!slot.frame || f.ts > slot.frame.ts) slot.frame = f;
             }
           }
