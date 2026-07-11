@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.10
+
+- Sandwiched pause bands no longer corrupt into offline-red: uploads
+  snap to the NEAREST cadence point, so the goodbye frame sent just
+  before a declare could carry a key up to half a cadence after the
+  pause began — a phantom "resume" that split the era into a sliver of
+  pause plus a frameless "active" run of red gaps. Bounded pause eras
+  (a later history event closes them) now trust the registry and never
+  probe; only the unbounded tail era infers resume from frames, and it
+  ignores the first cadence where the straggler lands.
+- A window that is entirely declared-pause renders its band instead of
+  vanishing: hideEmpty now treats declared pause as data.
+
 ## 0.9.9
 
 - Hatch continuity done right: the fixed-attachment trick from 0.9.7

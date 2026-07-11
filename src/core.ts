@@ -577,13 +577,24 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
 
   for (const era of eras) {
     if (!era.paused) { await pushActive(era); continue; }
-    // paused era: probe for frames — data inside it means the source resumed.
-    // Step-snapping can surface boundary frames at grid keys just outside the
-    // era (the last pre-pause frame before era.from, or the resume frame AT
-    // era.to when a resume entry bounds the era); only frames STRICTLY inside
-    // count — a frame at era.to belongs to the next era, which renders it.
+    // BOUNDED paused era (a later history event closes it): the registry is
+    // the truth — render the whole span paused, no probe. Probing here is
+    // what broke sandwiched pauses: uploads snap to the NEAREST grid point,
+    // so the goodbye frame sent just before the declare can carry a key up
+    // to cadence/2 AFTER era.from — a phantom "resume" that split the era
+    // into a sliver of pause plus a frameless "active" run of offline-red.
+    const isTail = era === eras[eras.length - 1];
+    if (!isTail) {
+      slots.push({ ts: era.from, span: era.to - era.from, paused: true, reason: era.reason, intended: era.intended });
+      continue;
+    }
+    // TAIL paused era: no closing event yet — infer resume from frames
+    // (crash-safe: a source that dies while paused never resumes). Ignore
+    // the first cadence of the era: that's where the round-half-up goodbye
+    // straggler lands; a real resume that fast is indistinguishable anyway
+    // and costs at most one cadence of detection lag.
     const probe = await backend.frames(decl.site, decl.id, era.from, era.to, era.cadence);
-    const resume = probe.find((f) => f.ts > era.from && f.ts < era.to);
+    const resume = probe.find((f) => f.ts >= era.from + era.cadence && f.ts < era.to);
     if (resume) {
       const resumeTs = resume.ts;
       slots.push({ ts: era.from, span: resumeTs - era.from, paused: true, reason: era.reason, intended: era.intended });
@@ -1118,7 +1129,9 @@ export function mountTimeline(root, cfg) {
         continue;
       }
       if (destroyed) return;
-      if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame)) continue;   // hide sources with no data
+      // declared pause IS data — a source that is all SCREEN DARK for the
+      // window must render its band, not vanish as if it never reported
+      if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) continue;
       cards[k.id] = buildCard(k, model);
     }
     kiosks = kiosks.filter((k) => cards[k.id]);
@@ -1315,7 +1328,9 @@ export function mountGrid(root, cfg) {
         continue;
       }
       if (destroyed) return;
-      if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame)) continue;   // hide sources with no data
+      // declared pause IS data — a source that is all SCREEN DARK for the
+      // window must render its band, not vanish as if it never reported
+      if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) continue;
       tiles[k.id] = buildTile(k, model);
     }
     kiosks = kiosks.filter((k) => tiles[k.id]);

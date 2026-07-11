@@ -538,8 +538,13 @@ var VTCore = (() => {
         await pushActive(era);
         continue;
       }
+      const isTail = era === eras[eras.length - 1];
+      if (!isTail) {
+        slots.push({ ts: era.from, span: era.to - era.from, paused: true, reason: era.reason, intended: era.intended });
+        continue;
+      }
       const probe = await backend.frames(decl.site, decl.id, era.from, era.to, era.cadence);
-      const resume = probe.find((f) => f.ts > era.from && f.ts < era.to);
+      const resume = probe.find((f) => f.ts >= era.from + era.cadence && f.ts < era.to);
       if (resume) {
         const resumeTs = resume.ts;
         slots.push({ ts: era.from, span: resumeTs - era.from, paused: true, reason: era.reason, intended: era.intended });
@@ -1007,7 +1012,7 @@ var VTCore = (() => {
           continue;
         }
         if (destroyed) return;
-        if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame)) continue;
+        if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) continue;
         cards[k.id] = buildCard(k, model);
       }
       kiosks = kiosks.filter((k) => cards[k.id]);
@@ -1192,7 +1197,7 @@ var VTCore = (() => {
           continue;
         }
         if (destroyed) return;
-        if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame)) continue;
+        if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) continue;
         tiles[k.id] = buildTile(k, model);
       }
       kiosks = kiosks.filter((k) => tiles[k.id]);
