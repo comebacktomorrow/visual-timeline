@@ -94,7 +94,7 @@ var VTCore = (() => {
   pointer-events:none; z-index:1; }
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
 .ktl .slot.gap { background:repeating-linear-gradient(45deg,#1b1215,#1b1215 5px,#2a171b 5px,#2a171b 10px); }
-.ktl .slot.paused { background:repeating-linear-gradient(45deg,#17191c,#17191c 7px,#1d2024 7px,#1d2024 14px); }
+.ktl .slot.paused { background:repeating-linear-gradient(45deg,#15171a,#15171a 7px,#232830 7px,#232830 14px); }
 /* pause REASONS: one color grammar with the dashboards \u2014 planned = distinct
  * cool hues (indigo = screen asleep, violet-slate = system down, teal = app
  * stopped), unintended = amber, undeclared silence stays the red .gap.
@@ -105,10 +105,19 @@ var VTCore = (() => {
 .ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,#4a350e,#4a350e 7px,#614614 7px,#614614 14px); }
 /* hatch continuity: each slot is its own element, so a per-element gradient
  * restarts at every slot edge \u2014 a run of narrow slots shows only the first
- * stripe color and reads as a SOLID block. Fixed attachment samples one
- * viewport-anchored pattern, so the diagonals run continuously across
- * adjacent slots at any slot width. */
-.ktl .slot.gap, .ktl .slot.paused { background-attachment:fixed !important; }
+ * stripe color and reads as a SOLID block. buildCard aligns each empty
+ * slot's background-position to its offset in the strip, so the diagonals
+ * run continuously across runs. (NOT background-attachment:fixed \u2014 Chrome
+ * refuses to paint fixed backgrounds inside Grafana's transformed panels.)
+ * A wide pause band also carries its label inline \u2014 a strip that is ALL
+ * pause should say why without requiring a hover. */
+.ktl .slot .band-label { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-size:10px; font-weight:700; letter-spacing:.06em; color:var(--ktl-dim);
+  white-space:nowrap; overflow:hidden; pointer-events:none; }
+.ktl .slot.r-screen-sleep .band-label { color:#8fb0e8; }
+.ktl .slot.r-system-down .band-label { color:#a897e0; }
+.ktl .slot.r-app-stopped .band-label { color:#6fc4b4; }
+.ktl .slot.unintended .band-label { color:#e8b155; }
 /* future slots: the window extends past now \u2014 nothing has happened yet, so
  * neither offline-red nor any hatch; the strip's own dark shows through */
 .ktl .slot.future { background:transparent; }
@@ -710,6 +719,26 @@ var VTCore = (() => {
     function hideSelection() {
       for (const k of kiosks) if (cards[k.id]) cards[k.id].sel.style.display = "none";
     }
+    function dressStrip(model) {
+      for (const sl of model.slots) {
+        if (!sl.el || sl.frame) continue;
+        sl.el.style.backgroundPosition = -sl.el.offsetLeft + "px 0";
+        if (sl.paused && sl.el.offsetWidth >= 90 && !sl.el.querySelector(".band-label")) {
+          const lab = document.createElement("span");
+          lab.className = "band-label";
+          lab.textContent = pauseInfo(sl).label;
+          sl.el.appendChild(lab);
+        }
+      }
+    }
+    function dressAll(tries) {
+      const anySized = kiosks.some((k) => cards[k.id] && cards[k.id].strip.clientWidth > 0);
+      if (!anySized) {
+        if (tries > 0 && !destroyed) setTimeout(() => dressAll(tries - 1), 500);
+        return;
+      }
+      for (const k of kiosks) if (cards[k.id]) dressStrip(cards[k.id].model);
+    }
     function buildCard(decl, model) {
       const kiosk = decl.id;
       const card = document.createElement("div");
@@ -735,6 +764,7 @@ var VTCore = (() => {
         strip.appendChild(el);
         sl.el = el;
       }
+      dressStrip(model);
       const hoverAt = (e) => {
         const r = strip.getBoundingClientRect();
         const t = P.from + SPAN * ((e.clientX - r.left) / r.width);
@@ -986,6 +1016,7 @@ var VTCore = (() => {
       if (cfg.showAnnotations !== false) renderAnnotations(normAnnotations(rawAnns, P));
       setCursor(cursorT, null, true);
       await revealWrapper(root, wrap);
+      dressAll(20);
       if (LIVE) {
         const steps = kiosks.map((k) => cards[k.id].model.lastActive && cards[k.id].model.lastActive.step).filter(Boolean);
         const minStep = steps.length ? Math.min.apply(null, steps) : 6e4;

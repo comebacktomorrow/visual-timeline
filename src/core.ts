@@ -75,7 +75,7 @@ const CSS = `
   pointer-events:none; z-index:1; }
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
 .ktl .slot.gap { background:repeating-linear-gradient(45deg,#1b1215,#1b1215 5px,#2a171b 5px,#2a171b 10px); }
-.ktl .slot.paused { background:repeating-linear-gradient(45deg,#17191c,#17191c 7px,#1d2024 7px,#1d2024 14px); }
+.ktl .slot.paused { background:repeating-linear-gradient(45deg,#15171a,#15171a 7px,#232830 7px,#232830 14px); }
 /* pause REASONS: one color grammar with the dashboards — planned = distinct
  * cool hues (indigo = screen asleep, violet-slate = system down, teal = app
  * stopped), unintended = amber, undeclared silence stays the red .gap.
@@ -86,10 +86,19 @@ const CSS = `
 .ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,#4a350e,#4a350e 7px,#614614 7px,#614614 14px); }
 /* hatch continuity: each slot is its own element, so a per-element gradient
  * restarts at every slot edge — a run of narrow slots shows only the first
- * stripe color and reads as a SOLID block. Fixed attachment samples one
- * viewport-anchored pattern, so the diagonals run continuously across
- * adjacent slots at any slot width. */
-.ktl .slot.gap, .ktl .slot.paused { background-attachment:fixed !important; }
+ * stripe color and reads as a SOLID block. buildCard aligns each empty
+ * slot's background-position to its offset in the strip, so the diagonals
+ * run continuously across runs. (NOT background-attachment:fixed — Chrome
+ * refuses to paint fixed backgrounds inside Grafana's transformed panels.)
+ * A wide pause band also carries its label inline — a strip that is ALL
+ * pause should say why without requiring a hover. */
+.ktl .slot .band-label { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-size:10px; font-weight:700; letter-spacing:.06em; color:var(--ktl-dim);
+  white-space:nowrap; overflow:hidden; pointer-events:none; }
+.ktl .slot.r-screen-sleep .band-label { color:#8fb0e8; }
+.ktl .slot.r-system-down .band-label { color:#a897e0; }
+.ktl .slot.r-app-stopped .band-label { color:#6fc4b4; }
+.ktl .slot.unintended .band-label { color:#e8b155; }
 /* future slots: the window extends past now — nothing has happened yet, so
  * neither offline-red nor any hatch; the strip's own dark shows through */
 .ktl .slot.future { background:transparent; }
@@ -769,6 +778,35 @@ export function mountTimeline(root, cfg) {
   }
 
 
+  /* Post-layout dressing, idempotent and re-runnable:
+   * - align each empty slot's hatch to its strip offset so the diagonals run
+   *   continuously across gap runs (per-element gradients restart at every
+   *   slot edge; narrow runs otherwise read as one solid block)
+   * - wide pause bands carry their label inline: a strip that is ALL
+   *   "screen dark" should say so without requiring a hover
+   * Needs real layout — called at build (visible mounts) and again after
+   * reveal with retries (panels that mount before they have a size). */
+  function dressStrip(model) {
+    for (const sl of model.slots) {
+      if (!sl.el || sl.frame) continue;
+      sl.el.style.backgroundPosition = (-sl.el.offsetLeft) + 'px 0';
+      if (sl.paused && sl.el.offsetWidth >= 90 && !sl.el.querySelector('.band-label')) {
+        const lab = document.createElement('span');
+        lab.className = 'band-label';
+        lab.textContent = pauseInfo(sl).label;
+        sl.el.appendChild(lab);
+      }
+    }
+  }
+  function dressAll(tries) {
+    const anySized = kiosks.some((k) => cards[k.id] && cards[k.id].strip.clientWidth > 0);
+    if (!anySized) {
+      if (tries > 0 && !destroyed) setTimeout(() => dressAll(tries - 1), 500);
+      return;
+    }
+    for (const k of kiosks) if (cards[k.id]) dressStrip(cards[k.id].model);
+  }
+
   function buildCard(decl, model) {
     const kiosk = decl.id;
     const card = document.createElement('div');
@@ -805,6 +843,7 @@ export function mountTimeline(root, cfg) {
       strip.appendChild(el);
       sl.el = el;
     }
+    dressStrip(model);   // hatch alignment + band labels (re-run post-reveal)
     const hoverAt = e => {
       const r = strip.getBoundingClientRect();
       const t = P.from + SPAN * ((e.clientX - r.left) / r.width);
@@ -1093,6 +1132,7 @@ export function mountTimeline(root, cfg) {
     if (cfg.showAnnotations !== false) renderAnnotations(normAnnotations(rawAnns, P));
     setCursor(cursorT, null, true);   // rest position; don't publish
     await revealWrapper(root, wrap);  // swap in only once images decoded
+    dressAll(20);                     // hatch alignment + labels once layout is real
 
     if (LIVE) {
       const steps = kiosks.map(k => cards[k.id].model.lastActive && cards[k.id].model.lastActive.step).filter(Boolean);

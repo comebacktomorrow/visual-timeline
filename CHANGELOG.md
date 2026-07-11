@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.9
+
+- Hatch continuity done right: the fixed-attachment trick from 0.9.7
+  doesn't paint inside Grafana's transformed panels (Chrome), reading as
+  a solid block. Empty slots now get their hatch background-position
+  aligned to their strip offset post-layout instead — continuous
+  diagonals everywhere, including Grafana.
+- Wide pause bands carry their label inline (SCREEN DARK (UNEXPECTED),
+  SYSTEM DOWN (PLANNED), ...) in the reason's color — a strip that is
+  all pause explains itself without a hover.
+- The neutral paused hatch got a visible stripe contrast.
+
 ## 0.9.8
 
 - A hung backend (e.g. a dead dev worker still holding its port) left the
