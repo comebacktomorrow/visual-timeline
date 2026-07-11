@@ -530,7 +530,7 @@ var VTCore = (() => {
       const nowMs = Date.now();
       for (let i = 0; i < n; i++) {
         const ts = start + i * step;
-        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts > nowMs });
+        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step > nowMs });
       }
     }
     for (const era of eras) {
@@ -966,10 +966,11 @@ var VTCore = (() => {
           c.head.classList.remove("stale", ...PAUSE_CLASSES);
           c.head.classList.add(...pi.classes);
         } else if (slot && slot.future) {
+          const inFlight = slot.ts <= Date.now();
           c.mag.classList.remove("gap", ...PAUSE_CLASSES);
           c.mag.classList.add("future");
-          c.mag.querySelector(".cap").textContent = "upcoming \u2014 " + fmtShort(slot.ts);
-          c.head.textContent = "upcoming";
+          c.mag.querySelector(".cap").textContent = (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + fmtShort(slot.ts);
+          c.head.textContent = inFlight ? "expected" : "upcoming";
           c.head.classList.remove("stale", ...PAUSE_CLASSES);
         } else {
           c.mag.classList.add("gap");
@@ -1150,7 +1151,7 @@ var VTCore = (() => {
             frame = slot && slot.frame;
             if (!frame) {
               if (slot && slot.future) {
-                offMsg = "UPCOMING \u2014 " + fmtShort(slot.ts);
+                offMsg = (slot.ts <= Date.now() ? "EXPECTED \u2014 " : "UPCOMING \u2014 ") + fmtShort(slot.ts);
               } else {
                 const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
                 let last = null;

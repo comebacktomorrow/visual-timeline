@@ -569,9 +569,12 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
     const nowMs = Date.now();
     for (let i = 0; i < n; i++) {
       const ts = start + i * step;
-      // a slot whose tick hasn't arrived is FUTURE, not offline — an empty
-      // window ahead of now hasn't broken any heartbeat promise yet
-      slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts > nowMs });
+      // a slot keeps "future" grace until ONE FULL STEP past its tick — the
+      // same boundary the live poll uses to age future slots into gaps. A
+      // tick that just passed has its frame IN FLIGHT (capture + upload +
+      // the backend's response cache), and calling it offline for those
+      // seconds painted a red live edge that healed on the next poll.
+      slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step > nowMs });
     }
   }
 
@@ -1078,11 +1081,13 @@ export function mountTimeline(root, cfg) {
         c.head.classList.remove('stale', ...PAUSE_CLASSES);
         c.head.classList.add(...pi.classes);
       } else if (slot && slot.future) {
-        // ahead of now: nothing has happened yet — not offline, not stale
+        // not offline, not stale: either the tick is ahead of now, or it
+        // just passed and its frame is still in flight (one-step grace)
+        const inFlight = slot.ts <= Date.now();
         c.mag.classList.remove('gap', ...PAUSE_CLASSES);
         c.mag.classList.add('future');
-        c.mag.querySelector('.cap').textContent = 'upcoming — ' + fmtShort(slot.ts);
-        c.head.textContent = 'upcoming';
+        c.mag.querySelector('.cap').textContent = (inFlight ? 'expected — ' : 'upcoming — ') + fmtShort(slot.ts);
+        c.head.textContent = inFlight ? 'expected' : 'upcoming';
         c.head.classList.remove('stale', ...PAUSE_CLASSES);
       } else {
         c.mag.classList.add('gap');
@@ -1281,7 +1286,8 @@ export function mountGrid(root, cfg) {
           frame = slot && slot.frame;
           if (!frame) {
             if (slot && slot.future) {
-              offMsg = 'UPCOMING — ' + fmtShort(slot.ts);   // ahead of now, not a failure
+              // ahead of now, or just-passed with the frame in flight
+              offMsg = (slot.ts <= Date.now() ? 'EXPECTED — ' : 'UPCOMING — ') + fmtShort(slot.ts);
             } else {
               const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
               let last = null;

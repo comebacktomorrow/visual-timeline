@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.11
+
+- The live edge no longer flashes "offline — last seen" while the newest
+  frame is in flight: a slot keeps its future grace until one full step
+  past its tick (the same boundary the poll uses to age misses into real
+  gaps), and the cursor says "expected — HH:MM" for a just-passed tick
+  vs "upcoming — HH:MM" for one ahead of now.
+
 ## 0.9.10
 
 - Sandwiched pause bands no longer corrupt into offline-red: uploads
