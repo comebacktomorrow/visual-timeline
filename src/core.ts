@@ -214,7 +214,7 @@ function injectStyles() {
   if (existing) {
     // a NEWER module version executing in a long-lived page (SPA navigation,
     // cached bundles) must refresh the shared styles, not defer to stale ones
-    if (existing.textContent !== CSS) existing.textContent = CSS;
+    if (existing.textContent !== CSS) {existing.textContent = CSS;}
     return;
   }
   const s = document.createElement('style');
@@ -301,8 +301,8 @@ function makeBackend(P, SPAN) {
       const gapA = P.from + SPAN * 0.35, gapB = P.from + SPAN * 0.55;
       const first = Math.ceil(from / step) * step;
       for (let ts = first; ts <= Math.min(to, Date.now()); ts += step) {
-        if (kiosk === 'source-2' && ts > gapA && ts < gapB) continue;
-      if (kiosk === 'source-4' && ts > P.from + SPAN * 0.2 && ts < P.from + SPAN * 0.45) continue;
+        if (kiosk === 'source-2' && ts > gapA && ts < gapB) {continue;}
+      if (kiosk === 'source-4' && ts > P.from + SPAN * 0.2 && ts < P.from + SPAN * 0.45) {continue;}
         out.push({ kiosk, ts, url: renderMockFrame(site, kiosk, ts, step) });
       }
       return Promise.resolve(out);
@@ -338,19 +338,19 @@ function normAnnotations(raw, P) {
   const out = [];
   for (const a of raw || []) {
     const ts = Number(a.ts != null ? a.ts : a.time);
-    if (!Number.isFinite(ts)) continue;
+    if (!Number.isFinite(ts)) {continue;}
     let end = a.timeEnd != null ? Number(a.timeEnd) : NaN;
-    if (!Number.isFinite(end) || end <= ts) end = null;
-    if ((end || ts) < P.from || ts > P.to) continue;
+    if (!Number.isFinite(end) || end <= ts) {end = null;}
+    if ((end || ts) < P.from || ts > P.to) {continue;}
     const tags = Array.isArray(a.tags) ? a.tags.map(String)
       : a.tags ? String(a.tags).split(',').map((s) => s.trim()).filter(Boolean) : [];
     let source = a.source || null;
     let siteScope = null;
     for (const t of tags) {
       const m = /^(?:source|kiosk):(.+)$/.exec(t);
-      if (m) source = m[1];
+      if (m) {source = m[1];}
       const ms = /^site:(.+)$/.exec(t);
-      if (ms) siteScope = ms[1];
+      if (ms) {siteScope = ms[1];}
     }
     out.push({ ts, timeEnd: end, title: a.title || '', text: a.text || '', tags, color: a.color || '', source, siteScope });
   }
@@ -371,10 +371,10 @@ function annTip() {
     annTipEl.style.display = 'none';
     document.body.appendChild(annTipEl);
     document.addEventListener('click', (e) => {
-      if (annTipPinned && !annTipEl.contains(e.target)) close();
+      if (annTipPinned && !annTipEl.contains(e.target)) {close();}
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && annTipPinned) close();
+      if (e.key === 'Escape' && annTipPinned) {close();}
     });
   }
   const el = annTipEl;
@@ -441,13 +441,13 @@ function annTip() {
   }
 
   return {
-    show(items, x, y) { if (!annTipPinned) render(items, x, y); },
+    show(items, x, y) { if (!annTipPinned) {render(items, x, y);} },
     pin(items, x, y) {
       annTipPinned = true;
       el.classList.add('pinned');
       render(items, x, y);
     },
-    hide() { if (!annTipPinned) el.style.display = 'none'; },
+    hide() { if (!annTipPinned) {el.style.display = 'none';} },
     close,
   };
 }
@@ -466,9 +466,9 @@ function makeApiBackend(apiUrl, apiKey) {
   return {
     async kiosks(sites) {
       const u = new URL(base + '/sources');
-      if (sites) u.searchParams.set('site', sites.join(','));
+      if (sites) {u.searchParams.set('site', sites.join(','));}
       const r = await fetch(u, opts());
-      if (!r.ok) throw new Error('kiosks ' + r.status);
+      if (!r.ok) {throw new Error('kiosks ' + r.status);}
       return r.json();
     },
     async frames(site, kiosk, from, to, step) {
@@ -480,11 +480,11 @@ function makeApiBackend(apiUrl, apiKey) {
       u.searchParams.set('step', String(step));
       u.searchParams.set('variant', 'lo');
       const r = await fetch(u, opts());
-      if (!r.ok) throw new Error('frames ' + r.status);
+      if (!r.ok) {throw new Error('frames ' + r.status);}
       const frames = await r.json();
       // <img> elements can't send headers — the key rides the frame URLs
       if (apiKey) {
-        for (const f of frames) f.url += (f.url.includes('?') ? '&' : '?') + 'k=' + encodeURIComponent(apiKey);
+        for (const f of frames) {f.url += (f.url.includes('?') ? '&' : '?') + 'k=' + encodeURIComponent(apiKey);}
       }
       return frames;
     },
@@ -494,7 +494,7 @@ function makeApiBackend(apiUrl, apiKey) {
 /* Nearest hi-variant URL for the click-in preview (API mode only); the
  * preview falls back to the lo frame if the hi key 404s. */
 function hiUrlFor(frame, decl, apiUrl, apiKey) {
-  if (!apiUrl || !decl.hiCadence) return null;
+  if (!apiUrl || !decl.hiCadence) {return null;}
   const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
   return (
     apiUrl.replace(/\/+$/, '') + '/frame/hi/' + decl.site + '/' + decl.id + '/' + hiTs + '.jpg' +
@@ -504,7 +504,7 @@ function hiUrlFor(frame, decl, apiUrl, apiKey) {
 
 /* ======================= timeline core ======================= */
 function parseVar(v) {
-  if (!v || v === 'All' || v === '$__all') return null;
+  if (!v || v === 'All' || v === '$__all') {return null;}
   return v.replace(/^\{|\}$/g, '').split(',').map(s => s.trim()).filter(Boolean);
 }
 
@@ -523,23 +523,23 @@ function erasFor(decl, P) {
     .slice()
     .sort((a, b) => a.since - b.since);
   let runCad = decl.cadence || 60e3;
-  if (hist.length && hist[0].cadence) runCad = hist[0].cadence;
+  if (hist.length && hist[0].cadence) {runCad = hist[0].cadence;}
   const evts = [{ since: -8.64e15, cadence: runCad, paused: false, reason: undefined, intended: undefined }];
-  for (const h of hist) evts.push({ since: h.since, cadence: h.cadence, paused: !!h.paused, reason: h.reason, intended: h.intended });
+  for (const h of hist) {evts.push({ since: h.since, cadence: h.cadence, paused: !!h.paused, reason: h.reason, intended: h.intended });}
   const eras = [];
   for (let i = 0; i < evts.length; i++) {
     const e = evts[i];
     const next = evts[i + 1];
-    if (e.cadence) runCad = e.cadence;
+    if (e.cadence) {runCad = e.cadence;}
     const from = Math.max(e.since, P.from);
     const to = Math.min(next ? next.since : P.to, P.to);
-    if (to <= from) continue;
+    if (to <= from) {continue;}
     const prev = eras[eras.length - 1];
     if (prev && prev.paused === !!e.paused && prev.cadence === runCad &&
         prev.reason === e.reason && prev.intended === e.intended) { prev.to = to; continue; }
     eras.push({ from, to, cadence: runCad, paused: !!e.paused, reason: e.reason, intended: e.intended });
   }
-  if (!eras.length) eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false });
+  if (!eras.length) {eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false });}
   return eras;
 }
 
@@ -557,8 +557,8 @@ function pauseInfo(x) {
     r === 'app-stopped'  ? 'APP STOPPED' :
     r === 'quiet'        ? 'QUIET HOURS' : 'PAUSED';
   const classes = ['paused'];
-  if (r) classes.push('r-' + r);
-  if (unintended) classes.push('unintended');
+  if (r) {classes.push('r-' + r);}
+  if (unintended) {classes.push('unintended');}
   return { label, classes };
 }
 
@@ -571,7 +571,7 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
   const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
 
   async function pushActive(era) {
-    if (era.to - era.from <= 0) return;   // degenerate span — nothing to render
+    if (era.to - era.from <= 0) {return;}   // degenerate span — nothing to render
     const eraSpan = era.to - era.from;
     const share = Math.max(4, Math.round(budgetSlots * (eraSpan / totalActive)));
     const raw = Math.max(1, Math.ceil(eraSpan / era.cadence));
@@ -607,7 +607,7 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
     const eTo = Math.min(era.to, horizon);
     const isTail = era === eras[eras.length - 1];
     if (!era.paused) {
-      if (eTo > eFrom) await pushActive({ from: eFrom, to: eTo, cadence: era.cadence });
+      if (eTo > eFrom) {await pushActive({ from: eFrom, to: eTo, cadence: era.cadence });}
       continue;
     }
     // BOUNDED paused era (a later history event closes it): the registry is
@@ -617,7 +617,7 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
     // to cadence/2 AFTER era.from — a phantom "resume" that split the era
     // into a sliver of pause plus a frameless "active" run of offline-red.
     if (!isTail) {
-      if (eTo > eFrom) slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
+      if (eTo > eFrom) {slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });}
       continue;
     }
     // TAIL paused era: no closing event yet — infer resume from frames
@@ -626,13 +626,13 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
     // straggler lands; a real resume that fast is indistinguishable anyway
     // and costs at most one cadence of detection lag. The band is clamped
     // to NOW — the future portion of the window is unknown, not paused.
-    if (eTo <= eFrom) continue;
+    if (eTo <= eFrom) {continue;}
     const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, era.cadence);
     const resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
     if (resume) {
       const resumeTs = resume.ts;
       slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended });
-      if (eTo > resumeTs) await pushActive({ from: resumeTs, to: eTo, cadence: era.cadence });
+      if (eTo > resumeTs) {await pushActive({ from: resumeTs, to: eTo, cadence: era.cadence });}
     } else {
       slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
     }
@@ -644,7 +644,7 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
       : (last.paused || last.beyond) ? last.ts + last.span
       : last.ts + last.step / 2;
     const fillerFrom = Math.min(Math.max(covered, horizon - 1), P.to);
-    if (P.to - fillerFrom > 0) slots.push({ ts: fillerFrom, span: P.to - fillerFrom, beyond: true });
+    if (P.to - fillerFrom > 0) {slots.push({ ts: fillerFrom, span: P.to - fillerFrom, beyond: true });}
   }
 
   function slotAt(t) {
@@ -659,7 +659,7 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
           // shows the latest frame instead of the unknown-future dash
           const i = slots.indexOf(sl);
           const prev = i > 0 ? slots[i - 1] : null;
-          if (prev && !prev.beyond && t < sl.ts + (prev.step || 0) / 2) return prev;
+          if (prev && !prev.beyond && t < sl.ts + (prev.step || 0) / 2) {return prev;}
         }
         return t >= from || sl === slots[0] ? sl : sl;
       }
@@ -672,24 +672,24 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
 
 /* panel-side tag filtering: "env=prod, room=lobby" must ALL match */
 function parseTagFilter(expr) {
-  if (!expr) return null;
+  if (!expr) {return null;}
   const out = {};
   for (const part of String(expr).split(',')) {
     const i = part.indexOf('=');
-    if (i > 0) out[part.slice(0, i).trim().toLowerCase()] = part.slice(i + 1).trim().toLowerCase();
+    if (i > 0) {out[part.slice(0, i).trim().toLowerCase()] = part.slice(i + 1).trim().toLowerCase();}
   }
   return Object.keys(out).length ? out : null;
 }
 function matchesTags(tags, filter) {
-  if (!filter) return true;
-  if (!tags) return false;
+  if (!filter) {return true;}
+  if (!tags) {return false;}
   for (const k in filter) {
-    if (String(tags[k] == null ? '' : tags[k]).toLowerCase() !== filter[k]) return false;
+    if (String(tags[k] == null ? '' : tags[k]).toLowerCase() !== filter[k]) {return false;}
   }
   return true;
 }
 function tagChips(decl) {
-  if (!decl.tags) return '';
+  if (!decl.tags) {return '';}
   const chips = Object.entries(decl.tags)
     .map(([k, v]) => '<span class="st">' + k + ':' + v + '</span>')
     .join('');
@@ -697,8 +697,8 @@ function tagChips(decl) {
 }
 function headTitle(decl) {
   const parts = [decl.site];
-  if (decl.location) parts.push(decl.location);
-  if (decl.tags) for (const [k, v] of Object.entries(decl.tags)) parts.push(k + ':' + v);
+  if (decl.location) {parts.push(decl.location);}
+  if (decl.tags) {for (const [k, v] of Object.entries(decl.tags)) {parts.push(k + ':' + v);}}
   return parts.join(' · ');
 }
 
@@ -715,7 +715,8 @@ const TICK_STEPS = [60e3, 5 * 60e3, 10 * 60e3, 15 * 60e3, 30 * 60e3,
 function alignedStart(ts, stepMs) {
   const d = new Date(ts);
   if (stepMs >= 30 * 86400e3) {
-    d.setHours(0, 0, 0, 0), d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(1);
   } else if (stepMs >= 86400e3) {
     d.setHours(0, 0, 0, 0);
   } else if (stepMs >= 3600e3) {
@@ -731,20 +732,20 @@ function alignedStart(ts, stepMs) {
 /* advances by calendar units (not raw ms) at day+ granularity so DST and
  * variable month lengths don't drift the grid */
 function nextTick(d, stepMs) {
-  if (stepMs >= 30 * 86400e3) d.setMonth(d.getMonth() + Math.round(stepMs / (30 * 86400e3)));
-  else if (stepMs >= 86400e3) d.setDate(d.getDate() + stepMs / 86400e3);
-  else d.setTime(+d + stepMs);
+  if (stepMs >= 30 * 86400e3) {d.setMonth(d.getMonth() + Math.round(stepMs / (30 * 86400e3)));}
+  else if (stepMs >= 86400e3) {d.setDate(d.getDate() + stepMs / 86400e3);}
+  else {d.setTime(+d + stepMs);}
   return d;
 }
 
 /* one format per zoom tier (not a whole-axis binary switch), matching
  * Grafana's per-increment axis labels */
 function tickFormat(stepMs) {
-  if (stepMs < 3600e3) return fmtShort;
+  if (stepMs < 3600e3) {return fmtShort;}
   if (stepMs < 24 * 3600e3)
-    return ts => new Date(ts).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+    {return ts => new Date(ts).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });}
   if (stepMs < 365 * 86400e3)
-    return ts => new Date(ts).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit' });
+    {return ts => new Date(ts).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit' });}
   return ts => String(new Date(ts).getFullYear());
 }
 
@@ -753,7 +754,7 @@ const TICK_LABEL_GAP = 14;
 let measureCtx;
 
 function measureTickWidth(text) {
-  if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+  if (!measureCtx) {measureCtx = document.createElement('canvas').getContext('2d');}
   measureCtx.font = TICK_FONT;
   return measureCtx.measureText(text).width;
 }
@@ -787,7 +788,7 @@ function makePreview() {
       el.addEventListener('click', closePreview);
       document.body.appendChild(el);
       const place = () => {
-        if (!el.isConnected) return;
+        if (!el.isConnected) {return;}
         const r = el.getBoundingClientRect();
         el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x + 14)) + 'px';
         el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y - r.height / 2)) + 'px';
@@ -797,7 +798,7 @@ function makePreview() {
       img.src = hiUrl || frame.url;
       place();
       popState.el = el;
-      popState.keyH = e => { if (e.key === 'Escape') closePreview(); };
+      popState.keyH = e => { if (e.key === 'Escape') {closePreview();} };
       document.addEventListener('keydown', popState.keyH);
     },
     close: closePreview,
@@ -836,8 +837,8 @@ async function revealWrapper(root, wrap) {
     Promise.allSettled(imgs.map(i => (i.decode ? i.decode().catch(() => {}) : Promise.resolve()))),
     new Promise(res => setTimeout(res, 900)),
   ]);
-  if (!wrap.isConnected) return;
-  for (const el of [...root.children]) if (el !== wrap) el.remove();
+  if (!wrap.isConnected) {return;}
+  for (const el of [...root.children]) {if (el !== wrap) {el.remove();}}
   wrap.style.visibility = '';
 }
 function retireWrapper(wrap) {
@@ -885,7 +886,7 @@ export function mountTimeline(root, cfg) {
     const a = Math.min(fa, fb), b = Math.max(fa, fb);
     for (const k of kiosks) {
       const c = cards[k.id];
-      if (!c) continue;
+      if (!c) {continue;}
       const w = c.strip.clientWidth;
       c.sel.style.display = 'block';
       c.sel.style.left = (a * w) + 'px';
@@ -893,7 +894,7 @@ export function mountTimeline(root, cfg) {
     }
   }
   function hideSelection() {
-    for (const k of kiosks) if (cards[k.id]) cards[k.id].sel.style.display = 'none';
+    for (const k of kiosks) {if (cards[k.id]) {cards[k.id].sel.style.display = 'none';}}
   }
 
 
@@ -907,7 +908,7 @@ export function mountTimeline(root, cfg) {
    * reveal with retries (panels that mount before they have a size). */
   function dressStrip(model) {
     for (const sl of model.slots) {
-      if (!sl.el || sl.frame) continue;
+      if (!sl.el || sl.frame) {continue;}
       sl.el.style.backgroundPosition = (-sl.el.offsetLeft) + 'px 0';
       if (sl.paused && sl.el.offsetWidth >= 90 && !sl.el.querySelector('.band-label')) {
         const lab = document.createElement('span');
@@ -920,10 +921,10 @@ export function mountTimeline(root, cfg) {
   function dressAll(tries) {
     const anySized = kiosks.some((k) => cards[k.id] && cards[k.id].strip.clientWidth > 0);
     if (!anySized) {
-      if (tries > 0 && !destroyed) setTimeout(() => dressAll(tries - 1), 500);
+      if (tries > 0 && !destroyed) {setTimeout(() => dressAll(tries - 1), 500);}
       return;
     }
-    for (const k of kiosks) if (cards[k.id]) dressStrip(cards[k.id].model);
+    for (const k of kiosks) {if (cards[k.id]) {dressStrip(cards[k.id].model);}}
   }
 
   function buildCard(decl, model) {
@@ -946,12 +947,12 @@ export function mountTimeline(root, cfg) {
     const strip = card.querySelector('.strip');
     // hairline frame boundaries only when slices are wide enough — below
     // ~12px they read as zebra noise rather than structure
-    if (hostWidth / model.slots.length >= 12) strip.classList.add('sep');
+    if (hostWidth / model.slots.length >= 12) {strip.classList.add('sep');}
     const slots = model.slots;
     for (const sl of slots) {
       const el = document.createElement('div');
       el.className = 'slot' + (sl.paused ? ' ' + pauseInfo(sl).classes.join(' ') : sl.beyond ? ' beyond' : sl.frame ? '' : sl.future ? ' future' : ' gap');
-      if (sl.paused) el.title = pauseInfo(sl).label.toLowerCase();
+      if (sl.paused) {el.title = pauseInfo(sl).label.toLowerCase();}
       // width ∝ time span, so x↔time stays linear across era boundaries
       el.style.flexGrow = String(sl.span / 1000);
       if (sl.frame) {
@@ -965,7 +966,7 @@ export function mountTimeline(root, cfg) {
     dressStrip(model);   // hatch alignment + band labels (re-run post-reveal)
     const hoverAt = e => {
       const r = strip.getBoundingClientRect();
-      if (!r.width) return;   // stale wrapper mid-swap: no geometry, no cursor
+      if (!r.width) {return;}   // stale wrapper mid-swap: no geometry, no cursor
       const t = P.from + SPAN * ((e.clientX - r.left) / r.width);
       setCursor(t, card, false);
     };
@@ -980,33 +981,33 @@ export function mountTimeline(root, cfg) {
     });
     strip.addEventListener('mouseleave', () => {
       wrap.classList.remove('strip-hover');
-      if (cfg.onHoverClear) cfg.onHoverClear();
+      if (cfg.onHoverClear) {cfg.onHoverClear();}
     });
     strip.addEventListener('click', e => {
       if (suppressClick) { suppressClick = false; return; }
       const sl = model.slotAt(cursorT);
       const f = sl && sl.frame;
-      if (f) pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, cfg.apiUrl, cfg.apiKey));
+      if (f) {pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, cfg.apiUrl, cfg.apiKey));}
     });
     /* magnifier takes the aspect of the actual frames (portrait screens etc.) */
     const magEl = card.querySelector('.mag');
     const magImg = magEl.querySelector('img');
     magImg.addEventListener('load', () => {
       if (magImg.naturalWidth && magImg.naturalHeight)
-        magEl.style.aspectRatio = String(magImg.naturalWidth / magImg.naturalHeight);
+        {magEl.style.aspectRatio = String(magImg.naturalWidth / magImg.naturalHeight);}
     });
     /* drag-select = zoom, grafana-style: band across all cards, release → onZoom */
     strip.addEventListener('mousedown', e => {
-      if (e.button !== 0) return;
+      if (e.button !== 0) {return;}
       e.preventDefault();
       const r = strip.getBoundingClientRect();
       const fracOf = x => Math.max(0, Math.min(1, (x - r.left) / r.width));
       const f0 = fracOf(e.clientX);
       let dragged = false;
       const move = ev => {
-        if (destroyed) return up(ev);
+        if (destroyed) {return up(ev);}
         const f1 = fracOf(ev.clientX);
-        if (Math.abs(f1 - f0) * r.width > 5) dragged = true;
+        if (Math.abs(f1 - f0) * r.width > 5) {dragged = true;}
         if (dragged) {
           showSelection(f0, f1);
           setCursor(P.from + SPAN * f1, card, false);
@@ -1020,7 +1021,7 @@ export function mountTimeline(root, cfg) {
           suppressClick = true;
           const f1 = fracOf(ev.clientX);
           const a = Math.min(f0, f1), b = Math.max(f0, f1);
-          if (b > a && cfg.onZoom) cfg.onZoom(Math.round(P.from + SPAN * a), Math.round(P.from + SPAN * b));
+          if (b > a && cfg.onZoom) {cfg.onZoom(Math.round(P.from + SPAN * a), Math.round(P.from + SPAN * b));}
         }
       };
       document.addEventListener('mousemove', move);
@@ -1056,7 +1057,7 @@ export function mountTimeline(root, cfg) {
     axis.querySelectorAll('.tick').forEach(t => t.remove());
     axisTickList.length = 0;
     let d = alignedStart(P.from, tickStep);
-    while (+d < P.from) d = nextTick(d, tickStep);
+    while (+d < P.from) {d = nextTick(d, tickStep);}
     for (; +d <= P.to; d = nextTick(d, tickStep)) {
       const ts = +d;
       axisTickList.push(ts);
@@ -1073,10 +1074,10 @@ export function mountTimeline(root, cfg) {
    * a screenshot timeline; the future is the absence of signal). Re-run
    * whenever the spacer's geometry changes (poll carving/band growth). */
   function ruleBeyond(sl) {
-    if (!sl || !sl.beyond || !sl.el) return;
+    if (!sl || !sl.beyond || !sl.el) {return;}
     sl.el.querySelectorAll('.bt').forEach(t => t.remove());
     for (const ts of axisTickList) {
-      if (ts <= sl.ts || ts > sl.ts + sl.span) continue;
+      if (ts <= sl.ts || ts > sl.ts + sl.span) {continue;}
       const t = document.createElement('div');
       t.className = 'bt';
       t.style.left = (((ts - sl.ts) / sl.span) * 100).toFixed(3) + '%';
@@ -1086,9 +1087,9 @@ export function mountTimeline(root, cfg) {
   function ruleAllBeyond() {
     for (const k of kiosks) {
       const c = cards[k.id];
-      if (!c) continue;
+      if (!c) {continue;}
       const last = c.model.slots[c.model.slots.length - 1];
-      if (last && last.beyond) ruleBeyond(last);
+      if (last && last.beyond) {ruleBeyond(last);}
     }
   }
 
@@ -1114,14 +1115,14 @@ export function mountTimeline(root, cfg) {
       const groups = [];
       for (const a of items) {
         const g = groups[groups.length - 1];
-        if (g && (fracOf(a.ts) - fracOf(g[0].ts)) * hostWidth < 10) g.push(a);
-        else groups.push([a]);
+        if (g && (fracOf(a.ts) - fracOf(g[0].ts)) * hostWidth < 10) {g.push(a);}
+        else {groups.push([a]);}
       }
       for (const g of groups) {
         const el = document.createElement('div');
         el.className = 'ann' + (g.length > 1 ? ' multi' : '');
         el.style.left = pct(fracOf(g[0].ts));
-        if (g[0].color) el.style.background = g[0].color;
+        if (g[0].color) {el.style.background = g[0].color;}
         el.title = '';   // suppress native tooltip; ours carries the detail
         if (g.length > 1) {
           const n = document.createElement('span');
@@ -1158,9 +1159,9 @@ export function mountTimeline(root, cfg) {
       for (const k of kiosks) {
         const c = cards[k.id];
         const items = anns.filter((a) => appliesTo(a, k));
-        if (!items.length) continue;
+        if (!items.length) {continue;}
         c.card.classList.add('has-lane');
-        for (const a of items) if (a.timeEnd) { addRegion(c.strip, a); addRegion(c.lane, a); }
+        for (const a of items) {if (a.timeEnd) { addRegion(c.strip, a); addRegion(c.lane, a); }}
         addMarkers(c.lane, items);
       }
       return;
@@ -1168,27 +1169,27 @@ export function mountTimeline(root, cfg) {
 
     const laneItems = [], perCard = {};
     for (const a of anns) {
-      if (isGlobal(a)) laneItems.push(a);
-      else for (const k of kiosks) if (appliesTo(a, k)) (perCard[k.id] ||= []).push(a);
+      if (isGlobal(a)) {laneItems.push(a);}
+      else {for (const k of kiosks) {if (appliesTo(a, k)) {(perCard[k.id] ||= []).push(a);}}}
       if (a.timeEnd) {
         // regions shade the strips they scope to; globals also shade the lane
         const hosts = isGlobal(a)
           ? kiosks.map((k) => cards[k.id].strip).concat([q('.ann-lane')])
           : kiosks.filter((k) => appliesTo(a, k)).map((k) => cards[k.id].strip);
-        for (const h of hosts) addRegion(h, a);
+        for (const h of hosts) {addRegion(h, a);}
       }
     }
-    for (const [id, items] of Object.entries(perCard)) addMarkers(cards[id].strip, items);
-    if (laneItems.length) addMarkers(q('.ann-lane'), laneItems);
-    if (laneItems.length || anns.some((a) => a.timeEnd && isGlobal(a))) q('.ann-lane').style.display = '';
+    for (const [id, items] of Object.entries(perCard)) {addMarkers(cards[id].strip, items);}
+    if (laneItems.length) {addMarkers(q('.ann-lane'), laneItems);}
+    if (laneItems.length || anns.some((a) => a.timeEnd && isGlobal(a))) {q('.ann-lane').style.display = '';}
   }
 
   /* external=true → came from the event bus; don't re-publish (no loop) */
   function setCursor(t, hoveredCard, external) {
     cursorT = Math.max(P.from, Math.min(P.to, t));
     root.dataset.ktlCursor = String(cursorT);
-    if (!external) root.dataset.ktlPinned = '1';
-    if (cfg.onCursor) cfg.onCursor(cursorT);        // host chrome hook (standalone app)
+    if (!external) {root.dataset.ktlPinned = '1';}
+    if (cfg.onCursor) {cfg.onCursor(cursorT);}        // host chrome hook (standalone app)
     const frac = (cursorT - P.from) / SPAN;
 
     const axis = q('.axis'), ac = q('.acur');
@@ -1198,10 +1199,10 @@ export function mountTimeline(root, cfg) {
 
     for (const k of kiosks) {
       const c = cards[k.id];
-      if (!c) continue;
+      if (!c) {continue;}
       // external cursor moves (event bus) must not strip local hover state —
       // other panels re-emit hover events and would un-dim us mid-hover
-      if (!external) c.card.classList.toggle('hovered', hoveredCard === c.card);
+      if (!external) {c.card.classList.toggle('hovered', hoveredCard === c.card);}
       const w = c.strip.clientWidth, x = frac * w;
       c.cross.style.left = x + 'px';
       const slot = c.model.slotAt(cursorT);
@@ -1242,7 +1243,7 @@ export function mountTimeline(root, cfg) {
         c.mag.classList.remove('future', 'off', ...PAUSE_CLASSES);
         const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
         let last = null;
-        for (let j = i; j >= 0; j--) if (c.model.slots[j].frame) { last = c.model.slots[j].frame; break; }
+        for (let j = i; j >= 0; j--) {if (c.model.slots[j].frame) { last = c.model.slots[j].frame; break; }}
         const msg = last ? 'offline — last seen ' + fmtTime(last.ts) : 'no data in window';
         c.mag.querySelector('.cap').textContent = msg;
         c.head.textContent = msg;
@@ -1250,7 +1251,7 @@ export function mountTimeline(root, cfg) {
         c.head.classList.remove(...PAUSE_CLASSES);
       }
     }
-    if (!external && cfg.onHover) cfg.onHover(cursorT);
+    if (!external && cfg.onHover) {cfg.onHover(cursorT);}
   }
 
   (async function boot() {
@@ -1262,7 +1263,7 @@ export function mountTimeline(root, cfg) {
       // registry unreachable (or hung past the fetch timeout): SAY so —
       // an eternally blank panel points the blame at the wrong layer
       console.warn('[visual-timeline] sources fetch failed:', e);
-      if (destroyed) return;
+      if (destroyed) {return;}
       const err = document.createElement('div');
       err.className = 'boot-err';
       err.textContent = 'frames API unreachable — ' + (e && e.message ? e.message : e);
@@ -1271,7 +1272,7 @@ export function mountTimeline(root, cfg) {
       return;
     }
     for (const k of kiosks) {
-      if (destroyed) return;
+      if (destroyed) {return;}
       let model;
       try {
         model = await buildSourceModel(k, P, backend, pxBudget);
@@ -1281,10 +1282,10 @@ export function mountTimeline(root, cfg) {
         console.warn('[visual-timeline] model build failed for ' + k.id + ':', e);
         continue;
       }
-      if (destroyed) return;
+      if (destroyed) {return;}
       // declared pause IS data — a source that is all SCREEN DARK for the
       // window must render its band, not vanish as if it never reported
-      if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) continue;
+      if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {continue;}
       cards[k.id] = buildCard(k, model);
     }
     kiosks = kiosks.filter((k) => cards[k.id]);
@@ -1296,7 +1297,7 @@ export function mountTimeline(root, cfg) {
     const rawAnns = (cfg.annotations && cfg.annotations.length)
       ? cfg.annotations
       : (backend.annotations ? backend.annotations() : []);
-    if (cfg.showAnnotations !== false) renderAnnotations(normAnnotations(rawAnns, P));
+    if (cfg.showAnnotations !== false) {renderAnnotations(normAnnotations(rawAnns, P));}
     setCursor(cursorT, null, true);   // rest position; don't publish
     await revealWrapper(root, wrap);  // swap in only once images decoded
     dressAll(20);                     // hatch alignment + labels once layout is real
@@ -1321,9 +1322,9 @@ export function mountTimeline(root, cfg) {
               if (grow > 0) {
                 prev.span += grow;
                 filler.ts += grow; filler.span -= grow;
-                if (prev.el) prev.el.style.flexGrow = String(prev.span / 1000);
-                if (filler.span <= 0) { if (filler.el) filler.el.remove(); mSlots.pop(); }
-                else { if (filler.el) filler.el.style.flexGrow = String(filler.span / 1000); ruleBeyond(filler); }
+                if (prev.el) {prev.el.style.flexGrow = String(prev.span / 1000);}
+                if (filler.span <= 0) { if (filler.el) {filler.el.remove();} mSlots.pop(); }
+                else { if (filler.el) {filler.el.style.flexGrow = String(filler.span / 1000);} ruleBeyond(filler); }
               }
             } else if (prev && prev.step) {
               let nextTs = prev.ts + prev.step;
@@ -1333,31 +1334,31 @@ export function mountTimeline(root, cfg) {
                 const el = document.createElement('div');
                 el.className = 'slot future';
                 el.style.flexGrow = String(sl.span / 1000);
-                if (f.el && f.el.parentNode) f.el.parentNode.insertBefore(el, f.el);
+                if (f.el && f.el.parentNode) {f.el.parentNode.insertBefore(el, f.el);}
                 sl.el = el;
                 mSlots.splice(mSlots.length - 1, 0, sl);
                 f.span -= sl.span; f.ts += sl.span;
-                if (f.span <= 0) { if (f.el) f.el.remove(); mSlots.pop(); }
-                else { if (f.el) f.el.style.flexGrow = String(f.span / 1000); ruleBeyond(f); }
+                if (f.span <= 0) { if (f.el) {f.el.remove();} mSlots.pop(); }
+                else { if (f.el) {f.el.style.flexGrow = String(f.span / 1000);} ruleBeyond(f); }
                 nextTs += prev.step;
               }
             }
           }
           const la = c.model.lastActive;
-          if (!la) continue;                    // tail era is a declared pause
+          if (!la) {continue;}                    // tail era is a declared pause
           let lastTs = P.from;
           for (let i = c.model.slots.length - 1; i >= 0; i--) {
             if (c.model.slots[i].frame) { lastTs = c.model.slots[i].ts; break; }
           }
           const fresh = await backend.frames(k.site, k.id, lastTs + 1, Date.now(), la.step);
-          if (destroyed) return;
+          if (destroyed) {return;}
           for (const f of fresh) {
             const slot = c.model.slotAt(f.ts);
-            if (!slot || slot.paused || slot.beyond) continue;
+            if (!slot || slot.paused || slot.beyond) {continue;}
             // newer frames REPLACE the bucket representative (frames past
             // the window end clamp into the last bucket) so the right edge
             // keeps sliding between dashboard refreshes — grid parity
-            if (slot.frame && f.ts <= slot.frame.ts) continue;
+            if (slot.frame && f.ts <= slot.frame.ts) {continue;}
             slot.frame = f;
             slot.future = false;
             slot.el.classList.remove('gap', 'future');
@@ -1380,11 +1381,11 @@ export function mountTimeline(root, cfg) {
   })();
 
   return {
-    setExternalCursor(t) { if (!destroyed) setCursor(t, null, true); },
+    setExternalCursor(t) { if (!destroyed) {setCursor(t, null, true);} },
     isHovering() { return wrap.classList.contains('strip-hover'); },
     destroy() {
       destroyed = true;
-      if (pollTimer) clearInterval(pollTimer);
+      if (pollTimer) {clearInterval(pollTimer);}
       pv.retire();   // an open preview survives refresh remounts (adopted by the successor)
       annTip().close();   // a hovered or pinned tip at teardown would strand
       retireWrapper(wrap);
@@ -1429,7 +1430,7 @@ export function mountGrid(root, cfg) {
       off: el.querySelector('.t-off'),
     };
     el.addEventListener('click', e => {
-      if (rec.shown) pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, cfg.apiUrl, cfg.apiKey));
+      if (rec.shown) {pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, cfg.apiUrl, cfg.apiKey));}
     });
     q('.grid').appendChild(el);
     return rec;
@@ -1437,7 +1438,7 @@ export function mountGrid(root, cfg) {
 
   function lastFrame(rec) {
     for (let i = rec.model.slots.length - 1; i >= 0; i--) {
-      if (rec.model.slots[i].frame) return rec.model.slots[i].frame;
+      if (rec.model.slots[i].frame) {return rec.model.slots[i].frame;}
     }
     return null;
   }
@@ -1445,10 +1446,10 @@ export function mountGrid(root, cfg) {
   /* t = null → most recent in window; otherwise frame at crosshair time */
   function setShown(t) {
     shownT = t;
-    if (cfg.onShown) cfg.onShown(t);                // host chrome hook (standalone app)
+    if (cfg.onShown) {cfg.onShown(t);}                // host chrome hook (standalone app)
     for (const k of kiosks) {
       const rec = tiles[k.id];
-      if (!rec) continue;
+      if (!rec) {continue;}
       let frame = null, offMsg = null, pausedMsg = null, pausedSlot = null;
       const la = rec.model.lastActive;
       if (t == null) {
@@ -1459,9 +1460,9 @@ export function mountGrid(root, cfg) {
           pausedSlot = tail;
           pausedMsg = pauseInfo(tail).label + (frame ? ' — last frame ' + fmtTime(frame.ts) : '');
         }
-        else if (!frame) offMsg = 'no data in window';
+        else if (!frame) {offMsg = 'no data in window';}
         else if (LIVE && la && Date.now() - frame.ts > 2 * la.step)
-          offMsg = 'OFFLINE — last seen ' + fmtTime(frame.ts);
+          {offMsg = 'OFFLINE — last seen ' + fmtTime(frame.ts);}
       } else {
         const slot = rec.model.slotAt(t);
         if (slot && slot.paused) {
@@ -1478,7 +1479,7 @@ export function mountGrid(root, cfg) {
             } else {
               const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
               let last = null;
-              for (let j = i; j >= 0; j--) if (rec.model.slots[j].frame) { last = rec.model.slots[j].frame; break; }
+              for (let j = i; j >= 0; j--) {if (rec.model.slots[j].frame) { last = rec.model.slots[j].frame; break; }}
               offMsg = last ? 'OFFLINE — last seen ' + fmtTime(last.ts) : 'no data';
             }
           }
@@ -1486,7 +1487,7 @@ export function mountGrid(root, cfg) {
       }
       rec.el.classList.toggle('offline', !!offMsg);
       rec.el.classList.remove(...PAUSE_CLASSES);
-      if (pausedMsg && !offMsg) rec.el.classList.add(...pauseInfo(pausedSlot).classes);
+      if (pausedMsg && !offMsg) {rec.el.classList.add(...pauseInfo(pausedSlot).classes);}
       rec.off.textContent = offMsg || pausedMsg || '';
       rec.shown = frame;
       if (frame && !offMsg && !pausedMsg) {
@@ -1503,7 +1504,7 @@ export function mountGrid(root, cfg) {
         .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
     } catch (e) {
       console.warn('[visual-timeline] sources fetch failed:', e);
-      if (destroyed) return;
+      if (destroyed) {return;}
       const err = document.createElement('div');
       err.className = 'boot-err';
       err.textContent = 'frames API unreachable — ' + (e && e.message ? e.message : e);
@@ -1512,7 +1513,7 @@ export function mountGrid(root, cfg) {
       return;
     }
     for (const k of kiosks) {
-      if (destroyed) return;
+      if (destroyed) {return;}
       let model;
       try {
         model = await buildSourceModel(k, P, backend, budget);
@@ -1520,10 +1521,10 @@ export function mountGrid(root, cfg) {
         console.warn('[visual-timeline] model build failed for ' + k.id + ':', e);
         continue;
       }
-      if (destroyed) return;
+      if (destroyed) {return;}
       // declared pause IS data — a source that is all SCREEN DARK for the
       // window must render its band, not vanish as if it never reported
-      if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) continue;
+      if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {continue;}
       tiles[k.id] = buildTile(k, model);
     }
     kiosks = kiosks.filter((k) => tiles[k.id]);
@@ -1535,28 +1536,28 @@ export function mountGrid(root, cfg) {
         for (const k of kiosks) {
           const rec = tiles[k.id];
           const la = rec.model.lastActive;
-          if (!la) continue;                   // tail era is a declared pause
+          if (!la) {continue;}                   // tail era is a declared pause
           const last = lastFrame(rec);
           const fresh = await backend.frames(k.site, k.id, (last ? last.ts : P.from) + 1, Date.now(), la.step);
-          if (destroyed) return;
+          if (destroyed) {return;}
           for (const f of fresh) {
             const slot = rec.model.slotAt(f.ts);
-            if (!slot || slot.paused || slot.beyond) continue;
+            if (!slot || slot.paused || slot.beyond) {continue;}
             // newer frames replace the bucket representative so "latest" slides
-            if (!slot.frame || f.ts > slot.frame.ts) slot.frame = f;
+            if (!slot.frame || f.ts > slot.frame.ts) {slot.frame = f;}
           }
         }
-        if (shownT == null) setShown(null);   // keep "latest" tiles fresh
+        if (shownT == null) {setShown(null);}   // keep "latest" tiles fresh
       }, 10000);
     }
   })();
 
   return {
-    setExternalCursor(t) { if (!destroyed) setShown(Math.max(P.from, Math.min(P.to, t))); },
-    clearExternal() { if (!destroyed) setShown(null); },
+    setExternalCursor(t) { if (!destroyed) {setShown(Math.max(P.from, Math.min(P.to, t)));} },
+    clearExternal() { if (!destroyed) {setShown(null);} },
     destroy() {
       destroyed = true;
-      if (pollTimer) clearInterval(pollTimer);
+      if (pollTimer) {clearInterval(pollTimer);}
       pv.retire();   // an open preview survives refresh remounts (adopted by the successor)
       retireWrapper(wrap);
     },

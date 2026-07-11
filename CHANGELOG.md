@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.16
+
+- Repository CI is green: the scaffold's lint config is now satisfied
+  (mechanical brace style via eslint --fix, one comma-expression split)
+  and build artifacts (web/vt-core.js, wrangler scratch) are excluded
+  from linting. No behavior change.
+
 ## 0.9.15
 
 - injectStyles refreshes the shared style tag when a newer module version

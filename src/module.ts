@@ -36,7 +36,7 @@ function extractAnnotations(frames: any[] | undefined): PanelAnnotation[] {
     const val = (f: any, i: number) =>
       f ? (typeof f.values?.get === 'function' ? f.values.get(i) : f.values?.[i]) : undefined;
     const time = field('time');
-    if (!time) continue;
+    if (!time) {continue;}
     const timeEnd = field('timeEnd');
     const title = field('title');
     const text = field('text');
@@ -152,7 +152,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       }),
     ];
     return () => subs.forEach((s) => s.unsubscribe());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [props.eventBus, mode, follow]);
 
   return React.createElement('div', {

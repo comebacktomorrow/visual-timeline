@@ -47,7 +47,7 @@ const REGISTERED_TTL = 5 * 60 * 1000;
 const registered = new Map();
 const isRegistered = (memo) => {
   const at = registered.get(memo);
-  if (at && Date.now() - at < REGISTERED_TTL) return true;
+  if (at && Date.now() - at < REGISTERED_TTL) {return true;}
   registered.delete(memo);
   return false;
 };
@@ -56,17 +56,17 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     try {
-      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
-      if (url.pathname === '/upload' && request.method === 'POST') return await handleUpload(request, env);
-      if (url.pathname === '/declare' && request.method === 'POST') return await handleDeclare(request, env);
+      if (request.method === 'OPTIONS') {return new Response(null, { status: 204, headers: CORS });}
+      if (url.pathname === '/upload' && request.method === 'POST') {return await handleUpload(request, env);}
+      if (url.pathname === '/declare' && request.method === 'POST') {return await handleDeclare(request, env);}
       const isData = url.pathname === '/sources' || url.pathname === '/kiosks' ||
                      url.pathname === '/frames' || url.pathname.startsWith('/frame/');
       if (isData && request.method === 'GET') {
         // viewer auth: when VIEWER_TOKEN is set, all data reads require it
         // (?k= for <img> URLs, Bearer for API calls). Unset = open (dev/demo).
-        if (!(await viewerAuthorized(request, env, url))) return json({ error: 'unauthorized' }, 401);
-        if (url.pathname === '/frames') return await handleFrames(url, env, ctx);
-        if (url.pathname.startsWith('/frame/')) return await handleFrame(url, env, ctx);
+        if (!(await viewerAuthorized(request, env, url))) {return json({ error: 'unauthorized' }, 401);}
+        if (url.pathname === '/frames') {return await handleFrames(url, env, ctx);}
+        if (url.pathname.startsWith('/frame/')) {return await handleFrame(url, env, ctx);}
         return await handleSources(url, env, ctx);   // /kiosks = deprecated alias
       }
       return env.ASSETS.fetch(request);
@@ -87,10 +87,10 @@ function json(body, status = 200, extra = {}) {
 /* ---------------- auth ---------------- */
 
 async function viewerAuthorized(request, env, url) {
-  if (!env.VIEWER_TOKEN) return true;
+  if (!env.VIEWER_TOKEN) {return true;}
   const got = url.searchParams.get('k') ||
     (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
-  if (!got) return false;
+  if (!got) {return false;}
   return timingSafeEqual(env.VIEWER_TOKEN, got);
 }
 
@@ -99,7 +99,7 @@ async function authorize(request, env, site) {
   try { tokens = JSON.parse(env.UPLOAD_TOKENS || '{}'); } catch { tokens = {}; }
   const expected = tokens[site];
   const got = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
-  if (!expected || !got) return false;
+  if (!expected || !got) {return false;}
   return timingSafeEqual(expected, got);
 }
 
@@ -112,7 +112,7 @@ async function timingSafeEqual(a, b) {
   ]);
   const va = new Uint8Array(ha), vb = new Uint8Array(hb);
   let diff = 0;
-  for (let i = 0; i < va.length; i++) diff |= va[i] ^ vb[i];
+  for (let i = 0; i < va.length; i++) {diff |= va[i] ^ vb[i];}
   return diff === 0;
 }
 
@@ -126,15 +126,15 @@ async function handleUpload(request, env) {
   const location = (request.headers.get('x-location') || '').toLowerCase().trim().slice(0, 64);
   const tags = parseTags(request.headers.get('x-tags'));
 
-  if (!ID_RE.test(site) || !ID_RE.test(source)) return json({ error: 'bad site/source' }, 400);
-  if (location && !/^[a-z0-9 _.-]+$/.test(location)) return json({ error: 'bad location' }, 400);
-  if (!Number.isInteger(cadenceS) || cadenceS < 5 || cadenceS > 3600) return json({ error: 'bad cadence' }, 400);
-  if (!VARIANTS.has(variant)) return json({ error: 'bad variant' }, 400);
-  if (!(await authorize(request, env, site))) return json({ error: 'unauthorized' }, 401);
+  if (!ID_RE.test(site) || !ID_RE.test(source)) {return json({ error: 'bad site/source' }, 400);}
+  if (location && !/^[a-z0-9 _.-]+$/.test(location)) {return json({ error: 'bad location' }, 400);}
+  if (!Number.isInteger(cadenceS) || cadenceS < 5 || cadenceS > 3600) {return json({ error: 'bad cadence' }, 400);}
+  if (!VARIANTS.has(variant)) {return json({ error: 'bad variant' }, 400);}
+  if (!(await authorize(request, env, site))) {return json({ error: 'unauthorized' }, 401);}
 
   const len = Number(request.headers.get('content-length') || 0);
-  if (!len) return json({ error: 'content-length required' }, 411);
-  if (len > MAX_UPLOAD_BYTES) return json({ error: 'too large' }, 413);
+  if (!len) {return json({ error: 'content-length required' }, 411);}
+  if (len > MAX_UPLOAD_BYTES) {return json({ error: 'too large' }, 413);}
 
   const cadence = cadenceS * 1000;
   const now = Date.now();
@@ -156,14 +156,14 @@ async function handleUpload(request, env) {
 /* Free-form source tags: "env=prod,room=lobby" → {env: 'prod', room: 'lobby'}.
  * Keys [a-z0-9_-]{1,32}, values [a-z0-9 ._-]{1,64}, at most 8 pairs. */
 function parseTags(raw) {
-  if (!raw) return null;
+  if (!raw) {return null;}
   const tags = {};
   for (const part of String(raw).split(',').slice(0, 8)) {
     const i = part.indexOf('=');
-    if (i <= 0) continue;
+    if (i <= 0) {continue;}
     const k = part.slice(0, i).trim().toLowerCase();
     const v = part.slice(i + 1).trim().toLowerCase();
-    if (/^[a-z0-9_-]{1,32}$/.test(k) && /^[a-z0-9 ._-]{1,64}$/.test(v)) tags[k] = v;
+    if (/^[a-z0-9_-]{1,32}$/.test(k) && /^[a-z0-9 ._-]{1,64}$/.test(v)) {tags[k] = v;}
   }
   return Object.keys(tags).length ? tags : null;
 }
@@ -172,7 +172,7 @@ function parseTags(raw) {
  * declaration changed; concurrent writers resolved by verify-after-write. */
 async function ensureRegistered(env, site, source, variant, cadence, ts, location, tags) {
   const memo = `${site}/${source}/${variant}/${cadence}/${location || ''}/${JSON.stringify(tags || {})}`;
-  if (isRegistered(memo)) return;
+  if (isRegistered(memo)) {return;}
   const field = variant === 'hi' ? 'hiCadence' : 'cadence';
 
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -191,11 +191,11 @@ async function ensureRegistered(env, site, source, variant, cadence, ts, locatio
       entry[field] = cadence;
       entry.history.push({ since: ts, variant, cadence });   // resume and/or pace change
     }
-    if (locChanged) entry.location = location;
-    if (tagsChanged) entry.tags = tags;
+    if (locChanged) {entry.location = location;}
+    if (tagsChanged) {entry.tags = tags;}
     const opts = cur ? { onlyIf: { etagMatches: cur.etag } } : {};
     const put = await env.FRAMES.put(INDEX_KEY, JSON.stringify(index), opts);
-    if (!put) continue;   // etag raced — reread and retry
+    if (!put) {continue;}   // etag raced — reread and retry
 
     // creation race has no etag guard: verify our entry actually survived
     const check = await env.FRAMES.get(INDEX_KEY);
@@ -226,31 +226,31 @@ async function handleDeclare(request, env) {
   const event = (request.headers.get('x-event') || '').toLowerCase();
   const reasonRaw = (request.headers.get('x-reason') || '').toLowerCase();
   const intendedRaw = (request.headers.get('x-intended') || '').trim();
-  if (!ID_RE.test(site) || !ID_RE.test(source)) return json({ error: 'bad site/source' }, 400);
-  if (event !== 'pause') return json({ error: 'unknown event' }, 400);
+  if (!ID_RE.test(site) || !ID_RE.test(source)) {return json({ error: 'bad site/source' }, 400);}
+  if (event !== 'pause') {return json({ error: 'unknown event' }, 400);}
   const reason = PAUSE_REASONS.has(reasonRaw) ? reasonRaw : undefined;
   const intended = intendedRaw === '1' ? true : intendedRaw === '0' ? false : undefined;
-  if (!(await authorize(request, env, site))) return json({ error: 'unauthorized' }, 401);
+  if (!(await authorize(request, env, site))) {return json({ error: 'unauthorized' }, 401);}
 
   for (let attempt = 0; attempt < 4; attempt++) {
     const cur = await env.FRAMES.get(INDEX_KEY);
     const index = cur ? await cur.json() : { sites: {} };
     const entry = index.sites?.[site]?.[source];
-    if (!entry) return json({ error: 'unknown source' }, 404);
+    if (!entry) {return json({ error: 'unknown source' }, 404);}
     const last = entry.history[entry.history.length - 1];
     // same pause re-declared = no-op; a DIFFERENT reason/intent while paused
     // pushes a new event so the band splits (quiet hours -> box shut down)
     if (last && last.paused && last.reason === reason && last.intended === intended)
-      return json({ ok: true, note: 'already paused' });
+      {return json({ ok: true, note: 'already paused' });}
     const evt = { since: Date.now(), variant: 'lo', paused: true };
-    if (reason !== undefined) evt.reason = reason;
-    if (intended !== undefined) evt.intended = intended;
+    if (reason !== undefined) {evt.reason = reason;}
+    if (intended !== undefined) {evt.intended = intended;}
     entry.history.push(evt);
     const put = await env.FRAMES.put(INDEX_KEY, JSON.stringify(index), { onlyIf: { etagMatches: cur.etag } });
     if (put) {
       // drop this isolate's memos so the next upload re-checks wasPaused
       for (const memo of registered.keys()) {
-        if (memo.startsWith(`${site}/${source}/`)) registered.delete(memo);
+        if (memo.startsWith(`${site}/${source}/`)) {registered.delete(memo);}
       }
       return json({ ok: true });
     }
@@ -261,7 +261,7 @@ async function handleDeclare(request, env) {
 /* ---------------- sources ---------------- */
 
 function parseCsv(v) {
-  if (!v || v === 'All' || v === '$__all') return null;
+  if (!v || v === 'All' || v === '$__all') {return null;}
   const parts = v.replace(/^\{|\}$/g, '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
   return parts.length ? parts : null;
 }
@@ -282,7 +282,7 @@ async function handleSources(url, env, ctx) {
   const filter = parseCsv(url.searchParams.get('site'));
   const out = [];
   for (const [site, sources] of Object.entries(index.sites || {})) {
-    if (filter && !filter.includes(site)) continue;
+    if (filter && !filter.includes(site)) {continue;}
     for (const [id, meta] of Object.entries(sources)) {
       out.push({ id, site, location: meta.location, tags: meta.tags, cadence: meta.cadence, hiCadence: meta.hiCadence, history: meta.history });
     }
@@ -301,15 +301,15 @@ async function handleFrames(url, env, ctx) {
   let to = Number(url.searchParams.get('to'));
   const step = Number(url.searchParams.get('step'));
 
-  if (!ID_RE.test(site) || !ID_RE.test(source) || !VARIANTS.has(variant)) return json({ error: 'bad params' }, 400);
-  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return json({ error: 'bad range' }, 400);
-  if (to === from) return json([]);   // zero-width window: legitimate degenerate ask, not an error
-  if (!Number.isInteger(step) || step < 1000) return json({ error: 'bad step' }, 400);
+  if (!ID_RE.test(site) || !ID_RE.test(source) || !VARIANTS.has(variant)) {return json({ error: 'bad params' }, 400);}
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {return json({ error: 'bad range' }, 400);}
+  if (to === from) {return json([]);}   // zero-width window: legitimate degenerate ask, not an error
+  if (!Number.isInteger(step) || step < 1000) {return json({ error: 'bad step' }, 400);}
 
   // snap the window to the step grid → auto-refresh jitter hits the same cache entry
   from = Math.floor(from / step) * step;
   to = Math.ceil(to / step) * step;
-  if ((to - from) / step > MAX_BUCKETS) return json({ error: 'too many buckets' }, 400);
+  if ((to - from) / step > MAX_BUCKETS) {return json({ error: 'too many buckets' }, 400);}
 
   const canonical = new URL('/frames', url.origin);
   for (const [k, v] of [['site', site], ['source', source], ['variant', variant], ['from', from], ['to', to], ['step', step]]) {
@@ -318,7 +318,7 @@ async function handleFrames(url, env, ctx) {
   const cache = caches.default;
   const cacheKey = new Request(canonical);
   const hit = await cache.match(cacheKey);
-  if (hit) return hit;
+  if (hit) {return hit;}
 
   // One bounded LIST over the kiosk/variant prefix. Keys are 13-digit epochs,
   // so lexicographic order == numeric order and startAfter can seek to `from`.
@@ -335,15 +335,15 @@ async function handleFrames(url, env, ctx) {
     pages++;
     for (const obj of listing.objects) {
       const ts = Number(obj.key.slice(prefix.length, -4));
-      if (!Number.isFinite(ts)) continue;
+      if (!Number.isFinite(ts)) {continue;}
       if (ts > to) { done = true; break; }
       const idx = Math.round((ts - bucketStart) / step);
       const dist = Math.abs(ts - (bucketStart + idx * step));
       const cur = best.get(idx);
-      if (!cur || dist < cur.dist) best.set(idx, { ts, dist });
+      if (!cur || dist < cur.dist) {best.set(idx, { ts, dist });}
     }
-    if (!listing.truncated) done = true;
-    else cursor = listing.cursor;
+    if (!listing.truncated) {done = true;}
+    else {cursor = listing.cursor;}
   }
 
   const base = env.IMG_BASE || url.origin;
@@ -362,12 +362,12 @@ async function handleFrames(url, env, ctx) {
 
 async function handleFrame(url, env, ctx) {
   const m = url.pathname.match(/^\/frame\/(lo|hi)\/([a-z0-9_-]+)\/([a-z0-9_-]+)\/(\d{10,14})\.jpg$/);
-  if (!m) return json({ error: 'not found' }, 404);
+  if (!m) {return json({ error: 'not found' }, 404);}
 
   const cache = caches.default;
   const cacheKey = new Request(new URL(url.pathname, url.origin));
   const hit = await cache.match(cacheKey);
-  if (hit) return hit;
+  if (hit) {return hit;}
 
   const obj = await env.FRAMES.get(url.pathname.slice('/frame/'.length));
   if (!obj) {

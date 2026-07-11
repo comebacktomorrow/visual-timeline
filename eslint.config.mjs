@@ -33,6 +33,8 @@ export default defineConfig([
       'playwright/.auth/',
       '**/.idea',
       '**/.eslintcache',
+      'web/vt-core.js',        // esbuild artifact (committed for worker asset deploys)
+      'worker/.wrangler/',     // wrangler dev scratch
     ],
   },
   ...baseConfig,
