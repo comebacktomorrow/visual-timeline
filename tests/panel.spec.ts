@@ -1,35 +1,26 @@
 import { test, expect } from '@grafana/plugin-e2e';
 
-test('should display "No data" in case panel data is empty', async ({
+// The panel ships a built-in demo backend (no API URL configured), so these
+// smoke tests assert the real render path with zero external dependencies.
+
+test('timeline mode renders source cards with frames from demo data', async ({
+  gotoPanelEditPage,
+  readProvisionedDashboard,
+}) => {
+  const dashboard = await readProvisionedDashboard({ fileName: 'dashboard.json' });
+  const panelEditPage = await gotoPanelEditPage({ dashboard, id: '1' });
+  const panel = panelEditPage.panel.locator;
+  await expect(panel.locator('.ktl .card').first()).toBeVisible({ timeout: 20000 });
+  await expect(panel.locator('.ktl .slot img').first()).toBeVisible();
+  await expect(panel.locator('.ktl .axis .tick').first()).toBeVisible();
+});
+
+test('multiview grid mode renders tiles from demo data', async ({
   gotoPanelEditPage,
   readProvisionedDashboard,
 }) => {
   const dashboard = await readProvisionedDashboard({ fileName: 'dashboard.json' });
   const panelEditPage = await gotoPanelEditPage({ dashboard, id: '2' });
-  await expect(panelEditPage.panel.locator).toContainText('No data');
-});
-
-test('should display circle when data is passed to the panel', async ({
-  panelEditPage,
-  readProvisionedDataSource,
-  page,
-}) => {
-  const ds = await readProvisionedDataSource({ fileName: 'datasources.yml' });
-  await panelEditPage.datasource.set(ds.name);
-  await panelEditPage.setVisualization('Visual Timeline');
-  await expect(page.getByTestId('simple-panel-circle')).toBeVisible();
-});
-
-test('should display series counter when "Show series counter" option is enabled', async ({
-  gotoPanelEditPage,
-  readProvisionedDashboard,
-  page,
-}) => {
-  const dashboard = await readProvisionedDashboard({ fileName: 'dashboard.json' });
-  const panelEditPage = await gotoPanelEditPage({ dashboard, id: '1' });
-  const options = panelEditPage.getCustomOptions('Visual Timeline');
-  const showSeriesCounter = options.getSwitch('Show series counter');
-
-  await showSeriesCounter.check();
-  await expect(page.getByTestId('simple-panel-series-counter')).toBeVisible();
+  const panel = panelEditPage.panel.locator;
+  await expect(panel.locator('.ktl .tile').first()).toBeVisible({ timeout: 20000 });
 });
