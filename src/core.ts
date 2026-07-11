@@ -107,7 +107,9 @@ const CSS = `
 .ktl .slot.future::before { content:""; position:absolute; inset:0; background:#232830;
   animation:ktl-limbo 2.2s ease-in-out infinite; }
 @keyframes ktl-limbo { 0%,100% { opacity:.15 } 50% { opacity:.55 } }
-.ktl .slot.beyond { background:transparent; }
+.ktl .slot.beyond { background:var(--ktl-bg2); }
+.ktl .slot.beyond .bt { position:absolute; top:0; bottom:0; width:1px; background:var(--ktl-axis-grid); }
+.ktl .mag.off { display:none; }
 .ktl .boot-err { flex:1 1 auto; display:flex; align-items:center; justify-content:center;
                  color:var(--ktl-off); font-size:12px; text-align:center; padding:14px; }
 .ktl .mag.future { border-color:var(--ktl-dim); }
@@ -869,6 +871,7 @@ export function mountTimeline(root, cfg) {
     return Math.min(P.to, Date.now());
   }
   let kiosks = [], cards = {}, cursorT = restoreCursor(), destroyed = false, pollTimer = null;
+  const axisTickList = [];   // filled by buildAxis; consumed by ruleBeyond
   let suppressClick = false;
   const pv = makePreview();
 
@@ -1046,15 +1049,41 @@ export function mountTimeline(root, cfg) {
     const fmt = tickFormat(tickStep);
 
     axis.querySelectorAll('.tick').forEach(t => t.remove());
+    axisTickList.length = 0;
     let d = alignedStart(P.from, tickStep);
     while (+d < P.from) d = nextTick(d, tickStep);
     for (; +d <= P.to; d = nextTick(d, tickStep)) {
       const ts = +d;
+      axisTickList.push(ts);
       const el = document.createElement('div');
       el.className = 'tick';
       el.style.left = ((ts - P.from) / SPAN * w) + 'px';
       el.textContent = fmt(ts);
       axis.appendChild(el);
+    }
+  }
+
+  /* The beyond-now spacer looks EMPTY, not black — the card's own surface,
+   * ruled only by hairlines continuing the axis ticks (black is a signal in
+   * a screenshot timeline; the future is the absence of signal). Re-run
+   * whenever the spacer's geometry changes (poll carving/band growth). */
+  function ruleBeyond(sl) {
+    if (!sl || !sl.beyond || !sl.el) return;
+    sl.el.querySelectorAll('.bt').forEach(t => t.remove());
+    for (const ts of axisTickList) {
+      if (ts <= sl.ts || ts > sl.ts + sl.span) continue;
+      const t = document.createElement('div');
+      t.className = 'bt';
+      t.style.left = (((ts - sl.ts) / sl.span) * 100).toFixed(3) + '%';
+      sl.el.appendChild(t);
+    }
+  }
+  function ruleAllBeyond() {
+    for (const k of kiosks) {
+      const c = cards[k.id];
+      if (!c) continue;
+      const last = c.model.slots[c.model.slots.length - 1];
+      if (last && last.beyond) ruleBeyond(last);
     }
   }
 
@@ -1174,7 +1203,7 @@ export function mountTimeline(root, cfg) {
       const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
       c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + 'px';
       if (slot && slot.frame) {
-        c.mag.classList.remove('gap', 'future', ...PAUSE_CLASSES);
+        c.mag.classList.remove('gap', 'future', 'off', ...PAUSE_CLASSES);
         c.mag.querySelector('img').src = slot.frame.url;
         c.mag.querySelector('.cap').textContent = fmtTime(slot.frame.ts);
         c.head.textContent = '';                 // healthy: time lives on the magnifier
@@ -1182,31 +1211,30 @@ export function mountTimeline(root, cfg) {
       } else if (slot && slot.paused) {
         // declared silence — neutral (or amber when unintended), not offline-red
         const pi = pauseInfo(slot);
-        c.mag.classList.remove('gap', 'future', ...PAUSE_CLASSES);
+        c.mag.classList.remove('gap', 'future', 'off', ...PAUSE_CLASSES);
         c.mag.classList.add(...pi.classes);
         c.mag.querySelector('.cap').textContent = pi.label.toLowerCase();
         c.head.textContent = pi.label.toLowerCase();
         c.head.classList.remove('stale', ...PAUSE_CLASSES);
         c.head.classList.add(...pi.classes);
       } else if (slot && slot.beyond) {
-        // ahead of now: unknown, deliberately unlabeled
-        c.mag.classList.remove('gap', ...PAUSE_CLASSES);
-        c.mag.classList.add('future');
-        c.mag.querySelector('.cap').textContent = '—';
+        // ahead of now: unknown — nothing to preview, only the crosshair
+        c.mag.classList.remove('gap', 'future', ...PAUSE_CLASSES);
+        c.mag.classList.add('off');
         c.head.textContent = '';
         c.head.classList.remove('stale', ...PAUSE_CLASSES);
       } else if (slot && slot.future) {
         // not offline, not stale: either the tick is ahead of now, or it
         // just passed and its frame is still in flight (one-step grace)
         const inFlight = slot.ts <= Date.now();
-        c.mag.classList.remove('gap', ...PAUSE_CLASSES);
+        c.mag.classList.remove('gap', 'off', ...PAUSE_CLASSES);
         c.mag.classList.add('future');
         c.mag.querySelector('.cap').textContent = (inFlight ? 'expected — ' : 'upcoming — ') + fmtShort(slot.ts);
         c.head.textContent = inFlight ? 'expected' : 'upcoming';
         c.head.classList.remove('stale', ...PAUSE_CLASSES);
       } else {
         c.mag.classList.add('gap');
-        c.mag.classList.remove('future', ...PAUSE_CLASSES);
+        c.mag.classList.remove('future', 'off', ...PAUSE_CLASSES);
         const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
         let last = null;
         for (let j = i; j >= 0; j--) if (c.model.slots[j].frame) { last = c.model.slots[j].frame; break; }
@@ -1256,6 +1284,7 @@ export function mountTimeline(root, cfg) {
     }
     kiosks = kiosks.filter((k) => cards[k.id]);
     buildAxis();
+    ruleAllBeyond();
     // host-provided annotations (Grafana: the dashboard's own annotation
     // queries, whatever data source they run on) win; the mock seam only
     // fills demo mode so the feature is visible without a backend
@@ -1289,7 +1318,7 @@ export function mountTimeline(root, cfg) {
                 filler.ts += grow; filler.span -= grow;
                 if (prev.el) prev.el.style.flexGrow = String(prev.span / 1000);
                 if (filler.span <= 0) { if (filler.el) filler.el.remove(); mSlots.pop(); }
-                else if (filler.el) filler.el.style.flexGrow = String(filler.span / 1000);
+                else { if (filler.el) filler.el.style.flexGrow = String(filler.span / 1000); ruleBeyond(filler); }
               }
             } else if (prev && prev.step) {
               let nextTs = prev.ts + prev.step;
@@ -1304,7 +1333,7 @@ export function mountTimeline(root, cfg) {
                 mSlots.splice(mSlots.length - 1, 0, sl);
                 f.span -= sl.span; f.ts += sl.span;
                 if (f.span <= 0) { if (f.el) f.el.remove(); mSlots.pop(); }
-                else if (f.el) f.el.style.flexGrow = String(f.span / 1000);
+                else { if (f.el) f.el.style.flexGrow = String(f.span / 1000); ruleBeyond(f); }
                 nextTs += prev.step;
               }
             }

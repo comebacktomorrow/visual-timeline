@@ -126,7 +126,9 @@ var VTCore = (() => {
 .ktl .slot.future::before { content:""; position:absolute; inset:0; background:#232830;
   animation:ktl-limbo 2.2s ease-in-out infinite; }
 @keyframes ktl-limbo { 0%,100% { opacity:.15 } 50% { opacity:.55 } }
-.ktl .slot.beyond { background:transparent; }
+.ktl .slot.beyond { background:var(--ktl-bg2); }
+.ktl .slot.beyond .bt { position:absolute; top:0; bottom:0; width:1px; background:var(--ktl-axis-grid); }
+.ktl .mag.off { display:none; }
 .ktl .boot-err { flex:1 1 auto; display:flex; align-items:center; justify-content:center;
                  color:var(--ktl-off); font-size:12px; text-align:center; padding:14px; }
 .ktl .mag.future { border-color:var(--ktl-dim); }
@@ -784,6 +786,7 @@ var VTCore = (() => {
       return Math.min(P.to, Date.now());
     }
     let kiosks = [], cards = {}, cursorT = restoreCursor(), destroyed = false, pollTimer = null;
+    const axisTickList = [];
     let suppressClick = false;
     const pv = makePreview();
     function showSelection(fa, fb) {
@@ -928,15 +931,36 @@ var VTCore = (() => {
       const tickStep = TICK_STEPS.find((s) => SPAN / s <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
       const fmt = tickFormat(tickStep);
       axis.querySelectorAll(".tick").forEach((t) => t.remove());
+      axisTickList.length = 0;
       let d = alignedStart(P.from, tickStep);
       while (+d < P.from) d = nextTick(d, tickStep);
       for (; +d <= P.to; d = nextTick(d, tickStep)) {
         const ts = +d;
+        axisTickList.push(ts);
         const el = document.createElement("div");
         el.className = "tick";
         el.style.left = (ts - P.from) / SPAN * w + "px";
         el.textContent = fmt(ts);
         axis.appendChild(el);
+      }
+    }
+    function ruleBeyond(sl) {
+      if (!sl || !sl.beyond || !sl.el) return;
+      sl.el.querySelectorAll(".bt").forEach((t) => t.remove());
+      for (const ts of axisTickList) {
+        if (ts <= sl.ts || ts > sl.ts + sl.span) continue;
+        const t = document.createElement("div");
+        t.className = "bt";
+        t.style.left = ((ts - sl.ts) / sl.span * 100).toFixed(3) + "%";
+        sl.el.appendChild(t);
+      }
+    }
+    function ruleAllBeyond() {
+      for (const k of kiosks) {
+        const c = cards[k.id];
+        if (!c) continue;
+        const last = c.model.slots[c.model.slots.length - 1];
+        if (last && last.beyond) ruleBeyond(last);
       }
     }
     function renderAnnotations(anns) {
@@ -1035,35 +1059,34 @@ var VTCore = (() => {
         const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
         c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + "px";
         if (slot && slot.frame) {
-          c.mag.classList.remove("gap", "future", ...PAUSE_CLASSES);
+          c.mag.classList.remove("gap", "future", "off", ...PAUSE_CLASSES);
           c.mag.querySelector("img").src = slot.frame.url;
           c.mag.querySelector(".cap").textContent = fmtTime(slot.frame.ts);
           c.head.textContent = "";
           c.head.classList.remove("stale", ...PAUSE_CLASSES);
         } else if (slot && slot.paused) {
           const pi = pauseInfo(slot);
-          c.mag.classList.remove("gap", "future", ...PAUSE_CLASSES);
+          c.mag.classList.remove("gap", "future", "off", ...PAUSE_CLASSES);
           c.mag.classList.add(...pi.classes);
           c.mag.querySelector(".cap").textContent = pi.label.toLowerCase();
           c.head.textContent = pi.label.toLowerCase();
           c.head.classList.remove("stale", ...PAUSE_CLASSES);
           c.head.classList.add(...pi.classes);
         } else if (slot && slot.beyond) {
-          c.mag.classList.remove("gap", ...PAUSE_CLASSES);
-          c.mag.classList.add("future");
-          c.mag.querySelector(".cap").textContent = "\u2014";
+          c.mag.classList.remove("gap", "future", ...PAUSE_CLASSES);
+          c.mag.classList.add("off");
           c.head.textContent = "";
           c.head.classList.remove("stale", ...PAUSE_CLASSES);
         } else if (slot && slot.future) {
           const inFlight = slot.ts <= Date.now();
-          c.mag.classList.remove("gap", ...PAUSE_CLASSES);
+          c.mag.classList.remove("gap", "off", ...PAUSE_CLASSES);
           c.mag.classList.add("future");
           c.mag.querySelector(".cap").textContent = (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + fmtShort(slot.ts);
           c.head.textContent = inFlight ? "expected" : "upcoming";
           c.head.classList.remove("stale", ...PAUSE_CLASSES);
         } else {
           c.mag.classList.add("gap");
-          c.mag.classList.remove("future", ...PAUSE_CLASSES);
+          c.mag.classList.remove("future", "off", ...PAUSE_CLASSES);
           const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
           let last = null;
           for (let j = i; j >= 0; j--) if (c.model.slots[j].frame) {
@@ -1107,6 +1130,7 @@ var VTCore = (() => {
       }
       kiosks = kiosks.filter((k) => cards[k.id]);
       buildAxis();
+      ruleAllBeyond();
       const rawAnns = cfg.annotations && cfg.annotations.length ? cfg.annotations : backend.annotations ? backend.annotations() : [];
       if (cfg.showAnnotations !== false) renderAnnotations(normAnnotations(rawAnns, P));
       setCursor(cursorT, null, true);
@@ -1133,7 +1157,10 @@ var VTCore = (() => {
                   if (filler.span <= 0) {
                     if (filler.el) filler.el.remove();
                     mSlots.pop();
-                  } else if (filler.el) filler.el.style.flexGrow = String(filler.span / 1e3);
+                  } else {
+                    if (filler.el) filler.el.style.flexGrow = String(filler.span / 1e3);
+                    ruleBeyond(filler);
+                  }
                 }
               } else if (prev && prev.step) {
                 let nextTs = prev.ts + prev.step;
@@ -1151,7 +1178,10 @@ var VTCore = (() => {
                   if (f.span <= 0) {
                     if (f.el) f.el.remove();
                     mSlots.pop();
-                  } else if (f.el) f.el.style.flexGrow = String(f.span / 1e3);
+                  } else {
+                    if (f.el) f.el.style.flexGrow = String(f.span / 1e3);
+                    ruleBeyond(f);
+                  }
                   nextTs += prev.step;
                 }
               }

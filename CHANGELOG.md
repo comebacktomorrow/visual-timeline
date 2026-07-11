@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.14
+
+- The future looks EMPTY, not black: the beyond-now region renders as
+  the card's own surface, ruled only by hairlines continuing the axis
+  ticks — black is its own signal in a screenshot timeline (a dark
+  screen), so the unknown future no longer borrows it. Hovering there
+  shows no magnifier at all: nothing to preview, only the crosshair and
+  time pill. The one rendered thing in the future remains the pulsing
+  live-edge slot. Ruling re-renders as the poll carves the spacer.
+
 ## 0.9.13
 
 - Time axis ticks now behave like Grafana's own panels. Increments span
