@@ -113,6 +113,30 @@ three env vars, composable per deployment:
 Default-private posture: set `VIEWER_TOKEN` + `IMG_SIGN_KEY`, leave
 `IMG_BASE` unset.
 
+### Where the viewer token lives (and the 2.0 plan)
+
+The panel is a **panel plugin**, so its API key is a per-panel option in
+the dashboard JSON — plaintext, visible to anyone who can view the
+dashboard (they receive it in the browser regardless: panels fetch
+client-side). Panel plugins have no config page and no `secureJsonData`;
+those are app/datasource plugin features. Practical posture today: use a
+dedicated, revocable viewer token per consumer (a dashboard, a wallboard)
+and treat "can view the dashboard" as "holds that token".
+
+The keyless architecture — planned as the 2.0 shape, not built — is a
+small companion **datasource plugin**: its config page stores the API URL
++ key in `secureJsonData` (encrypted server-side), `/sources` and
+`/frames` proxy through Grafana's backend so the key never reaches the
+browser, and the signed image URLs this API already mints are what make
+that cheap — the proxied `/frames` response carries its own short-lived
+image authorization, so `<img>` tags still load straight from the worker
+with no key and no image bytes proxied through Grafana. Grafana's own
+login becomes the viewer-facing auth flow; no second login, no static
+key in any dashboard JSON. (The other conceivable flow — browser SSO à
+la Cloudflare Access in front of the worker — is a poor fit for panels:
+cross-origin cookies + CORS-with-credentials, and it breaks the
+wildcard-CORS embed story.)
+
 ## Try it with curl
 
 ```bash
