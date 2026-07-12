@@ -93,9 +93,19 @@ Writes always require the per-site upload token. Reads are governed by
 three env vars, composable per deployment:
 
 - **`VIEWER_TOKEN`** (secret) — when set, every data read (`/sources`,
-  `/frames`, `/frame/*`) requires it: `Authorization: Bearer` on API
-  calls, `?k=` on image URLs (`<img>` can't send headers). Unset = open
-  reads (dev/demo).
+  `/frames`, `/frame/*`) requires a viewer credential: `Authorization:
+  Bearer` on API calls, `?k=` on image URLs (`<img>` can't send headers).
+  Unset = open reads (dev/demo). Either a single token string, or a JSON
+  map of **named consumers** so a leaked dashboard costs one revocable
+  entry, optionally scoped to sites:
+
+  ```json
+  {"grafana-cloud": "tok...",
+   "lobby-wall": {"token": "tok...", "sites": ["site-a"]}}
+  ```
+
+  A site-scoped consumer sees only its sites in `/sources` and gets 403
+  for out-of-scope `/frames` and `/frame/*`.
 - **`IMG_SIGN_KEY`** (secret) — when set, `/frames` appends
   `?e=<expiry-ms>&sig=<hex HMAC-SHA256(site/source|expiry)>` to each image
   URL, and `/frame/*` accepts a valid signature as authorization on its

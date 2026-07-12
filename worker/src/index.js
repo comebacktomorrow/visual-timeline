@@ -64,10 +64,11 @@ export default {
       if (isData && request.method === 'GET') {
         // viewer auth: when VIEWER_TOKEN is set, all data reads require it
         // (?k= for <img> URLs, Bearer for API calls). Unset = open (dev/demo).
-        if (!(await viewerAuthorized(request, env, url))) {return json({ error: 'unauthorized' }, 401);}
-        if (url.pathname === '/frames') {return await handleFrames(url, env, ctx);}
-        if (url.pathname.startsWith('/frame/')) {return await handleFrame(url, env, ctx);}
-        return await handleSources(url, env, ctx);   // /kiosks = deprecated alias
+        const viewer = await viewerFor(request, env, url);
+        if (!viewer) {return json({ error: 'unauthorized' }, 401);}
+        if (url.pathname === '/frames') {return await handleFrames(url, env, ctx, viewer);}
+        if (url.pathname.startsWith('/frame/')) {return await handleFrame(url, env, ctx, viewer);}
+        return await handleSources(url, env, ctx, viewer);   // /kiosks = deprecated alias
       }
       return env.ASSETS.fetch(request);
     } catch (err) {
@@ -86,7 +87,15 @@ function json(body, status = 200, extra = {}) {
 
 /* ---------------- auth ---------------- */
 
-async function viewerAuthorized(request, env, url) {
+/* Resolve the requesting viewer. Returns {sites} when authorized — sites
+ * null = every site, an array = only those — or null when not.
+ *
+ * VIEWER_TOKEN is either a single token string (one shared key) or a JSON
+ * map of named consumers, so a leaked dashboard costs one revocable entry:
+ *   {"grafana-cloud": "tok...",
+ *    "lobby-wall": {"token": "tok...", "sites": ["site-a"]}}
+ */
+async function viewerFor(request, env, url) {
   // a signed image URL is its own authorization: scoped to one source,
   // expiring, and mintable only by this worker — so the long-lived viewer
   // token never has to ride in <img> URLs (browser history, dashboard
@@ -97,14 +106,29 @@ async function viewerAuthorized(request, env, url) {
     const m = url.pathname.match(/^\/frame\/(?:lo|hi)\/([a-z0-9_-]+)\/([a-z0-9_-]+)\//);
     if (m && sig && Number.isFinite(e) && Date.now() < e &&
         (await timingSafeEqual(await signScope(env, m[1], m[2], e), sig))) {
-      return true;
+      return { sites: [m[1]] };   // the signature already binds the site
     }
   }
-  if (!env.VIEWER_TOKEN) {return true;}
+  if (!env.VIEWER_TOKEN) {return { sites: null };}
   const got = url.searchParams.get('k') ||
     (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
-  if (!got) {return false;}
-  return timingSafeEqual(env.VIEWER_TOKEN, got);
+  if (!got) {return null;}
+  const raw = env.VIEWER_TOKEN.trim();
+  if (!raw.startsWith('{')) {
+    return (await timingSafeEqual(raw, got)) ? { sites: null } : null;
+  }
+  let map;
+  try { map = JSON.parse(raw); } catch { return null; }
+  for (const entry of Object.values(map)) {
+    const token = typeof entry === 'string' ? entry : entry && entry.token;
+    if (token && (await timingSafeEqual(token, got))) {
+      const sites = entry && typeof entry === 'object' && Array.isArray(entry.sites) && entry.sites.length
+        ? entry.sites.map((s) => String(s).toLowerCase())
+        : null;
+      return { sites };
+    }
+  }
+  return null;
 }
 
 /* Source-scoped image-URL signature: HMAC(site/source|expiry). One
@@ -297,7 +321,7 @@ function parseCsv(v) {
   return parts.length ? parts : null;
 }
 
-async function handleSources(url, env, ctx) {
+async function handleSources(url, env, ctx, viewer) {
   const cache = caches.default;
   const cacheKey = new Request(new URL('/sources-index', url.origin));
   let res = await cache.match(cacheKey);
@@ -313,6 +337,9 @@ async function handleSources(url, env, ctx) {
   const filter = parseCsv(url.searchParams.get('site'));
   const out = [];
   for (const [site, sources] of Object.entries(index.sites || {})) {
+    // the shared cached index is post-filtered per request: a site-scoped
+    // viewer simply doesn't see out-of-scope sites
+    if (viewer.sites && !viewer.sites.includes(site)) {continue;}
     if (filter && !filter.includes(site)) {continue;}
     for (const [id, meta] of Object.entries(sources)) {
       out.push({ id, site, location: meta.location, tags: meta.tags, cadence: meta.cadence, hiCadence: meta.hiCadence, history: meta.history });
@@ -324,7 +351,7 @@ async function handleSources(url, env, ctx) {
 
 /* ---------------- frames ---------------- */
 
-async function handleFrames(url, env, ctx) {
+async function handleFrames(url, env, ctx, viewer) {
   const site = (url.searchParams.get('site') || '').toLowerCase();
   const source = (url.searchParams.get('source') || url.searchParams.get('kiosk') || '').toLowerCase();
   const variant = (url.searchParams.get('variant') || 'lo').toLowerCase();
@@ -333,6 +360,7 @@ async function handleFrames(url, env, ctx) {
   const step = Number(url.searchParams.get('step'));
 
   if (!ID_RE.test(site) || !ID_RE.test(source) || !VARIANTS.has(variant)) {return json({ error: 'bad params' }, 400);}
+  if (viewer.sites && !viewer.sites.includes(site)) {return json({ error: 'forbidden' }, 403);}
   if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {return json({ error: 'bad range' }, 400);}
   if (to === from) {return json([]);}   // zero-width window: legitimate degenerate ask, not an error
   if (!Number.isInteger(step) || step < 1000) {return json({ error: 'bad step' }, 400);}
@@ -402,9 +430,10 @@ async function handleFrames(url, env, ctx) {
 
 /* ---------------- frame image (POC path; prod = R2 custom domain) ---------------- */
 
-async function handleFrame(url, env, ctx) {
+async function handleFrame(url, env, ctx, viewer) {
   const m = url.pathname.match(/^\/frame\/(lo|hi)\/([a-z0-9_-]+)\/([a-z0-9_-]+)\/(\d{10,14})\.jpg$/);
   if (!m) {return json({ error: 'not found' }, 404);}
+  if (viewer.sites && !viewer.sites.includes(m[2])) {return json({ error: 'forbidden' }, 403);}
 
   const cache = caches.default;
   const cacheKey = new Request(new URL(url.pathname, url.origin));
