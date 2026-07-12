@@ -519,7 +519,9 @@ var VTCore = (() => {
       return null;
     }
     const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
-    return apiUrl.replace(/\/+$/, "") + "/frame/hi/" + decl.site + "/" + decl.id + "/" + hiTs + ".jpg" + (apiKey ? "?k=" + encodeURIComponent(apiKey) : "");
+    const qAt = frame.url ? frame.url.indexOf("?") : -1;
+    const q = qAt >= 0 ? frame.url.slice(qAt) : apiKey ? "?k=" + encodeURIComponent(apiKey) : "";
+    return apiUrl.replace(/\/+$/, "") + "/frame/hi/" + decl.site + "/" + decl.id + "/" + hiTs + ".jpg" + q;
   }
   function parseVar(v) {
     if (!v || v === "All" || v === "$__all") {

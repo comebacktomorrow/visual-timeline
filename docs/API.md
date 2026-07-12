@@ -87,6 +87,32 @@ clients derive it from their pixel budget, Prometheus-style).
 The frame image. Served with `Cache-Control: public, max-age=31536000,
 immutable` + ETag. Missing frame → 404 (that's a gap, render it as one).
 
+## Read auth (reference worker)
+
+Writes always require the per-site upload token. Reads are governed by
+three env vars, composable per deployment:
+
+- **`VIEWER_TOKEN`** (secret) — when set, every data read (`/sources`,
+  `/frames`, `/frame/*`) requires it: `Authorization: Bearer` on API
+  calls, `?k=` on image URLs (`<img>` can't send headers). Unset = open
+  reads (dev/demo).
+- **`IMG_SIGN_KEY`** (secret) — when set, `/frames` appends
+  `?e=<expiry-ms>&sig=<hex HMAC-SHA256(site/source|expiry)>` to each image
+  URL, and `/frame/*` accepts a valid signature as authorization on its
+  own. The long-lived viewer token then never appears in image URLs
+  (browser history, dashboard JSON, request logs); a leaked URL exposes
+  one source's frames for ≤24 h. One signature covers both variants of a
+  source, so clients reuse the lo URL's query string when constructing
+  hi-variant URLs. The viewer token keeps working as a fallback.
+- **`IMG_BASE`** — the explicit *public* opt-out for content that
+  tolerates it: image URLs point at an R2 custom domain, bypassing the
+  Worker (and its request quota) entirely. R2 domains can't verify
+  signatures or tokens, and frame keys are predictable — **only** use
+  this when the frames may be world-readable.
+
+Default-private posture: set `VIEWER_TOKEN` + `IMG_SIGN_KEY`, leave
+`IMG_BASE` unset.
+
 ## Try it with curl
 
 ```bash

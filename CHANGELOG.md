@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.18
+
+- Signed image URLs (reference worker): setting `IMG_SIGN_KEY` makes
+  `/frames` mint a source-scoped expiring HMAC (`?e=&sig=`) on every
+  image URL, and `/frame/*` accepts it as authorization — the long-lived
+  viewer token no longer rides in image URLs (browser history, dashboard
+  JSON, request logs). The client reuses the lo URL's query string when
+  it builds the hi-variant preview URL, so one signature covers both
+  variants. Viewer token keeps working as a fallback; `IMG_BASE` remains
+  the explicit public-content opt-out. See docs/API.md "Read auth".
+
 ## 0.9.17
 
 - A dashboard WITHOUT a `site` variable rendered an axis and zero cards:

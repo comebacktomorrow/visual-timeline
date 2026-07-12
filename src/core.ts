@@ -492,14 +492,17 @@ function makeApiBackend(apiUrl, apiKey) {
 }
 
 /* Nearest hi-variant URL for the click-in preview (API mode only); the
- * preview falls back to the lo frame if the hi key 404s. */
+ * preview falls back to the lo frame if the hi key 404s. The lo frame's
+ * query string is reused verbatim: it carries whatever authorization the
+ * backend chose (a source-scoped signature covers hi too, and an appended
+ * viewer key is the same key) — this is the only image URL built
+ * client-side, so it can't mint its own signature. */
 function hiUrlFor(frame, decl, apiUrl, apiKey) {
   if (!apiUrl || !decl.hiCadence) {return null;}
   const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
-  return (
-    apiUrl.replace(/\/+$/, '') + '/frame/hi/' + decl.site + '/' + decl.id + '/' + hiTs + '.jpg' +
-    (apiKey ? '?k=' + encodeURIComponent(apiKey) : '')
-  );
+  const qAt = frame.url ? frame.url.indexOf('?') : -1;
+  const q = qAt >= 0 ? frame.url.slice(qAt) : apiKey ? '?k=' + encodeURIComponent(apiKey) : '';
+  return apiUrl.replace(/\/+$/, '') + '/frame/hi/' + decl.site + '/' + decl.id + '/' + hiTs + '.jpg' + q;
 }
 
 /* ======================= timeline core ======================= */

@@ -87,11 +87,42 @@ function json(body, status = 200, extra = {}) {
 /* ---------------- auth ---------------- */
 
 async function viewerAuthorized(request, env, url) {
+  // a signed image URL is its own authorization: scoped to one source,
+  // expiring, and mintable only by this worker — so the long-lived viewer
+  // token never has to ride in <img> URLs (browser history, dashboard
+  // JSON, request logs)
+  if (env.IMG_SIGN_KEY && url.pathname.startsWith('/frame/')) {
+    const e = Number(url.searchParams.get('e'));
+    const sig = url.searchParams.get('sig') || '';
+    const m = url.pathname.match(/^\/frame\/(?:lo|hi)\/([a-z0-9_-]+)\/([a-z0-9_-]+)\//);
+    if (m && sig && Number.isFinite(e) && Date.now() < e &&
+        (await timingSafeEqual(await signScope(env, m[1], m[2], e), sig))) {
+      return true;
+    }
+  }
   if (!env.VIEWER_TOKEN) {return true;}
   const got = url.searchParams.get('k') ||
     (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
   if (!got) {return false;}
   return timingSafeEqual(env.VIEWER_TOKEN, got);
+}
+
+/* Source-scoped image-URL signature: HMAC(site/source|expiry). One
+ * signature covers every frame (lo AND hi) of that source until expiry,
+ * so /frames mints exactly one per response and the client can reuse the
+ * query string when it constructs hi-variant URLs itself. */
+let signKey = null;
+async function signScope(env, site, source, exp) {
+  if (!signKey) {
+    signKey = await crypto.subtle.importKey(
+      'raw', new TextEncoder().encode(env.IMG_SIGN_KEY),
+      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  }
+  const mac = await crypto.subtle.sign(
+    'HMAC', signKey, new TextEncoder().encode(`${site}/${source}|${exp}`));
+  let hex = '';
+  for (const b of new Uint8Array(mac)) {hex += b.toString(16).padStart(2, '0');}
+  return hex;
 }
 
 async function authorize(request, env, site) {
@@ -346,11 +377,22 @@ async function handleFrames(url, env, ctx) {
     else {cursor = listing.cursor;}
   }
 
+  // Default-private: when IMG_SIGN_KEY is set, worker-served image URLs
+  // carry a source-scoped expiring signature instead of needing the viewer
+  // token appended. IMG_BASE (public bucket domain) is the explicit public
+  // opt-out — R2 can't verify signatures, so those URLs stay bare.
   const base = env.IMG_BASE || url.origin;
+  let auth = '';
+  if (env.IMG_SIGN_KEY && !env.IMG_BASE) {
+    // validity must comfortably outlive this JSON response's cache life
+    // (≤1h) plus an open viewing session; a leak exposes one source for a day
+    const exp = Date.now() + 24 * 3600 * 1000;
+    auth = `?e=${exp}&sig=${await signScope(env, site, source, exp)}`;
+  }
   const frames = [...best.values()]
     .map(v => v.ts)
     .sort((a, b) => a - b)
-    .map(ts => ({ source, ts, url: `${base}/frame/${variant}/${site}/${source}/${ts}.jpg` }));
+    .map(ts => ({ source, ts, url: `${base}/frame/${variant}/${site}/${source}/${ts}.jpg${auth}` }));
 
   const live = to > Date.now() - step;
   const res = json(frames, 200, { 'cache-control': `public, max-age=${live ? 15 : 3600}` });
