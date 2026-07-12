@@ -180,7 +180,7 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
     .addTextInput({
       path: 'apiKey',
       name: 'API key',
-      description: 'Viewer token for the frames API, if it requires one. Sent as a Bearer header on API calls and as ?k= on image URLs.',
+      description: 'Viewer token for the frames API, if it requires one. Sent as a Bearer header on API calls; image URLs carry the backend\'s signed authorization when it mints one, falling back to ?k= with this key otherwise.',
       defaultValue: '',
     })
     .addTextInput({

@@ -20,9 +20,11 @@ Three frontends, one small HTTP contract ([docs/API.md](https://github.com/comeb
 
 Backend reference implementation: `worker/` — a single-file Cloudflare
 Worker over R2. Deterministic cadence-aligned keys, immutable frame
-caching, per-step downsampling, per-site bearer auth. Designed to run a
-real fleet on the R2/Workers free tier — but the panel binds to the API
-contract, not to this backend; implement `docs/API.md` with anything.
+caching, per-step downsampling, per-site bearer auth for writes, and
+default-private reads (viewer token + signed expiring image URLs — see
+"Read auth" in `docs/API.md`). Designed to run a real fleet on the
+R2/Workers free tier — but the panel binds to the API contract, not to
+this backend; implement `docs/API.md` with anything.
 
 ## Core idea: cadence as a heartbeat
 
