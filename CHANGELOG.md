@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.19
+
+- Standalone app: Grafana-style time-range picker. The topbar clock now
+  sits beside a range dropdown — absolute From/To inputs (accepting
+  now-expressions, epoch ms, or local `YYYY-MM-DD HH:mm`, with native
+  date pickers), quick ranges up to 30 days plus Today so far and
+  Yesterday, recently-used ranges, and window-shift/zoom-out buttons.
+  Quick picks write relative URLs (`?from=now-6h`) so a shared
+  "last hour" link re-evaluates on open instead of freezing; the old
+  inline quick-range buttons moved into the picker. App chrome only —
+  the Grafana panel and shared core are unchanged.
+
 ## 0.9.18
 
 - Signed image URLs (reference worker): setting `IMG_SIGN_KEY` makes
