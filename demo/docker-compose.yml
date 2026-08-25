@@ -1,17 +1,33 @@
 # Grafana demo for the Visual Timeline panel.
 # Run from the repo root:  docker compose -f demo/docker-compose.yml up
 # Dashboard: http://localhost:3300/d/visual-timeline-demo  (anonymous admin, throwaway)
+# Works from a bare clone: the build service compiles the panel into dist/
+# before Grafana starts (first run installs npm deps — allow a few minutes).
+# Port taken? DEMO_PORT=3301 docker compose -f demo/docker-compose.yml up
 #
 # Pair it with the local backend for live data:
 #   cd worker && npx wrangler dev --port 8787
 # then seed frames at http://localhost:8787/sim.html. The plugin panels also
 # work standalone on their built-in demo data (clear the panel's API URL).
 services:
+  build:
+    # node 24 bundles npm 11 — npm 10 rejects this repo's lockfile
+    image: node:24
+    working_dir: /app
+    volumes:
+      - ..:/app
+      # keep the container's linux node_modules out of the host checkout
+      - /app/node_modules
+    command: sh -c "npm ci --no-audit --no-fund && npm run build"
+
   grafana:
     image: grafana/grafana:11.4.0
     container_name: visual-timeline-demo
+    depends_on:
+      build:
+        condition: service_completed_successfully
     ports:
-      - "3300:3000"
+      - "${DEMO_PORT:-3300}:3000"
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
@@ -20,6 +36,6 @@ services:
     volumes:
       - ../grafana/provisioning:/etc/grafana/provisioning
       - ../grafana/dashboards:/var/lib/grafana/dashboards
-      # mount only the BUILT panel (run `npm run build` first) — Grafana
+      # mount only the BUILT panel (the build service produces it) — Grafana
       # preinstalls its own apps into the plugins dir, so no broad mounts
       - ../dist:/var/lib/grafana/plugins/savvycocoa1919-visualtimeline-panel

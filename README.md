@@ -72,10 +72,13 @@ Upload real frames with curl: see [docs/API.md](https://github.com/comebacktomor
 ## Grafana demo
 
 ```bash
-npm install && npm run build       # compose mounts the built plugin from dist/
 docker compose -f demo/docker-compose.yml up
 # → http://localhost:3300/d/visual-timeline-demo  (anonymous admin)
 ```
+
+Works from a bare clone — a build stage compiles the panel before Grafana
+starts, so the first run takes a few minutes. Port 3300 taken? Prefix with
+`DEMO_PORT=3301`.
 
 Grafana 11 with the panel mounted and a provisioned dashboard: timeline,
 two multiview grids (follow-crosshair vs latest-only), and a random-walk
