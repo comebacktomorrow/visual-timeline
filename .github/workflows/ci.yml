@@ -34,6 +34,14 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      # Dependabot regenerates package-lock.json with npm 11, which prunes nested
+      # entries that npm 10 still demands (@grafana/i18n's typescript@5.9.3), so
+      # `npm ci` under node 22's bundled npm 10 rejects EVERY Dependabot lockfile
+      # with "Missing: typescript@5.9.3 from lock file". Pin the resolver, not the
+      # runtime: node stays on 22 per .nvmrc and engines, only npm moves.
+      - name: Use npm 11 (matches the npm Dependabot builds lockfiles with)
+        run: npm install -g npm@11
+
       - name: Install dependencies
         run: npm ci
 
@@ -178,6 +186,10 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+
+      # Same reason as the build job above: match Dependabot's npm.
+      - name: Use npm 11 (matches the npm Dependabot builds lockfiles with)
+        run: npm install -g npm@11
 
       - name: Install dev dependencies
         run: npm ci
