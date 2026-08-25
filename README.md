@@ -72,6 +72,7 @@ Upload real frames with curl: see [docs/API.md](https://github.com/comebacktomor
 ## Grafana demo
 
 ```bash
+npm install && npm run build       # compose mounts the built plugin from dist/
 docker compose -f demo/docker-compose.yml up
 # → http://localhost:3300/d/visual-timeline-demo  (anonymous admin)
 ```
