@@ -18,3 +18,6 @@ jobs:
         with:
           # Make sure to save the token in your repository secrets as `GH_PAT_TOKEN`
           token: ${{ secrets.GH_PAT_TOKEN }}
+          # Node 24 bundles npm 11 — the action's default (node 20, npm 10) rejects
+          # Dependabot-built lockfiles, same story as the npm 11 pin in ci.yml.
+          node-version: "24"
