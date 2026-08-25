@@ -83,5 +83,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/comebacktomorrow/visual-timeline"
+  },
+  "overrides": {
+    "js-cookie": "^3.0.6"
   }
 }
