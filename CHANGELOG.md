@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.19
+## 0.9.19 (2026-08-21)
 
 - Standalone app: Grafana-style time-range picker. The topbar clock now
   sits beside a range dropdown — absolute From/To inputs (accepting
@@ -12,7 +12,7 @@
   inline quick-range buttons moved into the picker. App chrome only —
   the Grafana panel and shared core are unchanged.
 
-## 0.9.18
+## 0.9.18 (2026-07-12)
 
 - Signed image URLs (reference worker): setting `IMG_SIGN_KEY` makes
   `/frames` mint a source-scoped expiring HMAC (`?e=&sig=`) on every
@@ -23,7 +23,7 @@
   variants. Viewer token keeps working as a fallback; `IMG_BASE` remains
   the explicit public-content opt-out. See docs/API.md "Read auth".
 
-## 0.9.17
+## 0.9.17 (2026-07-12)
 
 - A dashboard WITHOUT a `site` variable rendered an axis and zero cards:
   the default `${site:csv}` expression stayed literal and filtered out
@@ -33,21 +33,21 @@
   locator test-id doesn't exist in every Grafana version's edit pane)
   asserting demo-data rendering in both modes.
 
-## 0.9.16
+## 0.9.16 (2026-07-12)
 
 - Repository CI is green: the scaffold's lint config is now satisfied
   (mechanical brace style via eslint --fix, one comma-expression split)
   and build artifacts (web/vt-core.js, wrangler scratch) are excluded
   from linting. No behavior change.
 
-## 0.9.15
+## 0.9.15 (2026-07-11)
 
 - injectStyles refreshes the shared style tag when a newer module version
   executes in a long-lived page — previously the first-injected CSS won
   forever, so a plugin update could render with the previous version's
   styles until a hard reload.
 
-## 0.9.14
+## 0.9.14 (2026-07-11)
 
 - The future looks EMPTY, not black: the beyond-now region renders as
   the card's own surface, ruled only by hairlines continuing the axis
@@ -57,7 +57,7 @@
   time pill. The one rendered thing in the future remains the pulsing
   live-edge slot. Ruling re-renders as the poll carves the spacer.
 
-## 0.9.13
+## 0.9.13 (2026-07-11)
 
 - Time axis ticks now behave like Grafana's own panels. Increments span
   the full range uPlot uses (minutes through years, not capped at 1 day)
@@ -74,7 +74,7 @@
   grid/tick color — pulled straight from `@grafana/data`'s theme source
   rather than eyeballed.
 
-## 0.9.12
+## 0.9.12 (2026-07-11)
 
 - The future is now rendered as unknown, not predicted: every era is
   clamped to now, so pause bands (SYSTEM DOWN, SCREEN DARK, ...) stop at
@@ -89,7 +89,7 @@
   live-edge rest cursor resolves to the latest frame rather than the
   spacer boundary.
 
-## 0.9.11
+## 0.9.11 (2026-07-11)
 
 - The live edge no longer flashes "offline — last seen" while the newest
   frame is in flight: a slot keeps its future grace until one full step
@@ -97,7 +97,7 @@
   gaps), and the cursor says "expected — HH:MM" for a just-passed tick
   vs "upcoming — HH:MM" for one ahead of now.
 
-## 0.9.10
+## 0.9.10 (2026-07-11)
 
 - Sandwiched pause bands no longer corrupt into offline-red: uploads
   snap to the NEAREST cadence point, so the goodbye frame sent just
@@ -110,7 +110,7 @@
 - A window that is entirely declared-pause renders its band instead of
   vanishing: hideEmpty now treats declared pause as data.
 
-## 0.9.9
+## 0.9.9 (2026-07-11)
 
 - Hatch continuity done right: the fixed-attachment trick from 0.9.7
   doesn't paint inside Grafana's transformed panels (Chrome), reading as
@@ -122,7 +122,7 @@
   all pause explains itself without a hover.
 - The neutral paused hatch got a visible stripe contrast.
 
-## 0.9.8
+## 0.9.8 (2026-07-11)
 
 - A hung backend (e.g. a dead dev worker still holding its port) left the
   panel blank forever: the registry fetch never resolved, so boot never
@@ -130,7 +130,7 @@
   and a failed/timed-out registry fetch renders "frames API unreachable"
   in the panel instead of silence.
 
-## 0.9.7
+## 0.9.7 (2026-07-11)
 
 Four fixes from live fleet use:
 
@@ -149,7 +149,7 @@ Four fixes from live fleet use:
   red hatch, "upcoming" instead of "offline — last seen", and they age
   into real gaps only a full step past their tick with no frame.
 
-## 0.9.4 – 0.9.6
+## 0.9.4 – 0.9.6 (2026-07-11)
 
 - **Pause reasons + intent**: `POST /declare` accepts `X-Reason`
   (`quiet | screen-sleep | app-stopped | system-down`) and `X-Intended`
@@ -160,7 +160,7 @@ Four fixes from live fleet use:
   gets the amber triage hatch and SCREEN DARK (UNEXPECTED). Undeclared
   silence stays offline-red: red means nobody said goodbye.
 
-## 0.9.3
+## 0.9.3 (2026-07-09)
 
 - A resume frame landing exactly on a paused era's end boundary produced
   a zero-width active era and a degenerate `/frames?from==to` call that
@@ -171,12 +171,12 @@ Four fixes from live fleet use:
   panel — the source is skipped with a console warning and retried on
   the next refresh.
 
-## 0.9.2
+## 0.9.2 (2026-07-09)
 
 - Multiview tiles run the inline-header gradient vertically (top fade)
   — the horizontal fade only makes sense on wide timeline strips.
 
-## 0.9.1
+## 0.9.1 (2026-07-09)
 
 - Inline header redesigned per feedback: no scrim block. The hostname
   gets its own solid chip bubble, the meta chips keep theirs, all
@@ -184,7 +184,7 @@ Four fixes from live fleet use:
   gradient — backs them with a full-height left-to-right fade for busy
   frames. Web: `?header=inline` or `?header=inline-gradient`.
 
-## 0.9.0
+## 0.9.0 (2026-07-09)
 
 - **Inline header mode**: a `Header` option (Bar / Inline overlay). Inline
   renders each source's header as a two-line scrim badge over the top-left
@@ -193,7 +193,7 @@ Four fixes from live fleet use:
   pointer events through, and sits under the magnifier and crosshair.
   Web app/embed: `?header=inline`.
 
-## 0.8.4
+## 0.8.4 (2026-07-09)
 
 - `site:<id>` annotation tag scopes an event to every source at that site
   (points and regions). Scoped annotations whose target isn't on the panel
@@ -206,7 +206,7 @@ Four fixes from live fleet use:
 - Demo data: a site-scoped `site:site-b` event and a URL in the deploy
   annotation exercise both features.
 
-## 0.8.3
+## 0.8.3 (2026-07-09)
 
 - Cluster markers show a count badge (×N) instead of only growing
   slightly; the tooltip still lists every member chronologically.
@@ -215,7 +215,7 @@ Four fixes from live fleet use:
   explaining source-2's outage, and an alert burst tight enough to
   cluster.
 
-## 0.8.2
+## 0.8.2 (2026-07-09)
 
 - Frame delineation now tints the frame instead of exposing the strip
   background. The old 1px `border-left` could never be covered by the
@@ -225,7 +225,7 @@ Four fixes from live fleet use:
   of shade (black 5%) plus a light inner edge (white 12%) — the seam
   shades light frames and highlights dark ones.
 
-## 0.8.1
+## 0.8.1 (2026-07-09)
 
 - **Annotation lanes** option: `Shared` (one lane above the axis, the
   default) or `Per source` — every source gets its own lane under its
@@ -236,7 +236,7 @@ Four fixes from live fleet use:
   half-clip: a chip either fits whole on its single line or drops out of
   view; the head tooltip always carries the full set.
 
-## 0.8.0
+## 0.8.0 (2026-07-09)
 
 - Annotations: the panel renders the dashboard's annotations (any
   annotation query, any data source). Points are diamond markers —
@@ -246,7 +246,7 @@ Four fixes from live fleet use:
 - `skipDataQuery` is now off so annotation data reaches the panel; the
   panel declares annotation support via `setDataSupport`.
 
-## 0.7.0
+## 0.7.0 (2026-07-09)
 
 - Cadence events: sources can change pace (a new `X-Cadence` on upload) or
   declare a pause (`POST /declare`) — the timeline renders each era on its
@@ -258,13 +258,13 @@ Four fixes from live fleet use:
 - Slot widths are time-proportional across era boundaries — the x-axis
   stays linear through pace changes and pauses.
 
-## 0.6.0
+## 0.6.0 (2026-07-09)
 
 - One shared UI core (`src/core.ts`) behind the Grafana panel, the
   standalone app, and the embed page (`web/vt-core.js` build).
 - Frame-boundary hairlines when slices are wide enough to earn them.
 
-## 0.5.0 (first public cut)
+## 0.5.0 (first public cut) (2026-07-09)
 
 Everything to date, extracted from the original kiosk-fleet project:
 

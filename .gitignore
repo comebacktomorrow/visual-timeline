@@ -39,3 +39,6 @@ work/
 yarn-debug.log*
 yarn-error.log*
 *.zip
+
+# macOS noise
+.DS_Store

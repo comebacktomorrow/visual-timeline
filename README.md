@@ -1,5 +1,9 @@
 # Visual Timeline
 
+[![CI](https://github.com/comebacktomorrow/visual-timeline/actions/workflows/ci.yml/badge.svg)](https://github.com/comebacktomorrow/visual-timeline/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/package-json/v/comebacktomorrow/visual-timeline)](https://github.com/comebacktomorrow/visual-timeline/blob/main/CHANGELOG.md)
+[![License](https://img.shields.io/github/license/comebacktomorrow/visual-timeline)](https://github.com/comebacktomorrow/visual-timeline/blob/main/LICENSE)
+
 Scrub-able visual timeline and multiview for image feeds — kiosk screens,
 security cameras, website thumbnails, anything that can post a JPEG on a
 heartbeat. Hover to set a global time cursor across every source; gaps show
@@ -86,6 +90,14 @@ set each panel's **API URL** option to a backend for live frames.
 | `worker/` | Cloudflare Worker + R2 reference backend |
 | `grafana/` | provisioning for the Grafana demo |
 | `docs/API.md` | the frames API contract + curl examples |
+
+## Contributing
+
+Bug reports and feature requests are welcome as
+[GitHub issues](https://github.com/comebacktomorrow/visual-timeline/issues);
+pull requests too. `npm run build` builds the panel, `npm run e2e` runs the
+Playwright suite against the Docker Grafana above, and the fleet simulator
+(`worker/` + `sim.html`) gives you realistic data with no hardware.
 
 ## License
 
