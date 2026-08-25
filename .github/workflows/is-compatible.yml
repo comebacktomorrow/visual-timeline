@@ -17,6 +17,13 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      # Same reason as ci.yml: Dependabot builds lockfiles with npm 11, which
+      # prunes nested entries node 22's bundled npm 10 still demands, so `npm ci`
+      # here rejects every Dependabot lockfile. This job was missed when ci.yml
+      # was fixed, which left compatibilitycheck red on PRs whose build was green.
+      - name: Use npm 11 (matches the npm Dependabot builds lockfiles with)
+        run: npm install -g npm@11
+
       - name: Install dependencies
         run: npm ci
 
