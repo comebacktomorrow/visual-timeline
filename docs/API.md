@@ -87,6 +87,53 @@ clients derive it from their pixel budget, Prometheus-style).
 The frame image. Served with `Cache-Control: public, max-age=31536000,
 immutable` + ETag. Missing frame → 404 (that's a gap, render it as one).
 
+## Write auth: adding a site (reference worker)
+
+`UPLOAD_TOKENS` is **one secret holding the whole map**, `{site: token}` —
+not one secret per site:
+
+```json
+{"site-a": "tok...", "site-b": "tok..."}
+```
+
+`/upload` and `/declare` look up `tokens[X-Site]`, so a token is only ever
+valid for the site it is filed under. A source uploading to a site with no
+entry gets `401` while holding a token that works perfectly elsewhere — the
+same response as a wrong token, which makes "this site was never
+provisioned" easy to misread as "this credential is broken". Adding a site
+is provisioning, never a retry.
+
+Two consequences when you add one:
+
+- **Writing the secret replaces the whole map.** Build the new JSON from
+  your own record of what is deployed and re-put it complete; a map
+  assembled from memory or from stale notes silently revokes every site it
+  omits. Keep that record next to the deployment — on Cloudflare a secret
+  cannot be read back.
+- **Site ids are `^[a-z0-9][a-z0-9_-]{0,62}$`.** Over 63 characters, or a
+  leading `-`, is rejected as `400 bad site/source` rather than `401` — a
+  different symptom for what looks like the same problem. If your uploader
+  derives ids from display names, derive the id and check it, rather than
+  assuming the slug.
+
+### Checking which tokens are live, without writing anything
+
+`/upload` validates the headers, then authorizes, **then** requires
+`content-length`. So a bodyless POST separates "this token is accepted" from
+"this token is rejected" without storing a frame:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  -H "X-Site: $SITE" -H "X-Source: authprobe" \
+  -H "X-Cadence: 60" -H "X-Variant: lo" \
+  -H "Authorization: Bearer $TOKEN" --data-binary '' \
+  "$BASE/upload"
+# 411 → token accepted for this site   401 → not accepted   400 → malformed id
+```
+
+Probe every site before and after changing the map: that is what catches an
+accidental revocation while it is still one command to undo.
+
 ## Read auth (reference worker)
 
 Writes always require the per-site upload token. Reads are governed by
