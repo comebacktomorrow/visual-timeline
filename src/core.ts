@@ -105,8 +105,23 @@ const CSS = `
  * filler: the future is unknown, so it gets no shading at all. */
 .ktl .slot.future { background:transparent; position:relative; }
 .ktl .slot.future::before { content:""; position:absolute; inset:0; background:#232830;
-  animation:ktl-limbo 2.2s ease-in-out infinite; }
+  animation:ktl-limbo 2.2s ease-in-out infinite; z-index:1; }
 @keyframes ktl-limbo { 0%,100% { opacity:.15 } 50% { opacity:.55 } }
+/* ...carrying the last frame as a "last known" ghost under that pulse: a
+ * hole at the live edge reads as a fault, and the pulse is what keeps the
+ * ghost from passing for a real frame. Bigger views (magnifier, click-in
+ * preview, crosshair-following tile) also blur it, because at that size a
+ * sharp frame would read as real. After a gap or a pause there is nothing
+ * honest to carry, so the slot stays a plain skeleton. */
+.ktl .mag.future.ghost img { display:block; filter:blur(5px) brightness(.8);
+  animation:ktl-ghost 2.2s ease-in-out infinite; }
+.ktl .tile.ghost .t-img img { filter:blur(5px) brightness(.8); animation:ktl-ghost 2.2s ease-in-out infinite; }
+.ktl-pop.ghost img { filter:blur(8px) brightness(.8); animation:ktl-ghost 2.2s ease-in-out infinite; }
+@keyframes ktl-ghost { 0%,100% { opacity:.45 } 50% { opacity:.85 } }
+@media (prefers-reduced-motion: reduce) {
+  .ktl .slot.future::before { animation:none; opacity:.4; }
+  .ktl .mag.future.ghost img, .ktl .tile.ghost .t-img img, .ktl-pop.ghost img { animation:none; opacity:.6; }
+}
 .ktl .slot.beyond { background:var(--ktl-bg2); }
 .ktl .slot.beyond .bt { position:absolute; top:0; bottom:0; width:1px; background:var(--ktl-axis-grid); }
 .ktl .mag.off { display:none; }
@@ -788,17 +803,42 @@ function closePreview() {
   if (popState.el) { popState.el.remove(); popState.el = null; }
   if (popState.keyH) { document.removeEventListener('keydown', popState.keyH); popState.keyH = null; }
 }
+/* The pending slot's "last known" frame: the nearest earlier frame, carried
+ * only across other pending slots. A gap, a pause band or the window start
+ * in between means there's nothing honest to carry. */
+function ghostFor(slots, sl) {
+  for (let j = slots.indexOf(sl) - 1; j >= 0; j--) {
+    if (slots[j].frame) {return slots[j].frame;}
+    if (!slots[j].future) {return null;}
+  }
+  return null;
+}
+/* keep a strip slot's ghost <img> in step with its state: present only
+ * while the slot is pending and has something to carry */
+function dressGhost(slots, sl) {
+  if (!sl.el) {return;}
+  const g = sl.future && !sl.frame ? ghostFor(slots, sl) : null;
+  let img = sl.el.querySelector('img.ghost');
+  if (!g) { if (img) {img.remove();} return; }
+  if (!img) { img = document.createElement('img'); img.className = 'ghost'; img.alt = ''; sl.el.appendChild(img); }
+  if (img.src !== g.url) {img.src = g.url;}
+}
+
 function makePreview() {
   // adopt: a mount created while a retire is pending cancels the close
   if (popState.retireTimer) { clearTimeout(popState.retireTimer); popState.retireTimer = null; }
   return {
-    open(site, kiosk, frame, x, y, hiUrl) {
+    // expectedTs set = frame is the pending slot's ghost: shown blurred and
+    // captioned as the last frame, never as the expected one
+    open(site, kiosk, frame, x, y, hiUrl, expectedTs) {
       closePreview();
       const el = document.createElement('div');
-      el.className = 'ktl-pop';
+      el.className = 'ktl-pop' + (expectedTs ? ' ghost' : '');
       el.innerHTML = '<img alt="frame"><div class="cap"></div>';
       const img = el.querySelector('img');
-      el.querySelector('.cap').textContent = site + ' / ' + kiosk + ' — ' + fmtTime(frame.ts);
+      el.querySelector('.cap').textContent = site + ' / ' + kiosk + ' — ' + (expectedTs
+        ? 'expected ' + fmtShort(expectedTs) + ' · last frame ' + fmtTime(frame.ts)
+        : fmtTime(frame.ts));
       el.addEventListener('click', closePreview);
       document.body.appendChild(el);
       const place = () => {
@@ -977,6 +1017,7 @@ export function mountTimeline(root, cfg) {
       strip.appendChild(el);
       sl.el = el;
     }
+    for (const sl of slots) {if (sl.future) {dressGhost(slots, sl);}}
     dressStrip(model);   // hatch alignment + band labels (re-run post-reveal)
     const hoverAt = e => {
       const r = strip.getBoundingClientRect();
@@ -1001,7 +1042,9 @@ export function mountTimeline(root, cfg) {
       if (suppressClick) { suppressClick = false; return; }
       const sl = model.slotAt(cursorT);
       const f = sl && sl.frame;
+      const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
       if (f) {pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, cfg.apiUrl, cfg.apiKey));}
+      else if (g) {pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl.ts);}
     });
     /* magnifier takes the aspect of the actual frames (portrait screens etc.) */
     const magEl = card.querySelector('.mag');
@@ -1222,6 +1265,7 @@ export function mountTimeline(root, cfg) {
       const slot = c.model.slotAt(cursorT);
       const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
       c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + 'px';
+      c.mag.classList.remove('ghost');
       if (slot && slot.frame) {
         c.mag.classList.remove('gap', 'future', 'off', ...PAUSE_CLASSES);
         c.mag.querySelector('img').src = slot.frame.url;
@@ -1247,9 +1291,12 @@ export function mountTimeline(root, cfg) {
         // not offline, not stale: either the tick is ahead of now, or it
         // just passed and its frame is still in flight (one-step grace)
         const inFlight = slot.ts <= Date.now();
+        const g = ghostFor(c.model.slots, slot);
         c.mag.classList.remove('gap', 'off', ...PAUSE_CLASSES);
         c.mag.classList.add('future');
-        c.mag.querySelector('.cap').textContent = (inFlight ? 'expected — ' : 'upcoming — ') + fmtShort(slot.ts);
+        if (g) { c.mag.classList.add('ghost'); c.mag.querySelector('img').src = g.url; }
+        c.mag.querySelector('.cap').textContent = (inFlight ? 'expected — ' : 'upcoming — ') + fmtShort(slot.ts) +
+          (g ? ' · last frame ' + fmtTime(g.ts) : '');
         c.head.textContent = inFlight ? 'expected' : 'upcoming';
         c.head.classList.remove('stale', ...PAUSE_CLASSES);
       } else {
@@ -1376,8 +1423,10 @@ export function mountTimeline(root, cfg) {
             slot.frame = f;
             slot.future = false;
             slot.el.classList.remove('gap', 'future');
+            // the real frame replaces the ghost in place: a snap, no fade
             let img = slot.el.querySelector('img');
             if (!img) { img = document.createElement('img'); slot.el.appendChild(img); }
+            img.classList.remove('ghost');
             img.src = f.url; img.alt = k.id + ' ' + fmtTime(f.ts);
           }
           // future slots age into the present; one still empty a full step
@@ -1389,6 +1438,9 @@ export function mountTimeline(root, cfg) {
               if (sl.el) { sl.el.classList.remove('future'); sl.el.classList.add('gap'); }
             }
           }
+          // one pass covers every path above: newly carved pending slots
+          // pick up a ghost, a missed heartbeat drops it
+          for (const sl of c.model.slots) {dressGhost(c.model.slots, sl);}
         }
       }, Math.min(minStep, 10000));
     }
@@ -1444,7 +1496,8 @@ export function mountGrid(root, cfg) {
       off: el.querySelector('.t-off'),
     };
     el.addEventListener('click', e => {
-      if (rec.shown) {pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, cfg.apiUrl, cfg.apiKey));}
+      if (rec.shown && rec.shownExpected) {pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, null, rec.shownExpected);}
+      else if (rec.shown) {pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, cfg.apiUrl, cfg.apiKey));}
     });
     q('.grid').appendChild(el);
     return rec;
@@ -1464,7 +1517,7 @@ export function mountGrid(root, cfg) {
     for (const k of kiosks) {
       const rec = tiles[k.id];
       if (!rec) {continue;}
-      let frame = null, offMsg = null, pausedMsg = null, pausedSlot = null;
+      let frame = null, offMsg = null, pausedMsg = null, pausedSlot = null, expectedTs = null;
       const la = rec.model.lastActive;
       if (t == null) {
         const tail = rec.model.slots.length ? rec.model.slots[rec.model.slots.length - 1] : null;
@@ -1488,8 +1541,11 @@ export function mountGrid(root, cfg) {
             if (slot && slot.beyond) {
               offMsg = '—';   // ahead of now: unknown, not a failure
             } else if (slot && slot.future) {
-              // just-passed tick, frame in flight
-              offMsg = 'EXPECTED — ' + fmtShort(slot.ts);
+              // just-passed tick, frame in flight: show the last frame as a
+              // ghost when there is one (never the red offline tile)
+              frame = ghostFor(rec.model.slots, slot);
+              if (frame) {expectedTs = slot.ts;}
+              else {offMsg = 'EXPECTED — ' + fmtShort(slot.ts);}
             } else {
               const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
               let last = null;
@@ -1503,10 +1559,14 @@ export function mountGrid(root, cfg) {
       rec.el.classList.remove(...PAUSE_CLASSES);
       if (pausedMsg && !offMsg) {rec.el.classList.add(...pauseInfo(pausedSlot).classes);}
       rec.off.textContent = offMsg || pausedMsg || '';
+      rec.el.classList.toggle('ghost', !!expectedTs);
       rec.shown = frame;
+      rec.shownExpected = expectedTs;
       if (frame && !offMsg && !pausedMsg) {
         rec.img.src = frame.url;
-        rec.ts.textContent = fmtTime(frame.ts);
+        rec.ts.textContent = expectedTs
+          ? 'expected ' + fmtShort(expectedTs) + ' · last ' + fmtTime(frame.ts)
+          : fmtTime(frame.ts);
       }
     }
   }

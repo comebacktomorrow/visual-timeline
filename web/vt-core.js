@@ -125,8 +125,23 @@ var VTCore = (() => {
  * filler: the future is unknown, so it gets no shading at all. */
 .ktl .slot.future { background:transparent; position:relative; }
 .ktl .slot.future::before { content:""; position:absolute; inset:0; background:#232830;
-  animation:ktl-limbo 2.2s ease-in-out infinite; }
+  animation:ktl-limbo 2.2s ease-in-out infinite; z-index:1; }
 @keyframes ktl-limbo { 0%,100% { opacity:.15 } 50% { opacity:.55 } }
+/* ...carrying the last frame as a "last known" ghost under that pulse: a
+ * hole at the live edge reads as a fault, and the pulse is what keeps the
+ * ghost from passing for a real frame. Bigger views (magnifier, click-in
+ * preview, crosshair-following tile) also blur it, because at that size a
+ * sharp frame would read as real. After a gap or a pause there is nothing
+ * honest to carry, so the slot stays a plain skeleton. */
+.ktl .mag.future.ghost img { display:block; filter:blur(5px) brightness(.8);
+  animation:ktl-ghost 2.2s ease-in-out infinite; }
+.ktl .tile.ghost .t-img img { filter:blur(5px) brightness(.8); animation:ktl-ghost 2.2s ease-in-out infinite; }
+.ktl-pop.ghost img { filter:blur(8px) brightness(.8); animation:ktl-ghost 2.2s ease-in-out infinite; }
+@keyframes ktl-ghost { 0%,100% { opacity:.45 } 50% { opacity:.85 } }
+@media (prefers-reduced-motion: reduce) {
+  .ktl .slot.future::before { animation:none; opacity:.4; }
+  .ktl .mag.future.ghost img, .ktl .tile.ghost .t-img img, .ktl-pop.ghost img { animation:none; opacity:.6; }
+}
 .ktl .slot.beyond { background:var(--ktl-bg2); }
 .ktl .slot.beyond .bt { position:absolute; top:0; bottom:0; width:1px; background:var(--ktl-axis-grid); }
 .ktl .mag.off { display:none; }
@@ -806,19 +821,54 @@ var VTCore = (() => {
       popState.keyH = null;
     }
   }
+  function ghostFor(slots, sl) {
+    for (let j = slots.indexOf(sl) - 1; j >= 0; j--) {
+      if (slots[j].frame) {
+        return slots[j].frame;
+      }
+      if (!slots[j].future) {
+        return null;
+      }
+    }
+    return null;
+  }
+  function dressGhost(slots, sl) {
+    if (!sl.el) {
+      return;
+    }
+    const g = sl.future && !sl.frame ? ghostFor(slots, sl) : null;
+    let img = sl.el.querySelector("img.ghost");
+    if (!g) {
+      if (img) {
+        img.remove();
+      }
+      return;
+    }
+    if (!img) {
+      img = document.createElement("img");
+      img.className = "ghost";
+      img.alt = "";
+      sl.el.appendChild(img);
+    }
+    if (img.src !== g.url) {
+      img.src = g.url;
+    }
+  }
   function makePreview() {
     if (popState.retireTimer) {
       clearTimeout(popState.retireTimer);
       popState.retireTimer = null;
     }
     return {
-      open(site, kiosk, frame, x, y, hiUrl) {
+      // expectedTs set = frame is the pending slot's ghost: shown blurred and
+      // captioned as the last frame, never as the expected one
+      open(site, kiosk, frame, x, y, hiUrl, expectedTs) {
         closePreview();
         const el = document.createElement("div");
-        el.className = "ktl-pop";
+        el.className = "ktl-pop" + (expectedTs ? " ghost" : "");
         el.innerHTML = '<img alt="frame"><div class="cap"></div>';
         const img = el.querySelector("img");
-        el.querySelector(".cap").textContent = site + " / " + kiosk + " \u2014 " + fmtTime(frame.ts);
+        el.querySelector(".cap").textContent = site + " / " + kiosk + " \u2014 " + (expectedTs ? "expected " + fmtShort(expectedTs) + " \xB7 last frame " + fmtTime(frame.ts) : fmtTime(frame.ts));
         el.addEventListener("click", closePreview);
         document.body.appendChild(el);
         const place = () => {
@@ -984,6 +1034,11 @@ var VTCore = (() => {
         strip.appendChild(el);
         sl.el = el;
       }
+      for (const sl of slots) {
+        if (sl.future) {
+          dressGhost(slots, sl);
+        }
+      }
       dressStrip(model);
       const hoverAt = (e) => {
         const r = strip.getBoundingClientRect();
@@ -1011,8 +1066,11 @@ var VTCore = (() => {
         }
         const sl = model.slotAt(cursorT);
         const f = sl && sl.frame;
+        const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
         if (f) {
           pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, cfg.apiUrl, cfg.apiKey));
+        } else if (g) {
+          pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl.ts);
         }
       });
       const magEl = card.querySelector(".mag");
@@ -1251,6 +1309,7 @@ var VTCore = (() => {
         const slot = c.model.slotAt(cursorT);
         const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
         c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + "px";
+        c.mag.classList.remove("ghost");
         if (slot && slot.frame) {
           c.mag.classList.remove("gap", "future", "off", ...PAUSE_CLASSES);
           c.mag.querySelector("img").src = slot.frame.url;
@@ -1272,9 +1331,14 @@ var VTCore = (() => {
           c.head.classList.remove("stale", ...PAUSE_CLASSES);
         } else if (slot && slot.future) {
           const inFlight = slot.ts <= Date.now();
+          const g = ghostFor(c.model.slots, slot);
           c.mag.classList.remove("gap", "off", ...PAUSE_CLASSES);
           c.mag.classList.add("future");
-          c.mag.querySelector(".cap").textContent = (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + fmtShort(slot.ts);
+          if (g) {
+            c.mag.classList.add("ghost");
+            c.mag.querySelector("img").src = g.url;
+          }
+          c.mag.querySelector(".cap").textContent = (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + fmtShort(slot.ts) + (g ? " \xB7 last frame " + fmtTime(g.ts) : "");
           c.head.textContent = inFlight ? "expected" : "upcoming";
           c.head.classList.remove("stale", ...PAUSE_CLASSES);
         } else {
@@ -1436,6 +1500,7 @@ var VTCore = (() => {
                 img = document.createElement("img");
                 slot.el.appendChild(img);
               }
+              img.classList.remove("ghost");
               img.src = f.url;
               img.alt = k.id + " " + fmtTime(f.ts);
             }
@@ -1448,6 +1513,9 @@ var VTCore = (() => {
                   sl.el.classList.add("gap");
                 }
               }
+            }
+            for (const sl of c.model.slots) {
+              dressGhost(c.model.slots, sl);
             }
           }
         }, Math.min(minStep, 1e4));
@@ -1501,7 +1569,9 @@ var VTCore = (() => {
         off: el.querySelector(".t-off")
       };
       el.addEventListener("click", (e) => {
-        if (rec.shown) {
+        if (rec.shown && rec.shownExpected) {
+          pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, null, rec.shownExpected);
+        } else if (rec.shown) {
           pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, cfg.apiUrl, cfg.apiKey));
         }
       });
@@ -1526,7 +1596,7 @@ var VTCore = (() => {
         if (!rec) {
           continue;
         }
-        let frame = null, offMsg = null, pausedMsg = null, pausedSlot = null;
+        let frame = null, offMsg = null, pausedMsg = null, pausedSlot = null, expectedTs = null;
         const la = rec.model.lastActive;
         if (t == null) {
           const tail = rec.model.slots.length ? rec.model.slots[rec.model.slots.length - 1] : null;
@@ -1551,7 +1621,12 @@ var VTCore = (() => {
               if (slot && slot.beyond) {
                 offMsg = "\u2014";
               } else if (slot && slot.future) {
-                offMsg = "EXPECTED \u2014 " + fmtShort(slot.ts);
+                frame = ghostFor(rec.model.slots, slot);
+                if (frame) {
+                  expectedTs = slot.ts;
+                } else {
+                  offMsg = "EXPECTED \u2014 " + fmtShort(slot.ts);
+                }
               } else {
                 const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
                 let last = null;
@@ -1572,10 +1647,12 @@ var VTCore = (() => {
           rec.el.classList.add(...pauseInfo(pausedSlot).classes);
         }
         rec.off.textContent = offMsg || pausedMsg || "";
+        rec.el.classList.toggle("ghost", !!expectedTs);
         rec.shown = frame;
+        rec.shownExpected = expectedTs;
         if (frame && !offMsg && !pausedMsg) {
           rec.img.src = frame.url;
-          rec.ts.textContent = fmtTime(frame.ts);
+          rec.ts.textContent = expectedTs ? "expected " + fmtShort(expectedTs) + " \xB7 last " + fmtTime(frame.ts) : fmtTime(frame.ts);
         }
       }
     }
