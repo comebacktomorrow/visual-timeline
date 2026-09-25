@@ -1,9 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.9.20 (2026-09-25)
 
-Nothing the panel, standalone app or worker does has changed. Everything
-below is dependencies, tooling, packaging and docs.
+### Fixes
+- The viewer key stays out of image URLs that don't need it. Since 0.9.18
+  the reference worker signs its image URLs so the long-lived key can be
+  left out of them, but the client kept appending `?k=` to every frame
+  URL, signed or not, and the click-in preview copied it along. Now only a
+  bare image URL on the API's own origin gets `?k=`. Signed URLs are used
+  as returned, and an image host that isn't the API (a public bucket
+  domain) is never handed the key. This applies to the panel, the
+  standalone app and the embed. The rule is written down under
+  `GET /frames` in docs/API.md.
 
 ### Dependencies
 - `@grafana/*` 13.2.2 with React 19, as dev dependencies (#40). Grafana
@@ -25,8 +33,14 @@ below is dependencies, tooling, packaging and docs.
 - The monthly scaffold-update workflow runs on Node 24 and opens its PR
   (it needs the `GH_PAT_TOKEN` secret).
 - GitHub Action bumps (#15, #16, #17, #18, #22, #30, #36, #38).
+- First unit tests: `src/core.test.ts` pins the image-URL key rule, and
+  `npm run test:ci` runs it.
 
 ### Demo and docs
+- The fleet simulator and the local dev tokens use the built-in demo's
+  names (`site-a`/`site-b`, `source-1` to `source-5`), so the curl
+  examples in docs/API.md work against a fresh `wrangler dev`. The
+  `site-a` upload used to get a 401.
 - `docker compose -f demo/docker-compose.yml up` works from a bare clone:
   a build stage compiles the panel before Grafana starts. `DEMO_PORT`
   overrides the host port.
