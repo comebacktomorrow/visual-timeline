@@ -42,3 +42,6 @@ yarn-error.log*
 
 # macOS noise
 .DS_Store
+
+# tool caches written into the checkout (an npm cache got committed once)
+.cache/
