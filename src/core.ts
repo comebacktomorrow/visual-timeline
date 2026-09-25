@@ -452,6 +452,20 @@ function annTip() {
   };
 }
 
+/* <img> can't send headers, so a key-protected backend's image URLs carry
+ * the viewer key as ?k= — but only bare URLs on the API's own origin. A URL
+ * that already has a query string brings its own authorization (the
+ * reference worker's ?e=&sig= signature, or a presigned URL that an extra
+ * param would break), and an image host that isn't the API, such as a
+ * public bucket domain, is never handed the key. */
+export function imageUrlWithKey(url, apiBase, apiKey) {
+  if (!apiKey || !url) {return url;}
+  const u = new URL(url, apiBase);
+  if (u.search || u.origin !== new URL(apiBase).origin) {return url;}
+  u.searchParams.set('k', apiKey);
+  return u.href;
+}
+
 /* API-backed data layer — same shapes as the mock. Used when the panel's
  * apiUrl option points at the kiosk-timeline Worker (CORS is served). */
 function makeApiBackend(apiUrl, apiKey) {
@@ -482,10 +496,7 @@ function makeApiBackend(apiUrl, apiKey) {
       const r = await fetch(u, opts());
       if (!r.ok) {throw new Error('frames ' + r.status);}
       const frames = await r.json();
-      // <img> elements can't send headers — the key rides the frame URLs
-      if (apiKey) {
-        for (const f of frames) {f.url += (f.url.includes('?') ? '&' : '?') + 'k=' + encodeURIComponent(apiKey);}
-      }
+      for (const f of frames) {f.url = imageUrlWithKey(f.url, base, apiKey);}
       return frames;
     },
   };

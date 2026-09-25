@@ -82,6 +82,13 @@ clients derive it from their pixel budget, Prometheus-style).
 [{"source":"source-1","ts":1783488360000,"url":"https://…/frame/lo/site-a/source-1/1783488360000.jpg"}]
 ```
 
+Clients load each `url` exactly as returned, with one exception: a client
+holding a viewer key appends `?k=<key>` to a bare URL (no query string) on
+the API's own origin, because `<img>` can't send headers. A URL with its own
+query string is taken to carry its own authorization (a signature, a
+presigned query), and a URL on any other origin is taken to be public, so
+neither is ever handed the viewer key.
+
 ### `GET /frame/{variant}/{site}/{source}/{ts}.jpg`
 
 The frame image. Served with `Cache-Control: public, max-age=31536000,
