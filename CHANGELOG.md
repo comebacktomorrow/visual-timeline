@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.22 (2026-09-25)
+
+- The pending slot (its tick has passed, the frame is still in flight)
+  carries the last frame as a "last known" ghost instead of a blank
+  pulsing block. At the live edge that block read like a fault. The ghost
+  keeps the same pulse, which stops it passing for a real frame. The
+  magnifier, the click-in preview and a crosshair-following grid tile
+  show it blurred as well, captioned "expected HH:MM · last frame HH:MM".
+  A following tile used to turn red-hatched instead. When the frame
+  arrives it replaces the ghost in place. After a gap or a pause there's
+  nothing to carry, so that pending slot stays a plain skeleton. A missed
+  heartbeat still turns red on schedule. The latest-only grid is
+  unchanged. Under `prefers-reduced-motion` the pulses become a static
+  dim.
+
 ## 0.9.21 (2026-09-25)
 
 - Standalone app: ranges that end at now actually follow now. The app
