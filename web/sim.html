@@ -22,16 +22,17 @@
 
 <script>
 /* Simulates the kiosk agents: renders mock signage frames on canvas and
- * uploads them with the real headers (X-Site/X-Kiosk/X-Cadence/X-Variant/
- * X-Timestamp + bearer token). kiosk-2 has an outage in the backfill window;
- * kiosk-1 also uploads a hi variant at a slower cadence. */
-const TOKENS = { 'lfac-south': 'dev-token', 'lfac-north': 'dev-token' };
+ * uploads them with the real headers (X-Site/X-Source/X-Cadence/X-Variant/
+ * X-Timestamp + bearer token). source-2 has an outage in the backfill window;
+ * source-1 also uploads a hi variant at a slower cadence. Same site/source
+ * layout as the panel's built-in demo data. */
+const TOKENS = { 'site-a': 'dev-token', 'site-b': 'dev-token' };
 const KIOSKS = [
-  { id: 'kiosk-1', site: 'lfac-south', cadence: 60,  dims: [384, 216], hue: 205, hiCadence: 300, hiDims: [768, 432] },
-  { id: 'kiosk-2', site: 'lfac-south', cadence: 60,  dims: [384, 216], hue: 275, outage: [0.35, 0.55] },
-  { id: 'kiosk-3', site: 'lfac-south', cadence: 120, dims: [288, 216], hue: 25 },
-  { id: 'kiosk-4', site: 'lfac-north', cadence: 60,  dims: [384, 216], hue: 130 },
-  { id: 'kiosk-5', site: 'lfac-north', cadence: 30,  dims: [216, 384], hue: 340 },
+  { id: 'source-1', site: 'site-a', cadence: 60,  dims: [384, 216], hue: 205, hiCadence: 300, hiDims: [768, 432] },
+  { id: 'source-2', site: 'site-a', cadence: 60,  dims: [384, 216], hue: 275, outage: [0.35, 0.55] },
+  { id: 'source-3', site: 'site-a', cadence: 120, dims: [288, 216], hue: 25 },
+  { id: 'source-4', site: 'site-b', cadence: 60,  dims: [384, 216], hue: 130 },
+  { id: 'source-5', site: 'site-b', cadence: 30,  dims: [216, 384], hue: 340 },
 ];
 const BACKFILL_MS = 60 * 60 * 1000;
 
