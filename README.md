@@ -102,6 +102,8 @@ Bug reports and feature requests are welcome as
 pull requests too. `npm run build` builds the panel, `npm run e2e` runs the
 Playwright suite against the Docker Grafana above, and the fleet simulator
 (`worker/` + `sim.html`) gives you realistic data with no hardware.
+Taking in Dependabot, scaffold and security updates has its own runbook:
+[docs/UPSTREAM-UPDATES.md](docs/UPSTREAM-UPDATES.md).
 
 ## License
 
