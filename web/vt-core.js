@@ -21,6 +21,7 @@ var VTCore = (() => {
   // src/core.ts
   var core_exports = {};
   __export(core_exports, {
+    imageUrlWithKey: () => imageUrlWithKey,
     mountGrid: () => mountGrid,
     mountTimeline: () => mountTimeline
   });
@@ -474,6 +475,17 @@ var VTCore = (() => {
       close
     };
   }
+  function imageUrlWithKey(url, apiBase, apiKey) {
+    if (!apiKey || !url) {
+      return url;
+    }
+    const u = new URL(url, apiBase);
+    if (u.search || u.origin !== new URL(apiBase).origin) {
+      return url;
+    }
+    u.searchParams.set("k", apiKey);
+    return u.href;
+  }
   function makeApiBackend(apiUrl, apiKey) {
     const base = apiUrl.replace(/\/+$/, "");
     const opts = () => ({
@@ -505,10 +517,8 @@ var VTCore = (() => {
           throw new Error("frames " + r.status);
         }
         const frames = await r.json();
-        if (apiKey) {
-          for (const f of frames) {
-            f.url += (f.url.includes("?") ? "&" : "?") + "k=" + encodeURIComponent(apiKey);
-          }
+        for (const f of frames) {
+          f.url = imageUrlWithKey(f.url, base, apiKey);
         }
         return frames;
       }
