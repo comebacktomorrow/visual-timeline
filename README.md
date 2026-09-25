@@ -18,7 +18,8 @@ Three frontends, one small HTTP contract ([docs/API.md](https://github.com/comeb
 - `web/app.html` — **standalone app** with the chrome Grafana normally
   provides: site filter, timeline/grid/both modes, fit/fill, a Grafana-style
   time-range picker, drag-zoom, and within-page cursor sync (hover the timeline, the grid
-  follows). State lives in the URL — views are shareable links.
+  follows). Ranges that end at now ("Last 1 hour") follow the clock, with a
+  LIVE/PAUSED toggle. State lives in the URL — views are shareable links.
 - `web/index.html` — **minimal embeddable viewer** (iframe-friendly;
   accepts Grafana dashboard-link params).
 

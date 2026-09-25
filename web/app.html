@@ -43,8 +43,12 @@
   .icobtn:hover { color: var(--text); }
   .spacer { flex: 1; }
   .cursor-time { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); min-width: 62px; }
-  .live-badge { display: none; padding: 1px 7px; border-radius: 3px; background: var(--live); color: #111; font-weight: 700; }
-  body.is-live .live-badge { display: inline-block; }
+  .live-badge {
+    display: none; padding: 1px 7px; border-radius: 3px; border: 1px solid var(--live);
+    background: var(--live); color: #111; font: inherit; font-weight: 700; cursor: pointer;
+  }
+  body.is-follow .live-badge { display: inline-block; }
+  .live-badge.paused { background: var(--bg2); border-color: var(--border); color: var(--dim); }
   .win { color: var(--dim); font-variant-numeric: tabular-nums; }
   .note { color: var(--dim); font-size: 11px; }
 
@@ -146,7 +150,7 @@
     <button class="icobtn" id="tpFwd" title="shift window forward">›</button>
     <button class="icobtn" id="tpOut" title="zoom out">−</button>
     <span class="cursor-time" id="cursorTime"></span>
-    <span class="live-badge">LIVE</span>
+    <button class="live-badge" id="liveBtn">LIVE</button>
     <span class="win" id="winLabel"></span>
   </div>
   <div class="panels">
@@ -164,7 +168,7 @@
  * cursor sync that stands in for Grafana's shared crosshair. */
 
 const qs = new URLSearchParams(location.search);
-const NOW = Date.now();
+let NOW = Date.now();   // re-read on every follow tick (see boot)
 
 /* ---------------- URL state (accepts Grafana dashboard-link params) ------- */
 function parseVar(v) {
@@ -208,8 +212,17 @@ const P = {
  * relative so shared links re-evaluate on open; absent params default to
  * a live last-hour window */
 const RAW = { from: qs.get('from') || 'now-1h', to: qs.get('to') || 'now' };
-const SPAN = Math.max(1, P.to - P.from);
-const LIVE = P.to > NOW - 2 * 60 * 1000;
+let SPAN = Math.max(1, P.to - P.from);
+/* a range that ends at "now" follows the clock: the window is re-evaluated
+ * and re-mounted on a timer, so it slides and missed heartbeats turn red.
+ * Absolute ranges never move. */
+const FOLLOW = RAW.to === 'now';
+function resolveWindow() {
+  NOW = Date.now();
+  P.from = parseTimeParam(qs.get('from'), NOW - 3600e3);
+  P.to = parseTimeParam(qs.get('to'), NOW);
+  SPAN = Math.max(1, P.to - P.from);
+}
 
 function navigate(updates) {
   const u = new URL(location.href);
@@ -354,19 +367,22 @@ const TP_QUICK = [
   const useApi = await probeApi();
   const apiUrl = useApi ? location.origin : '';
   document.body.dataset.mode = P.mode;
-  document.body.classList.toggle('is-live', LIVE);
-  document.getElementById('winLabel').textContent =
-    fmtShort(P.from) + ' → ' + fmtShort(P.to) + (useApi ? '' : ' · demo data');
+  document.body.classList.toggle('is-follow', FOLLOW);
+  const showWindow = () => {
+    document.getElementById('winLabel').textContent =
+      fmtShort(P.from) + ' → ' + fmtShort(P.to) + (useApi ? '' : ' · demo data');
+  };
+  showWindow();
   document.getElementById('cursorTime').textContent = fmtTime(Math.min(P.to, NOW));
 
-  const common = {
+  const common = () => ({
     site: P.site ? P.site.join(',') : '',
     from: P.from, to: P.to,
     fit: P.fit, apiUrl, apiKey: P.key,
     tagFilter: P.tags, hideEmpty: P.hideEmpty,
     annotationLanes: P.annLanes,
     headerMode: P.header,
-  };
+  });
 
   // site chips: distinct sites from the registry (or the demo set)
   try {
@@ -400,11 +416,11 @@ const TP_QUICK = [
     if (grid) grid.destroy();
     if (timeline) timeline.destroy();
     grid = P.mode !== 'timeline'
-      ? VTCore.mountGrid(document.getElementById('gridMount'), { ...common })
+      ? VTCore.mountGrid(document.getElementById('gridMount'), common())
       : null;
     timeline = P.mode !== 'grid'
       ? VTCore.mountTimeline(document.getElementById('timelineMount'), {
-          ...common,
+          ...common(),
           onZoom: (from, to) => navigate({ from, to }),
           onCursor: t => { document.getElementById('cursorTime').textContent = fmtTime(t); },
           onHover: t => { if (grid) grid.setExternalCursor(t); },
@@ -419,6 +435,36 @@ const TP_QUICK = [
     clearTimeout(rt);
     rt = setTimeout(mountAll, 300);
   });
+
+  /* follow "now": re-mount on a timer so the window slides. The core's own
+   * poll only fills the window it was mounted with, so without this a "last
+   * 5 minutes" view froze at page load, and a source that died after that
+   * never went red. A re-mount waits while someone is actively scrubbing a
+   * strip (pointer moved in the last 15 s: a mouse parked on a wallboard
+   * must not freeze it), has the range picker open, or the tab is hidden,
+   * and catches up as soon as it can. */
+  if (FOLLOW) {
+    const every = Math.max(30e3, Math.min(SPAN / 300, 10 * 60e3));
+    const btn = document.getElementById('liveBtn');
+    let paused = false, last = Date.now(), moved = 0;
+    window.addEventListener('pointermove', () => { moved = Date.now(); }, { passive: true });
+    const busy = () => document.hidden || !document.getElementById('tpPane').hidden ||
+      (timeline && timeline.isHovering() && Date.now() - moved < 15e3);
+    const slide = () => { resolveWindow(); showWindow(); last = Date.now(); mountAll(); };
+    const label = () => {
+      btn.textContent = paused ? 'PAUSED' : 'LIVE';
+      btn.classList.toggle('paused', paused);
+      btn.title = paused
+        ? 'Paused: the window stays where it is. Click to follow now again.'
+        : `Following now: the window moves every ${Math.round(every / 1000)} s. Click to pause.`;
+    };
+    btn.onclick = () => { paused = !paused; label(); if (!paused) slide(); };
+    label();
+    setInterval(() => { if (!paused && !busy() && Date.now() - last >= every) slide(); }, 5e3);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && !paused && Date.now() - last >= every) slide();
+    });
+  }
 })();
 </script>
 </body>
