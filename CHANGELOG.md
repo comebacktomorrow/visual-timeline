@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.21 (2026-09-25)
+
+- Standalone app: ranges that end at now actually follow now. The app
+  resolved `now-5m` once, at page load, so a "Last 5 minutes" tab still
+  showed the same five minutes an hour later. Only its right-most slot
+  kept updating, and a source that stopped after the page loaded never
+  went red. The app now re-evaluates the range and re-mounts on a timer:
+  every 30 s for short ranges, up to every 10 minutes for long ones. It
+  waits while someone is scrubbing a strip, has the range picker open, or
+  the tab is hidden. A pointer parked on a wallboard doesn't count as
+  scrubbing, so it can't freeze the view.
+- The LIVE badge is now a button. Click it to pause (the window stays
+  put, and the badge reads PAUSED), and click again to jump back to now.
+  It only appears on ranges that end at now. Before, it was a label that
+  lit up for any window ending near page-load time, and it stayed lit
+  however stale that window got. App chrome only: the Grafana panel
+  moves with the dashboard's own refresh and is unchanged.
+
 ## 0.9.20 (2026-09-25)
 
 ### Fixes
