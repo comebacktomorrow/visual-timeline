@@ -10,7 +10,9 @@
  *                                     (cadence ms; /kiosks is a deprecated alias)
  *   GET  /frames?site&source&from&to&step&variant
  *                                     → [{source, ts, url}], ≤1 frame per step
- *                                     bucket (source= falls back to kiosk=).
+ *                                     bucket (source= falls back to kiosk=);
+ *                                     X-Frames-Truncated-After: <ts> when the
+ *                                     window holds more than one scan covers.
  *   GET  /frame/{variant}/{site}/{source}/{ts}.jpg
  *                                     immutable frame image (POC path; production
  *                                     serves images from an R2 custom domain and
@@ -28,13 +30,19 @@ const ID_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 const VARIANTS = new Set(['lo', 'hi']);
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 const MAX_BUCKETS = 800;
-const MAX_LIST_PAGES = 3;
+/* /frames must see every key in the window to pick each bucket's frame, so
+ * the scan cap bounds how many frames one request can cover: 25 pages of
+ * 1000 is about 17 days at a 60 s cadence. Past it the response says where
+ * it stopped (X-Frames-Truncated-After) instead of dropping the newest
+ * frames silently. */
+const MAX_LIST_PAGES = 25;
 const INDEX_KEY = 'index.json';
 
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
   'access-control-allow-headers': 'authorization, content-type, x-site, x-source, x-kiosk, x-cadence, x-variant, x-timestamp, x-location, x-tags',
+  'access-control-expose-headers': 'x-frames-truncated-after',
   'access-control-max-age': '86400',
 };
 
@@ -384,7 +392,7 @@ async function handleFrames(url, env, ctx, viewer) {
   const prefix = `${variant}/${site}/${source}/`;
   const bucketStart = Math.ceil(from / step) * step;
   const best = new Map();   // bucket idx → {ts, dist to bucket tick}
-  let cursor, done = false, pages = 0;
+  let cursor, done = false, pages = 0, listedUntil = from;
   while (!done && pages < MAX_LIST_PAGES) {
     const listing = await env.FRAMES.list({
       prefix,
@@ -396,6 +404,7 @@ async function handleFrames(url, env, ctx, viewer) {
       const ts = Number(obj.key.slice(prefix.length, -4));
       if (!Number.isFinite(ts)) {continue;}
       if (ts > to) { done = true; break; }
+      listedUntil = ts;
       const idx = Math.round((ts - bucketStart) / step);
       const dist = Math.abs(ts - (bucketStart + idx * step));
       const cur = best.get(idx);
@@ -403,6 +412,12 @@ async function handleFrames(url, env, ctx, viewer) {
     }
     if (!listing.truncated) {done = true;}
     else {cursor = listing.cursor;}
+  }
+  // stopped at the cap with the window unfinished: nothing after listedUntil
+  // was examined, so flag it rather than let clients read it as offline
+  const truncatedAfter = done ? null : listedUntil;
+  if (truncatedAfter !== null) {
+    console.warn(JSON.stringify({ msg: 'frames scan truncated', site, source, variant, from, to, step, truncatedAfter }));
   }
 
   // Default-private: when IMG_SIGN_KEY is set, worker-served image URLs
@@ -423,7 +438,10 @@ async function handleFrames(url, env, ctx, viewer) {
     .map(ts => ({ source, ts, url: `${base}/frame/${variant}/${site}/${source}/${ts}.jpg${auth}` }));
 
   const live = to > Date.now() - step;
-  const res = json(frames, 200, { 'cache-control': `public, max-age=${live ? 15 : 3600}` });
+  const res = json(frames, 200, {
+    'cache-control': `public, max-age=${live ? 15 : 3600}`,
+    ...(truncatedAfter !== null ? { 'x-frames-truncated-after': String(truncatedAfter) } : {}),
+  });
   ctx.waitUntil(cache.put(cacheKey, res.clone()));
   return res;
 }

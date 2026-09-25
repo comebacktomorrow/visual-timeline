@@ -89,6 +89,13 @@ query string is taken to carry its own authorization (a signature, a
 presigned query), and a URL on any other origin is taken to be public, so
 neither is ever handed the viewer key.
 
+Picking each bucket's frame means scanning every frame in the window, so a
+backend may cap the scan per request. The reference worker stops at 25,000
+frames (about 17 days at a 60 s cadence). When it stops early, the
+response carries `X-Frames-Truncated-After: <ts>`: nothing after `<ts>`
+was examined. Request the rest with `from=<ts+1>`, and don't render that
+span as offline.
+
 ### `GET /frame/{variant}/{site}/{source}/{ts}.jpg`
 
 The frame image. Served with `Cache-Control: public, max-age=31536000,

@@ -12,6 +12,13 @@
   domain) is never handed the key. This applies to the panel, the
   standalone app and the embed. The rule is written down under
   `GET /frames` in docs/API.md.
+- Reference worker: long windows keep their newest frames. `/frames`
+  scanned at most 3,000 frames per request, listing forward from `from`,
+  so a window holding more (a week at a 60 s cadence) came back without
+  its newest part, which the clients drew as offline. The scan now covers
+  up to 25,000 frames. If a window holds even more, the response says
+  where it stopped with an `X-Frames-Truncated-After` header, and the
+  worker logs a warning, instead of dropping frames silently.
 
 ### Dependencies
 - `@grafana/*` 13.2.2 with React 19, as dev dependencies (#40). Grafana
