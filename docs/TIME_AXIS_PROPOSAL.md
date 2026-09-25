@@ -1,5 +1,9 @@
 # Proposal: Time axis ticks matching Grafana's native behavior
 
+> **Status: implemented in 0.9.13 (2026-07-11).** Kept as the design record.
+> The "current state" code and line numbers below describe the axis
+> *before* this change, not `src/core.ts` today.
+
 ## Current state (`buildAxis()`, `src/core.ts:978`)
 
 ```js

@@ -22,10 +22,15 @@ the decisions are in steps 2 and 6.
   runtime, so bumping them here only changes typings, tests and tooling, not
   what the panel runs against. That's why a React major can land safely as
   long as e2e on the oldest supported Grafana stays green.
-- **Anything that runs `npm ci` on this repo needs npm 11.** Node 20/22 bundle
-  npm 10, which rejects Dependabot-built lockfiles. This is why `ci.yml` does
-  `npm install -g npm@11`, `cp-update.yml` passes `node-version: "24"`, and the
-  demo build stage uses `node:24`.
+- **Run `npm ci` on this repo with npm 11.** Dependabot writes lockfiles with
+  npm 11, which prunes nested entries that npm 10 still demands. When a
+  dependency carries a nested pin, npm 10 (bundled with Node 20/22) rejects
+  the lockfile with `Missing: <pkg> from lock file`. That happened from July
+  to 2026-09-25 with `@grafana/runtime`'s nested `typescript@5.9.3`, until the
+  React 19 bump removed it. npm 10 accepts today's lockfile, but the next
+  nested pin brings the failure back, so the npm 11 pins stay: `ci.yml` runs
+  `npm install -g npm@11`, `cp-update.yml` passes `node-version: "24"`, and
+  the demo build stage uses `node:24`.
 - **Merging is the maintainer's call.** An agent session merges only the PRs
   the maintainer has named by number.
 - **None of this needs a redeploy** unless `worker/`, `web/` or `src/` changed.

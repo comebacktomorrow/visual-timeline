@@ -16,8 +16,8 @@ Three frontends, one small HTTP contract ([docs/API.md](https://github.com/comeb
   time range). Ships with built-in demo data — drop it on a dashboard and
   it works with zero infrastructure.
 - `web/app.html` — **standalone app** with the chrome Grafana normally
-  provides: site filter, timeline/grid/both modes, fit/fill, quick ranges,
-  drag-zoom, and within-page cursor sync (hover the timeline, the grid
+  provides: site filter, timeline/grid/both modes, fit/fill, a Grafana-style
+  time-range picker, drag-zoom, and within-page cursor sync (hover the timeline, the grid
   follows). State lives in the URL — views are shareable links.
 - `web/index.html` — **minimal embeddable viewer** (iframe-friendly;
   accepts Grafana dashboard-link params).
@@ -92,16 +92,20 @@ set each panel's **API URL** option to a backend for live frames.
 | `src/` | Grafana panel plugin source (create-plugin scaffold; `npm run build` → `dist/`) |
 | `web/` | standalone app, embeddable viewer, fleet simulator |
 | `worker/` | Cloudflare Worker + R2 reference backend |
+| `demo/` | zero-setup Grafana demo (`docker compose -f demo/docker-compose.yml up`) |
 | `grafana/` | provisioning for the Grafana demo |
 | `docs/API.md` | the frames API contract + curl examples |
+| `docs/UPSTREAM-UPDATES.md` | runbook for Dependabot, scaffold and security updates |
+| `docs/TIME_AXIS_PROPOSAL.md` | design record for the Grafana-matching time axis |
 
 ## Contributing
 
 Bug reports and feature requests are welcome as
 [GitHub issues](https://github.com/comebacktomorrow/visual-timeline/issues);
-pull requests too. `npm run build` builds the panel, `npm run e2e` runs the
-Playwright suite against the Docker Grafana above, and the fleet simulator
-(`worker/` + `sim.html`) gives you realistic data with no hardware.
+pull requests too. `npm run build` builds the panel; `npm run server` starts
+the scaffold's dev Grafana on `:3000` and `npm run e2e` runs the Playwright
+suite against it (that's separate from the `:3300` demo above). The fleet
+simulator (`worker/` + `sim.html`) gives you realistic data with no hardware.
 Taking in Dependabot, scaffold and security updates has its own runbook:
 [docs/UPSTREAM-UPDATES.md](docs/UPSTREAM-UPDATES.md).
 

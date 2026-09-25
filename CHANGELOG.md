@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+Nothing the panel, standalone app or worker does has changed. Everything
+below is dependencies, tooling, packaging and docs.
+
+### Dependencies
+- `@grafana/*` 13.2.2 with React 19, as dev dependencies (#40). Grafana
+  supplies React to the panel at runtime. `grafanaDependency` stays
+  `>=10.4.0`, and e2e passes on every Grafana from 10.4 to nightly.
+- Scaffold (`@grafana/create-plugin`) 7.8.0 → 7.11.0 (#29, #42).
+- Cleared the high-severity advisories that fail the plugin validator's
+  osv-scanner: fast-uri, ip-address, js-yaml, nanoid, postcss and
+  js-cookie (the last through an `overrides` pin) in August;
+  browserslist and js-yaml again in September (#40).
+- Routine Dependabot bumps: webpack-cli 7, @types/node 26, @emotion/css,
+  glob 13, @grafana/plugin-e2e, Playwright 1.63, jest and Testing
+  Library, typescript-eslint and eslint-plugin-jsdoc (#19, #20, #21,
+  #23, #24, #34, #37, #41).
+
+### CI
+- Installs run on npm 11, so Dependabot-built lockfiles install (#27,
+  #28).
+- The monthly scaffold-update workflow runs on Node 24 and opens its PR
+  (it needs the `GH_PAT_TOKEN` secret).
+- GitHub Action bumps (#15, #16, #17, #18, #22, #30, #36, #38).
+
+### Demo and docs
+- `docker compose -f demo/docker-compose.yml up` works from a bare clone:
+  a build stage compiles the panel before Grafana starts. `DEMO_PORT`
+  overrides the host port.
+- New catalog screenshot from the current build.
+- README badges and a Contributing section. Changelog entries are dated.
+- `docs/API.md` covers write auth: adding a site to the reference worker.
+- New runbook for upstream updates: `docs/UPSTREAM-UPDATES.md`.
+
 ## 0.9.19 (2026-08-21)
 
 - Standalone app: Grafana-style time-range picker. The topbar clock now
