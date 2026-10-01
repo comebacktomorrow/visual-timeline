@@ -301,12 +301,23 @@ const TP_QUICK = [
   const RKEY = 'vt.recentRanges';
   const loadRecents = () => { try { return JSON.parse(localStorage.getItem(RKEY)) || []; } catch { return []; } };
   const fmtRaw = v => /^\d+$/.test(v) ? fmtAbs(Number(v)) : v;
+  // built from DOM nodes, not innerHTML: the entries come from localStorage,
+  // which anything on this origin can write
   function renderRecents() {
+    const box = $('tpRecent');
+    box.replaceChildren();
     const rs = loadRecents();
-    $('tpRecent').innerHTML = rs.length
-      ? '<label>Recently used</label>' + rs.map(([f, t], i) =>
-          `<span class="rr" data-i="${i}">${fmtRaw(f)} → ${fmtRaw(t)}</span>`).join('')
-      : '';
+    if (!rs.length) return;
+    const label = document.createElement('label');
+    label.textContent = 'Recently used';
+    box.appendChild(label);
+    rs.forEach(([f, t], i) => {
+      const s = document.createElement('span');
+      s.className = 'rr';
+      s.dataset.i = String(i);
+      s.textContent = `${fmtRaw(f)} → ${fmtRaw(t)}`;
+      box.appendChild(s);
+    });
   }
   $('tpRecent').addEventListener('click', e => {
     const i = e.target.dataset.i;
