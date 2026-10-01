@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.23 (2026-10-01)
+
+- Standalone app: the time picker's "Recently used" list is built from
+  DOM nodes instead of `innerHTML`. Its entries come from `localStorage`,
+  so markup stored there could have run as script when the picker opened.
+  Today's code only ever stores validated time expressions, so this was
+  hardening against a tampered store rather than a reachable injection.
+  Found by CodeQL (`js/xss-through-dom`).
+
 ## 0.9.22 (2026-09-25)
 
 - The pending slot (its tick has passed, the frame is still in flight)
