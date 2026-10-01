@@ -1,0 +1,47 @@
+# The scaffold-update workflow (cp-update.yml) pushes with GH_PAT_TOKEN, a
+# fine-grained token whose default lifetime is 30 days. When it lapses, that
+# workflow fails with "Authentication failed" once a month and nobody sees
+# it. This opens an issue two weeks ahead instead.
+name: Scaffold token expiry
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read GH_PAT_TOKEN's expiry, open an issue if it is close
+        env:
+          PAT: ${{ secrets.GH_PAT_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          title="GH_PAT_TOKEN needs regenerating"
+          code=$(curl -s -o /dev/null -D headers.txt -w '%{http_code}' \
+            -H "Authorization: Bearer $PAT" "https://api.github.com/repos/$REPO")
+          exp=$(grep -i '^github-authentication-token-expiration:' headers.txt | cut -d' ' -f2- | tr -d '\r')
+          if [ "$code" != "200" ]; then
+            msg="GitHub rejected the token (HTTP $code), so it has expired or been revoked."
+          elif [ -n "$exp" ]; then
+            days=$(( ( $(date -d "$exp" +%s) - $(date +%s) ) / 86400 ))
+            echo "GH_PAT_TOKEN expires $exp ($days days)"
+            if [ "$days" -ge 14 ]; then exit 0; fi
+            msg="It expires $exp, in $days days."
+          else
+            echo "No expiry header, so the token doesn't expire."
+            exit 0
+          fi
+          body="$msg The monthly scaffold-update workflow (cp-update.yml) pushes with it and fails with \"Authentication failed\" once it lapses. Regenerate it with a custom expiry and store it as described in docs/UPSTREAM-UPDATES.md, step 5."
+          n=$(gh issue list --repo "$REPO" --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "$title" --body "$body"
+          fi

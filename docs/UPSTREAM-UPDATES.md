@@ -270,7 +270,7 @@ commit before calling the job done.
 
 Update this section whenever an ignore, pin or token changes.
 
-As of **2026-09-25**:
+As of **2026-10-01**:
 
 | What | State | When to revisit |
 |---|---|---|
@@ -280,8 +280,21 @@ As of **2026-09-25**:
 | Ignore: `@grafana/eslint-config` 10.x | its exports changed; only the scaffold migration updates `.config/eslint.config.mjs` | automatic once the 7.12 scaffold PR merges |
 | Pin: `overrides.js-cookie ^3.0.6` | floor under a dev-only high (GHSA-qjx8-664m-686j) reached through `@grafana/data` → `react-use` / `@react-hookz/web`, whose `^3.0.0` range still allows the vulnerable ≤3.0.5 | drop once they require ≥3.0.6 themselves |
 | React | 19 (dev only), since 2026-09-25 | — |
-| `GH_PAT_TOKEN` | expires **2026-10-25** | regenerate before then |
+| `GH_PAT_TOKEN` | expires **2026-10-25** | regenerate before then; `pat-expiry.yml` opens an issue 14 days ahead |
 | Open advisories | 4 moderate (react-router chain), none high | they need an `@grafana` major, so leave them |
+
+## Checks that watch for this between passes
+
+`.github/workflows/project-checks.yml` runs on every PR, on pushes to main and weekly:
+
+- **Advisories:** `npm audit --audit-level=high` fails when a high or critical advisory appears, the same
+  threshold as the catalog validator. The weekly run catches advisories published against an unchanged
+  lockfile. GitHub's Dependabot alerts and security updates are also on, so a fix PR often arrives on its own.
+- **vt-core.js drift:** fails if the committed `web/vt-core.js` isn't what `npm run build:web` produces.
+- **Worker tests:** `cd worker && npm test`, contract tests against an in-memory R2.
+
+`.github/workflows/pat-expiry.yml` checks `GH_PAT_TOKEN` every Monday and opens (or comments on) a
+"GH_PAT_TOKEN needs regenerating" issue when it has under 14 days left or has stopped working.
 
 ## Pitfalls seen in practice
 
