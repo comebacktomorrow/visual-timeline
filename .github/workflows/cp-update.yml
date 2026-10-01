@@ -10,6 +10,11 @@ on:
 # `pull requests: read and write`
 # `workflows: read and write`
 
+# the action pushes and opens its PR with GH_PAT_TOKEN, so the default
+# GITHUB_TOKEN needs nothing beyond reading
+permissions:
+  contents: read
+
 jobs:
   release:
     runs-on: ubuntu-latest

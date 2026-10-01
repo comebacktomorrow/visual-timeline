@@ -59,4 +59,8 @@ jobs:
       - name: Use npm 11 (matches the npm Dependabot builds lockfiles with)
         run: npm install -g npm@11
       # the catalog validator's osv-scanner fails a submission on any high
-      - run: npm audit --audit-level=high
+      - name: Plugin lockfile
+        run: npm audit --audit-level=high
+      - name: Worker lockfile (wrangler's tree)
+        run: npm audit --audit-level=high
+        working-directory: worker
