@@ -1,0 +1,62 @@
+# Checks specific to this repo, kept out of ci.yml because the create-plugin
+# scaffold update owns that file.
+name: Project checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # weekly: new advisories appear without any commit on our side
+    - cron: '0 1 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vt-core-drift:
+    name: web/vt-core.js matches src/core.ts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Use npm 11 (matches the npm Dependabot builds lockfiles with)
+        run: npm install -g npm@11
+      - run: npm ci
+      - run: npm run build:web
+      - name: The committed build is current
+        run: |
+          git diff --exit-code -- web/vt-core.js || {
+            echo "::error file=web/vt-core.js::web/vt-core.js is stale. Run npm run build:web and commit it."
+            exit 1
+          }
+
+  worker-tests:
+    name: Reference worker tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      # no install: the tests use only node: built-ins and the worker source
+      - run: npm test
+        working-directory: worker
+
+  advisories:
+    name: No high or critical advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Use npm 11 (matches the npm Dependabot builds lockfiles with)
+        run: npm install -g npm@11
+      # the catalog validator's osv-scanner fails a submission on any high
+      - run: npm audit --audit-level=high

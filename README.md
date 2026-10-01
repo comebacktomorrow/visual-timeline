@@ -107,6 +107,8 @@ pull requests too. `npm run build` builds the panel; `npm run server` starts
 the scaffold's dev Grafana on `:3000` and `npm run e2e` runs the Playwright
 suite against it (that's separate from the `:3300` demo above). The fleet
 simulator (`worker/` + `sim.html`) gives you realistic data with no hardware.
+`cd worker && npm test` runs the reference worker's contract tests (no Cloudflare
+account needed).
 Taking in Dependabot, scaffold and security updates has its own runbook:
 [docs/UPSTREAM-UPDATES.md](docs/UPSTREAM-UPDATES.md).
 
