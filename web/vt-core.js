@@ -2139,9 +2139,24 @@ var VTCore = (() => {
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="grid"></div>';
     const q2 = (sel) => wrap.querySelector(sel);
-    let kiosks = [], tiles = {}, destroyed = false, pollTimer = null, shownT = null;
-    const pv = makePreview(root, TZ);
-    const PANEL_TT = zoneTexts(TZ, TZ, false);
+    const s = {
+      root,
+      cfg,
+      P,
+      TZ,
+      SPAN,
+      LIVE,
+      backend,
+      wrap,
+      kiosks: [],
+      tiles: {},
+      destroyed: false,
+      pollTimer: null,
+      shownT: null,
+      pv: makePreview(root, TZ),
+      PANEL_TT: zoneTexts(TZ, TZ, false)
+    };
+    const { tiles, pv, PANEL_TT } = s;
     function buildTile(decl, model) {
       const el = document.createElement("div");
       const zone = zoneFor(decl, TZ, cfg.thumbTimes, PANEL_TT);
@@ -2179,12 +2194,12 @@ var VTCore = (() => {
       return null;
     }
     function setShown(t) {
-      shownT = t;
+      s.shownT = t;
       if (cfg.onShown) {
         cfg.onShown(t);
       }
       const zoneAt = t == null ? Math.min(P.to, Date.now()) : t;
-      for (const k of kiosks) {
+      for (const k of s.kiosks) {
         const rec = tiles[k.id];
         if (!rec) {
           continue;
@@ -2255,10 +2270,10 @@ var VTCore = (() => {
     }
     (async function boot() {
       try {
-        kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
+        s.kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
       } catch (e) {
         console.warn("[visual-timeline] sources fetch failed:", e);
-        if (destroyed) {
+        if (s.destroyed) {
           return;
         }
         const err = document.createElement("div");
@@ -2268,8 +2283,8 @@ var VTCore = (() => {
         await revealWrapper(root, wrap);
         return;
       }
-      for (const k of kiosks) {
-        if (destroyed) {
+      for (const k of s.kiosks) {
+        if (s.destroyed) {
           return;
         }
         let model;
@@ -2279,7 +2294,7 @@ var VTCore = (() => {
           console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
           continue;
         }
-        if (destroyed) {
+        if (s.destroyed) {
           return;
         }
         if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {
@@ -2287,12 +2302,12 @@ var VTCore = (() => {
         }
         tiles[k.id] = buildTile(k, model);
       }
-      kiosks = kiosks.filter((k) => tiles[k.id]);
+      s.kiosks = s.kiosks.filter((k) => tiles[k.id]);
       setShown(null);
       await revealWrapper(root, wrap);
       if (LIVE) {
-        pollTimer = setInterval(async () => {
-          for (const k of kiosks) {
+        s.pollTimer = setInterval(async () => {
+          for (const k of s.kiosks) {
             const rec = tiles[k.id];
             const la = rec.model.lastActive;
             if (!la) {
@@ -2300,7 +2315,7 @@ var VTCore = (() => {
             }
             const last = lastFrame(rec);
             const fresh = await backend.frames(k.site, k.id, (last ? last.ts : P.from) + 1, Date.now(), la.step);
-            if (destroyed) {
+            if (s.destroyed) {
               return;
             }
             for (const f of fresh) {
@@ -2313,7 +2328,7 @@ var VTCore = (() => {
               }
             }
           }
-          if (shownT == null) {
+          if (s.shownT == null) {
             setShown(null);
           }
         }, 1e4);
@@ -2321,19 +2336,19 @@ var VTCore = (() => {
     })();
     return {
       setExternalCursor(t) {
-        if (!destroyed) {
+        if (!s.destroyed) {
           setShown(Math.max(P.from, Math.min(P.to, t)));
         }
       },
       clearExternal() {
-        if (!destroyed) {
+        if (!s.destroyed) {
           setShown(null);
         }
       },
       destroy() {
-        destroyed = true;
-        if (pollTimer) {
-          clearInterval(pollTimer);
+        s.destroyed = true;
+        if (s.pollTimer) {
+          clearInterval(s.pollTimer);
         }
         pv.retire();
         retireWrapper(wrap);

@@ -11,6 +11,7 @@ import { makeBackend } from '../backends/demo';
 import { attachZoneChip, dressZoneChip, zoneChip } from '../zones/chip';
 import { makePreview } from '../ui/preview';
 import { makeWrapper, retireWrapper, revealWrapper } from '../ui/wrapper';
+import type { GridState } from './state';
 
 /* ======================= multiview grid mode =======================
  * One tile per kiosk, no timeline. Shows the most recent frame in the
@@ -30,9 +31,14 @@ export function mountGrid(root, cfg) {
   wrap.innerHTML = '<div class="grid"></div>';
   const q = sel => wrap.querySelector(sel);
 
-  let kiosks = [], tiles = {}, destroyed = false, pollTimer = null, shownT = null;
-  const pv = makePreview(root, TZ);
-  const PANEL_TT = zoneTexts(TZ, TZ, false);
+  // the mount's shared state (the fields that change live only here)
+  const s: GridState = {
+    root, cfg, P, TZ, SPAN, LIVE, backend, wrap,
+    kiosks: [], tiles: {}, destroyed: false, pollTimer: null, shownT: null,
+    pv: makePreview(root, TZ),
+    PANEL_TT: zoneTexts(TZ, TZ, false),
+  };
+  const { tiles, pv, PANEL_TT } = s;
 
   function buildTile(decl, model) {
     const el = document.createElement('div');
@@ -70,11 +76,11 @@ export function mountGrid(root, cfg) {
 
   /* t = null → most recent in window; otherwise frame at crosshair time */
   function setShown(t) {
-    shownT = t;
+    s.shownT = t;
     if (cfg.onShown) {cfg.onShown(t);}                // host chrome hook (standalone app)
     // zone chips: offset at the crosshair, else at the window's live edge
     const zoneAt = t == null ? Math.min(P.to, Date.now()) : t;
-    for (const k of kiosks) {
+    for (const k of s.kiosks) {
       const rec = tiles[k.id];
       if (!rec) {continue;}
       if (rec.zone.el) {dressZoneChip(rec.zone, zoneAt);}
@@ -135,12 +141,12 @@ export function mountGrid(root, cfg) {
 
   (async function boot() {
     try {
-      kiosks = (await backend.kiosks(P.site))
+      s.kiosks = (await backend.kiosks(P.site))
         .filter((k) => !P.source || P.source.includes(k.id))
         .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
     } catch (e) {
       console.warn('[visual-timeline] sources fetch failed:', e);
-      if (destroyed) {return;}
+      if (s.destroyed) {return;}
       const err = document.createElement('div');
       err.className = 'boot-err';
       err.textContent = 'frames API unreachable — ' + (e && e.message ? e.message : e);
@@ -148,8 +154,8 @@ export function mountGrid(root, cfg) {
       await revealWrapper(root, wrap);
       return;
     }
-    for (const k of kiosks) {
-      if (destroyed) {return;}
+    for (const k of s.kiosks) {
+      if (s.destroyed) {return;}
       let model;
       try {
         model = await buildSourceModel(k, P, backend, budget);
@@ -157,25 +163,25 @@ export function mountGrid(root, cfg) {
         console.warn('[visual-timeline] model build failed for ' + k.id + ':', e);
         continue;
       }
-      if (destroyed) {return;}
+      if (s.destroyed) {return;}
       // declared pause IS data — a source that is all SCREEN DARK for the
       // window must render its band, not vanish as if it never reported
       if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {continue;}
       tiles[k.id] = buildTile(k, model);
     }
-    kiosks = kiosks.filter((k) => tiles[k.id]);
+    s.kiosks = s.kiosks.filter((k) => tiles[k.id]);
     setShown(null);
     await revealWrapper(root, wrap);
 
     if (LIVE) {
-      pollTimer = setInterval(async () => {
-        for (const k of kiosks) {
+      s.pollTimer = setInterval(async () => {
+        for (const k of s.kiosks) {
           const rec = tiles[k.id];
           const la = rec.model.lastActive;
           if (!la) {continue;}                   // tail era is a declared pause
           const last = lastFrame(rec);
           const fresh = await backend.frames(k.site, k.id, (last ? last.ts : P.from) + 1, Date.now(), la.step);
-          if (destroyed) {return;}
+          if (s.destroyed) {return;}
           for (const f of fresh) {
             const slot = rec.model.slotAt(f.ts);
             if (!slot || slot.paused || slot.beyond) {continue;}
@@ -183,17 +189,17 @@ export function mountGrid(root, cfg) {
             if (!slot.frame || f.ts > slot.frame.ts) {slot.frame = f;}
           }
         }
-        if (shownT == null) {setShown(null);}   // keep "latest" tiles fresh
+        if (s.shownT == null) {setShown(null);}   // keep "latest" tiles fresh
       }, 10000);
     }
   })();
 
   return {
-    setExternalCursor(t) { if (!destroyed) {setShown(Math.max(P.from, Math.min(P.to, t)));} },
-    clearExternal() { if (!destroyed) {setShown(null);} },
+    setExternalCursor(t) { if (!s.destroyed) {setShown(Math.max(P.from, Math.min(P.to, t)));} },
+    clearExternal() { if (!s.destroyed) {setShown(null);} },
     destroy() {
-      destroyed = true;
-      if (pollTimer) {clearInterval(pollTimer);}
+      s.destroyed = true;
+      if (s.pollTimer) {clearInterval(s.pollTimer);}
       pv.retire();   // an open preview survives refresh remounts (adopted by the successor)
       retireWrapper(wrap);
     },
