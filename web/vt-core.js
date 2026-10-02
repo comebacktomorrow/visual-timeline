@@ -1804,6 +1804,108 @@ var VTCore = (() => {
     };
   }
 
+  // src/vt/timeline/annotations.ts
+  function renderAnnotations(s, anns) {
+    const tip = annTip();
+    const fracOf = (t) => (Math.max(s.P.from, Math.min(s.P.to, t)) - s.P.from) / s.SPAN;
+    const pct = (f) => (f * 100).toFixed(3) + "%";
+    function addRegion(host, a) {
+      const el = document.createElement("div");
+      el.className = "ann-region";
+      el.style.left = pct(fracOf(a.ts));
+      el.style.width = pct(fracOf(a.timeEnd) - fracOf(a.ts));
+      if (a.color) {
+        el.style.background = a.color + "22";
+        el.style.borderColor = a.color + "88";
+      }
+      host.appendChild(el);
+    }
+    function addMarkers(host, items) {
+      const groups = [];
+      for (const a of items) {
+        const g = groups[groups.length - 1];
+        if (g && (fracOf(a.ts) - fracOf(g[0].ts)) * s.hostWidth < 10) {
+          g.push(a);
+        } else {
+          groups.push([a]);
+        }
+      }
+      for (const g of groups) {
+        const el = document.createElement("div");
+        el.className = "ann" + (g.length > 1 ? " multi" : "");
+        el.style.left = pct(fracOf(g[0].ts));
+        if (g[0].color) {
+          el.style.background = g[0].color;
+        }
+        el.title = "";
+        if (g.length > 1) {
+          const n = document.createElement("span");
+          n.className = "n";
+          n.textContent = String(g.length);
+          el.appendChild(n);
+        }
+        el.addEventListener("mouseenter", () => {
+          const r = el.getBoundingClientRect();
+          tip.show(g, r.left + r.width / 2, r.top, el, s.TZ);
+        });
+        el.addEventListener("mouseleave", () => tip.hide());
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const r = el.getBoundingClientRect();
+          tip.pin(g, r.left + r.width / 2, r.top, el, s.TZ);
+        });
+        host.appendChild(el);
+      }
+    }
+    const appliesTo = (a, k) => (!a.source || a.source === k.id) && (!a.siteScope || a.siteScope === k.site);
+    const isGlobal = (a) => !a.source && !a.siteScope;
+    if (s.cfg.annotationLanes === "per-source") {
+      for (const k of s.kiosks) {
+        const c = s.cards[k.id];
+        const items = anns.filter((a) => appliesTo(a, k));
+        if (!items.length) {
+          continue;
+        }
+        c.card.classList.add("has-lane");
+        for (const a of items) {
+          if (a.timeEnd) {
+            addRegion(c.strip, a);
+            addRegion(c.lane, a);
+          }
+        }
+        addMarkers(c.lane, items);
+      }
+      return;
+    }
+    const laneItems = [], perCard = {};
+    for (const a of anns) {
+      if (isGlobal(a)) {
+        laneItems.push(a);
+      } else {
+        for (const k of s.kiosks) {
+          if (appliesTo(a, k)) {
+            (perCard[k.id] ||= []).push(a);
+          }
+        }
+      }
+      if (a.timeEnd) {
+        const hosts = isGlobal(a) ? s.kiosks.map((k) => s.cards[k.id].strip).concat([q(s.wrap, ".ann-lane")]) : s.kiosks.filter((k) => appliesTo(a, k)).map((k) => s.cards[k.id].strip);
+        for (const h of hosts) {
+          addRegion(h, a);
+        }
+      }
+    }
+    for (const [id, items] of Object.entries(perCard)) {
+      addMarkers(s.cards[id].strip, items);
+    }
+    if (laneItems.length) {
+      addMarkers(q(s.wrap, ".ann-lane"), laneItems);
+    }
+    if (laneItems.length || anns.some((a) => a.timeEnd && isGlobal(a))) {
+      q(s.wrap, ".ann-lane").style.display = "";
+    }
+  }
+
   // src/vt/timeline/mount.ts
   function mountTimeline(root, cfg) {
     injectStyles();
@@ -1842,106 +1944,6 @@ var VTCore = (() => {
       PANEL_TT: zoneTexts(TZ, TZ, false)
     };
     const { cards, pv, PANEL_TT } = s;
-    function renderAnnotations(anns) {
-      const tip = annTip();
-      const fracOf = (t) => (Math.max(P.from, Math.min(P.to, t)) - P.from) / SPAN;
-      const pct = (f) => (f * 100).toFixed(3) + "%";
-      function addRegion(host, a) {
-        const el = document.createElement("div");
-        el.className = "ann-region";
-        el.style.left = pct(fracOf(a.ts));
-        el.style.width = pct(fracOf(a.timeEnd) - fracOf(a.ts));
-        if (a.color) {
-          el.style.background = a.color + "22";
-          el.style.borderColor = a.color + "88";
-        }
-        host.appendChild(el);
-      }
-      function addMarkers(host, items) {
-        const groups = [];
-        for (const a of items) {
-          const g = groups[groups.length - 1];
-          if (g && (fracOf(a.ts) - fracOf(g[0].ts)) * hostWidth < 10) {
-            g.push(a);
-          } else {
-            groups.push([a]);
-          }
-        }
-        for (const g of groups) {
-          const el = document.createElement("div");
-          el.className = "ann" + (g.length > 1 ? " multi" : "");
-          el.style.left = pct(fracOf(g[0].ts));
-          if (g[0].color) {
-            el.style.background = g[0].color;
-          }
-          el.title = "";
-          if (g.length > 1) {
-            const n = document.createElement("span");
-            n.className = "n";
-            n.textContent = String(g.length);
-            el.appendChild(n);
-          }
-          el.addEventListener("mouseenter", () => {
-            const r = el.getBoundingClientRect();
-            tip.show(g, r.left + r.width / 2, r.top, el, TZ);
-          });
-          el.addEventListener("mouseleave", () => tip.hide());
-          el.addEventListener("click", (e) => {
-            e.stopPropagation();
-            const r = el.getBoundingClientRect();
-            tip.pin(g, r.left + r.width / 2, r.top, el, TZ);
-          });
-          host.appendChild(el);
-        }
-      }
-      const appliesTo = (a, k) => (!a.source || a.source === k.id) && (!a.siteScope || a.siteScope === k.site);
-      const isGlobal = (a) => !a.source && !a.siteScope;
-      if (cfg.annotationLanes === "per-source") {
-        for (const k of s.kiosks) {
-          const c = cards[k.id];
-          const items = anns.filter((a) => appliesTo(a, k));
-          if (!items.length) {
-            continue;
-          }
-          c.card.classList.add("has-lane");
-          for (const a of items) {
-            if (a.timeEnd) {
-              addRegion(c.strip, a);
-              addRegion(c.lane, a);
-            }
-          }
-          addMarkers(c.lane, items);
-        }
-        return;
-      }
-      const laneItems = [], perCard = {};
-      for (const a of anns) {
-        if (isGlobal(a)) {
-          laneItems.push(a);
-        } else {
-          for (const k of s.kiosks) {
-            if (appliesTo(a, k)) {
-              (perCard[k.id] ||= []).push(a);
-            }
-          }
-        }
-        if (a.timeEnd) {
-          const hosts = isGlobal(a) ? s.kiosks.map((k) => cards[k.id].strip).concat([q2(".ann-lane")]) : s.kiosks.filter((k) => appliesTo(a, k)).map((k) => cards[k.id].strip);
-          for (const h of hosts) {
-            addRegion(h, a);
-          }
-        }
-      }
-      for (const [id, items] of Object.entries(perCard)) {
-        addMarkers(cards[id].strip, items);
-      }
-      if (laneItems.length) {
-        addMarkers(q2(".ann-lane"), laneItems);
-      }
-      if (laneItems.length || anns.some((a) => a.timeEnd && isGlobal(a))) {
-        q2(".ann-lane").style.display = "";
-      }
-    }
     (async function boot() {
       try {
         s.kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
@@ -1981,7 +1983,7 @@ var VTCore = (() => {
       ruleAllBeyond(s);
       const rawAnns = cfg.annotations && cfg.annotations.length ? cfg.annotations : backend.annotations ? backend.annotations() : [];
       if (cfg.showAnnotations !== false) {
-        renderAnnotations(normAnnotations(rawAnns, P));
+        renderAnnotations(s, normAnnotations(rawAnns, P));
       }
       setCursor(s, s.cursorT, null, true);
       await revealWrapper(root, wrap);
