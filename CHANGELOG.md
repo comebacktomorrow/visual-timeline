@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Unit tests for the timeline's pure logic, as a safety net for splitting
+  `src/core.ts`: era construction from source history, pause labels, how
+  slots become frames, offline gaps, pending slots (with the one-step
+  grace and the "last known" ghost) or pause bands, axis tick alignment
+  and labels across DST changes and in half-hour zones, and tag
+  filtering. The tests pin current behaviour, including a few quirks
+  marked `NOTE: current behaviour`. To make this testable, `core.ts`
+  exports these functions, and three small pieces move out of
+  closures unchanged: `slotClass` (a slot's state class), `missedHeartbeat`
+  (pending → offline in the live poll) and `axisTicks` (the tick list the
+  axis draws). No behaviour changes.
+
 ## 0.9.23 (2026-10-01)
 
 - Standalone app: the time picker's "Recently used" list is built from
