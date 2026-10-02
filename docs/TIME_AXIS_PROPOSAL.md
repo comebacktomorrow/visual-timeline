@@ -3,6 +3,15 @@
 > **Status: implemented in 0.9.13 (2026-07-11).** Kept as the design record.
 > The "current state" code and line numbers below describe the axis
 > *before* this change, not `src/core.ts` today.
+>
+> **Follow-up (Unreleased, #65/#68):** 0.9.13 fixed problem 3 only for day
+> and month steps; hour steps still advanced by raw milliseconds and
+> drifted after a DST change. Alignment now runs in a configurable zone
+> (the dashboard's, or the browser's by default), and sub-day ticks are the
+> instants whose wall clock in that zone sits on the step's grid, so they
+> stay on it across any offset change. Quarter and year steps align to
+> calendar quarters and 1 January. The `alignedStart`/`nextTick` sketch
+> below is superseded by the zone-aware versions in `src/core.ts`.
 
 ## Current state (`buildAxis()`, `src/core.ts:978`)
 
