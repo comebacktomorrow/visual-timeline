@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- The viewer token no longer has to sit in dashboard JSON (#62). The
+  plugin is now an **app**, `savvycocoa1919-visualtimeline-app`, that
+  bundles the panel and a new **Visual Timeline API data source** as nested
+  plugins. It is one catalog entry and one install, and it is enabled on
+  install (`autoEnabled`).
+  - The panel keeps its id, `savvycocoa1919-visualtimeline-panel`, so
+    existing dashboards keep working. If the standalone panel plugin is
+    installed, uninstall it.
+  - The data source (frontend-only, no backend) stores the API URL in
+    `jsonData` and the viewer token, encrypted, in `secureJsonData`. A
+    proxy route in its `plugin.json` makes Grafana's server add
+    `Authorization: Bearer <token>`. **Save & test** checks `/sources`
+    through that route and names the failure: rejected token, wrong URL
+    or unreachable API.
+  - The panel has a new **Data source** option. When it is set, `/sources`
+    and `/frames` go through that data source's proxy, so the token never
+    reaches the browser or the dashboard. Frame images still load straight
+    from the API, so an API with read auth must sign its image URLs (the
+    reference worker's `IMG_SIGN_KEY`).
+  - The **API URL** and **API key** options stay for open APIs and existing
+    dashboards. They are hidden while a data source is selected, and **API
+    key** is deprecated.
+  - `core.ts` gets an injectable fetch for this, so it stays
+    framework-free.
+  - Changing any `plugin.json` needs a Grafana restart; this one adds the
+    app and the data source.
+  - e2e runs against a mock frames API that answers only with the provisioned
+    token, so CI checks that the token is injected server-side on every
+    Grafana version in the matrix.
 - Fix HTML injection (#59): source id, site, location and tags from the
   registry API were spliced unescaped into the card and grid-tile headers
   (including the `title` and `alt` attributes), so a hostile or malformed
