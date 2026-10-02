@@ -25,14 +25,16 @@ export function restoreCursor(root: HTMLElement, P: TimeWindow): number {
 /* selection band shown on every card during drag-zoom (fractions of window) */
 export function showSelection(s: TimelineState, fa: number, fb: number): void {
   const a = Math.min(fa, fb), b = Math.max(fa, fb);
-  for (const k of s.kiosks) {
+  // widths first, then styles: one layout per drag move, not one per card
+  const widths = s.kiosks.map((k) => (s.cards[k.id] ? s.cards[k.id].strip.clientWidth : 0));
+  s.kiosks.forEach((k, i) => {
     const c = s.cards[k.id];
-    if (!c) {continue;}
-    const w = c.strip.clientWidth;
+    if (!c) {return;}
+    const w = widths[i];
     c.sel.style.display = 'block';
     c.sel.style.left = (a * w) + 'px';
     c.sel.style.width = ((b - a) * w) + 'px';
-  }
+  });
 }
 export function hideSelection(s: TimelineState): void {
   for (const k of s.kiosks) {if (s.cards[k.id]) {s.cards[k.id].sel.style.display = 'none';}}
@@ -48,24 +50,36 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
   if (s.cfg.onCursor) {s.cfg.onCursor(s.cursorT);}        // host chrome hook (standalone app)
   const frac = (s.cursorT - s.P.from) / s.SPAN;
 
+  // Read every layout value first, then write. Reading a width after a
+  // style write forces a synchronous layout, and doing that card by card
+  // cost two layouts per source on every move (#64, perf/README.md). The
+  // writes below only move absolutely positioned elements and change text
+  // in fixed-height headers, so they can't change these widths.
   const axis = q(s.wrap, '.axis'), ac = q(s.wrap, '.acur');
   const acW = ac.offsetWidth || 50;
+  const axisW = axis.clientWidth;
+  const widths = new Map<string, { w: number; magW: number }>();
+  for (const k of s.kiosks) {
+    const c = s.cards[k.id];
+    if (c) {widths.set(k.id, { w: c.strip.clientWidth, magW: c.mag.offsetWidth || c.strip.clientHeight * 16 / 9 });}
+  }
+
   ac.textContent = fmtTime(s.cursorT, s.TZ);
-  ac.style.left = Math.max(acW / 2, Math.min(axis.clientWidth - acW / 2, frac * axis.clientWidth)) + 'px';
+  ac.style.left = Math.max(acW / 2, Math.min(axisW - acW / 2, frac * axisW)) + 'px';
 
   for (const k of s.kiosks) {
     const c = s.cards[k.id];
     if (!c) {continue;}
+    const { w, magW } = widths.get(k.id)!;   // measured above for every card
     // external cursor moves (event bus) must not strip local hover state —
     // other panels re-emit hover events and would un-dim us mid-hover
     if (!external) {c.card.classList.toggle('hovered', hoveredCard === c.card);}
-    const w = c.strip.clientWidth, x = frac * w;
+    const x = frac * w;
     c.cross.style.left = x + 'px';
     const slot = c.model.slotAt(s.cursorT);
     const tt = c.tt;
     // the zone chip's offset at the cursor: changes only across a DST edge
     if (c.zone.el) {dressZoneChip(c.zone, s.cursorT);}
-    const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
     c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + 'px';
     c.mag.classList.remove('ghost');
     if (slot && slot.frame) {

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Scrubbing is faster with many sources: moving the cursor used to force
+  two layouts per source (each card's widths were read after the previous
+  card's styles were written). All widths are now read first, so a move
+  costs one layout. With 20 sources a hover move dropped from 4.2 ms to
+  under 1 ms, and from 28 ms to 5.5 ms at 4x CPU throttling
+  (`npm run bench:scrub`, #64). The drag-zoom selection band gets the same
+  change.
 - Era boundaries (#65): where one era ends and the next begins, the later
   era owns the boundary tick, so it is no longer drawn twice, and an empty
   tick no longer shows as an offline gap right before a pause band. A
