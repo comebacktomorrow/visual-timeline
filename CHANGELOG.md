@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Era boundaries (#65): where one era ends and the next begins, the later
+  era owns the boundary tick, so it is no longer drawn twice, and an empty
+  tick no longer shows as an offline gap right before a pause band. A
+  boundary tick holding a frame the later era won't show (off its grid, or
+  a goodbye frame at a pause's start) is kept. An active era too short to
+  contain a tick gets one slot at its start, spanning it, showing the frame
+  it sent even when that frame snapped just outside it.
+- Click-in preview: the hi-res frame now loads behind a Visual Timeline API
+  data source too. Its URL is derived from the lo frame's own URL (same base
+  and signature, per the `/frame/{variant}/…` contract) instead of the
+  panel's API URL, which data source mode doesn't have. Site and source id
+  are URL-encoded as path segments (#66).
 - The panel follows the dashboard's time zone (#68, groundwork). It used to
   show browser time even on a dashboard set to UTC or to a named zone. The
   axis, cursor label, magnifier and preview captions, annotation tooltips,

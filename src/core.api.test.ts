@@ -1,8 +1,9 @@
-import { framesPath, makeApiBackend as untypedMakeApiBackend, resolveFrameUrl, sourcesPath } from './core';
+import { framesPath, hiUrlFor as untypedHiUrlFor, makeApiBackend as untypedMakeApiBackend, resolveFrameUrl, sourcesPath } from './core';
 
 // core.ts is untyped JS semantics (@ts-nocheck): give the test a signature
 type ApiFetch = (path: string) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 const makeApiBackend = untypedMakeApiBackend as (apiUrl: string, apiKey: string, apiFetch?: ApiFetch) => any;
+const hiUrlFor = untypedHiUrlFor as (frame: { ts: number; url?: string } | null, decl: object, apiUrl?: string, apiKey?: string) => string | null;
 
 const API = 'https://frames.example.com';
 const FRAME = `${API}/frame/lo/site-a/source-1/1783488360000.jpg`;
@@ -103,5 +104,43 @@ describe('makeApiBackend direct mode (unchanged)', () => {
     expect(url).toBe(`${API}/frames?site=site-a&source=source-1&from=0&to=1&step=1&variant=lo`);
     expect(init.headers).toEqual({ authorization: 'Bearer viewer-tok' });
     expect(frames[0].url).toBe(`${FRAME}?k=viewer-tok`);
+  });
+});
+
+describe('hiUrlFor', () => {
+  const TS = 1783488300000; // on a 5-minute boundary
+  const decl = { site: 'site-a', id: 'source-1', hiCadence: 300000 };
+  const HI = `${API}/frame/hi/site-a/source-1/${TS}.jpg`;
+
+  test('no hi variant declared: no hi URL', () => {
+    expect(hiUrlFor({ ts: TS, url: FRAME }, { site: 'site-a', id: 'source-1' }, API)).toBeNull();
+  });
+
+  test('reuses the lo frame’s base and signature, so it works without an apiUrl (data source mode)', () => {
+    expect(hiUrlFor({ ts: TS, url: `${API}/frame/lo/site-a/source-1/${TS}.jpg?e=1&sig=abc` }, decl)).toBe(`${HI}?e=1&sig=abc`);
+  });
+
+  test('snaps to the nearest hi-cadence tick', () => {
+    expect(hiUrlFor({ ts: TS + 140000, url: FRAME }, decl, API)).toBe(HI);
+    expect(hiUrlFor({ ts: TS + 160000, url: FRAME }, decl, API)).toBe(`${API}/frame/hi/site-a/source-1/${TS + 300000}.jpg`);
+  });
+
+  test('keeps a base path in front of /frame/', () => {
+    const lo = `${API}/vt/frame/lo/site-a/source-1/${TS}.jpg`;
+    expect(hiUrlFor({ ts: TS, url: lo }, decl)).toBe(`${API}/vt/frame/hi/site-a/source-1/${TS}.jpg`);
+  });
+
+  test('an unsigned frame in direct mode carries the viewer key', () => {
+    expect(hiUrlFor({ ts: TS, url: FRAME }, decl, API, 'viewer tok')).toBe(`${HI}?k=viewer%20tok`);
+  });
+
+  test('falls back to apiUrl when the frame URL has no /frame/ path', () => {
+    expect(hiUrlFor({ ts: TS, url: 'blob:x' }, decl, `${API}/`)).toBe(HI);
+    expect(hiUrlFor({ ts: TS, url: 'blob:x' }, decl)).toBeNull();
+  });
+
+  test('encodes site and id as path segments (#66)', () => {
+    const odd = { site: 'site a/b', id: 'cam?#1', hiCadence: 300000 };
+    expect(hiUrlFor({ ts: TS, url: 'blob:x' }, odd, API)).toBe(`${API}/frame/hi/site%20a%2Fb/cam%3F%231/${TS}.jpg`);
   });
 });

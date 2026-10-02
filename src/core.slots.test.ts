@@ -200,11 +200,7 @@ describe('buildSourceModel', () => {
     expect(m.lastActive.step).toBe(240e3);
   });
 
-  test('era boundary on both grids: the boundary tick is a slot in BOTH eras', async () => {
-    // NOTE: current behaviour; looks wrong because an era is [from, to) but
-    // pushActive includes the tick AT era.to, so a boundary tick that lies on
-    // both eras' grids (here 32m) is drawn twice — once at each era's step —
-    // with the same frame, and the strip's total slot span exceeds the window.
+  test('era boundary on both grids: the later era owns the boundary tick (#65)', async () => {
     now = T0 + DAY;
     const P = { from: T0, to: T0 + 60 * MIN };
     const d = decl({
@@ -215,14 +211,31 @@ describe('buildSourceModel', () => {
     });
     const m = await build(d, P, backendWith(every(2 * MIN, T0, T0 + 60 * MIN)), BUDGET);
     const atBoundary = m.slots.filter((sl: any) => sl.ts === T0 + 32 * MIN);
-    expect(atBoundary.map((sl: any) => sl.step)).toEqual([120e3, 240e3]);
-    expect(atBoundary.every((sl: any) => sl.frame && sl.frame.ts === T0 + 32 * MIN)).toBe(true);
+    expect(atBoundary.map((sl: any) => sl.step)).toEqual([240e3]);
+    expect(atBoundary[0].frame.ts).toBe(T0 + 32 * MIN);
+    // slots stay in time order with no duplicates
+    const ts = m.slots.map((sl: any) => sl.ts);
+    expect(ts).toEqual([...new Set(ts)].sort((a, b) => a - b));
   });
 
-  test('an active era shorter than a step with no tick inside still gets one slot, past its end', async () => {
-    // NOTE: current behaviour; looks wrong because pushActive clamps the slot
-    // count to at least 1 even when the era has no grid tick, so the slot's
-    // tick (11m) lies after the era (10m10s–10m50s), inside the next pause.
+  test('a boundary tick off the later grid keeps its frame in the earlier era', async () => {
+    // 30m is on the 120 s grid but not the 240 s one (32, 36, ...): the later
+    // era won't draw it, so the earlier era keeps it rather than lose a frame
+    now = T0 + DAY;
+    const P = { from: T0, to: T0 + 60 * MIN };
+    const d = decl({
+      history: [
+        { since: T0 - DAY, cadence: 120e3 },
+        { since: T0 + 30 * MIN, cadence: 240e3 },
+      ],
+    });
+    const m = await build(d, P, backendWith(every(2 * MIN, T0, T0 + 30 * MIN)), BUDGET);
+    const at30 = m.slots.filter((sl: any) => sl.ts === T0 + 30 * MIN);
+    expect(at30).toHaveLength(1);
+    expect(at30[0]).toMatchObject({ step: 120e3, frame: { ts: T0 + 30 * MIN } });
+  });
+
+  test('an active era with no tick inside gets one slot at its start, spanning it (#65)', async () => {
     now = T0 + DAY;
     const P = { from: T0, to: T0 + 60 * MIN };
     const d = decl({
@@ -235,9 +248,61 @@ describe('buildSourceModel', () => {
     const m = await build(d, P, backendWith([]), BUDGET);
     expect(m.slots.map((sl: any) => [(sl.ts - T0) / 1e3, slotClass(sl).trim()])).toEqual([
       [0, 'paused'],
-      [660, 'gap'],
+      [610, 'gap'],
       [650, 'paused'],
     ]);
+    expect(m.slots[1]).toMatchObject({ span: 40e3, step: 60e3 });
+  });
+
+  test('a short era shows the frame it sent, even snapped just outside it', async () => {
+    // uploads snap to the NEAREST grid point: a frame sent at 10m40s lands on 11m
+    now = T0 + DAY;
+    const P = { from: T0, to: T0 + 60 * MIN };
+    const d = decl({
+      history: [
+        { since: T0 - DAY, paused: true },
+        { since: T0 + 10 * MIN + 10e3 },
+        { since: T0 + 10 * MIN + 50e3, paused: true },
+      ],
+    });
+    const m = await build(d, P, backendWith([T0 + 11 * MIN]), BUDGET);
+    expect(m.slots[1]).toMatchObject({ ts: T0 + 10 * MIN + 10e3, frame: { ts: T0 + 11 * MIN } });
+    expect(slotClass(m.slots[1])).toBe('');
+  });
+
+  test('an era whose only tick is its boundary gets the start slot instead', async () => {
+    // active 10m10s–11m, then a pause: its one tick (11m) is the empty
+    // boundary before the band, so it moves to the era's start
+    now = T0 + DAY;
+    const P = { from: T0, to: T0 + 60 * MIN };
+    const d = decl({
+      history: [
+        { since: T0 - DAY, paused: true },
+        { since: T0 + 10 * MIN + 10e3 },
+        { since: T0 + 11 * MIN, paused: true },
+      ],
+    });
+    const m = await build(d, P, backendWith([]), BUDGET);
+    expect(m.slots.map((sl: any) => [(sl.ts - T0) / 1e3, slotClass(sl).trim()])).toEqual([
+      [0, 'paused'],
+      [610, 'gap'],
+      [660, 'paused'],
+    ]);
+  });
+
+  test('a goodbye frame on a pause’s start tick stays visible', async () => {
+    now = T0 + DAY;
+    const P = { from: T0, to: T0 + 60 * MIN };
+    const d = decl({
+      history: [
+        { since: T0 - DAY, cadence: 60e3 },
+        { since: T0 + 30 * MIN, paused: true, reason: 'quiet' },
+        { since: T0 + 45 * MIN, cadence: 60e3 },
+      ],
+    });
+    const m = await build(d, P, backendWith(every(MIN, T0, T0 + 30 * MIN)), BUDGET);
+    const at30 = m.slots.filter((sl: any) => sl.ts === T0 + 30 * MIN);
+    expect(at30.map((sl: any) => slotClass(sl).trim())).toEqual(['', 'paused r-quiet']);
   });
 
   test('a declared (bounded) pause next to an unexpected gap: neutral band vs offline slots', async () => {
@@ -264,15 +329,15 @@ describe('buildSourceModel', () => {
     const v = view(m.slots);
     expect(v.slice(0, 20).every(([, c]) => c === '')).toBe(true);
     // 20m–29m: unexpected silence → offline. The tick AT the pause start (30m)
-    // belongs to the active era (see the era-boundary NOTE above), so it is a
-    // gap slot too, right before the band.
-    expect(v.slice(20, 31)).toEqual([20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30].map((t) => [t, 'gap']));
+    // belongs to the later era (#65): an empty tick there would be a gap slot
+    // drawn right before the band, so the band owns it.
+    expect(v.slice(20, 30)).toEqual([20, 21, 22, 23, 24, 25, 26, 27, 28, 29].map((t) => [t, 'gap']));
     // the declared pause: ONE band slot spanning the whole bounded era
-    expect(v[31]).toEqual([30, 'paused r-quiet']);
-    expect(m.slots[31]).toMatchObject({ ts: T0 + 30 * MIN, span: 15 * MIN, paused: true, reason: 'quiet' });
-    expect(v.slice(32).every(([, c]) => c === '')).toBe(true);
-    expect(v.slice(32)[0]).toEqual([45, '']);
-    expect(m.slots).toHaveLength(32 + 16);
+    expect(v[30]).toEqual([30, 'paused r-quiet']);
+    expect(m.slots[30]).toMatchObject({ ts: T0 + 30 * MIN, span: 15 * MIN, paused: true, reason: 'quiet' });
+    expect(v.slice(31).every(([, c]) => c === '')).toBe(true);
+    expect(v.slice(31)[0]).toEqual([45, '']);
+    expect(m.slots).toHaveLength(31 + 16);
   });
 
   test('a tail pause with no frames since: band to the window end, no active slots after it', async () => {
