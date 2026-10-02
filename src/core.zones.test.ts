@@ -4,6 +4,7 @@ import {
   fmtShort,
   mountGrid,
   mountTimeline,
+  resolveTimeZone,
   sourceTimeZone as untypedSourceTimeZone,
   zoneHeadText,
   zoneLabel,
@@ -88,6 +89,31 @@ describe('sourceTimeZone', () => {
       expect(sourceTimeZone({ timezone: 10 })).toBeNull();
       expect(sourceTimeZone({ timezone: 'Mars/Olympus_Mons' })).toBeNull();
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('Mars/Olympus_Mons'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('an unknown name warns once as the panel zone and once as a source zone (#77)', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const name = 'Venus/Maxwell_Montes';
+      resolveTimeZone(name);
+      resolveTimeZone(name);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenLastCalledWith(expect.stringContaining('unknown time zone "' + name + '"'));
+      // the panel warning must not swallow the source one
+      expect(sourceTimeZone({ timezone: name })).toBeNull();
+      expect(sourceTimeZone({ timezone: name })).toBeNull();
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(warn).toHaveBeenLastCalledWith(expect.stringContaining('source declares unknown time zone "' + name + '"'));
+      // and the other way round, with a fresh name
+      const other = 'Venus/Ishtar_Terra';
+      sourceTimeZone({ timezone: other });
+      resolveTimeZone(other);
+      sourceTimeZone({ timezone: other });
+      resolveTimeZone(other);
+      expect(warn).toHaveBeenCalledTimes(4);
     } finally {
       warn.mockRestore();
     }

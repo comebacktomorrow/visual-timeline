@@ -85,7 +85,7 @@ var VTCore = (() => {
     }
     return z && isZone(z) ? z : LOCAL_TZ;
   }
-  var zoneWarned = /* @__PURE__ */ new Set();
+  var panelZoneWarned = /* @__PURE__ */ new Set();
   function resolveTimeZone(tz) {
     const s = tz == null ? "" : String(tz).trim();
     if (!s || /^(browser|default|local)$/i.test(s)) {
@@ -97,8 +97,8 @@ var VTCore = (() => {
     if (isZone(s)) {
       return s;
     }
-    if (!zoneWarned.has(s)) {
-      zoneWarned.add(s);
+    if (!panelZoneWarned.has(s)) {
+      panelZoneWarned.add(s);
       console.warn('[visual-timeline] unknown time zone "' + s + `"; using the browser's`);
     }
     return systemZone();
@@ -569,6 +569,7 @@ var VTCore = (() => {
   }
 
   // src/vt/zones/source.ts
+  var sourceZoneWarned = /* @__PURE__ */ new Set();
   function sourceTimeZone(decl) {
     const raw = decl && decl.timezone;
     if (typeof raw !== "string") {
@@ -584,8 +585,8 @@ var VTCore = (() => {
     if (isZone(s)) {
       return s;
     }
-    if (!zoneWarned.has(s)) {
-      zoneWarned.add(s);
+    if (!sourceZoneWarned.has(s)) {
+      sourceZoneWarned.add(s);
       console.warn('[visual-timeline] source declares unknown time zone "' + s + '"; ignoring it');
     }
     return null;

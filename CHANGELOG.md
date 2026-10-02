@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- An unknown time zone name used both as the panel zone and as a source's
+  declared zone now logs both console warnings, once each (#77).
 - A source's slots are all judged pending or offline against one "now"
   taken when the timeline is built, including the start slot of a short
   era next to a pause (#77).

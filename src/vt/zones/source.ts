@@ -1,4 +1,4 @@
-import { fmtShort, fmtTime, isZone, type TimeZoneName, zoneOf, zoneWarned } from '../time/zones';
+import { fmtShort, fmtTime, isZone, type TimeZoneName, zoneOf } from '../time/zones';
 import type { SourceDecl } from '../types';
 
 /* ---- per-source zones (#68) ----
@@ -10,7 +10,10 @@ import type { SourceDecl } from '../types';
 /* the declared zone of a source, or null: absent, blank and unknown names
  * all mean "none" (never the browser's zone — that would label a source
  * with the viewer's location). The declared spelling is kept: Intl's
- * canonical ids are the old names (Asia/Calcutta for Asia/Kolkata). */
+ * canonical ids are the old names (Asia/Calcutta for Asia/Kolkata). An
+ * unknown name warns once per page, separately from resolveTimeZone's
+ * warning about the same name as the panel zone. */
+const sourceZoneWarned = new Set<string>();
 export function sourceTimeZone(decl: Pick<SourceDecl, 'timezone'> | null | undefined): string | null {
   const raw = decl && decl.timezone;
   if (typeof raw !== 'string') {return null;}
@@ -18,8 +21,8 @@ export function sourceTimeZone(decl: Pick<SourceDecl, 'timezone'> | null | undef
   if (!s || /^(browser|default|local)$/i.test(s)) {return null;}
   if (/^(?:etc\/)?utc$/i.test(s)) {return 'UTC';}
   if (isZone(s)) {return s;}
-  if (!zoneWarned.has(s)) {
-    zoneWarned.add(s);
+  if (!sourceZoneWarned.has(s)) {
+    sourceZoneWarned.add(s);
     console.warn('[visual-timeline] source declares unknown time zone "' + s + '"; ignoring it');
   }
   return null;
