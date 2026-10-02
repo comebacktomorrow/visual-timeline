@@ -753,7 +753,7 @@ var VTCore = (() => {
     return parts.join(" \xB7 ");
   }
 
-  // src/core.ts
+  // src/vt/dom/styles.ts
   var STYLE_ID = "ktl-styles";
   var KTL_VAR_DEFAULTS = {
     "--ktl-bg": "#181b1f",
@@ -1053,6 +1053,8 @@ var VTCore = (() => {
     s.textContent = CSS;
     document.head.appendChild(s);
   }
+
+  // src/core.ts
   var SITES = {
     "site-a": [
       { id: "source-1", cadence: 6e4, tags: { env: "prod" } },
