@@ -2281,7 +2281,6 @@ var VTCore = (() => {
     const wrap = makeWrapper(root);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="grid"></div>';
-    const q2 = (sel) => wrap.querySelector(sel);
     const s = {
       root,
       cfg,
@@ -2299,7 +2298,6 @@ var VTCore = (() => {
       pv: makePreview(root, TZ),
       PANEL_TT: zoneTexts(TZ, TZ, false)
     };
-    const { tiles, pv, PANEL_TT } = s;
     (async function boot() {
       try {
         s.kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
@@ -2311,7 +2309,7 @@ var VTCore = (() => {
         const err = document.createElement("div");
         err.className = "boot-err";
         err.textContent = "frames API unreachable \u2014 " + (e && e.message ? e.message : e);
-        q2(".grid").appendChild(err);
+        q(s.wrap, ".grid").appendChild(err);
         await revealWrapper(root, wrap);
         return;
       }
@@ -2332,9 +2330,9 @@ var VTCore = (() => {
         if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {
           continue;
         }
-        tiles[k.id] = buildTile(s, k, model);
+        s.tiles[k.id] = buildTile(s, k, model);
       }
-      s.kiosks = s.kiosks.filter((k) => tiles[k.id]);
+      s.kiosks = s.kiosks.filter((k) => s.tiles[k.id]);
       setShown(s, null);
       await revealWrapper(root, wrap);
       if (LIVE) {
@@ -2357,7 +2355,7 @@ var VTCore = (() => {
         if (s.pollTimer) {
           clearInterval(s.pollTimer);
         }
-        pv.retire();
+        s.pv.retire();
         retireWrapper(wrap);
       }
     };
