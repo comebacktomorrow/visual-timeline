@@ -1,21 +1,19 @@
 // @ts-nocheck
-import { fmtDur, resolveTimeZone } from '../time/zones';
-import { pauseInfo } from '../model/eras';
-import { buildSourceModel, ghostFor, missedHeartbeat, slotClass } from '../model/slots';
+import { resolveTimeZone } from '../time/zones';
+import { buildSourceModel, missedHeartbeat } from '../model/slots';
 import { matchesTags, parseTagFilter, parseVar } from '../model/filters';
-import { zoneFor, zoneTexts } from '../zones/source';
-import { hiUrlFor, makeApiBackend } from '../backends/api';
-import { esc, headTitle, tagChips } from '../dom/html';
+import { zoneTexts } from '../zones/source';
+import { makeApiBackend } from '../backends/api';
 import { injectStyles } from '../dom/styles';
 import { makeBackend } from '../backends/demo';
-import { attachZoneChip, zoneChip } from '../zones/chip';
 import { annTip, normAnnotations } from '../ui/annotations';
 import { makePreview } from '../ui/preview';
 import { dressGhost } from '../ui/ghost';
 import { makeWrapper, retireWrapper, revealWrapper } from '../ui/wrapper';
 import type { TimelineState } from './state';
-import { hideSelection, restoreCursor, setCursor, showSelection } from './cursor';
+import { restoreCursor, setCursor } from './cursor';
 import { buildAxis, ruleAllBeyond, ruleBeyond } from './axis';
+import { buildCard, dressAll } from './card';
 
 /* ======================= timeline core ======================= */
 
@@ -59,157 +57,6 @@ export function mountTimeline(root, cfg) {
     PANEL_TT: zoneTexts(TZ, TZ, false),
   };
   const { cards, pv, PANEL_TT } = s;
-
-
-
-  /* Post-layout dressing, idempotent and re-runnable:
-   * - align each empty slot's hatch to its strip offset so the diagonals run
-   *   continuously across gap runs (per-element gradients restart at every
-   *   slot edge; narrow runs otherwise read as one solid block)
-   * - wide pause bands carry their label inline: a strip that is ALL
-   *   "screen dark" should say so without requiring a hover
-   * Needs real layout — called at build (visible mounts) and again after
-   * reveal with retries (panels that mount before they have a size). */
-  function dressStrip(model) {
-    for (const sl of model.slots) {
-      if (!sl.el || sl.frame) {continue;}
-      sl.el.style.backgroundPosition = (-sl.el.offsetLeft) + 'px 0';
-      if (sl.paused && sl.el.offsetWidth >= 90 && !sl.el.querySelector('.band-label')) {
-        const lab = document.createElement('span');
-        lab.className = 'band-label';
-        lab.textContent = pauseInfo(sl).label;
-        sl.el.appendChild(lab);
-      }
-    }
-  }
-  function dressAll(tries) {
-    const anySized = s.kiosks.some((k) => cards[k.id] && cards[k.id].strip.clientWidth > 0);
-    if (!anySized) {
-      if (tries > 0 && !s.destroyed) {setTimeout(() => dressAll(tries - 1), 500);}
-      return;
-    }
-    for (const k of s.kiosks) {if (cards[k.id]) {dressStrip(cards[k.id].model);}}
-  }
-
-  function buildCard(decl, model) {
-    const kiosk = decl.id;
-    const zone = zoneFor(decl, TZ, cfg.thumbTimes, PANEL_TT), tt = zone.tt;
-    const card = document.createElement('div');
-    const inline = cfg.headerMode === 'inline' || cfg.headerMode === 'inline-gradient';
-    card.className = 'card' + (inline ? ' inline-head' : '') +
-      (cfg.headerMode === 'inline-gradient' ? ' inline-grad' : '');
-    const la = model.lastActive;
-    const cad = cfg.showDetails && la
-      ? '<span class="cad">⏱ ' + fmtDur(la.cadence) + ' · 1/' + fmtDur(la.step) + (la.step > la.cadence ? ' ↓' : '') + '</span>'
-      : '';
-    card.innerHTML =
-      '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(kiosk) + '</span>' +
-      '<span class="inline-brk"></span>' + zoneChip(zone.srcTZ) +
-      '<span class="st">' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' +
-      tagChips(decl) + '<span class="ft"></span>' +
-      cad + '</div>' +
-      '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>' +
-      '<div class="card-lane"></div>';
-    const strip = card.querySelector('.strip');
-    // hairline frame boundaries only when slices are wide enough — below
-    // ~12px they read as zebra noise rather than structure
-    if (hostWidth / model.slots.length >= 12) {strip.classList.add('sep');}
-    const slots = model.slots;
-    for (const sl of slots) {
-      const el = document.createElement('div');
-      el.className = 'slot' + slotClass(sl);
-      if (sl.paused) {el.title = pauseInfo(sl).label.toLowerCase();}
-      // width ∝ time span, so x↔time stays linear across era boundaries
-      el.style.flexGrow = String(sl.span / 1000);
-      if (sl.frame) {
-        const img = document.createElement('img');
-        img.src = sl.frame.url; img.alt = kiosk + ' ' + tt.time(sl.ts) + tt.sfx(sl.ts);
-        el.appendChild(img);
-      }
-      strip.appendChild(el);
-      sl.el = el;
-    }
-    for (const sl of slots) {if (sl.future) {dressGhost(slots, sl);}}
-    dressStrip(model);   // hatch alignment + band labels (re-run post-reveal)
-    const hoverAt = e => {
-      const r = strip.getBoundingClientRect();
-      if (!r.width) {return;}   // stale wrapper mid-swap: no geometry, no cursor
-      const t = P.from + SPAN * ((e.clientX - r.left) / r.width);
-      setCursor(s, t, card, false);
-    };
-    strip.addEventListener('mousemove', hoverAt);
-    strip.addEventListener('mouseenter', e => {
-      wrap.classList.add('strip-hover');
-      // a refresh swaps the DOM under a STATIONARY cursor: the browser fires
-      // mouseenter on the new strip but no mousemove, so without this the
-      // dim class lands with no card marked hovered — everything dims,
-      // including the strip under the mouse
-      hoverAt(e);
-    });
-    strip.addEventListener('mouseleave', () => {
-      wrap.classList.remove('strip-hover');
-      if (cfg.onHoverClear) {cfg.onHoverClear();}
-    });
-    strip.addEventListener('click', e => {
-      if (s.suppressClick) { s.suppressClick = false; return; }
-      const sl = model.slotAt(s.cursorT);
-      const f = sl && sl.frame;
-      const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
-      if (f) {pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, cfg.apiUrl, cfg.apiKey), null, tt);}
-      else if (g) {pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl.ts, tt);}
-    });
-    /* magnifier takes the aspect of the actual frames (portrait screens etc.) */
-    const magEl = card.querySelector('.mag');
-    const magImg = magEl.querySelector('img');
-    magImg.addEventListener('load', () => {
-      if (magImg.naturalWidth && magImg.naturalHeight)
-        {magEl.style.aspectRatio = String(magImg.naturalWidth / magImg.naturalHeight);}
-    });
-    /* drag-select = zoom, grafana-style: band across all cards, release → onZoom */
-    strip.addEventListener('mousedown', e => {
-      if (e.button !== 0) {return;}
-      e.preventDefault();
-      const r = strip.getBoundingClientRect();
-      const fracOf = x => Math.max(0, Math.min(1, (x - r.left) / r.width));
-      const f0 = fracOf(e.clientX);
-      let dragged = false;
-      const move = ev => {
-        if (s.destroyed) {return up(ev);}
-        const f1 = fracOf(ev.clientX);
-        if (Math.abs(f1 - f0) * r.width > 5) {dragged = true;}
-        if (dragged) {
-          showSelection(s, f0, f1);
-          setCursor(s, P.from + SPAN * f1, card, false);
-        }
-      };
-      const up = ev => {
-        document.removeEventListener('mousemove', move);
-        document.removeEventListener('mouseup', up);
-        hideSelection(s);
-        if (dragged && !s.destroyed) {
-          s.suppressClick = true;
-          const f1 = fracOf(ev.clientX);
-          const a = Math.min(f0, f1), b = Math.max(f0, f1);
-          if (b > a && cfg.onZoom) {cfg.onZoom(Math.round(P.from + SPAN * a), Math.round(P.from + SPAN * b));}
-        }
-      };
-      document.addEventListener('mousemove', move);
-      document.addEventListener('mouseup', up);
-    });
-    q('.cards').appendChild(card);
-    attachZoneChip(zone, card);
-    return {
-      card, model, zone, tt,
-      head: card.querySelector('.ft'),
-      strip,
-      cross: card.querySelector('.xh'),
-      sel: card.querySelector('.sel'),
-      mag: card.querySelector('.mag'),
-      lane: card.querySelector('.card-lane'),
-    };
-  }
-
-
 
   /* Annotations: per-source markers ride that source's strip; the rest
    * share one lane above the axis. Regions shade their span; markers
@@ -335,7 +182,7 @@ export function mountTimeline(root, cfg) {
       // declared pause IS data — a source that is all SCREEN DARK for the
       // window must render its band, not vanish as if it never reported
       if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {continue;}
-      cards[k.id] = buildCard(k, model);
+      cards[k.id] = buildCard(s, k, model);
     }
     s.kiosks = s.kiosks.filter((k) => cards[k.id]);
     buildAxis(s);
@@ -349,7 +196,7 @@ export function mountTimeline(root, cfg) {
     if (cfg.showAnnotations !== false) {renderAnnotations(normAnnotations(rawAnns, P));}
     setCursor(s, s.cursorT, null, true);   // rest position; don't publish
     await revealWrapper(root, wrap);  // swap in only once images decoded
-    dressAll(20);                     // hatch alignment + labels once layout is real
+    dressAll(s, 20);                     // hatch alignment + labels once layout is real
 
     if (LIVE) {
       const steps = s.kiosks.map(k => cards[k.id].model.lastActive && cards[k.id].model.lastActive.step).filter(Boolean);

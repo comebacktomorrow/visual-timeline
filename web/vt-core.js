@@ -1173,31 +1173,6 @@ var VTCore = (() => {
     };
   }
 
-  // src/vt/zones/chip.ts
-  function zoneChip(srcTZ) {
-    return srcTZ ? '<span class="st tz"><span class="tzc"></span><span class="tzo"></span></span>' : "";
-  }
-  function attachZoneChip(z, host) {
-    z.el = host.querySelector(".tz");
-    if (!z.el) {
-      return;
-    }
-    z.el.querySelector(".tzc").textContent = z.texts.label;
-    z.offEl = z.el.querySelector(".tzo");
-  }
-  function dressZoneChip(z, ts) {
-    if (!z.el) {
-      return;
-    }
-    const o = z.texts.off(ts);
-    if (o === z.off) {
-      return;
-    }
-    z.off = o;
-    z.offEl.textContent = o ? " \xB7 " + o : "";
-    z.el.title = "Source time zone: " + z.texts.zone + (o ? " (" + o + " from panel time)" : " (same as panel time)");
-  }
-
   // src/vt/ui/annotations.ts
   function normAnnotations(raw, P) {
     const out = [];
@@ -1461,6 +1436,31 @@ var VTCore = (() => {
     return wrap.querySelector(sel);
   }
 
+  // src/vt/zones/chip.ts
+  function zoneChip(srcTZ) {
+    return srcTZ ? '<span class="st tz"><span class="tzc"></span><span class="tzo"></span></span>' : "";
+  }
+  function attachZoneChip(z, host) {
+    z.el = host.querySelector(".tz");
+    if (!z.el) {
+      return;
+    }
+    z.el.querySelector(".tzc").textContent = z.texts.label;
+    z.offEl = z.el.querySelector(".tzo");
+  }
+  function dressZoneChip(z, ts) {
+    if (!z.el) {
+      return;
+    }
+    const o = z.texts.off(ts);
+    if (o === z.off) {
+      return;
+    }
+    z.off = o;
+    z.offEl.textContent = o ? " \xB7 " + o : "";
+    z.el.title = "Source time zone: " + z.texts.zone + (o ? " (" + o + " from panel time)" : " (same as panel time)");
+  }
+
   // src/vt/timeline/cursor.ts
   function restoreCursor(root, P) {
     const saved = Number(root.dataset.ktlCursor);
@@ -1645,6 +1645,165 @@ var VTCore = (() => {
     }
   }
 
+  // src/vt/timeline/card.ts
+  function dressStrip(model) {
+    for (const sl of model.slots) {
+      if (!sl.el || sl.frame) {
+        continue;
+      }
+      sl.el.style.backgroundPosition = -sl.el.offsetLeft + "px 0";
+      if (sl.paused && sl.el.offsetWidth >= 90 && !sl.el.querySelector(".band-label")) {
+        const lab = document.createElement("span");
+        lab.className = "band-label";
+        lab.textContent = pauseInfo(sl).label;
+        sl.el.appendChild(lab);
+      }
+    }
+  }
+  function dressAll(s, tries) {
+    const anySized = s.kiosks.some((k) => s.cards[k.id] && s.cards[k.id].strip.clientWidth > 0);
+    if (!anySized) {
+      if (tries > 0 && !s.destroyed) {
+        setTimeout(() => dressAll(s, tries - 1), 500);
+      }
+      return;
+    }
+    for (const k of s.kiosks) {
+      if (s.cards[k.id]) {
+        dressStrip(s.cards[k.id].model);
+      }
+    }
+  }
+  function buildCard(s, decl, model) {
+    const kiosk = decl.id;
+    const zone = zoneFor(decl, s.TZ, s.cfg.thumbTimes, s.PANEL_TT), tt = zone.tt;
+    const card = document.createElement("div");
+    const inline = s.cfg.headerMode === "inline" || s.cfg.headerMode === "inline-gradient";
+    card.className = "card" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
+    const la = model.lastActive;
+    const cad = s.cfg.showDetails && la ? '<span class="cad">\u23F1 ' + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + "</span>" : "";
+    card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
+    const strip = card.querySelector(".strip");
+    if (s.hostWidth / model.slots.length >= 12) {
+      strip.classList.add("sep");
+    }
+    const slots = model.slots;
+    for (const sl of slots) {
+      const el = document.createElement("div");
+      el.className = "slot" + slotClass(sl);
+      if (sl.paused) {
+        el.title = pauseInfo(sl).label.toLowerCase();
+      }
+      el.style.flexGrow = String(sl.span / 1e3);
+      if (sl.frame) {
+        const img = document.createElement("img");
+        img.src = sl.frame.url;
+        img.alt = kiosk + " " + tt.time(sl.ts) + tt.sfx(sl.ts);
+        el.appendChild(img);
+      }
+      strip.appendChild(el);
+      sl.el = el;
+    }
+    for (const sl of slots) {
+      if (sl.future) {
+        dressGhost(slots, sl);
+      }
+    }
+    dressStrip(model);
+    const hoverAt = (e) => {
+      const r = strip.getBoundingClientRect();
+      if (!r.width) {
+        return;
+      }
+      const t = s.P.from + s.SPAN * ((e.clientX - r.left) / r.width);
+      setCursor(s, t, card, false);
+    };
+    strip.addEventListener("mousemove", hoverAt);
+    strip.addEventListener("mouseenter", (e) => {
+      s.wrap.classList.add("strip-hover");
+      hoverAt(e);
+    });
+    strip.addEventListener("mouseleave", () => {
+      s.wrap.classList.remove("strip-hover");
+      if (s.cfg.onHoverClear) {
+        s.cfg.onHoverClear();
+      }
+    });
+    strip.addEventListener("click", (e) => {
+      if (s.suppressClick) {
+        s.suppressClick = false;
+        return;
+      }
+      const sl = model.slotAt(s.cursorT);
+      const f = sl && sl.frame;
+      const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
+      if (f) {
+        s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, s.cfg.apiUrl, s.cfg.apiKey), null, tt);
+      } else if (g) {
+        s.pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl.ts, tt);
+      }
+    });
+    const magEl = card.querySelector(".mag");
+    const magImg = magEl.querySelector("img");
+    magImg.addEventListener("load", () => {
+      if (magImg.naturalWidth && magImg.naturalHeight) {
+        magEl.style.aspectRatio = String(magImg.naturalWidth / magImg.naturalHeight);
+      }
+    });
+    strip.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) {
+        return;
+      }
+      e.preventDefault();
+      const r = strip.getBoundingClientRect();
+      const fracOf = (x) => Math.max(0, Math.min(1, (x - r.left) / r.width));
+      const f0 = fracOf(e.clientX);
+      let dragged = false;
+      const move = (ev) => {
+        if (s.destroyed) {
+          return up(ev);
+        }
+        const f1 = fracOf(ev.clientX);
+        if (Math.abs(f1 - f0) * r.width > 5) {
+          dragged = true;
+        }
+        if (dragged) {
+          showSelection(s, f0, f1);
+          setCursor(s, s.P.from + s.SPAN * f1, card, false);
+        }
+      };
+      const up = (ev) => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        hideSelection(s);
+        if (dragged && !s.destroyed) {
+          s.suppressClick = true;
+          const f1 = fracOf(ev.clientX);
+          const a = Math.min(f0, f1), b = Math.max(f0, f1);
+          if (b > a && s.cfg.onZoom) {
+            s.cfg.onZoom(Math.round(s.P.from + s.SPAN * a), Math.round(s.P.from + s.SPAN * b));
+          }
+        }
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
+    q(s.wrap, ".cards").appendChild(card);
+    attachZoneChip(zone, card);
+    return {
+      card,
+      model,
+      zone,
+      tt,
+      head: card.querySelector(".ft"),
+      strip,
+      cross: card.querySelector(".xh"),
+      sel: card.querySelector(".sel"),
+      mag: card.querySelector(".mag"),
+      lane: card.querySelector(".card-lane")
+    };
+  }
+
   // src/vt/timeline/mount.ts
   function mountTimeline(root, cfg) {
     injectStyles();
@@ -1683,163 +1842,6 @@ var VTCore = (() => {
       PANEL_TT: zoneTexts(TZ, TZ, false)
     };
     const { cards, pv, PANEL_TT } = s;
-    function dressStrip(model) {
-      for (const sl of model.slots) {
-        if (!sl.el || sl.frame) {
-          continue;
-        }
-        sl.el.style.backgroundPosition = -sl.el.offsetLeft + "px 0";
-        if (sl.paused && sl.el.offsetWidth >= 90 && !sl.el.querySelector(".band-label")) {
-          const lab = document.createElement("span");
-          lab.className = "band-label";
-          lab.textContent = pauseInfo(sl).label;
-          sl.el.appendChild(lab);
-        }
-      }
-    }
-    function dressAll(tries) {
-      const anySized = s.kiosks.some((k) => cards[k.id] && cards[k.id].strip.clientWidth > 0);
-      if (!anySized) {
-        if (tries > 0 && !s.destroyed) {
-          setTimeout(() => dressAll(tries - 1), 500);
-        }
-        return;
-      }
-      for (const k of s.kiosks) {
-        if (cards[k.id]) {
-          dressStrip(cards[k.id].model);
-        }
-      }
-    }
-    function buildCard(decl, model) {
-      const kiosk = decl.id;
-      const zone = zoneFor(decl, TZ, cfg.thumbTimes, PANEL_TT), tt = zone.tt;
-      const card = document.createElement("div");
-      const inline = cfg.headerMode === "inline" || cfg.headerMode === "inline-gradient";
-      card.className = "card" + (inline ? " inline-head" : "") + (cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
-      const la = model.lastActive;
-      const cad = cfg.showDetails && la ? '<span class="cad">\u23F1 ' + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + "</span>" : "";
-      card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
-      const strip = card.querySelector(".strip");
-      if (hostWidth / model.slots.length >= 12) {
-        strip.classList.add("sep");
-      }
-      const slots = model.slots;
-      for (const sl of slots) {
-        const el = document.createElement("div");
-        el.className = "slot" + slotClass(sl);
-        if (sl.paused) {
-          el.title = pauseInfo(sl).label.toLowerCase();
-        }
-        el.style.flexGrow = String(sl.span / 1e3);
-        if (sl.frame) {
-          const img = document.createElement("img");
-          img.src = sl.frame.url;
-          img.alt = kiosk + " " + tt.time(sl.ts) + tt.sfx(sl.ts);
-          el.appendChild(img);
-        }
-        strip.appendChild(el);
-        sl.el = el;
-      }
-      for (const sl of slots) {
-        if (sl.future) {
-          dressGhost(slots, sl);
-        }
-      }
-      dressStrip(model);
-      const hoverAt = (e) => {
-        const r = strip.getBoundingClientRect();
-        if (!r.width) {
-          return;
-        }
-        const t = P.from + SPAN * ((e.clientX - r.left) / r.width);
-        setCursor(s, t, card, false);
-      };
-      strip.addEventListener("mousemove", hoverAt);
-      strip.addEventListener("mouseenter", (e) => {
-        wrap.classList.add("strip-hover");
-        hoverAt(e);
-      });
-      strip.addEventListener("mouseleave", () => {
-        wrap.classList.remove("strip-hover");
-        if (cfg.onHoverClear) {
-          cfg.onHoverClear();
-        }
-      });
-      strip.addEventListener("click", (e) => {
-        if (s.suppressClick) {
-          s.suppressClick = false;
-          return;
-        }
-        const sl = model.slotAt(s.cursorT);
-        const f = sl && sl.frame;
-        const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
-        if (f) {
-          pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, cfg.apiUrl, cfg.apiKey), null, tt);
-        } else if (g) {
-          pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl.ts, tt);
-        }
-      });
-      const magEl = card.querySelector(".mag");
-      const magImg = magEl.querySelector("img");
-      magImg.addEventListener("load", () => {
-        if (magImg.naturalWidth && magImg.naturalHeight) {
-          magEl.style.aspectRatio = String(magImg.naturalWidth / magImg.naturalHeight);
-        }
-      });
-      strip.addEventListener("mousedown", (e) => {
-        if (e.button !== 0) {
-          return;
-        }
-        e.preventDefault();
-        const r = strip.getBoundingClientRect();
-        const fracOf = (x) => Math.max(0, Math.min(1, (x - r.left) / r.width));
-        const f0 = fracOf(e.clientX);
-        let dragged = false;
-        const move = (ev) => {
-          if (s.destroyed) {
-            return up(ev);
-          }
-          const f1 = fracOf(ev.clientX);
-          if (Math.abs(f1 - f0) * r.width > 5) {
-            dragged = true;
-          }
-          if (dragged) {
-            showSelection(s, f0, f1);
-            setCursor(s, P.from + SPAN * f1, card, false);
-          }
-        };
-        const up = (ev) => {
-          document.removeEventListener("mousemove", move);
-          document.removeEventListener("mouseup", up);
-          hideSelection(s);
-          if (dragged && !s.destroyed) {
-            s.suppressClick = true;
-            const f1 = fracOf(ev.clientX);
-            const a = Math.min(f0, f1), b = Math.max(f0, f1);
-            if (b > a && cfg.onZoom) {
-              cfg.onZoom(Math.round(P.from + SPAN * a), Math.round(P.from + SPAN * b));
-            }
-          }
-        };
-        document.addEventListener("mousemove", move);
-        document.addEventListener("mouseup", up);
-      });
-      q2(".cards").appendChild(card);
-      attachZoneChip(zone, card);
-      return {
-        card,
-        model,
-        zone,
-        tt,
-        head: card.querySelector(".ft"),
-        strip,
-        cross: card.querySelector(".xh"),
-        sel: card.querySelector(".sel"),
-        mag: card.querySelector(".mag"),
-        lane: card.querySelector(".card-lane")
-      };
-    }
     function renderAnnotations(anns) {
       const tip = annTip();
       const fracOf = (t) => (Math.max(P.from, Math.min(P.to, t)) - P.from) / SPAN;
@@ -1972,7 +1974,7 @@ var VTCore = (() => {
         if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {
           continue;
         }
-        cards[k.id] = buildCard(k, model);
+        cards[k.id] = buildCard(s, k, model);
       }
       s.kiosks = s.kiosks.filter((k) => cards[k.id]);
       buildAxis(s);
@@ -1983,7 +1985,7 @@ var VTCore = (() => {
       }
       setCursor(s, s.cursorT, null, true);
       await revealWrapper(root, wrap);
-      dressAll(20);
+      dressAll(s, 20);
       if (LIVE) {
         const steps = s.kiosks.map((k) => cards[k.id].model.lastActive && cards[k.id].model.lastActive.step).filter(Boolean);
         const minStep = steps.length ? Math.min.apply(null, steps) : 6e4;
