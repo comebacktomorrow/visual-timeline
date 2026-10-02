@@ -855,6 +855,37 @@ var VTCore = (() => {
     const eras = erasFor(decl, P);
     const slots = [];
     const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
+    function shortEraSlot(era, frame, nowMs) {
+      return {
+        ts: era.from,
+        span: era.to - era.from,
+        frame,
+        cadence: era.cadence,
+        step: era.cadence,
+        future: era.from + era.cadence >= nowMs
+      };
+    }
+    function resolveBoundary(prev, firstIdx) {
+      if (!prev || firstIdx <= prev.startIdx || firstIdx >= slots.length) {
+        return;
+      }
+      const p = slots[firstIdx - 1];
+      const first = slots[firstIdx];
+      if (p.paused || p.beyond || p.ts !== prev.to) {
+        return;
+      }
+      const laterDrawsIt = !first.paused && !first.beyond && first.ts === p.ts;
+      if (!laterDrawsIt && !(first.paused && !p.frame)) {
+        return;
+      }
+      if (laterDrawsIt && !first.frame && p.frame) {
+        first.frame = p.frame;
+      }
+      slots.splice(firstIdx - 1, 1);
+      if (firstIdx - 1 === prev.startIdx) {
+        slots.splice(prev.startIdx, 0, shortEraSlot(prev, null, Date.now()));
+      }
+    }
     async function pushActive(era) {
       if (era.to - era.from <= 0) {
         return;
@@ -863,11 +894,18 @@ var VTCore = (() => {
       const share = Math.max(4, Math.round(budgetSlots * (eraSpan / totalActive)));
       const raw = Math.max(1, Math.ceil(eraSpan / era.cadence));
       const step = Math.ceil(raw / Math.min(share, raw)) * era.cadence;
-      const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
       const start = Math.ceil(era.from / step) * step;
-      const n = Math.max(1, Math.floor((era.to - start) / step) + 1);
-      const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
+      const n = era.to >= start ? Math.floor((era.to - start) / step) + 1 : 0;
       const nowMs = Date.now();
+      if (n === 0) {
+        const half = era.cadence / 2;
+        const near = await backend.frames(decl.site, decl.id, era.from - half, era.to + half, era.cadence);
+        const frame = near.filter((f) => f.ts >= era.from - half && f.ts <= era.to + half).sort((a, b) => Math.abs(a.ts - era.from) - Math.abs(b.ts - era.from))[0] || null;
+        slots.push(shortEraSlot(era, frame, nowMs));
+        return;
+      }
+      const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
+      const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
       for (let i = 0; i < n; i++) {
         const ts = start + i * step;
         slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowMs });
@@ -875,19 +913,27 @@ var VTCore = (() => {
     }
     const nowAtBuild = Date.now();
     const horizon = Math.min(P.to, nowAtBuild);
+    let prevActive = null;
     for (const era of eras) {
       const eFrom = era.from;
       const eTo = Math.min(era.to, horizon);
       const isTail = era === eras[eras.length - 1];
+      const firstIdx = slots.length;
+      const prev = prevActive;
+      prevActive = null;
       if (!era.paused) {
         if (eTo > eFrom) {
-          await pushActive({ from: eFrom, to: eTo, cadence: era.cadence });
+          const span = { from: eFrom, to: eTo, cadence: era.cadence };
+          await pushActive(span);
+          resolveBoundary(prev, firstIdx);
+          prevActive = { ...span, startIdx: firstIdx };
         }
         continue;
       }
       if (!isTail) {
         if (eTo > eFrom) {
           slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
+          resolveBoundary(prev, firstIdx);
         }
         continue;
       }
@@ -895,6 +941,7 @@ var VTCore = (() => {
         continue;
       }
       const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, era.cadence);
+      const tailIdx = slots.length;
       const resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
       if (resume) {
         const resumeTs = resume.ts;
@@ -905,6 +952,7 @@ var VTCore = (() => {
       } else {
         slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
       }
+      resolveBoundary(prev, tailIdx);
     }
     if (P.to > horizon) {
       const last = slots[slots.length - 1];

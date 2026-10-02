@@ -813,17 +813,57 @@ export async function buildSourceModel(decl, P, backend, budgetSlots) {
   const slots = [];
   const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
 
+  // the one slot of an active era with no grid tick of its own (#65)
+  function shortEraSlot(era, frame, nowMs) {
+    return { ts: era.from, span: era.to - era.from, frame, cadence: era.cadence, step: era.cadence,
+      future: era.from + era.cadence >= nowMs };
+  }
+
+  /* Where a closed active era meets the next era, its last tick can sit ON
+   * the boundary. The later era owns that tick (#65): drop the earlier
+   * era's copy when the later era draws the same tick itself, or when it's
+   * an empty gap slot right before a pause band. A boundary tick that holds
+   * a frame the later era won't show (off the later grid, or a goodbye
+   * frame at a pause's start) stays, so no frame is lost. If that leaves
+   * the earlier era with no slot, it gets the one-slot-at-its-start form. */
+  function resolveBoundary(prev, firstIdx) {
+    if (!prev || firstIdx <= prev.startIdx || firstIdx >= slots.length) {return;}
+    const p = slots[firstIdx - 1];
+    const first = slots[firstIdx];
+    if (p.paused || p.beyond || p.ts !== prev.to) {return;}
+    const laterDrawsIt = !first.paused && !first.beyond && first.ts === p.ts;
+    if (!laterDrawsIt && !(first.paused && !p.frame)) {return;}
+    if (laterDrawsIt && !first.frame && p.frame) {first.frame = p.frame;}
+    slots.splice(firstIdx - 1, 1);
+    if (firstIdx - 1 === prev.startIdx) {
+      slots.splice(prev.startIdx, 0, shortEraSlot(prev, null, Date.now()));
+    }
+  }
+
   async function pushActive(era) {
     if (era.to - era.from <= 0) {return;}   // degenerate span — nothing to render
     const eraSpan = era.to - era.from;
     const share = Math.max(4, Math.round(budgetSlots * (eraSpan / totalActive)));
     const raw = Math.max(1, Math.ceil(eraSpan / era.cadence));
     const step = Math.ceil(raw / Math.min(share, raw)) * era.cadence;
-    const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
     const start = Math.ceil(era.from / step) * step;
-    const n = Math.max(1, Math.floor((era.to - start) / step) + 1);
-    const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
+    const n = era.to >= start ? Math.floor((era.to - start) / step) + 1 : 0;
     const nowMs = Date.now();
+    if (n === 0) {
+      // No grid tick inside (shorter than a step, between two grid points):
+      // one slot at the era's start, spanning the era (#65). Uploads snap to
+      // the NEAREST grid point, so the frame it sent can sit up to half a
+      // cadence outside it.
+      const half = era.cadence / 2;
+      const near = await backend.frames(decl.site, decl.id, era.from - half, era.to + half, era.cadence);
+      const frame = near
+        .filter((f) => f.ts >= era.from - half && f.ts <= era.to + half)
+        .sort((a, b) => Math.abs(a.ts - era.from) - Math.abs(b.ts - era.from))[0] || null;
+      slots.push(shortEraSlot(era, frame, nowMs));
+      return;
+    }
+    const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
+    const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
     for (let i = 0; i < n; i++) {
       const ts = start + i * step;
       // a slot keeps "future" grace until ONE FULL STEP past its tick — the
@@ -846,12 +886,21 @@ export async function buildSourceModel(decl, P, backend, budgetSlots) {
   // must not spray pending slots across the next 45 minutes).
   const nowAtBuild = Date.now();
   const horizon = Math.min(P.to, nowAtBuild);
+  let prevActive = null;   // the last active era pushed, for resolveBoundary
   for (const era of eras) {
     const eFrom = era.from;
     const eTo = Math.min(era.to, horizon);
     const isTail = era === eras[eras.length - 1];
+    const firstIdx = slots.length;
+    const prev = prevActive;
+    prevActive = null;
     if (!era.paused) {
-      if (eTo > eFrom) {await pushActive({ from: eFrom, to: eTo, cadence: era.cadence });}
+      if (eTo > eFrom) {
+        const span = { from: eFrom, to: eTo, cadence: era.cadence };
+        await pushActive(span);
+        resolveBoundary(prev, firstIdx);
+        prevActive = { ...span, startIdx: firstIdx };
+      }
       continue;
     }
     // BOUNDED paused era (a later history event closes it): the registry is
@@ -861,7 +910,10 @@ export async function buildSourceModel(decl, P, backend, budgetSlots) {
     // to cadence/2 AFTER era.from — a phantom "resume" that split the era
     // into a sliver of pause plus a frameless "active" run of offline-red.
     if (!isTail) {
-      if (eTo > eFrom) {slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });}
+      if (eTo > eFrom) {
+        slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
+        resolveBoundary(prev, firstIdx);
+      }
       continue;
     }
     // TAIL paused era: no closing event yet — infer resume from frames
@@ -872,6 +924,7 @@ export async function buildSourceModel(decl, P, backend, budgetSlots) {
     // to NOW — the future portion of the window is unknown, not paused.
     if (eTo <= eFrom) {continue;}
     const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, era.cadence);
+    const tailIdx = slots.length;
     const resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
     if (resume) {
       const resumeTs = resume.ts;
@@ -880,6 +933,7 @@ export async function buildSourceModel(decl, P, backend, budgetSlots) {
     } else {
       slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
     }
+    resolveBoundary(prev, tailIdx);
   }
   // one spacer for everything past the horizon
   if (P.to > horizon) {
