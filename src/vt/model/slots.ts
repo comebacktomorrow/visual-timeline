@@ -147,10 +147,13 @@ export async function buildSourceModel(
     if (P.to - fillerFrom > 0) {slots.push({ ts: fillerFrom, span: P.to - fillerFrom, beyond: true });}
   }
 
+  /* The slot under t: the first one whose END lies past t. Only the end is
+   * tested: the slots tile the window in order, so every earlier slot has
+   * already ended, and a t before the window resolves to the first slot
+   * (past it, to the last). */
   function slotAt(t: number): Slot | null {
     for (const sl of slots) {
       const edge = sl.paused || sl.beyond;   // bands/fillers span [ts, ts+span); ticks are centered
-      const from = edge ? sl.ts : sl.ts - sl.span / 2;
       const to = edge ? sl.ts + sl.span : sl.ts + sl.span / 2;
       if (t < to) {
         if (sl.beyond) {
@@ -161,7 +164,7 @@ export async function buildSourceModel(
           const prev = i > 0 ? slots[i - 1] : null;
           if (prev && !prev.beyond && t < sl.ts + (prev.step || 0) / 2) {return prev;}
         }
-        return t >= from || sl === slots[0] ? sl : sl;
+        return sl;
       }
     }
     return slots[slots.length - 1] || null;

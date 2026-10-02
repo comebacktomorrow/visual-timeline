@@ -500,7 +500,6 @@ var VTCore = (() => {
     function slotAt(t) {
       for (const sl of slots) {
         const edge = sl.paused || sl.beyond;
-        const from = edge ? sl.ts : sl.ts - sl.span / 2;
         const to = edge ? sl.ts + sl.span : sl.ts + sl.span / 2;
         if (t < to) {
           if (sl.beyond) {
@@ -510,7 +509,7 @@ var VTCore = (() => {
               return prev;
             }
           }
-          return t >= from || sl === slots[0] ? sl : sl;
+          return sl;
         }
       }
       return slots[slots.length - 1] || null;
