@@ -211,7 +211,7 @@ wildcard-CORS embed story.)
 ## Try it with curl
 
 ```bash
-BASE=http://localhost:8787          # wrangler dev (see README quickstart)
+BASE=http://localhost:8787          # wrangler dev (see CONTRIBUTING.md, "Demo in two minutes")
 TOKEN=dev-token                     # from worker/.dev.vars
 
 # upload a frame (any JPEG)
