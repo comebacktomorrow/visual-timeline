@@ -208,6 +208,10 @@ const P = {
   annLanes: qs.get('annLanes') === 'per-source' ? 'per-source' : 'shared',
   header: ['inline', 'inline-gradient'].includes(qs.get('header')) ? qs.get('header') : 'bar',
 };
+/* ?tz=<IANA name>|utc shows every time in that zone (the core's axis,
+ * captions and tooltips, plus this page's readouts and time picker);
+ * without it, the browser's own zone, as always */
+const TZ = VTCore.resolveTimeZone(qs.get('tz') || undefined);
 /* raw from/to as written in the URL — relative expressions (now-6h) stay
  * relative so shared links re-evaluate on open; absent params default to
  * a live last-hour window */
@@ -234,11 +238,12 @@ function navigate(updates) {
   location.href = u;
 }
 
-const fmtTime = ts => new Date(ts).toLocaleTimeString('en-AU', { hour12: false });
-const fmtShort = ts => new Date(ts).toLocaleTimeString('en-AU', { hour12: false, hour: '2-digit', minute: '2-digit' });
+const fmtTime = ts => VTCore.fmtTime(ts, TZ);
+const fmtShort = ts => VTCore.fmtShort(ts, TZ);
 const pad2 = n => String(n).padStart(2, '0');
-const fmtAbs = ts => { const d = new Date(ts); return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
-const toLocalDT = ts => { const d = new Date(ts); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+const fmtAbs = ts => { const d = VTCore.zonedParts(ts, TZ); return `${pad2(d.day)}/${pad2(d.month)} ${pad2(d.hour)}:${pad2(d.minute)}`; };
+const toLocalDT = ts => { const d = VTCore.zonedParts(ts, TZ); return `${d.year}-${pad2(d.month)}-${pad2(d.day)}T${pad2(d.hour)}:${pad2(d.minute)}`; };
+const DAY_MS = 864e5;
 
 const AUTHH = P.key ? { headers: { authorization: 'Bearer ' + P.key } } : undefined;
 async function probeApi() {
@@ -259,13 +264,19 @@ function rangeLabel() {
   }
   return `${fmtAbs(P.from)} → ${fmtAbs(P.to)}`;
 }
-/* lenient input parse: now / now-6h / epoch ms / local "YYYY-MM-DD HH:mm";
- * returns the URL-safe form plus its resolved ms, or null when invalid */
+/* lenient input parse: now / now-6h / epoch ms / "YYYY-MM-DD HH:mm" in the
+ * page's zone; returns the URL-safe form plus its resolved ms, or null when
+ * invalid */
 function parseInput(s) {
   s = s.trim();
   if (!s) return null;
   if (/^now/.test(s)) { const ms = parseTimeParam(s, null); return ms == null ? null : { url: s, ms }; }
   if (/^\d+$/.test(s)) return { url: s, ms: Number(s) };
+  const w = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(s);
+  if (w) {
+    const ms = VTCore.zonedTime({ year: +w[1], month: +w[2], day: +w[3], hour: +w[4], minute: +w[5], second: +(w[6] || 0) }, TZ);
+    return { url: String(ms), ms };
+  }
   const d = new Date(s.replace(' ', 'T'));
   return isNaN(d) ? null : { url: String(d.getTime()), ms: d.getTime() };
 }
@@ -287,14 +298,13 @@ const TP_QUICK = [
   $('tpQuick').addEventListener('click', e => {
     const r = e.target.dataset.r, sp = e.target.dataset.special;
     if (r) return navigate({ from: 'now-' + r, to: null });
+    // midnights in the page's zone
     if (sp === 'today') {
-      const d = new Date(); d.setHours(0, 0, 0, 0);
-      return navigate({ from: d.getTime(), to: null });
+      return navigate({ from: VTCore.alignedStart(Date.now(), DAY_MS, TZ), to: null });
     }
     if (sp === 'yesterday') {
-      const t0 = new Date(); t0.setHours(0, 0, 0, 0);
-      const y0 = new Date(t0); y0.setDate(y0.getDate() - 1);
-      return navigate({ from: y0.getTime(), to: t0.getTime() });
+      const t0 = VTCore.alignedStart(Date.now(), DAY_MS, TZ);
+      return navigate({ from: VTCore.alignedStart(t0 - 1, DAY_MS, TZ), to: t0 });
     }
   });
 
@@ -381,7 +391,7 @@ const TP_QUICK = [
   document.body.classList.toggle('is-follow', FOLLOW);
   const showWindow = () => {
     document.getElementById('winLabel').textContent =
-      fmtShort(P.from) + ' → ' + fmtShort(P.to) + (useApi ? '' : ' · demo data');
+      fmtShort(P.from) + ' → ' + fmtShort(P.to) + (qs.get('tz') ? ' ' + TZ : '') + (useApi ? '' : ' · demo data');
   };
   showWindow();
   document.getElementById('cursorTime').textContent = fmtTime(Math.min(P.to, NOW));
@@ -393,6 +403,7 @@ const TP_QUICK = [
     tagFilter: P.tags, hideEmpty: P.hideEmpty,
     annotationLanes: P.annLanes,
     headerMode: P.header,
+    timeZone: TZ,
   });
 
   // site chips: distinct sites from the registry (or the demo set)
