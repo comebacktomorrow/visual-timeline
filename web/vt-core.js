@@ -1492,14 +1492,32 @@ var VTCore = (() => {
       }
       return Math.min(P.to, Date.now());
     }
-    let kiosks = [], cards = {}, cursorT = restoreCursor(), destroyed = false, pollTimer = null;
-    const axisTickList = [];
-    let suppressClick = false;
-    const pv = makePreview(root, TZ);
-    const PANEL_TT = zoneTexts(TZ, TZ, false);
+    const s = {
+      root,
+      cfg,
+      P,
+      TZ,
+      SPAN,
+      LIVE,
+      hostWidth,
+      pxBudget,
+      backend,
+      wrap,
+      kiosks: [],
+      cards: {},
+      cursorT: restoreCursor(),
+      destroyed: false,
+      pollTimer: null,
+      axisTickList: [],
+      // filled by buildAxis; consumed by ruleBeyond
+      suppressClick: false,
+      pv: makePreview(root, TZ),
+      PANEL_TT: zoneTexts(TZ, TZ, false)
+    };
+    const { cards, axisTickList, pv, PANEL_TT } = s;
     function showSelection(fa, fb) {
       const a = Math.min(fa, fb), b = Math.max(fa, fb);
-      for (const k of kiosks) {
+      for (const k of s.kiosks) {
         const c = cards[k.id];
         if (!c) {
           continue;
@@ -1511,7 +1529,7 @@ var VTCore = (() => {
       }
     }
     function hideSelection() {
-      for (const k of kiosks) {
+      for (const k of s.kiosks) {
         if (cards[k.id]) {
           cards[k.id].sel.style.display = "none";
         }
@@ -1532,14 +1550,14 @@ var VTCore = (() => {
       }
     }
     function dressAll(tries) {
-      const anySized = kiosks.some((k) => cards[k.id] && cards[k.id].strip.clientWidth > 0);
+      const anySized = s.kiosks.some((k) => cards[k.id] && cards[k.id].strip.clientWidth > 0);
       if (!anySized) {
-        if (tries > 0 && !destroyed) {
+        if (tries > 0 && !s.destroyed) {
           setTimeout(() => dressAll(tries - 1), 500);
         }
         return;
       }
-      for (const k of kiosks) {
+      for (const k of s.kiosks) {
         if (cards[k.id]) {
           dressStrip(cards[k.id].model);
         }
@@ -1601,11 +1619,11 @@ var VTCore = (() => {
         }
       });
       strip.addEventListener("click", (e) => {
-        if (suppressClick) {
-          suppressClick = false;
+        if (s.suppressClick) {
+          s.suppressClick = false;
           return;
         }
-        const sl = model.slotAt(cursorT);
+        const sl = model.slotAt(s.cursorT);
         const f = sl && sl.frame;
         const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
         if (f) {
@@ -1631,7 +1649,7 @@ var VTCore = (() => {
         const f0 = fracOf(e.clientX);
         let dragged = false;
         const move = (ev) => {
-          if (destroyed) {
+          if (s.destroyed) {
             return up(ev);
           }
           const f1 = fracOf(ev.clientX);
@@ -1647,8 +1665,8 @@ var VTCore = (() => {
           document.removeEventListener("mousemove", move);
           document.removeEventListener("mouseup", up);
           hideSelection();
-          if (dragged && !destroyed) {
-            suppressClick = true;
+          if (dragged && !s.destroyed) {
+            s.suppressClick = true;
             const f1 = fracOf(ev.clientX);
             const a = Math.min(f0, f1), b = Math.max(f0, f1);
             if (b > a && cfg.onZoom) {
@@ -1678,10 +1696,10 @@ var VTCore = (() => {
       const axis = q(".axis");
       const w = axis.clientWidth;
       const roughMaxTicks = Math.max(3, Math.floor(w / 90));
-      const roughStep = TICK_STEPS.find((s) => SPAN / s <= roughMaxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
+      const roughStep = TICK_STEPS.find((s2) => SPAN / s2 <= roughMaxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
       const sampleWidth = measureTickWidth(tickFormat(roughStep, TZ)(P.to));
       const maxTicks = Math.max(3, Math.floor(w / (sampleWidth + TICK_LABEL_GAP)));
-      const tickStep = TICK_STEPS.find((s) => SPAN / s <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
+      const tickStep = TICK_STEPS.find((s2) => SPAN / s2 <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
       const fmt = tickFormat(tickStep, TZ);
       axis.querySelectorAll(".tick").forEach((t) => t.remove());
       axisTickList.length = 0;
@@ -1710,7 +1728,7 @@ var VTCore = (() => {
       }
     }
     function ruleAllBeyond() {
-      for (const k of kiosks) {
+      for (const k of s.kiosks) {
         const c = cards[k.id];
         if (!c) {
           continue;
@@ -1776,7 +1794,7 @@ var VTCore = (() => {
       const appliesTo = (a, k) => (!a.source || a.source === k.id) && (!a.siteScope || a.siteScope === k.site);
       const isGlobal = (a) => !a.source && !a.siteScope;
       if (cfg.annotationLanes === "per-source") {
-        for (const k of kiosks) {
+        for (const k of s.kiosks) {
           const c = cards[k.id];
           const items = anns.filter((a) => appliesTo(a, k));
           if (!items.length) {
@@ -1798,14 +1816,14 @@ var VTCore = (() => {
         if (isGlobal(a)) {
           laneItems.push(a);
         } else {
-          for (const k of kiosks) {
+          for (const k of s.kiosks) {
             if (appliesTo(a, k)) {
               (perCard[k.id] ||= []).push(a);
             }
           }
         }
         if (a.timeEnd) {
-          const hosts = isGlobal(a) ? kiosks.map((k) => cards[k.id].strip).concat([q(".ann-lane")]) : kiosks.filter((k) => appliesTo(a, k)).map((k) => cards[k.id].strip);
+          const hosts = isGlobal(a) ? s.kiosks.map((k) => cards[k.id].strip).concat([q(".ann-lane")]) : s.kiosks.filter((k) => appliesTo(a, k)).map((k) => cards[k.id].strip);
           for (const h of hosts) {
             addRegion(h, a);
           }
@@ -1822,20 +1840,20 @@ var VTCore = (() => {
       }
     }
     function setCursor(t, hoveredCard, external) {
-      cursorT = Math.max(P.from, Math.min(P.to, t));
-      root.dataset.ktlCursor = String(cursorT);
+      s.cursorT = Math.max(P.from, Math.min(P.to, t));
+      root.dataset.ktlCursor = String(s.cursorT);
       if (!external) {
         root.dataset.ktlPinned = "1";
       }
       if (cfg.onCursor) {
-        cfg.onCursor(cursorT);
+        cfg.onCursor(s.cursorT);
       }
-      const frac = (cursorT - P.from) / SPAN;
+      const frac = (s.cursorT - P.from) / SPAN;
       const axis = q(".axis"), ac = q(".acur");
       const acW = ac.offsetWidth || 50;
-      ac.textContent = fmtTime(cursorT, TZ);
+      ac.textContent = fmtTime(s.cursorT, TZ);
       ac.style.left = Math.max(acW / 2, Math.min(axis.clientWidth - acW / 2, frac * axis.clientWidth)) + "px";
-      for (const k of kiosks) {
+      for (const k of s.kiosks) {
         const c = cards[k.id];
         if (!c) {
           continue;
@@ -1845,10 +1863,10 @@ var VTCore = (() => {
         }
         const w = c.strip.clientWidth, x = frac * w;
         c.cross.style.left = x + "px";
-        const slot = c.model.slotAt(cursorT);
+        const slot = c.model.slotAt(s.cursorT);
         const tt = c.tt;
         if (c.zone.el) {
-          dressZoneChip(c.zone, cursorT);
+          dressZoneChip(c.zone, s.cursorT);
         }
         const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
         c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + "px";
@@ -1912,15 +1930,15 @@ var VTCore = (() => {
         }
       }
       if (!external && cfg.onHover) {
-        cfg.onHover(cursorT);
+        cfg.onHover(s.cursorT);
       }
     }
     (async function boot() {
       try {
-        kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
+        s.kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
       } catch (e) {
         console.warn("[visual-timeline] sources fetch failed:", e);
-        if (destroyed) {
+        if (s.destroyed) {
           return;
         }
         const err = document.createElement("div");
@@ -1930,8 +1948,8 @@ var VTCore = (() => {
         await revealWrapper(root, wrap);
         return;
       }
-      for (const k of kiosks) {
-        if (destroyed) {
+      for (const k of s.kiosks) {
+        if (s.destroyed) {
           return;
         }
         let model;
@@ -1941,7 +1959,7 @@ var VTCore = (() => {
           console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
           continue;
         }
-        if (destroyed) {
+        if (s.destroyed) {
           return;
         }
         if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {
@@ -1949,21 +1967,21 @@ var VTCore = (() => {
         }
         cards[k.id] = buildCard(k, model);
       }
-      kiosks = kiosks.filter((k) => cards[k.id]);
+      s.kiosks = s.kiosks.filter((k) => cards[k.id]);
       buildAxis();
       ruleAllBeyond();
       const rawAnns = cfg.annotations && cfg.annotations.length ? cfg.annotations : backend.annotations ? backend.annotations() : [];
       if (cfg.showAnnotations !== false) {
         renderAnnotations(normAnnotations(rawAnns, P));
       }
-      setCursor(cursorT, null, true);
+      setCursor(s.cursorT, null, true);
       await revealWrapper(root, wrap);
       dressAll(20);
       if (LIVE) {
-        const steps = kiosks.map((k) => cards[k.id].model.lastActive && cards[k.id].model.lastActive.step).filter(Boolean);
+        const steps = s.kiosks.map((k) => cards[k.id].model.lastActive && cards[k.id].model.lastActive.step).filter(Boolean);
         const minStep = steps.length ? Math.min.apply(null, steps) : 6e4;
-        pollTimer = setInterval(async () => {
-          for (const k of kiosks) {
+        s.pollTimer = setInterval(async () => {
+          for (const k of s.kiosks) {
             const c = cards[k.id];
             const mSlots = c.model.slots;
             const filler = mSlots.length && mSlots[mSlots.length - 1].beyond ? mSlots[mSlots.length - 1] : null;
@@ -2033,7 +2051,7 @@ var VTCore = (() => {
               }
             }
             const fresh = await backend.frames(k.site, k.id, lastTs + 1, Date.now(), la.step);
-            if (destroyed) {
+            if (s.destroyed) {
               return;
             }
             for (const f of fresh) {
@@ -2075,7 +2093,7 @@ var VTCore = (() => {
     })();
     return {
       setExternalCursor(t) {
-        if (!destroyed) {
+        if (!s.destroyed) {
           setCursor(t, null, true);
         }
       },
@@ -2083,9 +2101,9 @@ var VTCore = (() => {
         return wrap.classList.contains("strip-hover");
       },
       destroy() {
-        destroyed = true;
-        if (pollTimer) {
-          clearInterval(pollTimer);
+        s.destroyed = true;
+        if (s.pollTimer) {
+          clearInterval(s.pollTimer);
         }
         pv.retire();
         annTip().close();

@@ -15,6 +15,7 @@ import { measureTickWidth, TICK_LABEL_GAP } from '../time/measure';
 import { makePreview } from '../ui/preview';
 import { dressGhost } from '../ui/ghost';
 import { makeWrapper, retireWrapper, revealWrapper } from '../ui/wrapper';
+import type { TimelineState } from './state';
 
 /* ======================= timeline core ======================= */
 
@@ -59,16 +60,21 @@ export function mountTimeline(root, cfg) {
     }
     return Math.min(P.to, Date.now());
   }
-  let kiosks = [], cards = {}, cursorT = restoreCursor(), destroyed = false, pollTimer = null;
-  const axisTickList = [];   // filled by buildAxis; consumed by ruleBeyond
-  let suppressClick = false;
-  const pv = makePreview(root, TZ);
-  const PANEL_TT = zoneTexts(TZ, TZ, false);
+  // the mount's shared state (the fields that change live only here)
+  const s: TimelineState = {
+    root, cfg, P, TZ, SPAN, LIVE, hostWidth, pxBudget, backend, wrap,
+    kiosks: [], cards: {}, cursorT: restoreCursor(), destroyed: false, pollTimer: null,
+    axisTickList: [],   // filled by buildAxis; consumed by ruleBeyond
+    suppressClick: false,
+    pv: makePreview(root, TZ),
+    PANEL_TT: zoneTexts(TZ, TZ, false),
+  };
+  const { cards, axisTickList, pv, PANEL_TT } = s;
 
   /* selection band shown on every card during drag-zoom (fractions of window) */
   function showSelection(fa, fb) {
     const a = Math.min(fa, fb), b = Math.max(fa, fb);
-    for (const k of kiosks) {
+    for (const k of s.kiosks) {
       const c = cards[k.id];
       if (!c) {continue;}
       const w = c.strip.clientWidth;
@@ -78,7 +84,7 @@ export function mountTimeline(root, cfg) {
     }
   }
   function hideSelection() {
-    for (const k of kiosks) {if (cards[k.id]) {cards[k.id].sel.style.display = 'none';}}
+    for (const k of s.kiosks) {if (cards[k.id]) {cards[k.id].sel.style.display = 'none';}}
   }
 
 
@@ -103,12 +109,12 @@ export function mountTimeline(root, cfg) {
     }
   }
   function dressAll(tries) {
-    const anySized = kiosks.some((k) => cards[k.id] && cards[k.id].strip.clientWidth > 0);
+    const anySized = s.kiosks.some((k) => cards[k.id] && cards[k.id].strip.clientWidth > 0);
     if (!anySized) {
-      if (tries > 0 && !destroyed) {setTimeout(() => dressAll(tries - 1), 500);}
+      if (tries > 0 && !s.destroyed) {setTimeout(() => dressAll(tries - 1), 500);}
       return;
     }
-    for (const k of kiosks) {if (cards[k.id]) {dressStrip(cards[k.id].model);}}
+    for (const k of s.kiosks) {if (cards[k.id]) {dressStrip(cards[k.id].model);}}
   }
 
   function buildCard(decl, model) {
@@ -171,8 +177,8 @@ export function mountTimeline(root, cfg) {
       if (cfg.onHoverClear) {cfg.onHoverClear();}
     });
     strip.addEventListener('click', e => {
-      if (suppressClick) { suppressClick = false; return; }
-      const sl = model.slotAt(cursorT);
+      if (s.suppressClick) { s.suppressClick = false; return; }
+      const sl = model.slotAt(s.cursorT);
       const f = sl && sl.frame;
       const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
       if (f) {pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, cfg.apiUrl, cfg.apiKey), null, tt);}
@@ -194,7 +200,7 @@ export function mountTimeline(root, cfg) {
       const f0 = fracOf(e.clientX);
       let dragged = false;
       const move = ev => {
-        if (destroyed) {return up(ev);}
+        if (s.destroyed) {return up(ev);}
         const f1 = fracOf(ev.clientX);
         if (Math.abs(f1 - f0) * r.width > 5) {dragged = true;}
         if (dragged) {
@@ -206,8 +212,8 @@ export function mountTimeline(root, cfg) {
         document.removeEventListener('mousemove', move);
         document.removeEventListener('mouseup', up);
         hideSelection();
-        if (dragged && !destroyed) {
-          suppressClick = true;
+        if (dragged && !s.destroyed) {
+          s.suppressClick = true;
           const f1 = fracOf(ev.clientX);
           const a = Math.min(f0, f1), b = Math.max(f0, f1);
           if (b > a && cfg.onZoom) {cfg.onZoom(Math.round(P.from + SPAN * a), Math.round(P.from + SPAN * b));}
@@ -272,7 +278,7 @@ export function mountTimeline(root, cfg) {
     }
   }
   function ruleAllBeyond() {
-    for (const k of kiosks) {
+    for (const k of s.kiosks) {
       const c = cards[k.id];
       if (!c) {continue;}
       const last = c.model.slots[c.model.slots.length - 1];
@@ -343,7 +349,7 @@ export function mountTimeline(root, cfg) {
     if (cfg.annotationLanes === 'per-source') {
       // one lane per card: its own scoped events plus every global, so each
       // timeline reads in context — stacked windows never share one bar
-      for (const k of kiosks) {
+      for (const k of s.kiosks) {
         const c = cards[k.id];
         const items = anns.filter((a) => appliesTo(a, k));
         if (!items.length) {continue;}
@@ -357,12 +363,12 @@ export function mountTimeline(root, cfg) {
     const laneItems = [], perCard = {};
     for (const a of anns) {
       if (isGlobal(a)) {laneItems.push(a);}
-      else {for (const k of kiosks) {if (appliesTo(a, k)) {(perCard[k.id] ||= []).push(a);}}}
+      else {for (const k of s.kiosks) {if (appliesTo(a, k)) {(perCard[k.id] ||= []).push(a);}}}
       if (a.timeEnd) {
         // regions shade the strips they scope to; globals also shade the lane
         const hosts = isGlobal(a)
-          ? kiosks.map((k) => cards[k.id].strip).concat([q('.ann-lane')])
-          : kiosks.filter((k) => appliesTo(a, k)).map((k) => cards[k.id].strip);
+          ? s.kiosks.map((k) => cards[k.id].strip).concat([q('.ann-lane')])
+          : s.kiosks.filter((k) => appliesTo(a, k)).map((k) => cards[k.id].strip);
         for (const h of hosts) {addRegion(h, a);}
       }
     }
@@ -373,18 +379,18 @@ export function mountTimeline(root, cfg) {
 
   /* external=true → came from the event bus; don't re-publish (no loop) */
   function setCursor(t, hoveredCard, external) {
-    cursorT = Math.max(P.from, Math.min(P.to, t));
-    root.dataset.ktlCursor = String(cursorT);
+    s.cursorT = Math.max(P.from, Math.min(P.to, t));
+    root.dataset.ktlCursor = String(s.cursorT);
     if (!external) {root.dataset.ktlPinned = '1';}
-    if (cfg.onCursor) {cfg.onCursor(cursorT);}        // host chrome hook (standalone app)
-    const frac = (cursorT - P.from) / SPAN;
+    if (cfg.onCursor) {cfg.onCursor(s.cursorT);}        // host chrome hook (standalone app)
+    const frac = (s.cursorT - P.from) / SPAN;
 
     const axis = q('.axis'), ac = q('.acur');
     const acW = ac.offsetWidth || 50;
-    ac.textContent = fmtTime(cursorT, TZ);
+    ac.textContent = fmtTime(s.cursorT, TZ);
     ac.style.left = Math.max(acW / 2, Math.min(axis.clientWidth - acW / 2, frac * axis.clientWidth)) + 'px';
 
-    for (const k of kiosks) {
+    for (const k of s.kiosks) {
       const c = cards[k.id];
       if (!c) {continue;}
       // external cursor moves (event bus) must not strip local hover state —
@@ -392,10 +398,10 @@ export function mountTimeline(root, cfg) {
       if (!external) {c.card.classList.toggle('hovered', hoveredCard === c.card);}
       const w = c.strip.clientWidth, x = frac * w;
       c.cross.style.left = x + 'px';
-      const slot = c.model.slotAt(cursorT);
+      const slot = c.model.slotAt(s.cursorT);
       const tt = c.tt;
       // the zone chip's offset at the cursor: changes only across a DST edge
-      if (c.zone.el) {dressZoneChip(c.zone, cursorT);}
+      if (c.zone.el) {dressZoneChip(c.zone, s.cursorT);}
       const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
       c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + 'px';
       c.mag.classList.remove('ghost');
@@ -445,19 +451,19 @@ export function mountTimeline(root, cfg) {
         clearPauseClasses(c.head);
       }
     }
-    if (!external && cfg.onHover) {cfg.onHover(cursorT);}
+    if (!external && cfg.onHover) {cfg.onHover(s.cursorT);}
   }
 
   (async function boot() {
     try {
-      kiosks = (await backend.kiosks(P.site))
+      s.kiosks = (await backend.kiosks(P.site))
         .filter((k) => !P.source || P.source.includes(k.id))
         .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
     } catch (e) {
       // registry unreachable (or hung past the fetch timeout): SAY so —
       // an eternally blank panel points the blame at the wrong layer
       console.warn('[visual-timeline] sources fetch failed:', e);
-      if (destroyed) {return;}
+      if (s.destroyed) {return;}
       const err = document.createElement('div');
       err.className = 'boot-err';
       err.textContent = 'frames API unreachable — ' + (e && e.message ? e.message : e);
@@ -465,8 +471,8 @@ export function mountTimeline(root, cfg) {
       await revealWrapper(root, wrap);
       return;
     }
-    for (const k of kiosks) {
-      if (destroyed) {return;}
+    for (const k of s.kiosks) {
+      if (s.destroyed) {return;}
       let model;
       try {
         model = await buildSourceModel(k, P, backend, pxBudget);
@@ -476,13 +482,13 @@ export function mountTimeline(root, cfg) {
         console.warn('[visual-timeline] model build failed for ' + k.id + ':', e);
         continue;
       }
-      if (destroyed) {return;}
+      if (s.destroyed) {return;}
       // declared pause IS data — a source that is all SCREEN DARK for the
       // window must render its band, not vanish as if it never reported
       if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {continue;}
       cards[k.id] = buildCard(k, model);
     }
-    kiosks = kiosks.filter((k) => cards[k.id]);
+    s.kiosks = s.kiosks.filter((k) => cards[k.id]);
     buildAxis();
     ruleAllBeyond();
     // host-provided annotations (Grafana: the dashboard's own annotation
@@ -492,15 +498,15 @@ export function mountTimeline(root, cfg) {
       ? cfg.annotations
       : (backend.annotations ? backend.annotations() : []);
     if (cfg.showAnnotations !== false) {renderAnnotations(normAnnotations(rawAnns, P));}
-    setCursor(cursorT, null, true);   // rest position; don't publish
+    setCursor(s.cursorT, null, true);   // rest position; don't publish
     await revealWrapper(root, wrap);  // swap in only once images decoded
     dressAll(20);                     // hatch alignment + labels once layout is real
 
     if (LIVE) {
-      const steps = kiosks.map(k => cards[k.id].model.lastActive && cards[k.id].model.lastActive.step).filter(Boolean);
+      const steps = s.kiosks.map(k => cards[k.id].model.lastActive && cards[k.id].model.lastActive.step).filter(Boolean);
       const minStep = steps.length ? Math.min.apply(null, steps) : 60e3;
-      pollTimer = setInterval(async () => {
-        for (const k of kiosks) {
+      s.pollTimer = setInterval(async () => {
+        for (const k of s.kiosks) {
           const c = cards[k.id];
           // advance the live edge: newly-elapsed ticks are carved out of the
           // beyond filler (active tail), or a tail pause band GROWS into it —
@@ -545,7 +551,7 @@ export function mountTimeline(root, cfg) {
             if (c.model.slots[i].frame) { lastTs = c.model.slots[i].ts; break; }
           }
           const fresh = await backend.frames(k.site, k.id, lastTs + 1, Date.now(), la.step);
-          if (destroyed) {return;}
+          if (s.destroyed) {return;}
           for (const f of fresh) {
             const slot = c.model.slotAt(f.ts);
             if (!slot || slot.paused || slot.beyond) {continue;}
@@ -580,11 +586,11 @@ export function mountTimeline(root, cfg) {
   })();
 
   return {
-    setExternalCursor(t) { if (!destroyed) {setCursor(t, null, true);} },
+    setExternalCursor(t) { if (!s.destroyed) {setCursor(t, null, true);} },
     isHovering() { return wrap.classList.contains('strip-hover'); },
     destroy() {
-      destroyed = true;
-      if (pollTimer) {clearInterval(pollTimer);}
+      s.destroyed = true;
+      if (s.pollTimer) {clearInterval(s.pollTimer);}
       pv.retire();   // an open preview survives refresh remounts (adopted by the successor)
       annTip().close();   // a hovered or pinned tip at teardown would strand
       retireWrapper(wrap);
