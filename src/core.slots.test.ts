@@ -98,6 +98,12 @@ describe('missedHeartbeat (live poll: pending → offline)', () => {
     expect(missedHeartbeat({ ...sl, frame: { ts: T0, url: 'u' } }, T0 + DAY)).toBeFalsy();
     expect(missedHeartbeat({ ...sl, future: false }, T0 + DAY)).toBeFalsy();
   });
+  test('always a boolean: false, not undefined, for slots that are not ticks (#77)', () => {
+    expect(missedHeartbeat({ ts: T0, span: MIN, paused: true }, T0 + DAY)).toBe(false);
+    expect(missedHeartbeat({ ts: T0, span: MIN, beyond: true }, T0 + DAY)).toBe(false);
+    expect(missedHeartbeat({ ...sl, frame: { ts: T0, url: 'u' } }, T0 + DAY)).toBe(false);
+    expect(missedHeartbeat({ ...sl, future: false }, T0 + DAY)).toBe(false);
+  });
 });
 
 describe('ghostFor (the pending slot’s "last known" frame)', () => {

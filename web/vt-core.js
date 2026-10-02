@@ -531,7 +531,7 @@ var VTCore = (() => {
     return sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? "" : sl.future ? " future" : " gap";
   }
   function missedHeartbeat(sl, now) {
-    return sl.future && !sl.frame && sl.ts + sl.step < now;
+    return sl.future === true && !sl.frame && sl.ts + sl.step < now;
   }
 
   // src/vt/model/filters.ts

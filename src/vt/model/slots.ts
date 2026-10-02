@@ -194,6 +194,6 @@ export function slotClass(sl: SlotState): string {
 }
 /* a pending slot still empty a full step past its tick has missed its
  * heartbeat: the live poll turns it from pending into offline */
-export function missedHeartbeat(sl: Slot, now: number): boolean | undefined {
-  return sl.future && !sl.frame && sl.ts + sl.step < now;
+export function missedHeartbeat(sl: Slot, now: number): boolean {
+  return sl.future === true && !sl.frame && sl.ts + sl.step < now;
 }
