@@ -59,6 +59,275 @@ var VTCore = (() => {
     zonedParts: () => zonedParts,
     zonedTime: () => zonedTime
   });
+
+  // src/vt/time/zones.ts
+  var LOCAL_TZ = "local";
+  var zoneOk = /* @__PURE__ */ new Map();
+  function isZone(name) {
+    let ok = zoneOk.get(name);
+    if (ok === void 0) {
+      try {
+        new Intl.DateTimeFormat("en-US", { timeZone: name });
+        ok = true;
+      } catch (e) {
+        ok = false;
+      }
+      zoneOk.set(name, ok);
+    }
+    return ok;
+  }
+  function systemZone() {
+    let z = null;
+    try {
+      z = new Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch (e) {
+      z = null;
+    }
+    return z && isZone(z) ? z : LOCAL_TZ;
+  }
+  var zoneWarned = /* @__PURE__ */ new Set();
+  function resolveTimeZone(tz) {
+    const s = tz == null ? "" : String(tz).trim();
+    if (!s || /^(browser|default|local)$/i.test(s)) {
+      return systemZone();
+    }
+    if (/^utc$/i.test(s)) {
+      return "UTC";
+    }
+    if (isZone(s)) {
+      return s;
+    }
+    if (!zoneWarned.has(s)) {
+      zoneWarned.add(s);
+      console.warn('[visual-timeline] unknown time zone "' + s + `"; using the browser's`);
+    }
+    return systemZone();
+  }
+  var zones = /* @__PURE__ */ new Map();
+  function zoneOf(tz) {
+    const id = resolveTimeZone(tz);
+    let z = zones.get(id);
+    if (!z) {
+      const tzOpt = id === LOCAL_TZ ? {} : { timeZone: id };
+      const fmts = /* @__PURE__ */ new Map();
+      let offset;
+      if (id === "UTC") {
+        offset = () => 0;
+      } else if (id === LOCAL_TZ) {
+        offset = (ts) => -new Date(ts).getTimezoneOffset() * 6e4;
+      } else {
+        const pf = new Intl.DateTimeFormat("en-US", Object.assign({
+          hourCycle: "h23",
+          year: "numeric",
+          month: "numeric",
+          day: "numeric",
+          hour: "numeric",
+          minute: "numeric",
+          second: "numeric"
+        }, tzOpt));
+        offset = (ts) => {
+          const p = {};
+          for (const x of pf.formatToParts(ts)) {
+            p[x.type] = x.value;
+          }
+          const wall = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
+          return wall - Math.floor(ts / 1e3) * 1e3;
+        };
+      }
+      z = {
+        id,
+        offset,
+        // en-AU, 24 h: the panel's one display format (locale/12 h are not options)
+        fmt(key, opts) {
+          let f = fmts.get(key);
+          if (!f) {
+            f = new Intl.DateTimeFormat("en-AU", Object.assign({}, opts, tzOpt));
+            fmts.set(key, f);
+          }
+          return f;
+        }
+      };
+      zones.set(id, z);
+    }
+    return z;
+  }
+  var wallOf = (ts, z) => ts + z.offset(ts);
+  function fromWall(w, z) {
+    const before = z.offset(w - 864e5), after = z.offset(w + 864e5);
+    const a = w - before;
+    if (before === after) {
+      return a;
+    }
+    const b = w - after;
+    const aOk = z.offset(a) === before, bOk = z.offset(b) === after;
+    if (aOk && bOk) {
+      return Math.min(a, b);
+    }
+    if (bOk) {
+      return b;
+    }
+    return a;
+  }
+  function zonedParts(ts, tz) {
+    const d = new Date(wallOf(ts, zoneOf(tz)));
+    return {
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth() + 1,
+      day: d.getUTCDate(),
+      hour: d.getUTCHours(),
+      minute: d.getUTCMinutes(),
+      second: d.getUTCSeconds(),
+      ms: d.getUTCMilliseconds()
+    };
+  }
+  function zonedTime(f, tz) {
+    return fromWall(Date.UTC(f.year, f.month - 1, f.day, f.hour || 0, f.minute || 0, f.second || 0, f.ms || 0), zoneOf(tz));
+  }
+  var F_TIME = { hour12: false, hour: "numeric", minute: "numeric", second: "numeric" };
+  var F_SHORT = { hour12: false, hour: "2-digit", minute: "2-digit" };
+  var F_DAY_HM = { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false };
+  var F_DAY = { day: "2-digit", month: "2-digit" };
+  var fmtTime = (ts, tz) => zoneOf(tz).fmt("time", F_TIME).format(ts);
+  var fmtShort = (ts, tz) => zoneOf(tz).fmt("short", F_SHORT).format(ts);
+  var fmtDur = (ms) => ms % 36e5 === 0 ? ms / 36e5 + "h" : ms % 6e4 === 0 ? ms / 6e4 + "m" : ms / 1e3 + "s";
+
+  // src/vt/time/ticks.ts
+  var TICK_STEPS = [
+    6e4,
+    5 * 6e4,
+    10 * 6e4,
+    15 * 6e4,
+    30 * 6e4,
+    36e5,
+    2 * 36e5,
+    3 * 36e5,
+    6 * 36e5,
+    12 * 36e5,
+    24 * 36e5,
+    2 * 864e5,
+    3 * 864e5,
+    4 * 864e5,
+    5 * 864e5,
+    6 * 864e5,
+    7 * 864e5,
+    8 * 864e5,
+    9 * 864e5,
+    10 * 864e5,
+    15 * 864e5,
+    30 * 864e5,
+    90 * 864e5,
+    365 * 864e5
+  ];
+  var DAY_MS = 864e5;
+  function monthsOf(stepMs) {
+    return stepMs >= 30 * DAY_MS ? Math.round(stepMs / (30 * DAY_MS)) : 0;
+  }
+  function offsetChange(lo, hi, o, z) {
+    let a = Math.floor(lo / 1e3), b = Math.ceil(hi / 1e3);
+    while (b - a > 1) {
+      const m = Math.floor((a + b) / 2);
+      if (z.offset(m * 1e3) === o) {
+        a = m;
+      } else {
+        b = m;
+      }
+    }
+    return b * 1e3;
+  }
+  function ceilWall(ts, step, z) {
+    let t = ts;
+    for (let i = 0; i < 6; i++) {
+      const o = z.offset(t);
+      const c = Math.ceil((t + o) / step) * step - o;
+      if (z.offset(c) === o) {
+        return c;
+      }
+      t = offsetChange(t, c, o, z);
+    }
+    return Math.ceil(ts / step) * step;
+  }
+  function floorWall(ts, step, z) {
+    let t = ts;
+    for (let i = 0; i < 6; i++) {
+      const o = z.offset(t);
+      const c = Math.floor((t + o) / step) * step - o;
+      const oc = z.offset(c);
+      if (oc === o) {
+        return c;
+      }
+      t = offsetChange(c, t, oc, z) - 1;
+    }
+    return Math.floor(ts / step) * step;
+  }
+  function monthStart(idx, z) {
+    return fromWall(Date.UTC(Math.floor(idx / 12), (idx % 12 + 12) % 12, 1), z);
+  }
+  function dayStartWall(ts, z) {
+    const w = wallOf(ts, z);
+    return w - (w % DAY_MS + DAY_MS) % DAY_MS;
+  }
+  function alignIn(ts, stepMs, z) {
+    const k = monthsOf(stepMs);
+    if (k) {
+      const d = new Date(wallOf(ts, z));
+      const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
+      return monthStart(Math.floor(idx / k) * k, z);
+    }
+    if (stepMs >= DAY_MS) {
+      return fromWall(dayStartWall(ts, z), z);
+    }
+    return floorWall(ts, stepMs, z);
+  }
+  function nextIn(ts, stepMs, z) {
+    const k = monthsOf(stepMs);
+    let n;
+    if (k) {
+      const d = new Date(wallOf(ts, z));
+      const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
+      n = monthStart(Math.floor(idx / k) * k + k, z);
+    } else if (stepMs >= DAY_MS) {
+      n = fromWall(dayStartWall(ts, z) + Math.round(stepMs / DAY_MS) * DAY_MS, z);
+    } else {
+      n = ceilWall(ts + 1, stepMs, z);
+    }
+    return n > ts ? n : ts + stepMs;
+  }
+  function alignedStart(ts, stepMs, tz) {
+    return alignIn(ts, stepMs, zoneOf(tz));
+  }
+  function nextTick(ts, stepMs, tz) {
+    return nextIn(ts, stepMs, zoneOf(tz));
+  }
+  function axisTicks(from, to, stepMs, tz) {
+    const z = zoneOf(tz);
+    const out = [];
+    let t = alignIn(from, stepMs, z);
+    while (t < from) {
+      t = nextIn(t, stepMs, z);
+    }
+    for (; t <= to && out.length < 1e4; t = nextIn(t, stepMs, z)) {
+      out.push(t);
+    }
+    return out;
+  }
+  function tickFormat(stepMs, tz) {
+    const z = zoneOf(tz);
+    if (stepMs < 36e5) {
+      const f = z.fmt("short", F_SHORT);
+      return (ts) => f.format(ts);
+    }
+    if (stepMs < 24 * 36e5) {
+      const f = z.fmt("dayhm", F_DAY_HM);
+      return (ts) => f.format(ts);
+    }
+    if (stepMs < 365 * 864e5) {
+      const f = z.fmt("day", F_DAY);
+      return (ts) => f.format(ts);
+    }
+    return (ts) => String(new Date(wallOf(ts, z)).getUTCFullYear());
+  }
+
+  // src/core.ts
   var STYLE_ID = "ktl-styles";
   var KTL_VAR_DEFAULTS = {
     "--ktl-bg": "#181b1f",
@@ -381,135 +650,6 @@ var VTCore = (() => {
   }
   var HUES = { "source-1": 205, "source-2": 275, "source-3": 25, "source-4": 130, "source-5": 340 };
   var DIMS = { "source-3": [288, 216], "source-5": [216, 384] };
-  var LOCAL_TZ = "local";
-  var zoneOk = /* @__PURE__ */ new Map();
-  function isZone(name) {
-    let ok = zoneOk.get(name);
-    if (ok === void 0) {
-      try {
-        new Intl.DateTimeFormat("en-US", { timeZone: name });
-        ok = true;
-      } catch (e) {
-        ok = false;
-      }
-      zoneOk.set(name, ok);
-    }
-    return ok;
-  }
-  function systemZone() {
-    let z = null;
-    try {
-      z = new Intl.DateTimeFormat().resolvedOptions().timeZone;
-    } catch (e) {
-      z = null;
-    }
-    return z && isZone(z) ? z : LOCAL_TZ;
-  }
-  var zoneWarned = /* @__PURE__ */ new Set();
-  function resolveTimeZone(tz) {
-    const s = tz == null ? "" : String(tz).trim();
-    if (!s || /^(browser|default|local)$/i.test(s)) {
-      return systemZone();
-    }
-    if (/^utc$/i.test(s)) {
-      return "UTC";
-    }
-    if (isZone(s)) {
-      return s;
-    }
-    if (!zoneWarned.has(s)) {
-      zoneWarned.add(s);
-      console.warn('[visual-timeline] unknown time zone "' + s + `"; using the browser's`);
-    }
-    return systemZone();
-  }
-  var zones = /* @__PURE__ */ new Map();
-  function zoneOf(tz) {
-    const id = resolveTimeZone(tz);
-    let z = zones.get(id);
-    if (!z) {
-      const tzOpt = id === LOCAL_TZ ? {} : { timeZone: id };
-      const fmts = /* @__PURE__ */ new Map();
-      let offset;
-      if (id === "UTC") {
-        offset = () => 0;
-      } else if (id === LOCAL_TZ) {
-        offset = (ts) => -new Date(ts).getTimezoneOffset() * 6e4;
-      } else {
-        const pf = new Intl.DateTimeFormat("en-US", Object.assign({
-          hourCycle: "h23",
-          year: "numeric",
-          month: "numeric",
-          day: "numeric",
-          hour: "numeric",
-          minute: "numeric",
-          second: "numeric"
-        }, tzOpt));
-        offset = (ts) => {
-          const p = {};
-          for (const x of pf.formatToParts(ts)) {
-            p[x.type] = x.value;
-          }
-          const wall = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
-          return wall - Math.floor(ts / 1e3) * 1e3;
-        };
-      }
-      z = {
-        id,
-        offset,
-        // en-AU, 24 h: the panel's one display format (locale/12 h are not options)
-        fmt(key, opts) {
-          let f = fmts.get(key);
-          if (!f) {
-            f = new Intl.DateTimeFormat("en-AU", Object.assign({}, opts, tzOpt));
-            fmts.set(key, f);
-          }
-          return f;
-        }
-      };
-      zones.set(id, z);
-    }
-    return z;
-  }
-  var wallOf = (ts, z) => ts + z.offset(ts);
-  function fromWall(w, z) {
-    const before = z.offset(w - 864e5), after = z.offset(w + 864e5);
-    const a = w - before;
-    if (before === after) {
-      return a;
-    }
-    const b = w - after;
-    const aOk = z.offset(a) === before, bOk = z.offset(b) === after;
-    if (aOk && bOk) {
-      return Math.min(a, b);
-    }
-    if (bOk) {
-      return b;
-    }
-    return a;
-  }
-  function zonedParts(ts, tz) {
-    const d = new Date(wallOf(ts, zoneOf(tz)));
-    return {
-      year: d.getUTCFullYear(),
-      month: d.getUTCMonth() + 1,
-      day: d.getUTCDate(),
-      hour: d.getUTCHours(),
-      minute: d.getUTCMinutes(),
-      second: d.getUTCSeconds(),
-      ms: d.getUTCMilliseconds()
-    };
-  }
-  function zonedTime(f, tz) {
-    return fromWall(Date.UTC(f.year, f.month - 1, f.day, f.hour || 0, f.minute || 0, f.second || 0, f.ms || 0), zoneOf(tz));
-  }
-  var F_TIME = { hour12: false, hour: "numeric", minute: "numeric", second: "numeric" };
-  var F_SHORT = { hour12: false, hour: "2-digit", minute: "2-digit" };
-  var F_DAY_HM = { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false };
-  var F_DAY = { day: "2-digit", month: "2-digit" };
-  var fmtTime = (ts, tz) => zoneOf(tz).fmt("time", F_TIME).format(ts);
-  var fmtShort = (ts, tz) => zoneOf(tz).fmt("short", F_SHORT).format(ts);
-  var fmtDur = (ms) => ms % 36e5 === 0 ? ms / 36e5 + "h" : ms % 6e4 === 0 ? ms / 6e4 + "m" : ms / 1e3 + "s";
   function sourceTimeZone(decl) {
     const raw = decl && decl.timezone;
     if (typeof raw !== "string") {
@@ -1154,140 +1294,6 @@ var VTCore = (() => {
       }
     }
     return parts.join(" \xB7 ");
-  }
-  var TICK_STEPS = [
-    6e4,
-    5 * 6e4,
-    10 * 6e4,
-    15 * 6e4,
-    30 * 6e4,
-    36e5,
-    2 * 36e5,
-    3 * 36e5,
-    6 * 36e5,
-    12 * 36e5,
-    24 * 36e5,
-    2 * 864e5,
-    3 * 864e5,
-    4 * 864e5,
-    5 * 864e5,
-    6 * 864e5,
-    7 * 864e5,
-    8 * 864e5,
-    9 * 864e5,
-    10 * 864e5,
-    15 * 864e5,
-    30 * 864e5,
-    90 * 864e5,
-    365 * 864e5
-  ];
-  var DAY_MS = 864e5;
-  function monthsOf(stepMs) {
-    return stepMs >= 30 * DAY_MS ? Math.round(stepMs / (30 * DAY_MS)) : 0;
-  }
-  function offsetChange(lo, hi, o, z) {
-    let a = Math.floor(lo / 1e3), b = Math.ceil(hi / 1e3);
-    while (b - a > 1) {
-      const m = Math.floor((a + b) / 2);
-      if (z.offset(m * 1e3) === o) {
-        a = m;
-      } else {
-        b = m;
-      }
-    }
-    return b * 1e3;
-  }
-  function ceilWall(ts, step, z) {
-    let t = ts;
-    for (let i = 0; i < 6; i++) {
-      const o = z.offset(t);
-      const c = Math.ceil((t + o) / step) * step - o;
-      if (z.offset(c) === o) {
-        return c;
-      }
-      t = offsetChange(t, c, o, z);
-    }
-    return Math.ceil(ts / step) * step;
-  }
-  function floorWall(ts, step, z) {
-    let t = ts;
-    for (let i = 0; i < 6; i++) {
-      const o = z.offset(t);
-      const c = Math.floor((t + o) / step) * step - o;
-      const oc = z.offset(c);
-      if (oc === o) {
-        return c;
-      }
-      t = offsetChange(c, t, oc, z) - 1;
-    }
-    return Math.floor(ts / step) * step;
-  }
-  function monthStart(idx, z) {
-    return fromWall(Date.UTC(Math.floor(idx / 12), (idx % 12 + 12) % 12, 1), z);
-  }
-  function dayStartWall(ts, z) {
-    const w = wallOf(ts, z);
-    return w - (w % DAY_MS + DAY_MS) % DAY_MS;
-  }
-  function alignIn(ts, stepMs, z) {
-    const k = monthsOf(stepMs);
-    if (k) {
-      const d = new Date(wallOf(ts, z));
-      const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
-      return monthStart(Math.floor(idx / k) * k, z);
-    }
-    if (stepMs >= DAY_MS) {
-      return fromWall(dayStartWall(ts, z), z);
-    }
-    return floorWall(ts, stepMs, z);
-  }
-  function nextIn(ts, stepMs, z) {
-    const k = monthsOf(stepMs);
-    let n;
-    if (k) {
-      const d = new Date(wallOf(ts, z));
-      const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
-      n = monthStart(Math.floor(idx / k) * k + k, z);
-    } else if (stepMs >= DAY_MS) {
-      n = fromWall(dayStartWall(ts, z) + Math.round(stepMs / DAY_MS) * DAY_MS, z);
-    } else {
-      n = ceilWall(ts + 1, stepMs, z);
-    }
-    return n > ts ? n : ts + stepMs;
-  }
-  function alignedStart(ts, stepMs, tz) {
-    return alignIn(ts, stepMs, zoneOf(tz));
-  }
-  function nextTick(ts, stepMs, tz) {
-    return nextIn(ts, stepMs, zoneOf(tz));
-  }
-  function axisTicks(from, to, stepMs, tz) {
-    const z = zoneOf(tz);
-    const out = [];
-    let t = alignIn(from, stepMs, z);
-    while (t < from) {
-      t = nextIn(t, stepMs, z);
-    }
-    for (; t <= to && out.length < 1e4; t = nextIn(t, stepMs, z)) {
-      out.push(t);
-    }
-    return out;
-  }
-  function tickFormat(stepMs, tz) {
-    const z = zoneOf(tz);
-    if (stepMs < 36e5) {
-      const f = z.fmt("short", F_SHORT);
-      return (ts) => f.format(ts);
-    }
-    if (stepMs < 24 * 36e5) {
-      const f = z.fmt("dayhm", F_DAY_HM);
-      return (ts) => f.format(ts);
-    }
-    if (stepMs < 365 * 864e5) {
-      const f = z.fmt("day", F_DAY);
-      return (ts) => f.format(ts);
-    }
-    return (ts) => String(new Date(wallOf(ts, z)).getUTCFullYear());
   }
   var TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
   var TICK_LABEL_GAP = 14;
