@@ -13,7 +13,7 @@
       "multiview",
       "visual monitoring"
     ],
-    "description": "Scrub-able visual timeline and multiview for image feeds — kiosk screens, security cameras, website thumbnails — with shared-crosshair sync and offline-gap semantics",
+    "description": "Scrub-able visual timeline and multiview for image feeds — kiosk screens, security cameras, website thumbnails — with shared-crosshair sync, offline-gap semantics and a data source that keeps the API's viewer token server-side",
     "author": {
       "name": "Xzibit"
     },
@@ -45,6 +45,11 @@
       "type": "panel",
       "name": "Visual Timeline",
       "path": "panel/plugin.json"
+    },
+    {
+      "type": "datasource",
+      "name": "Visual Timeline API",
+      "path": "datasource/plugin.json"
     }
   ],
   "dependencies": {

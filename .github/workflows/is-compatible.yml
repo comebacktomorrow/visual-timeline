@@ -15,6 +15,7 @@ jobs:
         module:
           - ./src/module.tsx
           - ./src/panel/module.ts
+          - ./src/datasource/module.ts
     name: compatibilitycheck (${{ matrix.module }})
     steps:
       - uses: actions/checkout@v7
