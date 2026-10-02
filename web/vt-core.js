@@ -1447,16 +1447,17 @@ var VTCore = (() => {
   }
   function showSelection(s, fa, fb) {
     const a = Math.min(fa, fb), b = Math.max(fa, fb);
-    for (const k of s.kiosks) {
+    const widths = s.kiosks.map((k) => s.cards[k.id] ? s.cards[k.id].strip.clientWidth : 0);
+    s.kiosks.forEach((k, i) => {
       const c = s.cards[k.id];
       if (!c) {
-        continue;
+        return;
       }
-      const w = c.strip.clientWidth;
+      const w = widths[i];
       c.sel.style.display = "block";
       c.sel.style.left = a * w + "px";
       c.sel.style.width = (b - a) * w + "px";
-    }
+    });
   }
   function hideSelection(s) {
     for (const k of s.kiosks) {
@@ -1477,24 +1478,32 @@ var VTCore = (() => {
     const frac = (s.cursorT - s.P.from) / s.SPAN;
     const axis = q(s.wrap, ".axis"), ac = q(s.wrap, ".acur");
     const acW = ac.offsetWidth || 50;
+    const axisW = axis.clientWidth;
+    const widths = /* @__PURE__ */ new Map();
+    for (const k of s.kiosks) {
+      const c = s.cards[k.id];
+      if (c) {
+        widths.set(k.id, { w: c.strip.clientWidth, magW: c.mag.offsetWidth || c.strip.clientHeight * 16 / 9 });
+      }
+    }
     ac.textContent = fmtTime(s.cursorT, s.TZ);
-    ac.style.left = Math.max(acW / 2, Math.min(axis.clientWidth - acW / 2, frac * axis.clientWidth)) + "px";
+    ac.style.left = Math.max(acW / 2, Math.min(axisW - acW / 2, frac * axisW)) + "px";
     for (const k of s.kiosks) {
       const c = s.cards[k.id];
       if (!c) {
         continue;
       }
+      const { w, magW } = widths.get(k.id);
       if (!external) {
         c.card.classList.toggle("hovered", hoveredCard === c.card);
       }
-      const w = c.strip.clientWidth, x = frac * w;
+      const x = frac * w;
       c.cross.style.left = x + "px";
       const slot = c.model.slotAt(s.cursorT);
       const tt = c.tt;
       if (c.zone.el) {
         dressZoneChip(c.zone, s.cursorT);
       }
-      const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
       c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + "px";
       c.mag.classList.remove("ghost");
       if (slot && slot.frame) {

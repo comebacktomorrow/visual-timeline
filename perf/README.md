@@ -50,3 +50,20 @@ The timeline pays about two forced layouts per source on every move:
 `setCursor` reads `clientWidth`/`offsetWidth` card by card between style
 writes. At 4x CPU a move takes longer than a 16 ms frame. The grid does one
 layout per move.
+
+## After #64 PR D (read before write in `setCursor`)
+
+Same machine and settings as the baseline.
+
+| Mode     | CPU | Path  | Mean ms | p95 ms | Layouts/move | Layout ms/move |
+| -------- | --- | ----- | ------- | ------ | ------------ | -------------- |
+| timeline | 1x  | hover | 0.95    | 1.2    | 1            | 1.3            |
+| timeline | 1x  | sync  | 2.2     | 4.0    | 1            | 1.2            |
+| timeline | 4x  | hover | 5.5     | 7.6    | 1            | 7.8            |
+| timeline | 4x  | sync  | 11.3    | 19.0   | 1            | 6.3            |
+
+`setCursor` now reads every width it needs (the axis, then each card's strip
+and magnifier) before writing any style, so a move costs one layout however
+many sources there are. The remaining layout time is the one real layout of
+the panel after the writes. The sync path's figures include the forced
+layout flush the benchmark adds after each call.
