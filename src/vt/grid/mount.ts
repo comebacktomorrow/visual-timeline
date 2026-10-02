@@ -9,7 +9,8 @@ import { makeBackend } from '../backends/demo';
 import { makePreview } from '../ui/preview';
 import { makeWrapper, retireWrapper, revealWrapper } from '../ui/wrapper';
 import type { GridState } from './state';
-import { buildTile, lastFrame, setShown } from './tile';
+import { buildTile, setShown } from './tile';
+import { startPoll } from './poll';
 
 /* ======================= multiview grid mode =======================
  * One tile per kiosk, no timeline. Shows the most recent frame in the
@@ -72,25 +73,7 @@ export function mountGrid(root, cfg) {
     setShown(s, null);
     await revealWrapper(root, wrap);
 
-    if (LIVE) {
-      s.pollTimer = setInterval(async () => {
-        for (const k of s.kiosks) {
-          const rec = tiles[k.id];
-          const la = rec.model.lastActive;
-          if (!la) {continue;}                   // tail era is a declared pause
-          const last = lastFrame(rec);
-          const fresh = await backend.frames(k.site, k.id, (last ? last.ts : P.from) + 1, Date.now(), la.step);
-          if (s.destroyed) {return;}
-          for (const f of fresh) {
-            const slot = rec.model.slotAt(f.ts);
-            if (!slot || slot.paused || slot.beyond) {continue;}
-            // newer frames replace the bucket representative so "latest" slides
-            if (!slot.frame || f.ts > slot.frame.ts) {slot.frame = f;}
-          }
-        }
-        if (s.shownT == null) {setShown(s, null);}   // keep "latest" tiles fresh
-      }, 10000);
-    }
+    if (LIVE) {startPoll(s);}
   })();
 
   return {

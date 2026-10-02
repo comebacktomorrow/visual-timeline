@@ -2239,6 +2239,36 @@ var VTCore = (() => {
     }
   }
 
+  // src/vt/grid/poll.ts
+  function startPoll2(s) {
+    s.pollTimer = setInterval(async () => {
+      for (const k of s.kiosks) {
+        const rec = s.tiles[k.id];
+        const la = rec.model.lastActive;
+        if (!la) {
+          continue;
+        }
+        const last = lastFrame(rec);
+        const fresh = await s.backend.frames(k.site, k.id, (last ? last.ts : s.P.from) + 1, Date.now(), la.step);
+        if (s.destroyed) {
+          return;
+        }
+        for (const f of fresh) {
+          const slot = rec.model.slotAt(f.ts);
+          if (!slot || slot.paused || slot.beyond) {
+            continue;
+          }
+          if (!slot.frame || f.ts > slot.frame.ts) {
+            slot.frame = f;
+          }
+        }
+      }
+      if (s.shownT == null) {
+        setShown(s, null);
+      }
+    }, 1e4);
+  }
+
   // src/vt/grid/mount.ts
   function mountGrid(root, cfg) {
     injectStyles();
@@ -2308,32 +2338,7 @@ var VTCore = (() => {
       setShown(s, null);
       await revealWrapper(root, wrap);
       if (LIVE) {
-        s.pollTimer = setInterval(async () => {
-          for (const k of s.kiosks) {
-            const rec = tiles[k.id];
-            const la = rec.model.lastActive;
-            if (!la) {
-              continue;
-            }
-            const last = lastFrame(rec);
-            const fresh = await backend.frames(k.site, k.id, (last ? last.ts : P.from) + 1, Date.now(), la.step);
-            if (s.destroyed) {
-              return;
-            }
-            for (const f of fresh) {
-              const slot = rec.model.slotAt(f.ts);
-              if (!slot || slot.paused || slot.beyond) {
-                continue;
-              }
-              if (!slot.frame || f.ts > slot.frame.ts) {
-                slot.frame = f;
-              }
-            }
-          }
-          if (s.shownT == null) {
-            setShown(s, null);
-          }
-        }, 1e4);
+        startPoll2(s);
       }
     })();
     return {
