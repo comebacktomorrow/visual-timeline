@@ -656,22 +656,22 @@ var VTCore = (() => {
     return u.href;
   }
   function sourcesPath(sites) {
-    const q = new URLSearchParams();
+    const q2 = new URLSearchParams();
     if (sites) {
-      q.set("site", sites.join(","));
+      q2.set("site", sites.join(","));
     }
-    const qs = q.toString();
+    const qs = q2.toString();
     return "/sources" + (qs ? "?" + qs : "");
   }
   function framesPath(site, kiosk, from, to, step) {
-    const q = new URLSearchParams();
-    q.set("site", site);
-    q.set("source", kiosk);
-    q.set("from", String(Math.round(from)));
-    q.set("to", String(Math.round(to)));
-    q.set("step", String(step));
-    q.set("variant", "lo");
-    return "/frames?" + q.toString();
+    const q2 = new URLSearchParams();
+    q2.set("site", site);
+    q2.set("source", kiosk);
+    q2.set("from", String(Math.round(from)));
+    q2.set("to", String(Math.round(to)));
+    q2.set("step", String(step));
+    q2.set("variant", "lo");
+    return "/frames?" + q2.toString();
   }
   function resolveFrameUrl(url, apiBase) {
     if (!url || !apiBase) {
@@ -724,9 +724,9 @@ var VTCore = (() => {
     if (base === null) {
       return null;
     }
-    const q = qAt >= 0 ? url.slice(qAt) : apiKey ? "?k=" + encodeURIComponent(apiKey) : "";
+    const q2 = qAt >= 0 ? url.slice(qAt) : apiKey ? "?k=" + encodeURIComponent(apiKey) : "";
     const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
-    return base + "/frame/hi/" + encodeURIComponent(decl.site) + "/" + encodeURIComponent(decl.id) + "/" + hiTs + ".jpg" + q;
+    return base + "/frame/hi/" + encodeURIComponent(decl.site) + "/" + encodeURIComponent(decl.id) + "/" + hiTs + ".jpg" + q2;
   }
 
   // src/vt/dom/html.ts
@@ -1469,6 +1469,132 @@ var VTCore = (() => {
     wrap.dataset.stale = "1";
     setTimeout(() => wrap.remove(), 1500);
   }
+  function q(wrap, sel) {
+    return wrap.querySelector(sel);
+  }
+
+  // src/vt/timeline/cursor.ts
+  function restoreCursor(root, P) {
+    const saved = Number(root.dataset.ktlCursor);
+    if (root.dataset.ktlPinned === "1" && Number.isFinite(saved)) {
+      return Math.max(P.from, Math.min(P.to, saved));
+    }
+    return Math.min(P.to, Date.now());
+  }
+  function showSelection(s, fa, fb) {
+    const a = Math.min(fa, fb), b = Math.max(fa, fb);
+    for (const k of s.kiosks) {
+      const c = s.cards[k.id];
+      if (!c) {
+        continue;
+      }
+      const w = c.strip.clientWidth;
+      c.sel.style.display = "block";
+      c.sel.style.left = a * w + "px";
+      c.sel.style.width = (b - a) * w + "px";
+    }
+  }
+  function hideSelection(s) {
+    for (const k of s.kiosks) {
+      if (s.cards[k.id]) {
+        s.cards[k.id].sel.style.display = "none";
+      }
+    }
+  }
+  function setCursor(s, t, hoveredCard, external) {
+    s.cursorT = Math.max(s.P.from, Math.min(s.P.to, t));
+    s.root.dataset.ktlCursor = String(s.cursorT);
+    if (!external) {
+      s.root.dataset.ktlPinned = "1";
+    }
+    if (s.cfg.onCursor) {
+      s.cfg.onCursor(s.cursorT);
+    }
+    const frac = (s.cursorT - s.P.from) / s.SPAN;
+    const axis = q(s.wrap, ".axis"), ac = q(s.wrap, ".acur");
+    const acW = ac.offsetWidth || 50;
+    ac.textContent = fmtTime(s.cursorT, s.TZ);
+    ac.style.left = Math.max(acW / 2, Math.min(axis.clientWidth - acW / 2, frac * axis.clientWidth)) + "px";
+    for (const k of s.kiosks) {
+      const c = s.cards[k.id];
+      if (!c) {
+        continue;
+      }
+      if (!external) {
+        c.card.classList.toggle("hovered", hoveredCard === c.card);
+      }
+      const w = c.strip.clientWidth, x = frac * w;
+      c.cross.style.left = x + "px";
+      const slot = c.model.slotAt(s.cursorT);
+      const tt = c.tt;
+      if (c.zone.el) {
+        dressZoneChip(c.zone, s.cursorT);
+      }
+      const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
+      c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + "px";
+      c.mag.classList.remove("ghost");
+      if (slot && slot.frame) {
+        c.mag.classList.remove("gap", "future", "off");
+        clearPauseClasses(c.mag);
+        c.mag.querySelector("img").src = slot.frame.url;
+        c.mag.querySelector(".cap").textContent = tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts);
+        c.head.textContent = "";
+        c.head.classList.remove("stale");
+        clearPauseClasses(c.head);
+      } else if (slot && slot.paused) {
+        const pi = pauseInfo(slot);
+        c.mag.classList.remove("gap", "future", "off");
+        clearPauseClasses(c.mag);
+        c.mag.classList.add(...pi.classes);
+        c.mag.querySelector(".cap").textContent = pi.label.toLowerCase();
+        c.head.textContent = pi.label.toLowerCase();
+        c.head.classList.remove("stale");
+        clearPauseClasses(c.head);
+        c.head.classList.add(...pi.classes);
+      } else if (slot && slot.beyond) {
+        c.mag.classList.remove("gap", "future");
+        clearPauseClasses(c.mag);
+        c.mag.classList.add("off");
+        c.head.textContent = "";
+        c.head.classList.remove("stale");
+        clearPauseClasses(c.head);
+      } else if (slot && slot.future) {
+        const inFlight = slot.ts <= Date.now();
+        const g = ghostFor(c.model.slots, slot);
+        c.mag.classList.remove("gap", "off");
+        clearPauseClasses(c.mag);
+        c.mag.classList.add("future");
+        if (g) {
+          c.mag.classList.add("ghost");
+          c.mag.querySelector("img").src = g.url;
+        }
+        c.mag.querySelector(".cap").textContent = (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + tt.short(slot.ts) + (g ? " \xB7 last frame " + tt.time(g.ts) : "") + tt.sfx(slot.ts);
+        c.head.textContent = inFlight ? "expected" : "upcoming";
+        c.head.classList.remove("stale");
+        clearPauseClasses(c.head);
+      } else {
+        c.mag.classList.add("gap");
+        c.mag.classList.remove("future", "off");
+        clearPauseClasses(c.mag);
+        const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
+        let last = null;
+        for (let j = i; j >= 0; j--) {
+          if (c.model.slots[j].frame) {
+            last = c.model.slots[j].frame;
+            break;
+          }
+        }
+        const msg = last ? "offline \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : "no data in window";
+        c.mag.querySelector(".cap").textContent = msg;
+        c.head.textContent = msg;
+        c.head.classList.add("stale");
+        clearPauseClasses(c.head);
+      }
+    }
+    if (!external && s.cfg.onHover) {
+      s.cfg.onHover(s.cursorT);
+    }
+  }
 
   // src/vt/timeline/mount.ts
   function mountTimeline(root, cfg) {
@@ -1484,14 +1610,7 @@ var VTCore = (() => {
     const wrap = makeWrapper(root);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="cards"></div><div class="ann-lane" style="display:none"></div><div class="axis"><div class="base"></div><div class="acur"></div></div>';
-    const q = (sel) => wrap.querySelector(sel);
-    function restoreCursor() {
-      const saved = Number(root.dataset.ktlCursor);
-      if (root.dataset.ktlPinned === "1" && Number.isFinite(saved)) {
-        return Math.max(P.from, Math.min(P.to, saved));
-      }
-      return Math.min(P.to, Date.now());
-    }
+    const q2 = (sel) => wrap.querySelector(sel);
     const s = {
       root,
       cfg,
@@ -1505,7 +1624,7 @@ var VTCore = (() => {
       wrap,
       kiosks: [],
       cards: {},
-      cursorT: restoreCursor(),
+      cursorT: restoreCursor(root, P),
       destroyed: false,
       pollTimer: null,
       axisTickList: [],
@@ -1515,26 +1634,6 @@ var VTCore = (() => {
       PANEL_TT: zoneTexts(TZ, TZ, false)
     };
     const { cards, axisTickList, pv, PANEL_TT } = s;
-    function showSelection(fa, fb) {
-      const a = Math.min(fa, fb), b = Math.max(fa, fb);
-      for (const k of s.kiosks) {
-        const c = cards[k.id];
-        if (!c) {
-          continue;
-        }
-        const w = c.strip.clientWidth;
-        c.sel.style.display = "block";
-        c.sel.style.left = a * w + "px";
-        c.sel.style.width = (b - a) * w + "px";
-      }
-    }
-    function hideSelection() {
-      for (const k of s.kiosks) {
-        if (cards[k.id]) {
-          cards[k.id].sel.style.display = "none";
-        }
-      }
-    }
     function dressStrip(model) {
       for (const sl of model.slots) {
         if (!sl.el || sl.frame) {
@@ -1605,7 +1704,7 @@ var VTCore = (() => {
           return;
         }
         const t = P.from + SPAN * ((e.clientX - r.left) / r.width);
-        setCursor(t, card, false);
+        setCursor(s, t, card, false);
       };
       strip.addEventListener("mousemove", hoverAt);
       strip.addEventListener("mouseenter", (e) => {
@@ -1657,14 +1756,14 @@ var VTCore = (() => {
             dragged = true;
           }
           if (dragged) {
-            showSelection(f0, f1);
-            setCursor(P.from + SPAN * f1, card, false);
+            showSelection(s, f0, f1);
+            setCursor(s, P.from + SPAN * f1, card, false);
           }
         };
         const up = (ev) => {
           document.removeEventListener("mousemove", move);
           document.removeEventListener("mouseup", up);
-          hideSelection();
+          hideSelection(s);
           if (dragged && !s.destroyed) {
             s.suppressClick = true;
             const f1 = fracOf(ev.clientX);
@@ -1677,7 +1776,7 @@ var VTCore = (() => {
         document.addEventListener("mousemove", move);
         document.addEventListener("mouseup", up);
       });
-      q(".cards").appendChild(card);
+      q2(".cards").appendChild(card);
       attachZoneChip(zone, card);
       return {
         card,
@@ -1693,7 +1792,7 @@ var VTCore = (() => {
       };
     }
     function buildAxis() {
-      const axis = q(".axis");
+      const axis = q2(".axis");
       const w = axis.clientWidth;
       const roughMaxTicks = Math.max(3, Math.floor(w / 90));
       const roughStep = TICK_STEPS.find((s2) => SPAN / s2 <= roughMaxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
@@ -1823,7 +1922,7 @@ var VTCore = (() => {
           }
         }
         if (a.timeEnd) {
-          const hosts = isGlobal(a) ? s.kiosks.map((k) => cards[k.id].strip).concat([q(".ann-lane")]) : s.kiosks.filter((k) => appliesTo(a, k)).map((k) => cards[k.id].strip);
+          const hosts = isGlobal(a) ? s.kiosks.map((k) => cards[k.id].strip).concat([q2(".ann-lane")]) : s.kiosks.filter((k) => appliesTo(a, k)).map((k) => cards[k.id].strip);
           for (const h of hosts) {
             addRegion(h, a);
           }
@@ -1833,104 +1932,10 @@ var VTCore = (() => {
         addMarkers(cards[id].strip, items);
       }
       if (laneItems.length) {
-        addMarkers(q(".ann-lane"), laneItems);
+        addMarkers(q2(".ann-lane"), laneItems);
       }
       if (laneItems.length || anns.some((a) => a.timeEnd && isGlobal(a))) {
-        q(".ann-lane").style.display = "";
-      }
-    }
-    function setCursor(t, hoveredCard, external) {
-      s.cursorT = Math.max(P.from, Math.min(P.to, t));
-      root.dataset.ktlCursor = String(s.cursorT);
-      if (!external) {
-        root.dataset.ktlPinned = "1";
-      }
-      if (cfg.onCursor) {
-        cfg.onCursor(s.cursorT);
-      }
-      const frac = (s.cursorT - P.from) / SPAN;
-      const axis = q(".axis"), ac = q(".acur");
-      const acW = ac.offsetWidth || 50;
-      ac.textContent = fmtTime(s.cursorT, TZ);
-      ac.style.left = Math.max(acW / 2, Math.min(axis.clientWidth - acW / 2, frac * axis.clientWidth)) + "px";
-      for (const k of s.kiosks) {
-        const c = cards[k.id];
-        if (!c) {
-          continue;
-        }
-        if (!external) {
-          c.card.classList.toggle("hovered", hoveredCard === c.card);
-        }
-        const w = c.strip.clientWidth, x = frac * w;
-        c.cross.style.left = x + "px";
-        const slot = c.model.slotAt(s.cursorT);
-        const tt = c.tt;
-        if (c.zone.el) {
-          dressZoneChip(c.zone, s.cursorT);
-        }
-        const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
-        c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + "px";
-        c.mag.classList.remove("ghost");
-        if (slot && slot.frame) {
-          c.mag.classList.remove("gap", "future", "off");
-          clearPauseClasses(c.mag);
-          c.mag.querySelector("img").src = slot.frame.url;
-          c.mag.querySelector(".cap").textContent = tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts);
-          c.head.textContent = "";
-          c.head.classList.remove("stale");
-          clearPauseClasses(c.head);
-        } else if (slot && slot.paused) {
-          const pi = pauseInfo(slot);
-          c.mag.classList.remove("gap", "future", "off");
-          clearPauseClasses(c.mag);
-          c.mag.classList.add(...pi.classes);
-          c.mag.querySelector(".cap").textContent = pi.label.toLowerCase();
-          c.head.textContent = pi.label.toLowerCase();
-          c.head.classList.remove("stale");
-          clearPauseClasses(c.head);
-          c.head.classList.add(...pi.classes);
-        } else if (slot && slot.beyond) {
-          c.mag.classList.remove("gap", "future");
-          clearPauseClasses(c.mag);
-          c.mag.classList.add("off");
-          c.head.textContent = "";
-          c.head.classList.remove("stale");
-          clearPauseClasses(c.head);
-        } else if (slot && slot.future) {
-          const inFlight = slot.ts <= Date.now();
-          const g = ghostFor(c.model.slots, slot);
-          c.mag.classList.remove("gap", "off");
-          clearPauseClasses(c.mag);
-          c.mag.classList.add("future");
-          if (g) {
-            c.mag.classList.add("ghost");
-            c.mag.querySelector("img").src = g.url;
-          }
-          c.mag.querySelector(".cap").textContent = (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + tt.short(slot.ts) + (g ? " \xB7 last frame " + tt.time(g.ts) : "") + tt.sfx(slot.ts);
-          c.head.textContent = inFlight ? "expected" : "upcoming";
-          c.head.classList.remove("stale");
-          clearPauseClasses(c.head);
-        } else {
-          c.mag.classList.add("gap");
-          c.mag.classList.remove("future", "off");
-          clearPauseClasses(c.mag);
-          const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
-          let last = null;
-          for (let j = i; j >= 0; j--) {
-            if (c.model.slots[j].frame) {
-              last = c.model.slots[j].frame;
-              break;
-            }
-          }
-          const msg = last ? "offline \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : "no data in window";
-          c.mag.querySelector(".cap").textContent = msg;
-          c.head.textContent = msg;
-          c.head.classList.add("stale");
-          clearPauseClasses(c.head);
-        }
-      }
-      if (!external && cfg.onHover) {
-        cfg.onHover(s.cursorT);
+        q2(".ann-lane").style.display = "";
       }
     }
     (async function boot() {
@@ -1944,7 +1949,7 @@ var VTCore = (() => {
         const err = document.createElement("div");
         err.className = "boot-err";
         err.textContent = "frames API unreachable \u2014 " + (e && e.message ? e.message : e);
-        q(".cards").appendChild(err);
+        q2(".cards").appendChild(err);
         await revealWrapper(root, wrap);
         return;
       }
@@ -1974,7 +1979,7 @@ var VTCore = (() => {
       if (cfg.showAnnotations !== false) {
         renderAnnotations(normAnnotations(rawAnns, P));
       }
-      setCursor(s.cursorT, null, true);
+      setCursor(s, s.cursorT, null, true);
       await revealWrapper(root, wrap);
       dressAll(20);
       if (LIVE) {
@@ -2094,7 +2099,7 @@ var VTCore = (() => {
     return {
       setExternalCursor(t) {
         if (!s.destroyed) {
-          setCursor(t, null, true);
+          setCursor(s, t, null, true);
         }
       },
       isHovering() {
@@ -2124,7 +2129,7 @@ var VTCore = (() => {
     const wrap = makeWrapper(root);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="grid"></div>';
-    const q = (sel) => wrap.querySelector(sel);
+    const q2 = (sel) => wrap.querySelector(sel);
     let kiosks = [], tiles = {}, destroyed = false, pollTimer = null, shownT = null;
     const pv = makePreview(root, TZ);
     const PANEL_TT = zoneTexts(TZ, TZ, false);
@@ -2153,7 +2158,7 @@ var VTCore = (() => {
           pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, cfg.apiUrl, cfg.apiKey), null, rec.tt);
         }
       });
-      q(".grid").appendChild(el);
+      q2(".grid").appendChild(el);
       return rec;
     }
     function lastFrame(rec) {
@@ -2250,7 +2255,7 @@ var VTCore = (() => {
         const err = document.createElement("div");
         err.className = "boot-err";
         err.textContent = "frames API unreachable \u2014 " + (e && e.message ? e.message : e);
-        q(".grid").appendChild(err);
+        q2(".grid").appendChild(err);
         await revealWrapper(root, wrap);
         return;
       }

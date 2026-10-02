@@ -32,3 +32,9 @@ export function retireWrapper(wrap: HTMLElement): void {
   wrap.dataset.stale = '1';
   setTimeout(() => wrap.remove(), 1500);
 }
+/* one of a mount wrapper's own elements, by selector. The mounts only ask
+ * for elements their wrapper template (innerHTML) always has, so the result
+ * is asserted non-null. */
+export function q<E extends Element = HTMLElement>(wrap: ParentNode, sel: string): E {
+  return wrap.querySelector<E>(sel)!;
+}
