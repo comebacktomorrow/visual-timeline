@@ -191,142 +191,6 @@ var VTCore = (() => {
   var fmtShort = (ts, tz) => zoneOf(tz).fmt("short", F_SHORT).format(ts);
   var fmtDur = (ms) => ms % 36e5 === 0 ? ms / 36e5 + "h" : ms % 6e4 === 0 ? ms / 6e4 + "m" : ms / 1e3 + "s";
 
-  // src/vt/time/ticks.ts
-  var TICK_STEPS = [
-    6e4,
-    5 * 6e4,
-    10 * 6e4,
-    15 * 6e4,
-    30 * 6e4,
-    36e5,
-    2 * 36e5,
-    3 * 36e5,
-    6 * 36e5,
-    12 * 36e5,
-    24 * 36e5,
-    2 * 864e5,
-    3 * 864e5,
-    4 * 864e5,
-    5 * 864e5,
-    6 * 864e5,
-    7 * 864e5,
-    8 * 864e5,
-    9 * 864e5,
-    10 * 864e5,
-    15 * 864e5,
-    30 * 864e5,
-    90 * 864e5,
-    365 * 864e5
-  ];
-  var DAY_MS = 864e5;
-  function monthsOf(stepMs) {
-    return stepMs >= 30 * DAY_MS ? Math.round(stepMs / (30 * DAY_MS)) : 0;
-  }
-  function offsetChange(lo, hi, o, z) {
-    let a = Math.floor(lo / 1e3), b = Math.ceil(hi / 1e3);
-    while (b - a > 1) {
-      const m = Math.floor((a + b) / 2);
-      if (z.offset(m * 1e3) === o) {
-        a = m;
-      } else {
-        b = m;
-      }
-    }
-    return b * 1e3;
-  }
-  function ceilWall(ts, step, z) {
-    let t = ts;
-    for (let i = 0; i < 6; i++) {
-      const o = z.offset(t);
-      const c = Math.ceil((t + o) / step) * step - o;
-      if (z.offset(c) === o) {
-        return c;
-      }
-      t = offsetChange(t, c, o, z);
-    }
-    return Math.ceil(ts / step) * step;
-  }
-  function floorWall(ts, step, z) {
-    let t = ts;
-    for (let i = 0; i < 6; i++) {
-      const o = z.offset(t);
-      const c = Math.floor((t + o) / step) * step - o;
-      const oc = z.offset(c);
-      if (oc === o) {
-        return c;
-      }
-      t = offsetChange(c, t, oc, z) - 1;
-    }
-    return Math.floor(ts / step) * step;
-  }
-  function monthStart(idx, z) {
-    return fromWall(Date.UTC(Math.floor(idx / 12), (idx % 12 + 12) % 12, 1), z);
-  }
-  function dayStartWall(ts, z) {
-    const w = wallOf(ts, z);
-    return w - (w % DAY_MS + DAY_MS) % DAY_MS;
-  }
-  function alignIn(ts, stepMs, z) {
-    const k = monthsOf(stepMs);
-    if (k) {
-      const d = new Date(wallOf(ts, z));
-      const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
-      return monthStart(Math.floor(idx / k) * k, z);
-    }
-    if (stepMs >= DAY_MS) {
-      return fromWall(dayStartWall(ts, z), z);
-    }
-    return floorWall(ts, stepMs, z);
-  }
-  function nextIn(ts, stepMs, z) {
-    const k = monthsOf(stepMs);
-    let n;
-    if (k) {
-      const d = new Date(wallOf(ts, z));
-      const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
-      n = monthStart(Math.floor(idx / k) * k + k, z);
-    } else if (stepMs >= DAY_MS) {
-      n = fromWall(dayStartWall(ts, z) + Math.round(stepMs / DAY_MS) * DAY_MS, z);
-    } else {
-      n = ceilWall(ts + 1, stepMs, z);
-    }
-    return n > ts ? n : ts + stepMs;
-  }
-  function alignedStart(ts, stepMs, tz) {
-    return alignIn(ts, stepMs, zoneOf(tz));
-  }
-  function nextTick(ts, stepMs, tz) {
-    return nextIn(ts, stepMs, zoneOf(tz));
-  }
-  function axisTicks(from, to, stepMs, tz) {
-    const z = zoneOf(tz);
-    const out = [];
-    let t = alignIn(from, stepMs, z);
-    while (t < from) {
-      t = nextIn(t, stepMs, z);
-    }
-    for (; t <= to && out.length < 1e4; t = nextIn(t, stepMs, z)) {
-      out.push(t);
-    }
-    return out;
-  }
-  function tickFormat(stepMs, tz) {
-    const z = zoneOf(tz);
-    if (stepMs < 36e5) {
-      const f = z.fmt("short", F_SHORT);
-      return (ts) => f.format(ts);
-    }
-    if (stepMs < 24 * 36e5) {
-      const f = z.fmt("dayhm", F_DAY_HM);
-      return (ts) => f.format(ts);
-    }
-    if (stepMs < 365 * 864e5) {
-      const f = z.fmt("day", F_DAY);
-      return (ts) => f.format(ts);
-    }
-    return (ts) => String(new Date(wallOf(ts, z)).getUTCFullYear());
-  }
-
   // src/vt/model/eras.ts
   function erasFor(decl, P) {
     const hist = (decl.history || []).filter((h) => (h.variant || "lo") === "lo").slice().sort((a, b) => a.since - b.since);
@@ -1198,6 +1062,245 @@ var VTCore = (() => {
     z.el.title = "Source time zone: " + z.texts.zone + (o ? " (" + o + " from panel time)" : " (same as panel time)");
   }
 
+  // src/vt/ui/preview.ts
+  var popState = { el: null, keyH: null, retireTimer: null };
+  function closePreview() {
+    if (popState.retireTimer) {
+      clearTimeout(popState.retireTimer);
+      popState.retireTimer = null;
+    }
+    if (popState.el) {
+      popState.el.remove();
+      popState.el = null;
+    }
+    if (popState.keyH) {
+      document.removeEventListener("keydown", popState.keyH);
+      popState.keyH = null;
+    }
+  }
+  function makePreview(root, tz) {
+    if (popState.retireTimer) {
+      clearTimeout(popState.retireTimer);
+      popState.retireTimer = null;
+    }
+    const panelTexts = zoneTexts(tz, tz, false);
+    return {
+      // expectedTs set = frame is the pending slot's ghost: shown blurred and
+      // captioned as the last frame, never as the expected one. tt: the
+      // source's time text (zoneTexts), the panel's when omitted
+      open(site, kiosk, frame, x, y, hiUrl, expectedTs, tt) {
+        tt = tt || panelTexts;
+        closePreview();
+        const el = document.createElement("div");
+        el.className = "ktl-pop" + (expectedTs ? " ghost" : "");
+        copyVars(root, el);
+        el.innerHTML = '<img alt="frame"><div class="cap"></div>';
+        const img = el.querySelector("img");
+        el.querySelector(".cap").textContent = site + " / " + kiosk + " \u2014 " + (expectedTs ? "expected " + tt.short(expectedTs) + " \xB7 last frame " + tt.time(frame.ts) : tt.time(frame.ts)) + tt.sfx(frame.ts);
+        el.addEventListener("click", closePreview);
+        document.body.appendChild(el);
+        const place = () => {
+          if (!el.isConnected) {
+            return;
+          }
+          const r = el.getBoundingClientRect();
+          el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x + 14)) + "px";
+          el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y - r.height / 2)) + "px";
+        };
+        img.onload = place;
+        img.onerror = () => {
+          img.onerror = null;
+          img.src = frame.url;
+        };
+        img.src = hiUrl || frame.url;
+        place();
+        popState.el = el;
+        popState.keyH = (e) => {
+          if (e.key === "Escape") {
+            closePreview();
+          }
+        };
+        document.addEventListener("keydown", popState.keyH);
+      },
+      close: closePreview,
+      retire() {
+        if (popState.el && !popState.retireTimer) {
+          popState.retireTimer = setTimeout(closePreview, 1500);
+        }
+      }
+    };
+  }
+
+  // src/vt/ui/wrapper.ts
+  function makeWrapper(root) {
+    const wrap = document.createElement("div");
+    wrap.className = "ktl";
+    root.style.position = "relative";
+    root.classList.add("ktl-root");
+    wrap.style.position = "absolute";
+    wrap.style.inset = "0";
+    wrap.style.visibility = "hidden";
+    root.appendChild(wrap);
+    return wrap;
+  }
+  async function revealWrapper(root, wrap) {
+    const imgs = [...wrap.querySelectorAll("img")];
+    await Promise.race([
+      Promise.allSettled(imgs.map((i) => i.decode ? i.decode().catch(() => {
+      }) : Promise.resolve())),
+      new Promise((res) => setTimeout(res, 900))
+    ]);
+    if (!wrap.isConnected) {
+      return;
+    }
+    for (const el of [...root.children]) {
+      if (el !== wrap) {
+        el.remove();
+      }
+    }
+    wrap.style.visibility = "";
+  }
+  function retireWrapper(wrap) {
+    wrap.dataset.stale = "1";
+    setTimeout(() => wrap.remove(), 1500);
+  }
+
+  // src/vt/time/ticks.ts
+  var TICK_STEPS = [
+    6e4,
+    5 * 6e4,
+    10 * 6e4,
+    15 * 6e4,
+    30 * 6e4,
+    36e5,
+    2 * 36e5,
+    3 * 36e5,
+    6 * 36e5,
+    12 * 36e5,
+    24 * 36e5,
+    2 * 864e5,
+    3 * 864e5,
+    4 * 864e5,
+    5 * 864e5,
+    6 * 864e5,
+    7 * 864e5,
+    8 * 864e5,
+    9 * 864e5,
+    10 * 864e5,
+    15 * 864e5,
+    30 * 864e5,
+    90 * 864e5,
+    365 * 864e5
+  ];
+  var DAY_MS = 864e5;
+  function monthsOf(stepMs) {
+    return stepMs >= 30 * DAY_MS ? Math.round(stepMs / (30 * DAY_MS)) : 0;
+  }
+  function offsetChange(lo, hi, o, z) {
+    let a = Math.floor(lo / 1e3), b = Math.ceil(hi / 1e3);
+    while (b - a > 1) {
+      const m = Math.floor((a + b) / 2);
+      if (z.offset(m * 1e3) === o) {
+        a = m;
+      } else {
+        b = m;
+      }
+    }
+    return b * 1e3;
+  }
+  function ceilWall(ts, step, z) {
+    let t = ts;
+    for (let i = 0; i < 6; i++) {
+      const o = z.offset(t);
+      const c = Math.ceil((t + o) / step) * step - o;
+      if (z.offset(c) === o) {
+        return c;
+      }
+      t = offsetChange(t, c, o, z);
+    }
+    return Math.ceil(ts / step) * step;
+  }
+  function floorWall(ts, step, z) {
+    let t = ts;
+    for (let i = 0; i < 6; i++) {
+      const o = z.offset(t);
+      const c = Math.floor((t + o) / step) * step - o;
+      const oc = z.offset(c);
+      if (oc === o) {
+        return c;
+      }
+      t = offsetChange(c, t, oc, z) - 1;
+    }
+    return Math.floor(ts / step) * step;
+  }
+  function monthStart(idx, z) {
+    return fromWall(Date.UTC(Math.floor(idx / 12), (idx % 12 + 12) % 12, 1), z);
+  }
+  function dayStartWall(ts, z) {
+    const w = wallOf(ts, z);
+    return w - (w % DAY_MS + DAY_MS) % DAY_MS;
+  }
+  function alignIn(ts, stepMs, z) {
+    const k = monthsOf(stepMs);
+    if (k) {
+      const d = new Date(wallOf(ts, z));
+      const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
+      return monthStart(Math.floor(idx / k) * k, z);
+    }
+    if (stepMs >= DAY_MS) {
+      return fromWall(dayStartWall(ts, z), z);
+    }
+    return floorWall(ts, stepMs, z);
+  }
+  function nextIn(ts, stepMs, z) {
+    const k = monthsOf(stepMs);
+    let n;
+    if (k) {
+      const d = new Date(wallOf(ts, z));
+      const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
+      n = monthStart(Math.floor(idx / k) * k + k, z);
+    } else if (stepMs >= DAY_MS) {
+      n = fromWall(dayStartWall(ts, z) + Math.round(stepMs / DAY_MS) * DAY_MS, z);
+    } else {
+      n = ceilWall(ts + 1, stepMs, z);
+    }
+    return n > ts ? n : ts + stepMs;
+  }
+  function alignedStart(ts, stepMs, tz) {
+    return alignIn(ts, stepMs, zoneOf(tz));
+  }
+  function nextTick(ts, stepMs, tz) {
+    return nextIn(ts, stepMs, zoneOf(tz));
+  }
+  function axisTicks(from, to, stepMs, tz) {
+    const z = zoneOf(tz);
+    const out = [];
+    let t = alignIn(from, stepMs, z);
+    while (t < from) {
+      t = nextIn(t, stepMs, z);
+    }
+    for (; t <= to && out.length < 1e4; t = nextIn(t, stepMs, z)) {
+      out.push(t);
+    }
+    return out;
+  }
+  function tickFormat(stepMs, tz) {
+    const z = zoneOf(tz);
+    if (stepMs < 36e5) {
+      const f = z.fmt("short", F_SHORT);
+      return (ts) => f.format(ts);
+    }
+    if (stepMs < 24 * 36e5) {
+      const f = z.fmt("dayhm", F_DAY_HM);
+      return (ts) => f.format(ts);
+    }
+    if (stepMs < 365 * 864e5) {
+      const f = z.fmt("day", F_DAY);
+      return (ts) => f.format(ts);
+    }
+    return (ts) => String(new Date(wallOf(ts, z)).getUTCFullYear());
+  }
+
   // src/vt/ui/annotations.ts
   function normAnnotations(raw, P) {
     const out = [];
@@ -1343,75 +1446,6 @@ var VTCore = (() => {
     return measureCtx.measureText(text).width;
   }
 
-  // src/vt/ui/preview.ts
-  var popState = { el: null, keyH: null, retireTimer: null };
-  function closePreview() {
-    if (popState.retireTimer) {
-      clearTimeout(popState.retireTimer);
-      popState.retireTimer = null;
-    }
-    if (popState.el) {
-      popState.el.remove();
-      popState.el = null;
-    }
-    if (popState.keyH) {
-      document.removeEventListener("keydown", popState.keyH);
-      popState.keyH = null;
-    }
-  }
-  function makePreview(root, tz) {
-    if (popState.retireTimer) {
-      clearTimeout(popState.retireTimer);
-      popState.retireTimer = null;
-    }
-    const panelTexts = zoneTexts(tz, tz, false);
-    return {
-      // expectedTs set = frame is the pending slot's ghost: shown blurred and
-      // captioned as the last frame, never as the expected one. tt: the
-      // source's time text (zoneTexts), the panel's when omitted
-      open(site, kiosk, frame, x, y, hiUrl, expectedTs, tt) {
-        tt = tt || panelTexts;
-        closePreview();
-        const el = document.createElement("div");
-        el.className = "ktl-pop" + (expectedTs ? " ghost" : "");
-        copyVars(root, el);
-        el.innerHTML = '<img alt="frame"><div class="cap"></div>';
-        const img = el.querySelector("img");
-        el.querySelector(".cap").textContent = site + " / " + kiosk + " \u2014 " + (expectedTs ? "expected " + tt.short(expectedTs) + " \xB7 last frame " + tt.time(frame.ts) : tt.time(frame.ts)) + tt.sfx(frame.ts);
-        el.addEventListener("click", closePreview);
-        document.body.appendChild(el);
-        const place = () => {
-          if (!el.isConnected) {
-            return;
-          }
-          const r = el.getBoundingClientRect();
-          el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x + 14)) + "px";
-          el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y - r.height / 2)) + "px";
-        };
-        img.onload = place;
-        img.onerror = () => {
-          img.onerror = null;
-          img.src = frame.url;
-        };
-        img.src = hiUrl || frame.url;
-        place();
-        popState.el = el;
-        popState.keyH = (e) => {
-          if (e.key === "Escape") {
-            closePreview();
-          }
-        };
-        document.addEventListener("keydown", popState.keyH);
-      },
-      close: closePreview,
-      retire() {
-        if (popState.el && !popState.retireTimer) {
-          popState.retireTimer = setTimeout(closePreview, 1500);
-        }
-      }
-    };
-  }
-
   // src/vt/ui/ghost.ts
   function dressGhost(slots, sl) {
     if (!sl.el) {
@@ -1436,41 +1470,7 @@ var VTCore = (() => {
     }
   }
 
-  // src/vt/ui/wrapper.ts
-  function makeWrapper(root) {
-    const wrap = document.createElement("div");
-    wrap.className = "ktl";
-    root.style.position = "relative";
-    root.classList.add("ktl-root");
-    wrap.style.position = "absolute";
-    wrap.style.inset = "0";
-    wrap.style.visibility = "hidden";
-    root.appendChild(wrap);
-    return wrap;
-  }
-  async function revealWrapper(root, wrap) {
-    const imgs = [...wrap.querySelectorAll("img")];
-    await Promise.race([
-      Promise.allSettled(imgs.map((i) => i.decode ? i.decode().catch(() => {
-      }) : Promise.resolve())),
-      new Promise((res) => setTimeout(res, 900))
-    ]);
-    if (!wrap.isConnected) {
-      return;
-    }
-    for (const el of [...root.children]) {
-      if (el !== wrap) {
-        el.remove();
-      }
-    }
-    wrap.style.visibility = "";
-  }
-  function retireWrapper(wrap) {
-    wrap.dataset.stale = "1";
-    setTimeout(() => wrap.remove(), 1500);
-  }
-
-  // src/core.ts
+  // src/vt/timeline/mount.ts
   function mountTimeline(root, cfg) {
     injectStyles();
     const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
@@ -2093,6 +2093,8 @@ var VTCore = (() => {
       }
     };
   }
+
+  // src/core.ts
   function mountGrid(root, cfg) {
     injectStyles();
     const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
