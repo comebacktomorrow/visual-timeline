@@ -1,0 +1,131 @@
+# Contributing to Visual Timeline
+
+Bug reports and feature requests are welcome as
+[GitHub issues](https://github.com/comebacktomorrow/visual-timeline/issues);
+pull requests too. This page is the developer guide: repository layout, running
+the pieces locally, testing, and releasing. For what the panel does and how to
+use it, see the [README](README.md).
+
+## What's in the repository
+
+Three frontends, one small HTTP contract ([docs/API.md](docs/API.md)):
+
+- `src/` — **Grafana panel** (timeline + multiview grid modes, two-way
+  shared-crosshair sync with other panels, drag-zoom drives the dashboard
+  time range). Ships with built-in demo data — drop it on a dashboard and
+  it works with zero infrastructure.
+- `web/app.html` — **standalone app** with the chrome Grafana normally
+  provides: site filter, timeline/grid/both modes, fit/fill, a Grafana-style
+  time-range picker, drag-zoom, and within-page cursor sync (hover the timeline, the grid
+  follows). Ranges that end at now ("Last 1 hour") follow the clock, with a
+  LIVE/PAUSED toggle. State lives in the URL — views are shareable links.
+- `web/index.html` — **minimal embeddable viewer** (iframe-friendly;
+  accepts Grafana dashboard-link params).
+
+Backend reference implementation: `worker/` — a single-file Cloudflare
+Worker over R2. Deterministic cadence-aligned keys, immutable frame
+caching, per-step downsampling, per-site bearer auth for writes, and
+default-private reads (viewer token + signed expiring image URLs — see
+"Read auth" in `docs/API.md`). Designed to run a real fleet on the
+R2/Workers free tier — but the panel binds to the API contract, not to
+this backend; implement `docs/API.md` with anything.
+
+## Repository layout
+
+| Path                         | What                                                                            |
+| ---------------------------- | ------------------------------------------------------------------------------- |
+| `src/`                       | Grafana panel plugin source (create-plugin scaffold; `npm run build` → `dist/`) |
+| `web/`                       | standalone app, embeddable viewer, fleet simulator                              |
+| `worker/`                    | Cloudflare Worker + R2 reference backend                                        |
+| `demo/`                      | zero-setup Grafana demo (`docker compose -f demo/docker-compose.yml up`)        |
+| `grafana/`                   | provisioning for the Grafana demo                                               |
+| `docs/API.md`                | the frames API contract + curl examples                                         |
+| `docs/UPSTREAM-UPDATES.md`   | runbook for Dependabot, scaffold and security updates                           |
+| `docs/TIME_AXIS_PROPOSAL.md` | design record for the Grafana-matching time axis                                |
+
+## Core idea: cadence as a heartbeat
+
+Every source declares how often it promises a frame. Timestamps snap to
+that grid, storage keys become deterministic, and a _missing_ frame means
+_offline_ — rendered as a hatched gap at its true width in the timeline,
+and an offline tile in the multiview. Uploaders drop failed frames rather
+than queueing them: the gap **is** the signal.
+
+Cadence changes and declared pauses are first-class: the timeline renders
+each era on its own grid, so a source that slows for quiet hours isn't a
+wall of false gaps, and a deliberate pause (`POST /declare`) shows as
+neutral silence — while an unexpected crash still renders as offline.
+
+## Annotations
+
+The panel renders the dashboard's own annotations — from any annotation
+query on any data source (the built-in store, alerts, Loki, …). Point
+annotations become diamond markers, regions shade their time span, and an
+annotation tagged `source:<id>` pins to that source's strip while the rest
+share a lane above the axis. Hover a marker for the details. The panel is
+purely a renderer here: bring events from whatever system already has
+them.
+
+## Demo in two minutes (no cloud account)
+
+```bash
+cd worker && npm install
+npx wrangler dev --port 8787        # local Worker + local R2, dev tokens in .dev.vars
+```
+
+1. `http://localhost:8787/sim.html` — **Backfill last 60 min** (and
+   optionally live ticking): a simulated 5-source fleet uploads
+   canvas-rendered frames through the real `/upload` path, including an
+   outage and a hi-res variant.
+2. `http://localhost:8787/app.html` — the standalone app on that data.
+3. No backend at all? `web/app.html?backend=mock` renders built-in demo data.
+
+Upload real frames with curl: see [docs/API.md](docs/API.md).
+
+## Grafana demo
+
+```bash
+docker compose -f demo/docker-compose.yml up
+# → http://localhost:3300/d/visual-timeline-demo  (anonymous admin)
+```
+
+Works from a bare clone — a build stage compiles the panel before Grafana
+starts, so the first run takes a few minutes. Port 3300 taken? Prefix with
+`DEMO_PORT=3301`.
+
+Grafana 11 with the panel mounted and a provisioned dashboard: timeline,
+two multiview grids (follow-crosshair vs latest-only), and a random-walk
+panel to see the two-way crosshair sync. Panels run on built-in demo data;
+set each panel's **API URL** option to a backend for live frames.
+
+## Development
+
+- `npm run build` builds the panel (webpack, with the configuration in
+  `.config/`, which is managed by Grafana plugin tools — don't edit it).
+- `npm run server` starts the scaffold's dev Grafana on `:3000` (that's
+  separate from the `:3300` demo above); `npm run dev` rebuilds on change.
+- `npm run e2e` runs the Playwright suite against the dev Grafana.
+- `npm run test:ci` runs the unit tests, `npm run typecheck` and
+  `npm run lint` check types and style.
+- The fleet simulator (`worker/` + `sim.html`) gives you realistic data with
+  no hardware.
+- `cd worker && npm test` runs the reference worker's contract tests (no
+  Cloudflare account needed).
+- The standalone app and embeddable viewer (`web/`) load `web/vt-core.js`,
+  which is built from `src/core.ts` with `npm run build:web`. Commit the
+  rebuilt file when you change `src/core.ts` (the `project-checks` workflow fails on drift).
+- Changes to `src/plugin.json` need a restart of the Grafana server.
+
+## Upstream updates
+
+Taking in Dependabot, scaffold and security updates has its own runbook:
+[docs/UPSTREAM-UPDATES.md](docs/UPSTREAM-UPDATES.md).
+
+## Releasing
+
+Releases are cut from tags. Add a dated entry for the new version to
+[CHANGELOG.md](CHANGELOG.md), bump `version` in `package.json`, and push a tag
+named `v<version>` (for example `v0.9.23`). The `Release` workflow
+(`.github/workflows/release.yml`) builds the plugin with
+`grafana/plugin-actions/build-plugin` and packages it for the GitHub
+release.

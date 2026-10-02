@@ -270,7 +270,7 @@ commit before calling the job done.
 
 Update this section whenever an ignore, pin or token changes.
 
-As of **2026-10-01**:
+As of **2026-10-02**:
 
 | What | State | When to revisit |
 |---|---|---|
@@ -279,6 +279,7 @@ As of **2026-10-01**:
 | Ignore: `typescript` 7.x | blocked by `typescript-eslint`, which requires <6.1 | when `typescript-eslint` supports 7 |
 | Ignore: `@grafana/eslint-config` 10.x | its exports changed; only the scaffold migration updates `.config/eslint.config.mjs` | automatic once the 7.12 scaffold PR merges |
 | Pin: `overrides.js-cookie ^3.0.6` | floor under a dev-only high (GHSA-qjx8-664m-686j) reached through `@grafana/data` → `react-use` / `@react-hookz/web`, whose `^3.0.0` range still allows the vulnerable ≤3.0.5 | drop once they require ≥3.0.6 themselves |
+| Pin: `overrides.basic-ftp ^6.2.1` | floor under a dev-only high (GHSA-c475-qrg2-pj4r) reached through `@grafana/sign-plugin` → `proxy-agent` → `pac-proxy-agent` → `get-uri`, whose `^5.3.1` range has no fixed release; get-uri's FTP calls (`access`, `lastMod`, `list`, `downloadTo`, `close`) are unchanged in 6.x | drop once `get-uri` requires ≥6.2.1 itself |
 | React | 19 (dev only), since 2026-09-25 | — |
 | `GH_PAT_TOKEN` | expires **2026-10-25** | regenerate before then; `pat-expiry.yml` opens an issue 14 days ahead |
 | Open advisories | 4 moderate (react-router chain), none high | they need an `@grafana` major, so leave them |

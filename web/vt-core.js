@@ -21,16 +21,92 @@ var VTCore = (() => {
   // src/core.ts
   var core_exports = {};
   __export(core_exports, {
+    KTL_VAR_DEFAULTS: () => KTL_VAR_DEFAULTS,
+    PAUSE_CLASSES: () => PAUSE_CLASSES,
+    TICK_STEPS: () => TICK_STEPS,
+    alignedStart: () => alignedStart,
+    axisTicks: () => axisTicks,
+    buildSourceModel: () => buildSourceModel,
+    erasFor: () => erasFor,
+    esc: () => esc,
+    ghostFor: () => ghostFor,
+    headTitle: () => headTitle,
     imageUrlWithKey: () => imageUrlWithKey,
+    matchesTags: () => matchesTags,
+    missedHeartbeat: () => missedHeartbeat,
     mountGrid: () => mountGrid,
-    mountTimeline: () => mountTimeline
+    mountTimeline: () => mountTimeline,
+    nextTick: () => nextTick,
+    parseTagFilter: () => parseTagFilter,
+    pauseInfo: () => pauseInfo,
+    slotClass: () => slotClass,
+    tagChips: () => tagChips,
+    tickFormat: () => tickFormat
   });
   var STYLE_ID = "ktl-styles";
+  var KTL_VAR_DEFAULTS = {
+    "--ktl-bg": "#181b1f",
+    "--ktl-bg2": "#22262b",
+    "--ktl-border": "#2c3235",
+    "--ktl-text": "#ccccdc",
+    "--ktl-dim": "#7b8087",
+    "--ktl-muted": "#9aa0a6",
+    "--ktl-strong": "#fff",
+    "--ktl-chip-text": "#b9bec6",
+    "--ktl-link": "#6e9fff",
+    "--ktl-accent": "#f2cc0c",
+    "--ktl-sel": "rgba(242,204,12,.14)",
+    "--ktl-live": "#73bf69",
+    "--ktl-off": "#f2495c",
+    "--ktl-axis-grid": "rgba(240,250,255,.09)",
+    "--ktl-media": "#111",
+    "--ktl-mag-bg": "#000",
+    "--ktl-float-bg": "#0b0c0e",
+    "--ktl-divider": "#1d2024",
+    "--ktl-shadow": "0 8px 32px rgba(0,0,0,.7)",
+    "--ktl-pending": "#232830",
+    "--ktl-scrim": "rgba(0,0,0,.6)",
+    "--ktl-gap-a": "#1b1215",
+    "--ktl-gap-b": "#2a171b",
+    "--ktl-pause-a": "#15171a",
+    "--ktl-pause-b": "#232830",
+    "--ktl-tpause-a": "#17191c",
+    "--ktl-tpause-b": "#1d2024",
+    "--ktl-sleep-a": "#182a4e",
+    "--ktl-sleep-b": "#223c6e",
+    "--ktl-sleep": "#8fb0e8",
+    "--ktl-down-a": "#28204a",
+    "--ktl-down-b": "#372c66",
+    "--ktl-down": "#a897e0",
+    "--ktl-stopped-a": "#123832",
+    "--ktl-stopped-b": "#1a4c44",
+    "--ktl-stopped": "#6fc4b4",
+    "--ktl-unint-a": "#4a350e",
+    "--ktl-unint-b": "#614614",
+    "--ktl-unint": "#e8b155",
+    "--ktl-ann": "#5794F2",
+    "--ktl-ann-edge": "#0b0c0e",
+    "--ktl-ann-region": "rgba(87,148,242,.12)",
+    "--ktl-ann-region-edge": "rgba(87,148,242,.55)"
+  };
+  var KTL_VARS = Object.keys(KTL_VAR_DEFAULTS);
+  function copyVars(from, to) {
+    if (!from || !from.isConnected) {
+      return;
+    }
+    const cs = getComputedStyle(from);
+    for (const v of KTL_VARS) {
+      const val = cs.getPropertyValue(v).trim();
+      if (val) {
+        to.style.setProperty(v, val);
+      } else {
+        to.style.removeProperty(v);
+      }
+    }
+  }
   var CSS = `
+.ktl-root, .ktl-ann-tip, .ktl-pop { ${KTL_VARS.map((v) => v + ":" + KTL_VAR_DEFAULTS[v] + ";").join(" ")} }
 .ktl { display:flex; flex-direction:column; width:100%; height:100%; overflow:hidden;
-       --ktl-bg:#181b1f; --ktl-bg2:#22262b; --ktl-border:#2c3235; --ktl-text:#ccccdc;
-       --ktl-dim:#7b8087; --ktl-accent:#f2cc0c; --ktl-live:#73bf69; --ktl-off:#f2495c;
-       --ktl-axis-grid:rgba(240,250,255,.09);
        color:var(--ktl-text); font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif; }
 .ktl * { box-sizing:border-box; margin:0; padding:0; }
 .ktl .cards { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:6px; overflow-y:auto; }
@@ -53,19 +129,19 @@ var VTCore = (() => {
 .ktl .card.inline-head .card-head .inline-brk, .ktl .tile.inline-head .t-head .inline-brk {
   display:block; width:100%; height:0; }
 .ktl .card.inline-head .card-head .nm, .ktl .tile.inline-head .t-head .nm {
-  background:#181b1f; border-radius:9px; padding:0 8px; }
+  background:var(--ktl-bg); border-radius:9px; padding:0 8px; }
 .ktl .card.inline-head .card-head .st, .ktl .tile.inline-head .t-head .st {
-  background:#181b1f; color:#b9bec6; }
-.ktl .card.inline-head .card-head .ft:not(:empty) { background:#181b1f; border-radius:9px; padding:0 8px; }
+  background:var(--ktl-bg); color:var(--ktl-chip-text); }
+.ktl .card.inline-head .card-head .ft:not(:empty) { background:var(--ktl-bg); border-radius:9px; padding:0 8px; }
 /* gradient backing: strips fade left-to-right (header hugs the left
    edge); tiles fade top-to-bottom (the header spans the tile's top) */
 .ktl .card.inline-grad .strip::before {
   content:""; position:absolute; top:0; bottom:0; left:0; width:42%;
-  background:linear-gradient(90deg, rgba(0,0,0,.6), rgba(0,0,0,0));
+  background:linear-gradient(90deg, var(--ktl-scrim), rgba(0,0,0,0));
   z-index:1; pointer-events:none; }
 .ktl .tile.inline-grad .t-img::before {
   content:""; position:absolute; top:0; left:0; right:0; height:48%;
-  background:linear-gradient(180deg, rgba(0,0,0,.6), rgba(0,0,0,0));
+  background:linear-gradient(180deg, var(--ktl-scrim), rgba(0,0,0,0));
   z-index:1; pointer-events:none; }
 .ktl.strip-hover .card:not(.hovered) { opacity:.45; }
 .ktl .card-head { display:flex; align-items:center; gap:8px; padding:2px 8px; flex:0 0 auto; color:var(--ktl-dim);
@@ -83,7 +159,7 @@ var VTCore = (() => {
 .ktl .card-head .ft.stale { color:var(--ktl-off); }
 .ktl .card-head .cad { margin-left:auto; font-size:10px; color:var(--ktl-dim); }
 .ktl .strip { flex:1 1 auto; min-height:0; position:relative; display:flex; align-items:stretch;
-              cursor:crosshair; background:#111; }
+              cursor:crosshair; background:var(--ktl-media); }
 .ktl .slot { flex:1 1 0; min-width:0; position:relative; overflow:hidden; }
 /* Frame delineation tints the FRAME: overflow clips the img to the padding
    box, so a border column would expose the #111 strip bg underneath and
@@ -95,16 +171,16 @@ var VTCore = (() => {
   width:1px; background:rgba(0,0,0,.05); box-shadow:1px 0 0 rgba(255,255,255,.12);
   pointer-events:none; z-index:1; }
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
-.ktl .slot.gap { background:repeating-linear-gradient(45deg,#1b1215,#1b1215 5px,#2a171b 5px,#2a171b 10px); }
-.ktl .slot.paused { background:repeating-linear-gradient(45deg,#15171a,#15171a 7px,#232830 7px,#232830 14px); }
+.ktl .slot.gap { background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px); }
+.ktl .slot.paused { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 7px,var(--ktl-pause-b) 7px,var(--ktl-pause-b) 14px); }
 /* pause REASONS: one color grammar with the dashboards \u2014 planned = distinct
  * cool hues (indigo = screen asleep, violet-slate = system down, teal = app
  * stopped), unintended = amber, undeclared silence stays the red .gap.
  * Reason classes replace the hatch; .unintended overrides them all. */
-.ktl .slot.paused.r-screen-sleep { background:repeating-linear-gradient(45deg,#182a4e,#182a4e 7px,#223c6e 7px,#223c6e 14px); }
-.ktl .slot.paused.r-system-down { background:repeating-linear-gradient(45deg,#28204a,#28204a 7px,#372c66 7px,#372c66 14px); }
-.ktl .slot.paused.r-app-stopped { background:repeating-linear-gradient(45deg,#123832,#123832 7px,#1a4c44 7px,#1a4c44 14px); }
-.ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,#4a350e,#4a350e 7px,#614614 7px,#614614 14px); }
+.ktl .slot.paused.r-screen-sleep { background:repeating-linear-gradient(45deg,var(--ktl-sleep-a),var(--ktl-sleep-a) 7px,var(--ktl-sleep-b) 7px,var(--ktl-sleep-b) 14px); }
+.ktl .slot.paused.r-system-down { background:repeating-linear-gradient(45deg,var(--ktl-down-a),var(--ktl-down-a) 7px,var(--ktl-down-b) 7px,var(--ktl-down-b) 14px); }
+.ktl .slot.paused.r-app-stopped { background:repeating-linear-gradient(45deg,var(--ktl-stopped-a),var(--ktl-stopped-a) 7px,var(--ktl-stopped-b) 7px,var(--ktl-stopped-b) 14px); }
+.ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,var(--ktl-unint-a),var(--ktl-unint-a) 7px,var(--ktl-unint-b) 7px,var(--ktl-unint-b) 14px); }
 /* hatch continuity: each slot is its own element, so a per-element gradient
  * restarts at every slot edge \u2014 a run of narrow slots shows only the first
  * stripe color and reads as a SOLID block. buildCard aligns each empty
@@ -116,15 +192,15 @@ var VTCore = (() => {
 .ktl .slot .band-label { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   font-size:10px; font-weight:700; letter-spacing:.06em; color:var(--ktl-dim);
   white-space:nowrap; overflow:hidden; pointer-events:none; }
-.ktl .slot.r-screen-sleep .band-label { color:#8fb0e8; }
-.ktl .slot.r-system-down .band-label { color:#a897e0; }
-.ktl .slot.r-app-stopped .band-label { color:#6fc4b4; }
-.ktl .slot.unintended .band-label { color:#e8b155; }
+.ktl .slot.r-screen-sleep .band-label { color:var(--ktl-sleep); }
+.ktl .slot.r-system-down .band-label { color:var(--ktl-down); }
+.ktl .slot.r-app-stopped .band-label { color:var(--ktl-stopped); }
+.ktl .slot.unintended .band-label { color:var(--ktl-unint); }
 /* the ONE pending slot (its tick passed, frame in flight) pulses gently \u2014
  * in limbo, not offline. Everything further ahead is one inert .beyond
  * filler: the future is unknown, so it gets no shading at all. */
 .ktl .slot.future { background:transparent; position:relative; }
-.ktl .slot.future::before { content:""; position:absolute; inset:0; background:#232830;
+.ktl .slot.future::before { content:""; position:absolute; inset:0; background:var(--ktl-pending);
   animation:ktl-limbo 2.2s ease-in-out infinite; z-index:1; }
 @keyframes ktl-limbo { 0%,100% { opacity:.15 } 50% { opacity:.55 } }
 /* ...carrying the last frame as a "last known" ghost under that pulse: a
@@ -149,30 +225,30 @@ var VTCore = (() => {
                  color:var(--ktl-off); font-size:12px; text-align:center; padding:14px; }
 .ktl .mag.future { border-color:var(--ktl-dim); }
 .ktl .mag.future img { display:none; }
-.ktl .card-head .ft.paused.r-screen-sleep, .ktl .tile.paused.r-screen-sleep .t-off { color:#8fb0e8; }
-.ktl .card-head .ft.paused.r-system-down, .ktl .tile.paused.r-system-down .t-off { color:#a897e0; }
-.ktl .card-head .ft.paused.r-app-stopped, .ktl .tile.paused.r-app-stopped .t-off { color:#6fc4b4; }
-.ktl .card-head .ft.paused.unintended, .ktl .tile.paused.unintended .t-off { color:#e8b155; }
+.ktl .card-head .ft.paused.r-screen-sleep, .ktl .tile.paused.r-screen-sleep .t-off { color:var(--ktl-sleep); }
+.ktl .card-head .ft.paused.r-system-down, .ktl .tile.paused.r-system-down .t-off { color:var(--ktl-down); }
+.ktl .card-head .ft.paused.r-app-stopped, .ktl .tile.paused.r-app-stopped .t-off { color:var(--ktl-stopped); }
+.ktl .card-head .ft.paused.unintended, .ktl .tile.paused.unintended .t-off { color:var(--ktl-unint); }
 .ktl .mag.paused { border-color:var(--ktl-dim); }
 .ktl .mag.paused img { display:none; }
 .ktl .card-head .ft.paused { color:var(--ktl-dim); }
 .ktl .tile.paused { border-color:var(--ktl-dim); }
 .ktl .tile.paused .t-off { display:flex; color:var(--ktl-dim);
-  background:repeating-linear-gradient(45deg,#17191c,#17191c 7px,#1d2024 7px,#1d2024 14px); }
+  background:repeating-linear-gradient(45deg,var(--ktl-tpause-a),var(--ktl-tpause-a) 7px,var(--ktl-tpause-b) 7px,var(--ktl-tpause-b) 14px); }
 .ktl .tile.paused img, .ktl .tile.paused .t-ts { display:none; }
 .ktl .xh { position:absolute; top:0; bottom:0; width:1px; background:var(--ktl-accent); opacity:.85;
            pointer-events:none; z-index:4; }
-.ktl .sel { position:absolute; top:0; bottom:0; display:none; background:rgba(242,204,12,.14);
+.ktl .sel { position:absolute; top:0; bottom:0; display:none; background:var(--ktl-sel);
             border-left:1px solid var(--ktl-accent); border-right:1px solid var(--ktl-accent);
             pointer-events:none; z-index:2; }
 .ktl .mag { position:absolute; top:0; height:100%; aspect-ratio:16/9; max-width:40%;
             border:2px solid var(--ktl-accent); border-radius:2px; overflow:hidden; pointer-events:none;
-            z-index:3; background:#000; box-shadow:0 0 12px rgba(0,0,0,.8); }
-.ktl .mag img { width:100%; height:100%; object-fit:contain; display:block; background:#000; }
+            z-index:3; background:var(--ktl-mag-bg); box-shadow:0 0 12px rgba(0,0,0,.8); }
+.ktl .mag img { width:100%; height:100%; object-fit:contain; display:block; background:var(--ktl-mag-bg); }
 .ktl.fill .mag img { object-fit:cover; }
 .ktl.fill .tile .t-img img { object-fit:cover; }
 .ktl .mag.gap { border-color:var(--ktl-off);
-                background:repeating-linear-gradient(45deg,#1b1215,#1b1215 5px,#2a171b 5px,#2a171b 10px); }
+                background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px), var(--ktl-mag-bg); }
 .ktl .mag.gap img { display:none; }
 .ktl .mag .cap { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.6); color:#fff;
                  text-align:center; font-size:10px; font-variant-numeric:tabular-nums; padding:1px 0; }
@@ -182,29 +258,29 @@ var VTCore = (() => {
 .ktl .card-lane .ann { top:50%; }
 .ktl .card-lane .ann-region { top:2px; bottom:2px; }
 .ktl .ann { position:absolute; width:7px; height:7px; transform:translate(-50%,-50%) rotate(45deg);
-            background:#5794F2; border:1px solid #0b0c0e; cursor:pointer; z-index:6; }
+            background:var(--ktl-ann); border:1px solid var(--ktl-ann-edge); cursor:pointer; z-index:6; }
 .ktl .ann.multi { width:11px; height:11px; }
 .ktl .ann .n { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   transform:rotate(-45deg); font:700 8px/1 -apple-system,"Segoe UI",Roboto,sans-serif; color:#fff;
   text-shadow:0 0 2px #000,0 0 2px #000; pointer-events:none; }
 .ktl .ann-lane .ann { top:50%; }
 .ktl .strip .ann { top:auto; bottom:0; transform:translate(-50%,50%) rotate(45deg); }
-.ktl .ann-region { position:absolute; top:0; bottom:0; background:rgba(87,148,242,.12);
-                   border-left:1px dashed rgba(87,148,242,.55); border-right:1px dashed rgba(87,148,242,.55);
+.ktl .ann-region { position:absolute; top:0; bottom:0; background:var(--ktl-ann-region);
+                   border-left:1px dashed var(--ktl-ann-region-edge); border-right:1px dashed var(--ktl-ann-region-edge);
                    pointer-events:none; z-index:1; }
 .ktl .ann-lane .ann-region { top:3px; bottom:3px; }
-.ktl-ann-tip { position:fixed; z-index:1070; background:#0b0c0e; border:1px solid #2c3235; border-radius:4px;
-               padding:6px 9px; max-width:340px; color:#ccccdc; box-shadow:0 8px 32px rgba(0,0,0,.7);
+.ktl-ann-tip { position:fixed; z-index:1070; background:var(--ktl-float-bg); border:1px solid var(--ktl-border); border-radius:4px;
+               padding:6px 9px; max-width:340px; color:var(--ktl-text); box-shadow:var(--ktl-shadow);
                font:11px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; pointer-events:none; }
-.ktl-ann-tip.pinned { pointer-events:auto; border-color:#f2cc0c; user-select:text; }
-.ktl-ann-tip a { color:#6e9fff; text-decoration:underline; }
+.ktl-ann-tip.pinned { pointer-events:auto; border-color:var(--ktl-accent); user-select:text; }
+.ktl-ann-tip a { color:var(--ktl-link); text-decoration:underline; }
 .ktl-ann-tip .at { display:flex; gap:8px; align-items:baseline; }
-.ktl-ann-tip .at b { color:#fff; }
-.ktl-ann-tip .at .tm { color:#7b8087; font-variant-numeric:tabular-nums; margin-left:auto; }
-.ktl-ann-tip .ax { color:#9aa0a6; white-space:pre-wrap; }
+.ktl-ann-tip .at b { color:var(--ktl-strong); }
+.ktl-ann-tip .at .tm { color:var(--ktl-dim); font-variant-numeric:tabular-nums; margin-left:auto; }
+.ktl-ann-tip .ax { color:var(--ktl-muted); white-space:pre-wrap; }
 .ktl-ann-tip .ag { display:flex; gap:4px; flex-wrap:wrap; margin-top:2px; }
-.ktl-ann-tip .ag span { font-size:10px; color:#7b8087; border:1px solid #2c3235; border-radius:8px; padding:0 6px; }
-.ktl-ann-tip .item + .item { border-top:1px solid #1d2024; margin-top:5px; padding-top:5px; }
+.ktl-ann-tip .ag span { font-size:10px; color:var(--ktl-dim); border:1px solid var(--ktl-border); border-radius:8px; padding:0 6px; }
+.ktl-ann-tip .item + .item { border-top:1px solid var(--ktl-divider); margin-top:5px; padding-top:5px; }
 .ktl .axis { flex:0 0 24px; position:relative; margin:4px 1px 0; overflow:hidden; }
 .ktl .axis .base { position:absolute; top:0; left:0; right:0; height:1px; background:var(--ktl-axis-grid); }
 .ktl .tick { position:absolute; top:0; transform:translateX(-50%); color:var(--ktl-text); font-size:12px;
@@ -227,21 +303,21 @@ var VTCore = (() => {
                            flex-wrap:wrap; max-height:17px; align-content:flex-start; }
 .ktl .tile .t-head .tags .st { flex:0 0 auto; }
 .ktl .tile .t-head .nm { font-weight:600; color:var(--ktl-text); }
-.ktl .tile .t-img { flex:1 1 auto; min-height:0; position:relative; background:#111; }
+.ktl .tile .t-img { flex:1 1 auto; min-height:0; position:relative; background:var(--ktl-media); }
 .ktl .tile .t-img img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
 .ktl .tile .t-ts { position:absolute; right:4px; bottom:4px; background:rgba(0,0,0,.65); color:#fff;
                    padding:0 5px; border-radius:2px; font-size:10px; font-variant-numeric:tabular-nums; z-index:1; }
 .ktl .tile .t-off { display:none; position:absolute; inset:0; align-items:center; justify-content:center;
                     flex-direction:column; gap:2px; color:var(--ktl-off); font-weight:700; text-align:center;
-                    background:repeating-linear-gradient(45deg,#1b1215,#1b1215 5px,#2a171b 5px,#2a171b 10px); }
+                    background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px); }
 .ktl .tile.offline { border-color:var(--ktl-off); }
 .ktl .tile.offline .t-off { display:flex; }
 .ktl .tile.offline img, .ktl .tile.offline .t-ts { display:none; }
-.ktl-pop { position:fixed; z-index:1060; background:#0b0c0e; border:1px solid var(--ktl-accent, #f2cc0c);
+.ktl-pop { position:fixed; z-index:1060; background:var(--ktl-float-bg); border:1px solid var(--ktl-accent);
            border-radius:4px; padding:4px; cursor:zoom-out;
-           box-shadow:0 8px 32px rgba(0,0,0,.7); }
+           box-shadow:var(--ktl-shadow); }
 .ktl-pop img { display:block; max-width:min(560px, 50vw); max-height:55vh; border-radius:2px; }
-.ktl-pop .cap { text-align:center; color:#ccccdc; font-size:11px; padding:3px 0 0;
+.ktl-pop .cap { text-align:center; color:var(--ktl-text); font-size:11px; padding:3px 0 0;
                 font-variant-numeric:tabular-nums; }`;
   function injectStyles() {
     const existing = document.getElementById(STYLE_ID);
@@ -427,7 +503,8 @@ var VTCore = (() => {
         }
       }
     }
-    function render(items, x, y) {
+    function render(items, x, y, src) {
+      copyVars(src, el);
       el.textContent = "";
       for (const a of items) {
         const item = document.createElement("div");
@@ -472,15 +549,15 @@ var VTCore = (() => {
       el.style.display = "none";
     }
     return {
-      show(items, x, y) {
+      show(items, x, y, src) {
         if (!annTipPinned) {
-          render(items, x, y);
+          render(items, x, y, src);
         }
       },
-      pin(items, x, y) {
+      pin(items, x, y, src) {
         annTipPinned = true;
         el.classList.add("pinned");
-        render(items, x, y);
+        render(items, x, y, src);
       },
       hide() {
         if (!annTipPinned) {
@@ -595,7 +672,7 @@ var VTCore = (() => {
     const label = r === "screen-sleep" ? unintended ? "SCREEN DARK (UNEXPECTED)" : "SCREEN ASLEEP" : r === "system-down" ? "SYSTEM DOWN (PLANNED)" : r === "app-stopped" ? "APP STOPPED" : r === "quiet" ? "QUIET HOURS" : "PAUSED";
     const classes = ["paused"];
     if (r) {
-      classes.push("r-" + r);
+      classes.push("r-" + String(r).replace(/[^\w-]/g, ""));
     }
     if (unintended) {
       classes.push("unintended");
@@ -713,11 +790,14 @@ var VTCore = (() => {
     }
     return true;
   }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
+  }
   function tagChips(decl) {
     if (!decl.tags) {
       return "";
     }
-    const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st">' + k + ":" + v + "</span>").join("");
+    const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st">' + esc(k) + ":" + esc(v) + "</span>").join("");
     return '<span class="tags">' + chips + "</span>";
   }
   function headTitle(decl) {
@@ -784,6 +864,17 @@ var VTCore = (() => {
     }
     return d;
   }
+  function axisTicks(from, to, stepMs) {
+    const out = [];
+    let d = alignedStart(from, stepMs);
+    while (+d < from) {
+      d = nextTick(d, stepMs);
+    }
+    for (; +d <= to; d = nextTick(d, stepMs)) {
+      out.push(+d);
+    }
+    return out;
+  }
   function tickFormat(stepMs) {
     if (stepMs < 36e5) {
       return fmtShort;
@@ -832,6 +923,12 @@ var VTCore = (() => {
     }
     return null;
   }
+  function slotClass(sl) {
+    return sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? "" : sl.future ? " future" : " gap";
+  }
+  function missedHeartbeat(sl, now) {
+    return sl.future && !sl.frame && sl.ts + sl.step < now;
+  }
   function dressGhost(slots, sl) {
     if (!sl.el) {
       return;
@@ -854,7 +951,7 @@ var VTCore = (() => {
       img.src = g.url;
     }
   }
-  function makePreview() {
+  function makePreview(root) {
     if (popState.retireTimer) {
       clearTimeout(popState.retireTimer);
       popState.retireTimer = null;
@@ -866,6 +963,7 @@ var VTCore = (() => {
         closePreview();
         const el = document.createElement("div");
         el.className = "ktl-pop" + (expectedTs ? " ghost" : "");
+        copyVars(root, el);
         el.innerHTML = '<img alt="frame"><div class="cap"></div>';
         const img = el.querySelector("img");
         el.querySelector(".cap").textContent = site + " / " + kiosk + " \u2014 " + (expectedTs ? "expected " + fmtShort(expectedTs) + " \xB7 last frame " + fmtTime(frame.ts) : fmtTime(frame.ts));
@@ -906,6 +1004,7 @@ var VTCore = (() => {
     const wrap = document.createElement("div");
     wrap.className = "ktl";
     root.style.position = "relative";
+    root.classList.add("ktl-root");
     wrap.style.position = "absolute";
     wrap.style.inset = "0";
     wrap.style.visibility = "hidden";
@@ -956,7 +1055,7 @@ var VTCore = (() => {
     let kiosks = [], cards = {}, cursorT = restoreCursor(), destroyed = false, pollTimer = null;
     const axisTickList = [];
     let suppressClick = false;
-    const pv = makePreview();
+    const pv = makePreview(root);
     function showSelection(fa, fb) {
       const a = Math.min(fa, fb), b = Math.max(fa, fb);
       for (const k of kiosks) {
@@ -1012,7 +1111,7 @@ var VTCore = (() => {
       card.className = "card" + (inline ? " inline-head" : "") + (cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
       const la = model.lastActive;
       const cad = cfg.showDetails && la ? '<span class="cad">\u23F1 ' + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + "</span>" : "";
-      card.innerHTML = '<div class="card-head" title="' + headTitle(decl) + '"><span class="nm">' + kiosk + '</span><span class="inline-brk"></span><span class="st">' + decl.site + (decl.location ? " \xB7 " + decl.location : "") + "</span>" + tagChips(decl) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
+      card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(kiosk) + '</span><span class="inline-brk"></span><span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
       const strip = card.querySelector(".strip");
       if (hostWidth / model.slots.length >= 12) {
         strip.classList.add("sep");
@@ -1020,7 +1119,7 @@ var VTCore = (() => {
       const slots = model.slots;
       for (const sl of slots) {
         const el = document.createElement("div");
-        el.className = "slot" + (sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? "" : sl.future ? " future" : " gap");
+        el.className = "slot" + slotClass(sl);
         if (sl.paused) {
           el.title = pauseInfo(sl).label.toLowerCase();
         }
@@ -1141,12 +1240,7 @@ var VTCore = (() => {
       const fmt = tickFormat(tickStep);
       axis.querySelectorAll(".tick").forEach((t) => t.remove());
       axisTickList.length = 0;
-      let d = alignedStart(P.from, tickStep);
-      while (+d < P.from) {
-        d = nextTick(d, tickStep);
-      }
-      for (; +d <= P.to; d = nextTick(d, tickStep)) {
-        const ts = +d;
+      for (const ts of axisTicks(P.from, P.to, tickStep)) {
         axisTickList.push(ts);
         const el = document.createElement("div");
         el.className = "tick";
@@ -1223,13 +1317,13 @@ var VTCore = (() => {
           }
           el.addEventListener("mouseenter", () => {
             const r = el.getBoundingClientRect();
-            tip.show(g, r.left + r.width / 2, r.top);
+            tip.show(g, r.left + r.width / 2, r.top, el);
           });
           el.addEventListener("mouseleave", () => tip.hide());
           el.addEventListener("click", (e) => {
             e.stopPropagation();
             const r = el.getBoundingClientRect();
-            tip.pin(g, r.left + r.width / 2, r.top);
+            tip.pin(g, r.left + r.width / 2, r.top, el);
           });
           host.appendChild(el);
         }
@@ -1506,7 +1600,7 @@ var VTCore = (() => {
             }
             const overdue = Date.now();
             for (const sl of c.model.slots) {
-              if (sl.future && !sl.frame && sl.ts + sl.step < overdue) {
+              if (missedHeartbeat(sl, overdue)) {
                 sl.future = false;
                 if (sl.el) {
                   sl.el.classList.remove("future");
@@ -1553,12 +1647,12 @@ var VTCore = (() => {
     wrap.innerHTML = '<div class="grid"></div>';
     const q = (sel) => wrap.querySelector(sel);
     let kiosks = [], tiles = {}, destroyed = false, pollTimer = null, shownT = null;
-    const pv = makePreview();
+    const pv = makePreview(root);
     function buildTile(decl, model) {
       const el = document.createElement("div");
       const inline = cfg.headerMode === "inline" || cfg.headerMode === "inline-gradient";
       el.className = "tile" + (inline ? " inline-head" : "") + (cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
-      el.innerHTML = '<div class="t-head" title="' + headTitle(decl) + '"><span class="nm">' + decl.id + '</span><span class="inline-brk"></span><span class="st">' + decl.site + (decl.location ? " \xB7 " + decl.location : "") + "</span>" + tagChips(decl) + '</div><div class="t-img"><img alt="' + decl.id + '"><span class="t-ts"></span><div class="t-off"></div></div>';
+      el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(decl.id) + '</span><span class="inline-brk"></span><span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
       const rec = {
         decl,
         model,

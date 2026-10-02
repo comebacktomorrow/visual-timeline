@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+- Fix HTML injection (#59): source id, site, location and tags from the
+  registry API were spliced unescaped into the card and grid-tile headers
+  (including the `title` and `alt` attributes), so a hostile or malformed
+  declaration could inject markup. They are now escaped. The standalone
+  app's site chips are built from DOM nodes for the same reason.
+- Docs: README is now written for Grafana catalog readers: what the panel
+  shows, the built-in demo data, connecting a backend, the panel options and
+  a note on the viewer token. All its links and images are absolute URLs, as
+  the plugin validator requires (it flagged the relative link to
+  `docs/UPSTREAM-UPDATES.md`). Repository layout, dev setup, testing and the
+  upstream-update pointer moved to the new `CONTRIBUTING.md`.
+- Unit tests for the timeline's pure logic, as a safety net for splitting
+  `src/core.ts`: era construction from source history, pause labels, how
+  slots become frames, offline gaps, pending slots (with the one-step
+  grace and the "last known" ghost) or pause bands, axis tick alignment
+  and labels across DST changes and in half-hour zones, and tag
+  filtering. The tests pin current behaviour, including a few quirks
+  marked `NOTE: current behaviour`. To make this testable, `core.ts`
+  exports these functions, and three small pieces move out of
+  closures unchanged: `slotClass` (a slot's state class), `missedHeartbeat`
+  (pending → offline in the live poll) and `axisTicks` (the tick list the
+  axis draws). No behaviour changes.
+- The panel follows Grafana's light and dark themes (#61). Its palette
+  used to be hard-coded dark, so on a light dashboard it showed as a dark
+  block. Surfaces, text, borders and the live/offline/accent colours now
+  come from the active theme and update when the theme is switched. On a
+  light theme the offline hatching, pause bands and their reason colours,
+  the pending-slot pulse and the inline header's gradient are derived
+  from the light theme's own colours. The annotation tooltip and the
+  click-in preview follow the panel that opened them. On a dark theme the
+  panel looks as before. The standalone app and the embed keep their
+  dark palette. A page that hosts the core can restyle it by setting
+  the `--ktl-*` custom properties on the element it mounts into.
+
 ## 0.9.23 (2026-10-01)
 
 - Standalone app: the time picker's "Recently used" list is built from

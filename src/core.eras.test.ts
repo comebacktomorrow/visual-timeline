@@ -1,0 +1,199 @@
+import { erasFor, pauseInfo, PAUSE_CLASSES } from './core';
+
+/* These pin the CURRENT behaviour of src/core.ts as a safety net for the
+ * split in #64. A test marked "NOTE: current behaviour" documents something
+ * that looks wrong; change it only together with a deliberate fix. */
+
+const MIN = 60e3;
+const DAY = 864e5;
+const T0 = Date.UTC(2026, 6, 1); // 2026-07-01T00:00Z, a multiple of every cadence used here
+const P = { from: T0, to: T0 + 60 * MIN };
+
+const era = (from: number, to: number, cadence: number, extra: Record<string, unknown> = {}) => ({
+  from,
+  to,
+  cadence,
+  paused: false,
+  reason: undefined,
+  intended: undefined,
+  ...extra,
+});
+
+describe('erasFor', () => {
+  test('no history: one era over the window at the declared cadence', () => {
+    expect(erasFor({ cadence: 30e3 }, P)).toEqual([era(P.from, P.to, 30e3)]);
+  });
+
+  test('no history and no cadence: defaults to 60 s', () => {
+    expect(erasFor({}, P)).toEqual([era(P.from, P.to, 60e3)]);
+  });
+
+  test('a cadence change mid-window splits the window into two eras', () => {
+    const decl = {
+      cadence: 240e3,
+      history: [
+        { since: T0 - DAY, variant: 'lo', cadence: 120e3 },
+        { since: T0 + 30 * MIN, variant: 'lo', cadence: 240e3 },
+      ],
+    };
+    expect(erasFor(decl, P)).toEqual([era(T0, T0 + 30 * MIN, 120e3), era(T0 + 30 * MIN, P.to, 240e3)]);
+  });
+
+  test('before the first history entry, the first entry’s cadence applies (not the current declared one)', () => {
+    const decl = { cadence: 240e3, history: [{ since: T0 + 30 * MIN, variant: 'lo', cadence: 120e3 }] };
+    // the leading era (before any recorded event) takes history[0].cadence
+    expect(erasFor(decl, P)).toEqual([era(T0, P.to, 120e3)]);
+  });
+
+  test('history is sorted by `since` and hi-variant entries are ignored', () => {
+    const decl = {
+      cadence: 60e3,
+      history: [
+        { since: T0 + 40 * MIN, variant: 'lo', cadence: 30e3 },
+        { since: T0 + 10 * MIN, variant: 'hi', cadence: 600e3 },
+        { since: T0 - DAY, variant: 'lo', cadence: 60e3 },
+        { since: T0 + 20 * MIN, cadence: 120e3 }, // no variant = lo
+      ],
+    };
+    expect(erasFor(decl, P)).toEqual([
+      era(T0, T0 + 20 * MIN, 60e3),
+      era(T0 + 20 * MIN, T0 + 40 * MIN, 120e3),
+      era(T0 + 40 * MIN, P.to, 30e3),
+    ]);
+  });
+
+  test('events outside the window only set the cadence in force; nothing outside is emitted', () => {
+    const decl = {
+      history: [
+        { since: T0 - 2 * DAY, variant: 'lo', cadence: 60e3 },
+        { since: T0 - DAY, variant: 'lo', cadence: 300e3 },
+        { since: P.to + MIN, variant: 'lo', cadence: 30e3 },
+      ],
+    };
+    expect(erasFor(decl, P)).toEqual([era(P.from, P.to, 300e3)]);
+  });
+
+  test('an event exactly at the window start replaces the leading era (no zero-width era)', () => {
+    const decl = { history: [{ since: P.from, variant: 'lo', cadence: 120e3 }], cadence: 30e3 };
+    expect(erasFor(decl, P)).toEqual([era(P.from, P.to, 120e3)]);
+  });
+
+  test('a re-declaration of the same cadence merges into the running era', () => {
+    const decl = {
+      history: [
+        { since: T0 - DAY, variant: 'lo', cadence: 60e3 },
+        { since: T0 + 20 * MIN, variant: 'lo', cadence: 60e3 },
+      ],
+    };
+    expect(erasFor(decl, P)).toEqual([era(P.from, P.to, 60e3)]);
+  });
+
+  test('a declared pause becomes a paused era; it keeps the cadence in force and carries reason/intent', () => {
+    const decl = {
+      history: [
+        { since: T0 - DAY, variant: 'lo', cadence: 60e3 },
+        { since: T0 + 20 * MIN, variant: 'lo', paused: true, reason: 'screen-sleep', intended: false },
+      ],
+    };
+    expect(erasFor(decl, P)).toEqual([
+      era(T0, T0 + 20 * MIN, 60e3),
+      era(T0 + 20 * MIN, P.to, 60e3, { paused: true, reason: 'screen-sleep', intended: false }),
+    ]);
+  });
+
+  test('a bounded pause: the next non-paused entry (resume) closes it, cadence-less resume keeps the pace', () => {
+    const decl = {
+      history: [
+        { since: T0 - DAY, variant: 'lo', cadence: 120e3 },
+        { since: T0 + 20 * MIN, variant: 'lo', paused: true, reason: 'quiet' },
+        { since: T0 + 35 * MIN, variant: 'lo' },
+      ],
+    };
+    expect(erasFor(decl, P)).toEqual([
+      era(T0, T0 + 20 * MIN, 120e3),
+      era(T0 + 20 * MIN, T0 + 35 * MIN, 120e3, { paused: true, reason: 'quiet' }),
+      era(T0 + 35 * MIN, P.to, 120e3),
+    ]);
+  });
+
+  test('two consecutive pauses merge only when reason and intent match', () => {
+    const same = {
+      history: [
+        { since: T0 + 10 * MIN, variant: 'lo', paused: true, reason: 'quiet' },
+        { since: T0 + 20 * MIN, variant: 'lo', paused: true, reason: 'quiet' },
+      ],
+      cadence: 60e3,
+    };
+    expect(erasFor(same, P)).toEqual([
+      era(T0, T0 + 10 * MIN, 60e3),
+      era(T0 + 10 * MIN, P.to, 60e3, { paused: true, reason: 'quiet' }),
+    ]);
+    const different = {
+      history: [
+        { since: T0 + 10 * MIN, variant: 'lo', paused: true, reason: 'quiet' },
+        { since: T0 + 20 * MIN, variant: 'lo', paused: true, reason: 'system-down' },
+      ],
+      cadence: 60e3,
+    };
+    expect(erasFor(different, P)).toEqual([
+      era(T0, T0 + 10 * MIN, 60e3),
+      era(T0 + 10 * MIN, T0 + 20 * MIN, 60e3, { paused: true, reason: 'quiet' }),
+      era(T0 + 20 * MIN, P.to, 60e3, { paused: true, reason: 'system-down' }),
+    ]);
+  });
+
+  test('a pause that started before the window covers the window start', () => {
+    const decl = { cadence: 60e3, history: [{ since: T0 - DAY, variant: 'lo', paused: true }] };
+    expect(erasFor(decl, P)).toEqual([era(P.from, P.to, 60e3, { paused: true })]);
+  });
+
+  test('an empty window still yields one (bare) era', () => {
+    const empty = { from: T0, to: T0 };
+    expect(erasFor({ cadence: 30e3 }, empty)).toEqual([{ from: T0, to: T0, cadence: 30e3, paused: false }]);
+  });
+});
+
+describe('pauseInfo', () => {
+  test.each([
+    [undefined, true, 'PAUSED', ['paused']],
+    ['quiet', true, 'QUIET HOURS', ['paused', 'r-quiet']],
+    ['screen-sleep', true, 'SCREEN ASLEEP', ['paused', 'r-screen-sleep']],
+    ['screen-sleep', false, 'SCREEN DARK (UNEXPECTED)', ['paused', 'r-screen-sleep', 'unintended']],
+    ['system-down', true, 'SYSTEM DOWN (PLANNED)', ['paused', 'r-system-down']],
+    ['app-stopped', true, 'APP STOPPED', ['paused', 'r-app-stopped']],
+    ['app-stopped', false, 'APP STOPPED', ['paused', 'r-app-stopped', 'unintended']],
+    [undefined, false, 'PAUSED', ['paused', 'unintended']],
+  ])('reason %p, intended %p → %p', (reason, intended, label, classes) => {
+    expect(pauseInfo({ paused: true, reason, intended })).toEqual({ label, classes });
+  });
+
+  test('only intended === false is unintended (undefined intent is not)', () => {
+    expect(pauseInfo({ reason: 'quiet' }).classes).not.toContain('unintended');
+    expect(pauseInfo({ reason: 'quiet', intended: null }).classes).not.toContain('unintended');
+  });
+
+  test('a missing slot reads as a plain pause', () => {
+    expect(pauseInfo(null)).toEqual({ label: 'PAUSED', classes: ['paused'] });
+    expect(pauseInfo(undefined)).toEqual({ label: 'PAUSED', classes: ['paused'] });
+  });
+
+  test('every class for a known reason is one the cursor knows how to clear', () => {
+    for (const reason of [undefined, 'quiet', 'screen-sleep', 'system-down', 'app-stopped']) {
+      for (const intended of [true, false]) {
+        for (const c of pauseInfo({ reason, intended }).classes) {
+          expect(PAUSE_CLASSES).toContain(c);
+        }
+      }
+    }
+  });
+
+  test('an unknown reason labels as PAUSED but still adds an r-<reason> class', () => {
+    // NOTE: current behaviour; looks wrong because setCursor clears the
+    // magnifier/header classes with PAUSE_CLASSES, which has no entry for an
+    // unknown reason — "r-maintenance" would stick after the cursor leaves
+    // the band.
+    const info = pauseInfo({ reason: 'maintenance' });
+    expect(info).toEqual({ label: 'PAUSED', classes: ['paused', 'r-maintenance'] });
+    expect(PAUSE_CLASSES).not.toContain('r-maintenance');
+  });
+});
