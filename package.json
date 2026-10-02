@@ -14,7 +14,7 @@
     "sign": "sign-plugin",
     "build:web": "esbuild src/core.ts --bundle --format=iife --global-name=VTCore --outfile=web/vt-core.js"
   },
-  "author": "Savvycocoa1919",
+  "author": "Xzibit",
   "license": "Apache-2.0",
   "devDependencies": {
     "@grafana/eslint-config": "^9.0.0",
