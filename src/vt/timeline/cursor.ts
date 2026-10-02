@@ -1,6 +1,7 @@
 import { clearPauseClasses, pauseInfo } from '../model/eras';
 import { ghostFor } from '../model/slots';
 import { fmtTime } from '../time/zones';
+import { MAG_CAP_ROOM } from '../dom/styles';
 import { q } from '../ui/wrapper';
 import { dressZoneChip } from '../zones/chip';
 import type { Frame, TimeWindow } from '../types';
@@ -80,7 +81,17 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
     const tt = c.tt;
     // the zone chip's offset at the cursor: changes only across a DST edge
     if (c.zone.el) {dressZoneChip(c.zone, s.cursorT);}
-    c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + 'px';
+    const magL = Math.max(0, Math.min(w - magW, x - magW / 2));
+    c.mag.style.left = magL + 'px';
+    // a magnifier narrower than its caption may be (portrait sources) lets
+    // the caption overflow it: the strip's ends seen from the magnifier's
+    // centre keep it inside the strip (.mag .cap in styles.ts). A wider
+    // magnifier's caption never overflows, and without layout (magW 0)
+    // there is nothing to keep.
+    if (magW > 0 && magW < MAG_CAP_ROOM + 4) {   // + its 2px borders
+      c.mag.style.setProperty('--cap-lo', -(magL + magW / 2) + 'px');
+      c.mag.style.setProperty('--cap-hi', (w - magL - magW / 2) + 'px');
+    }
     c.mag.classList.remove('ghost');
     if (slot && slot.frame) {
       c.mag.classList.remove('gap', 'future', 'off'); clearPauseClasses(c.mag);

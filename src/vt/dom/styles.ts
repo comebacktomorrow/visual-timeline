@@ -30,6 +30,9 @@ export const KTL_VAR_DEFAULTS: Record<string, string> = {
   '--ktl-ann-region': 'rgba(87,148,242,.12)', '--ktl-ann-region-edge': 'rgba(87,148,242,.55)',
 };
 const KTL_VARS = Object.keys(KTL_VAR_DEFAULTS);
+/* the width (px) a magnifier caption may always take, however narrow the
+ * magnifier: see .mag .cap below, and setCursor */
+export const MAG_CAP_ROOM = 90;
 /* the resolved palette of `from` (a mount root or anything inside one),
  * set inline on `to`: how body-level popups follow the panel they serve */
 export function copyVars(from: Element | null | undefined, to: HTMLElement): void {
@@ -189,15 +192,29 @@ const CSS = `
             border-left:1px solid var(--ktl-accent); border-right:1px solid var(--ktl-accent);
             pointer-events:none; z-index:2; }
 .ktl .mag { position:absolute; top:0; height:100%; aspect-ratio:16/9; max-width:40%;
-            border:2px solid var(--ktl-accent); border-radius:2px; overflow:hidden; pointer-events:none;
+            border:2px solid var(--ktl-accent); border-radius:2px; pointer-events:none;
             z-index:3; background:var(--ktl-mag-bg); box-shadow:0 0 12px rgba(0,0,0,.8); }
-.ktl .mag img { width:100%; height:100%; object-fit:contain; display:block; background:var(--ktl-mag-bg); }
+/* clip-path, not overflow:hidden on .mag, keeps the ghost's blur inside the
+ * frame: the caption below must be free to overflow the magnifier */
+.ktl .mag img { width:100%; height:100%; object-fit:contain; display:block; background:var(--ktl-mag-bg);
+                clip-path:inset(0); }
 .ktl.fill .mag img { object-fit:cover; }
 .ktl.fill .tile .t-img img { object-fit:cover; }
 .ktl .mag.gap { border-color:var(--ktl-off);
                 background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px), var(--ktl-mag-bg); }
 .ktl .mag.gap img { display:none; }
-.ktl .mag .cap { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.6); color:#fff;
+/* The caption spans the magnifier, centred on it. A narrow magnifier (a
+ * portrait source's is ~30px wide) wrapped and clipped even a time with a
+ * zone offset, "16:15:00 (+5h45m)" (~85px), so the caption may grow to
+ * MAG_CAP_ROOM and overflow the magnifier on both sides. Near a strip end it
+ * slides inward instead of being cut off by the card: for a magnifier that
+ * narrow, setCursor sets --cap-lo and --cap-hi, the strip's two ends
+ * measured from the magnifier's centre. A 16:9 magnifier is at least 90px
+ * inside (the smallest card's strip is 53px tall), so its caption keeps the
+ * magnifier's width and wraps within it as before. */
+.ktl .mag .cap { position:absolute; left:50%; bottom:0; width:max-content; min-width:100%; max-width:max(100%, ${MAG_CAP_ROOM}px);
+                 transform:translateX(clamp(var(--cap-lo, -100vw), -50%, calc(var(--cap-hi, 100vw) - 100%)));
+                 background:rgba(0,0,0,.6); color:#fff;
                  text-align:center; font-size:10px; font-variant-numeric:tabular-nums; padding:1px 0; }
 .ktl .ann-lane { flex:0 0 13px; position:relative; margin:2px 1px 0; }
 .ktl .card-lane { flex:0 0 12px; position:relative; display:none; border-top:1px solid var(--ktl-border); }

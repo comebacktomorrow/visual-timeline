@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The magnifier caption of a portrait source, e.g. `16:35:00 (+5h45m)`, no
+  longer wraps and clips in its narrow magnifier: it overflows it on one
+  line, centred, and stays inside the strip at either end. Landscape
+  sources look as before.
 - Offline stretches that start while a live timeline is open now hatch in
   continuous diagonals like the ones drawn at load, instead of restarting
   the stripes at every slot (#77).
