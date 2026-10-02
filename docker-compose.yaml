@@ -1,3 +1,8 @@
+# A throwaway token shared by the mock API and the Grafana provisioning
+# (provisioning/datasources/datasources.yml reads it from the environment).
+# It guards nothing real: the mock serves fixed test data.
+x-vt-mock-viewer-token: &vt-mock-viewer-token vt-mock-viewer-token
+
 services:
   grafana:
     extends:
@@ -9,3 +14,15 @@ services:
       # names only the root id). Development mode already admits unsigned
       # plugins; listing all three keeps them loading if that ever changes.
       GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: savvycocoa1919-visualtimeline-app,savvycocoa1919-visualtimeline-panel,savvycocoa1919-visualtimeline-datasource
+      VT_MOCK_VIEWER_TOKEN: *vt-mock-viewer-token
+    depends_on:
+      - vt-mock-api
+
+  # Stand-in frames API for the provisioned Visual Timeline API data
+  # sources (dev and e2e). Grafana reaches it as http://vt-mock-api.
+  vt-mock-api:
+    image: nginx:1.27-alpine
+    environment:
+      VT_MOCK_VIEWER_TOKEN: *vt-mock-viewer-token
+    volumes:
+      - ./tests/mock-api/default.conf.template:/etc/nginx/templates/default.conf.template:ro
