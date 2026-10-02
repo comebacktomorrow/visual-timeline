@@ -11,6 +11,7 @@ import { buildSourceModel, ghostFor, missedHeartbeat, slotClass } from './vt/mod
 import { matchesTags, parseTagFilter, parseVar } from './vt/model/filters';
 import { zoneFor, zoneLabel, zoneTexts } from './vt/zones/source';
 import { hiUrlFor, makeApiBackend } from './vt/backends/api';
+import { esc, headTitle, tagChips } from './vt/dom/html';
 
 export { fmtShort, fmtTime, resolveTimeZone, zonedParts, zonedTime } from './vt/time/zones';
 export { alignedStart, axisTicks, nextTick, TICK_STEPS, tickFormat } from './vt/time/ticks';
@@ -19,6 +20,7 @@ export { buildSourceModel, ghostFor, missedHeartbeat, slotClass } from './vt/mod
 export { matchesTags, parseTagFilter } from './vt/model/filters';
 export { fmtOffset, sourceTimeZone, zoneHeadText, zoneLabel, zoneOffsetText } from './vt/zones/source';
 export { framesPath, hiUrlFor, imageUrlWithKey, makeApiBackend, resolveFrameUrl, sourcesPath } from './vt/backends/api';
+export { esc, headTitle, tagChips } from './vt/dom/html';
 
 /* ======================= styles (injected once) ======================= */
 const STYLE_ID = 'ktl-styles';
@@ -564,27 +566,6 @@ function annTip() {
 }
 
 /* ======================= timeline core ======================= */
-
-/* Source ids, sites, locations and tags come from the registry API, so they
- * are untrusted. Everything spliced into an innerHTML template goes through
- * esc() — text AND attribute context (quotes are escaped too). */
-export function esc(s) {
-  return String(s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
-}
-export function tagChips(decl) {
-  if (!decl.tags) {return '';}
-  const chips = Object.entries(decl.tags)
-    .map(([k, v]) => '<span class="st">' + esc(k) + ':' + esc(v) + '</span>')
-    .join('');
-  return '<span class="tags">' + chips + '</span>';
-}
-/* Plain text: escape at the splice point, esc(headTitle(decl)). */
-export function headTitle(decl) {
-  const parts = [decl.site];
-  if (decl.location) {parts.push(decl.location);}
-  if (decl.tags) {for (const [k, v] of Object.entries(decl.tags)) {parts.push(k + ':' + v);}}
-  return parts.join(' · ');
-}
 
 const TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
 const TICK_LABEL_GAP = 14;

@@ -729,6 +729,30 @@ var VTCore = (() => {
     return base + "/frame/hi/" + encodeURIComponent(decl.site) + "/" + encodeURIComponent(decl.id) + "/" + hiTs + ".jpg" + q;
   }
 
+  // src/vt/dom/html.ts
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
+  }
+  function tagChips(decl) {
+    if (!decl.tags) {
+      return "";
+    }
+    const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st">' + esc(k) + ":" + esc(v) + "</span>").join("");
+    return '<span class="tags">' + chips + "</span>";
+  }
+  function headTitle(decl) {
+    const parts = [decl.site];
+    if (decl.location) {
+      parts.push(decl.location);
+    }
+    if (decl.tags) {
+      for (const [k, v] of Object.entries(decl.tags)) {
+        parts.push(k + ":" + v);
+      }
+    }
+    return parts.join(" \xB7 ");
+  }
+
   // src/core.ts
   var STYLE_ID = "ktl-styles";
   var KTL_VAR_DEFAULTS = {
@@ -1299,28 +1323,6 @@ var VTCore = (() => {
       },
       close
     };
-  }
-  function esc(s) {
-    return String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
-  }
-  function tagChips(decl) {
-    if (!decl.tags) {
-      return "";
-    }
-    const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st">' + esc(k) + ":" + esc(v) + "</span>").join("");
-    return '<span class="tags">' + chips + "</span>";
-  }
-  function headTitle(decl) {
-    const parts = [decl.site];
-    if (decl.location) {
-      parts.push(decl.location);
-    }
-    if (decl.tags) {
-      for (const [k, v] of Object.entries(decl.tags)) {
-        parts.push(k + ":" + v);
-      }
-    }
-    return parts.join(" \xB7 ");
   }
   var TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
   var TICK_LABEL_GAP = 14;
