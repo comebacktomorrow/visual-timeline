@@ -2,6 +2,7 @@ import { missedHeartbeat } from '../model/slots';
 import { dressGhost } from '../ui/ghost';
 import type { TickSlot } from '../types';
 import { ruleBeyond } from './axis';
+import { dressStrip } from './card';
 import type { TimelineState } from './state';
 
 /* The live poll (a window that reaches now): every min(step, 10 s) it
@@ -21,6 +22,7 @@ export function startPoll(s: TimelineState): void {
       // the strip keeps sliding between dashboard refreshes without ever
       // shading time that hasn't happened
       const mSlots = c.model.slots;
+      let reshaped = false;   // a slot was carved or a tail band grew: re-dress the strip
       const filler = mSlots.length && mSlots[mSlots.length - 1].beyond ? mSlots[mSlots.length - 1] : null;
       if (filler) {
         const nowP = Date.now();
@@ -28,6 +30,7 @@ export function startPoll(s: TimelineState): void {
         if (prev && prev.paused) {
           const grow = Math.min(nowP, filler.ts + filler.span) - filler.ts;
           if (grow > 0) {
+            reshaped = true;
             prev.span += grow;
             filler.ts += grow; filler.span -= grow;
             if (prev.el) {prev.el.style.flexGrow = String(prev.span / 1000);}
@@ -45,6 +48,7 @@ export function startPoll(s: TimelineState): void {
             if (f.el && f.el.parentNode) {f.el.parentNode.insertBefore(el, f.el);}
             sl.el = el;
             mSlots.splice(mSlots.length - 1, 0, sl);
+            reshaped = true;
             f.span -= sl.span; f.ts += sl.span;
             if (f.span <= 0) { if (f.el) {f.el.remove();} mSlots.pop(); }
             else { if (f.el) {f.el.style.flexGrow = String(f.span / 1000);} ruleBeyond(s, f); }
@@ -52,6 +56,13 @@ export function startPoll(s: TimelineState): void {
           }
         }
       }
+      // slots carved or grown above get the dressing built slots got
+      // (dressStrip): the hatch aligned to the strip, so when a carved slot
+      // later misses its heartbeat its gap hatch runs on from its
+      // neighbours' instead of restarting per slot, and the label of a
+      // pause band grown wide enough. One layout read, only on polls that
+      // reshaped this strip; an unsized (hidden) strip is left as is.
+      if (reshaped && c.strip.clientWidth > 0) {dressStrip(c.model);}
       const la = c.model.lastActive;
       if (!la) {continue;}                    // tail era is a declared pause
       let lastTs = s.P.from;

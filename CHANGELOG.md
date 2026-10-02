@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- The magnifier caption of a portrait source, e.g. `16:35:00 (+5h45m)`, no
+  longer wraps and clips in its narrow magnifier: it overflows it on one
+  line, centred, and stays inside the strip at either end. Landscape
+  sources look as before.
+- Offline stretches that start while a live timeline is open now hatch in
+  continuous diagonals like the ones drawn at load, instead of restarting
+  the stripes at every slot (#77).
+- An unknown time zone name used both as the panel zone and as a source's
+  declared zone now logs both console warnings, once each (#77).
+- A source's slots are all judged pending or offline against one "now"
+  taken when the timeline is built, including the start slot of a short
+  era next to a pause (#77).
 - Internal: the timeline core moved from one untyped `src/core.ts` into
   typed modules under `src/vt/` (#64); `src/core.ts` now only re-exports,
   and no `@ts-nocheck` is left. Rendering is unchanged, checked by new

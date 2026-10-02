@@ -85,7 +85,7 @@ var VTCore = (() => {
     }
     return z && isZone(z) ? z : LOCAL_TZ;
   }
-  var zoneWarned = /* @__PURE__ */ new Set();
+  var panelZoneWarned = /* @__PURE__ */ new Set();
   function resolveTimeZone(tz) {
     const s = tz == null ? "" : String(tz).trim();
     if (!s || /^(browser|default|local)$/i.test(s)) {
@@ -97,8 +97,8 @@ var VTCore = (() => {
     if (isZone(s)) {
       return s;
     }
-    if (!zoneWarned.has(s)) {
-      zoneWarned.add(s);
+    if (!panelZoneWarned.has(s)) {
+      panelZoneWarned.add(s);
       console.warn('[visual-timeline] unknown time zone "' + s + `"; using the browser's`);
     }
     return systemZone();
@@ -358,7 +358,7 @@ var VTCore = (() => {
       eras.push({ from, to, cadence: runCad, paused: !!e.paused, reason: e.reason, intended: e.intended });
     }
     if (!eras.length) {
-      eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false });
+      eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false, reason: void 0, intended: void 0 });
     }
     return eras;
   }
@@ -390,14 +390,15 @@ var VTCore = (() => {
     const eras = erasFor(decl, P);
     const slots = [];
     const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
-    function shortEraSlot(era, frame, nowMs) {
+    const nowAtBuild = Date.now();
+    function shortEraSlot(era, frame) {
       return {
         ts: era.from,
         span: era.to - era.from,
         frame,
         cadence: era.cadence,
         step: era.cadence,
-        future: era.from + era.cadence >= nowMs
+        future: era.from + era.cadence >= nowAtBuild
       };
     }
     function resolveBoundary(prev, firstIdx) {
@@ -418,7 +419,7 @@ var VTCore = (() => {
       }
       slots.splice(firstIdx - 1, 1);
       if (firstIdx - 1 === prev.startIdx) {
-        slots.splice(prev.startIdx, 0, shortEraSlot(prev, null, Date.now()));
+        slots.splice(prev.startIdx, 0, shortEraSlot(prev, null));
       }
     }
     async function pushActive(era) {
@@ -431,22 +432,20 @@ var VTCore = (() => {
       const step = Math.ceil(raw / Math.min(share, raw)) * era.cadence;
       const start = Math.ceil(era.from / step) * step;
       const n = era.to >= start ? Math.floor((era.to - start) / step) + 1 : 0;
-      const nowMs = Date.now();
       if (n === 0) {
         const half = era.cadence / 2;
         const near = await backend.frames(decl.site, decl.id, era.from - half, era.to + half, era.cadence);
         const frame = near.filter((f) => f.ts >= era.from - half && f.ts <= era.to + half).sort((a, b) => Math.abs(a.ts - era.from) - Math.abs(b.ts - era.from))[0] || null;
-        slots.push(shortEraSlot(era, frame, nowMs));
+        slots.push(shortEraSlot(era, frame));
         return;
       }
       const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
       const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
       for (let i = 0; i < n; i++) {
         const ts = start + i * step;
-        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowMs });
+        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowAtBuild });
       }
     }
-    const nowAtBuild = Date.now();
     const horizon = Math.min(P.to, nowAtBuild);
     let prevActive = null;
     for (const era of eras) {
@@ -500,7 +499,6 @@ var VTCore = (() => {
     function slotAt(t) {
       for (const sl of slots) {
         const edge = sl.paused || sl.beyond;
-        const from = edge ? sl.ts : sl.ts - sl.span / 2;
         const to = edge ? sl.ts + sl.span : sl.ts + sl.span / 2;
         if (t < to) {
           if (sl.beyond) {
@@ -510,7 +508,7 @@ var VTCore = (() => {
               return prev;
             }
           }
-          return t >= from || sl === slots[0] ? sl : sl;
+          return sl;
         }
       }
       return slots[slots.length - 1] || null;
@@ -533,7 +531,7 @@ var VTCore = (() => {
     return sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? "" : sl.future ? " future" : " gap";
   }
   function missedHeartbeat(sl, now) {
-    return sl.future && !sl.frame && sl.ts + sl.step < now;
+    return sl.future === true && !sl.frame && sl.ts + sl.step < now;
   }
 
   // src/vt/model/filters.ts
@@ -571,6 +569,7 @@ var VTCore = (() => {
   }
 
   // src/vt/zones/source.ts
+  var sourceZoneWarned = /* @__PURE__ */ new Set();
   function sourceTimeZone(decl) {
     const raw = decl && decl.timezone;
     if (typeof raw !== "string") {
@@ -586,8 +585,8 @@ var VTCore = (() => {
     if (isZone(s)) {
       return s;
     }
-    if (!zoneWarned.has(s)) {
-      zoneWarned.add(s);
+    if (!sourceZoneWarned.has(s)) {
+      sourceZoneWarned.add(s);
       console.warn('[visual-timeline] source declares unknown time zone "' + s + '"; ignoring it');
     }
     return null;
@@ -801,6 +800,7 @@ var VTCore = (() => {
     "--ktl-ann-region-edge": "rgba(87,148,242,.55)"
   };
   var KTL_VARS = Object.keys(KTL_VAR_DEFAULTS);
+  var MAG_CAP_ROOM = 90;
   function copyVars(from, to) {
     if (!from || !from.isConnected) {
       return;
@@ -904,8 +904,9 @@ var VTCore = (() => {
 .ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,var(--ktl-unint-a),var(--ktl-unint-a) 7px,var(--ktl-unint-b) 7px,var(--ktl-unint-b) 14px); }
 /* hatch continuity: each slot is its own element, so a per-element gradient
  * restarts at every slot edge \u2014 a run of narrow slots shows only the first
- * stripe color and reads as a SOLID block. buildCard aligns each empty
- * slot's background-position to its offset in the strip, so the diagonals
+ * stripe color and reads as a SOLID block. dressStrip aligns each empty
+ * slot's background-position to its offset in the strip (at build, and for
+ * the slots the live poll adds), so the diagonals
  * run continuously across runs. (NOT background-attachment:fixed \u2014 Chrome
  * refuses to paint fixed backgrounds inside Grafana's transformed panels.)
  * A wide pause band also carries its label inline \u2014 a strip that is ALL
@@ -963,15 +964,29 @@ var VTCore = (() => {
             border-left:1px solid var(--ktl-accent); border-right:1px solid var(--ktl-accent);
             pointer-events:none; z-index:2; }
 .ktl .mag { position:absolute; top:0; height:100%; aspect-ratio:16/9; max-width:40%;
-            border:2px solid var(--ktl-accent); border-radius:2px; overflow:hidden; pointer-events:none;
+            border:2px solid var(--ktl-accent); border-radius:2px; pointer-events:none;
             z-index:3; background:var(--ktl-mag-bg); box-shadow:0 0 12px rgba(0,0,0,.8); }
-.ktl .mag img { width:100%; height:100%; object-fit:contain; display:block; background:var(--ktl-mag-bg); }
+/* clip-path, not overflow:hidden on .mag, keeps the ghost's blur inside the
+ * frame: the caption below must be free to overflow the magnifier */
+.ktl .mag img { width:100%; height:100%; object-fit:contain; display:block; background:var(--ktl-mag-bg);
+                clip-path:inset(0); }
 .ktl.fill .mag img { object-fit:cover; }
 .ktl.fill .tile .t-img img { object-fit:cover; }
 .ktl .mag.gap { border-color:var(--ktl-off);
                 background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px), var(--ktl-mag-bg); }
 .ktl .mag.gap img { display:none; }
-.ktl .mag .cap { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.6); color:#fff;
+/* The caption spans the magnifier, centred on it. A narrow magnifier (a
+ * portrait source's is ~30px wide) wrapped and clipped even a time with a
+ * zone offset, "16:15:00 (+5h45m)" (~85px), so the caption may grow to
+ * MAG_CAP_ROOM and overflow the magnifier on both sides. Near a strip end it
+ * slides inward instead of being cut off by the card: for a magnifier that
+ * narrow, setCursor sets --cap-lo and --cap-hi, the strip's two ends
+ * measured from the magnifier's centre. A 16:9 magnifier is at least 90px
+ * inside (the smallest card's strip is 53px tall), so its caption keeps the
+ * magnifier's width and wraps within it as before. */
+.ktl .mag .cap { position:absolute; left:50%; bottom:0; width:max-content; min-width:100%; max-width:max(100%, ${MAG_CAP_ROOM}px);
+                 transform:translateX(clamp(var(--cap-lo, -100vw), -50%, calc(var(--cap-hi, 100vw) - 100%)));
+                 background:rgba(0,0,0,.6); color:#fff;
                  text-align:center; font-size:10px; font-variant-numeric:tabular-nums; padding:1px 0; }
 .ktl .ann-lane { flex:0 0 13px; position:relative; margin:2px 1px 0; }
 .ktl .card-lane { flex:0 0 12px; position:relative; display:none; border-top:1px solid var(--ktl-border); }
@@ -1504,7 +1519,12 @@ var VTCore = (() => {
       if (c.zone.el) {
         dressZoneChip(c.zone, s.cursorT);
       }
-      c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + "px";
+      const magL = Math.max(0, Math.min(w - magW, x - magW / 2));
+      c.mag.style.left = magL + "px";
+      if (magW > 0 && magW < MAG_CAP_ROOM + 4) {
+        c.mag.style.setProperty("--cap-lo", -(magL + magW / 2) + "px");
+        c.mag.style.setProperty("--cap-hi", w - magL - magW / 2 + "px");
+      }
       c.mag.classList.remove("ghost");
       if (slot && slot.frame) {
         c.mag.classList.remove("gap", "future", "off");
@@ -1923,6 +1943,7 @@ var VTCore = (() => {
       for (const k of s.kiosks) {
         const c = s.cards[k.id];
         const mSlots = c.model.slots;
+        let reshaped = false;
         const filler = mSlots.length && mSlots[mSlots.length - 1].beyond ? mSlots[mSlots.length - 1] : null;
         if (filler) {
           const nowP = Date.now();
@@ -1930,6 +1951,7 @@ var VTCore = (() => {
           if (prev && prev.paused) {
             const grow = Math.min(nowP, filler.ts + filler.span) - filler.ts;
             if (grow > 0) {
+              reshaped = true;
               prev.span += grow;
               filler.ts += grow;
               filler.span -= grow;
@@ -1961,6 +1983,7 @@ var VTCore = (() => {
               }
               sl.el = el;
               mSlots.splice(mSlots.length - 1, 0, sl);
+              reshaped = true;
               f.span -= sl.span;
               f.ts += sl.span;
               if (f.span <= 0) {
@@ -1977,6 +2000,9 @@ var VTCore = (() => {
               nextTs += prev.step;
             }
           }
+        }
+        if (reshaped && c.strip.clientWidth > 0) {
+          dressStrip(c.model);
         }
         const la = c.model.lastActive;
         if (!la) {

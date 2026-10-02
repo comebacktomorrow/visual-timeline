@@ -32,16 +32,17 @@ function systemZone(): string {
   try { z = new Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { z = null; }
   return z && isZone(z) ? z : LOCAL_TZ;
 }
-/* zone names already warned about, shared with sourceTimeZone: one warning
- * per name per page */
-export const zoneWarned = new Set<string>();
+/* unknown panel zone names already warned about: one warning per name per
+ * page (sourceTimeZone keeps its own set, so a name warned about here still
+ * gets its warning as a source's declared zone) */
+const panelZoneWarned = new Set<string>();
 export function resolveTimeZone(tz?: TimeZoneName): string {
   const s = tz == null ? '' : String(tz).trim();
   if (!s || /^(browser|default|local)$/i.test(s)) {return systemZone();}
   if (/^utc$/i.test(s)) {return 'UTC';}
   if (isZone(s)) {return s;}
-  if (!zoneWarned.has(s)) {
-    zoneWarned.add(s);
+  if (!panelZoneWarned.has(s)) {
+    panelZoneWarned.add(s);
     console.warn('[visual-timeline] unknown time zone "' + s + '"; using the browser\'s');
   }
   return systemZone();

@@ -14,11 +14,15 @@ export async function buildSourceModel(
   const eras = erasFor(decl, P);
   const slots: Slot[] = [];
   const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
+  // ONE "now" for the whole build: the horizon and every slot's pending
+  // ("future") flag are judged against it, however long the frame fetches
+  // in between take (#77)
+  const nowAtBuild = Date.now();
 
   // the one slot of an active era with no grid tick of its own (#65)
-  function shortEraSlot(era: ActiveSpan, frame: Frame | null, nowMs: number): TickSlot {
+  function shortEraSlot(era: ActiveSpan, frame: Frame | null): TickSlot {
     return { ts: era.from, span: era.to - era.from, frame, cadence: era.cadence, step: era.cadence,
-      future: era.from + era.cadence >= nowMs };
+      future: era.from + era.cadence >= nowAtBuild };
   }
 
   /* Where a closed active era meets the next era, its last tick can sit ON
@@ -38,7 +42,7 @@ export async function buildSourceModel(
     if (laterDrawsIt && !first.frame && p.frame) {first.frame = p.frame;}
     slots.splice(firstIdx - 1, 1);
     if (firstIdx - 1 === prev.startIdx) {
-      slots.splice(prev.startIdx, 0, shortEraSlot(prev, null, Date.now()));
+      slots.splice(prev.startIdx, 0, shortEraSlot(prev, null));
     }
   }
 
@@ -50,7 +54,6 @@ export async function buildSourceModel(
     const step = Math.ceil(raw / Math.min(share, raw)) * era.cadence;
     const start = Math.ceil(era.from / step) * step;
     const n = era.to >= start ? Math.floor((era.to - start) / step) + 1 : 0;
-    const nowMs = Date.now();
     if (n === 0) {
       // No grid tick inside (shorter than a step, between two grid points):
       // one slot at the era's start, spanning the era (#65). Uploads snap to
@@ -61,7 +64,7 @@ export async function buildSourceModel(
       const frame = near
         .filter((f) => f.ts >= era.from - half && f.ts <= era.to + half)
         .sort((a, b) => Math.abs(a.ts - era.from) - Math.abs(b.ts - era.from))[0] || null;
-      slots.push(shortEraSlot(era, frame, nowMs));
+      slots.push(shortEraSlot(era, frame));
       return;
     }
     const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
@@ -74,7 +77,7 @@ export async function buildSourceModel(
       // the backend's response cache), and calling it offline for those
       // seconds painted a red live edge that healed on the next poll.
       // Pending through ts + step itself, offline after: missedHeartbeat's rule.
-      slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowMs });
+      slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowAtBuild });
     }
   }
 
@@ -86,7 +89,6 @@ export async function buildSourceModel(
   // ("system down forever into the future") stop at now — and so do
   // active eras bounded by FUTURE events (a scheduled cadence change
   // must not spray pending slots across the next 45 minutes).
-  const nowAtBuild = Date.now();
   const horizon = Math.min(P.to, nowAtBuild);
   let prevActive: (ActiveSpan & { startIdx: number }) | null = null;   // the last active era pushed, for resolveBoundary
   for (const era of eras) {
@@ -147,10 +149,13 @@ export async function buildSourceModel(
     if (P.to - fillerFrom > 0) {slots.push({ ts: fillerFrom, span: P.to - fillerFrom, beyond: true });}
   }
 
+  /* The slot under t: the first one whose END lies past t. Only the end is
+   * tested: the slots tile the window in order, so every earlier slot has
+   * already ended, and a t before the window resolves to the first slot
+   * (past it, to the last). */
   function slotAt(t: number): Slot | null {
     for (const sl of slots) {
       const edge = sl.paused || sl.beyond;   // bands/fillers span [ts, ts+span); ticks are centered
-      const from = edge ? sl.ts : sl.ts - sl.span / 2;
       const to = edge ? sl.ts + sl.span : sl.ts + sl.span / 2;
       if (t < to) {
         if (sl.beyond) {
@@ -161,7 +166,7 @@ export async function buildSourceModel(
           const prev = i > 0 ? slots[i - 1] : null;
           if (prev && !prev.beyond && t < sl.ts + (prev.step || 0) / 2) {return prev;}
         }
-        return t >= from || sl === slots[0] ? sl : sl;
+        return sl;
       }
     }
     return slots[slots.length - 1] || null;
@@ -189,6 +194,6 @@ export function slotClass(sl: SlotState): string {
 }
 /* a pending slot still empty a full step past its tick has missed its
  * heartbeat: the live poll turns it from pending into offline */
-export function missedHeartbeat(sl: Slot, now: number): boolean | undefined {
-  return sl.future && !sl.frame && sl.ts + sl.step < now;
+export function missedHeartbeat(sl: Slot, now: number): boolean {
+  return sl.future === true && !sl.frame && sl.ts + sl.step < now;
 }
