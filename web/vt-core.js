@@ -1173,7 +1173,7 @@ var VTCore = (() => {
     };
   }
 
-  // src/core.ts
+  // src/vt/zones/chip.ts
   function zoneChip(srcTZ) {
     return srcTZ ? '<span class="st tz"><span class="tzc"></span><span class="tzo"></span></span>' : "";
   }
@@ -1197,6 +1197,8 @@ var VTCore = (() => {
     z.offEl.textContent = o ? " \xB7 " + o : "";
     z.el.title = "Source time zone: " + z.texts.zone + (o ? " (" + o + " from panel time)" : " (same as panel time)");
   }
+
+  // src/core.ts
   function normAnnotations(raw, P) {
     const out = [];
     for (const a of raw || []) {

@@ -9,11 +9,12 @@ import { axisTicks, TICK_STEPS, tickFormat } from './vt/time/ticks';
 import { clearPauseClasses, pauseInfo } from './vt/model/eras';
 import { buildSourceModel, ghostFor, missedHeartbeat, slotClass } from './vt/model/slots';
 import { matchesTags, parseTagFilter, parseVar } from './vt/model/filters';
-import { zoneFor, zoneLabel, zoneTexts } from './vt/zones/source';
+import { zoneFor, zoneTexts } from './vt/zones/source';
 import { hiUrlFor, makeApiBackend } from './vt/backends/api';
 import { esc, headTitle, tagChips } from './vt/dom/html';
 import { copyVars, injectStyles } from './vt/dom/styles';
 import { makeBackend } from './vt/backends/demo';
+import { attachZoneChip, dressZoneChip, zoneChip } from './vt/zones/chip';
 
 export { fmtShort, fmtTime, resolveTimeZone, zonedParts, zonedTime } from './vt/time/zones';
 export { alignedStart, axisTicks, nextTick, TICK_STEPS, tickFormat } from './vt/time/ticks';
@@ -24,30 +25,6 @@ export { fmtOffset, sourceTimeZone, zoneHeadText, zoneLabel, zoneOffsetText } fr
 export { framesPath, hiUrlFor, imageUrlWithKey, makeApiBackend, resolveFrameUrl, sourcesPath } from './vt/backends/api';
 export { esc, headTitle, tagChips } from './vt/dom/html';
 export { KTL_VAR_DEFAULTS } from './vt/dom/styles';
-
-/* the header chip for a zoned source: city, then " · offset". Text and
- * title are set by attachZoneChip/dressZoneChip with textContent, so a
- * zone name never becomes markup */
-function zoneChip(srcTZ) {
-  return srcTZ ? '<span class="st tz"><span class="tzc"></span><span class="tzo"></span></span>' : '';
-}
-function attachZoneChip(z, host) {
-  z.el = host.querySelector('.tz');
-  if (!z.el) {return;}
-  z.el.querySelector('.tzc').textContent = z.texts.label;
-  z.offEl = z.el.querySelector('.tzo');
-}
-/* refresh a zone chip's offset for instant ts: one memoized lookup, and the
- * DOM is touched only when the text changes (a DST change inside the
- * window, the cursor crossing it) */
-function dressZoneChip(z, ts) {
-  if (!z.el) {return;}
-  const o = z.texts.off(ts);
-  if (o === z.off) {return;}
-  z.off = o;
-  z.offEl.textContent = o ? ' · ' + o : '';
-  z.el.title = 'Source time zone: ' + z.texts.zone + (o ? ' (' + o + ' from panel time)' : ' (same as panel time)');
-}
 
 /* Normalize annotations from any provider (Grafana annotation frames, the
  * mock seam, a host page) into { ts, timeEnd?, title, text, tags[], color,
