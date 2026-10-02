@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Fix HTML injection (#59): source id, site, location and tags from the
+  registry API were spliced unescaped into the card and grid-tile headers
+  (including the `title` and `alt` attributes), so a hostile or malformed
+  declaration could inject markup. They are now escaped. The standalone
+  app's site chips are built from DOM nodes for the same reason.
+
 ## 0.9.23 (2026-10-01)
 
 - Standalone app: the time picker's "Recently used" list is built from

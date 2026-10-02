@@ -400,8 +400,14 @@ const TP_QUICK = [
     const sites = useApi
       ? [...new Set((await (await fetch(new URL('/sources', location.origin), AUTHH)).json()).map(k => k.site))].sort()
       : ['site-a', 'site-b'];
-    document.getElementById('siteChips').innerHTML =
-      sites.map(s => `<span class="chip ${!P.site || P.site.includes(s) ? 'on' : ''}" data-site="${s}">${s}</span>`).join('');
+    // DOM nodes, not innerHTML: site names come from the registry API
+    document.getElementById('siteChips').replaceChildren(...sites.map(s => {
+      const chip = document.createElement('span');
+      chip.className = 'chip' + (!P.site || P.site.includes(s) ? ' on' : '');
+      chip.dataset.site = s;
+      chip.textContent = s;
+      return chip;
+    }));
     document.getElementById('siteChips').addEventListener('click', e => {
       const s = e.target.dataset.site;
       if (!s) return;
