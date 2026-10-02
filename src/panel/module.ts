@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { PanelPlugin, PanelProps, DataHoverEvent, DataHoverClearEvent } from '@grafana/data';
 import { useTheme2 } from '@grafana/ui';
-import { mountTimeline, mountGrid } from './core';
-import { themeVars } from './theme';
+import { mountTimeline, mountGrid } from '../core';
+import { themeVars } from '../theme';
 
 interface VisualTimelineOptions {
   apiUrl?: string;

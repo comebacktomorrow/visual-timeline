@@ -3,3 +3,9 @@ services:
     extends:
       file: .config/docker-compose-base.yaml
       service: grafana
+    environment:
+      # The plugin is an app with nested plugins, and Grafana checks the
+      # signature of each one under its own id (the scaffold's base file
+      # names only the root id). Development mode already admits unsigned
+      # plugins; listing all three keeps them loading if that ever changes.
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: savvycocoa1919-visualtimeline-app,savvycocoa1919-visualtimeline-panel,savvycocoa1919-visualtimeline-datasource

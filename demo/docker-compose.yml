@@ -1,7 +1,7 @@
-# Grafana demo for the Visual Timeline panel.
+# Grafana demo for the Visual Timeline app (panel + data source).
 # Run from the repo root:  docker compose -f demo/docker-compose.yml up
 # Dashboard: http://localhost:3300/d/visual-timeline-demo  (anonymous admin, throwaway)
-# Works from a bare clone: the build service compiles the panel into dist/
+# Works from a bare clone: the build service compiles the plugin into dist/
 # before Grafana starts (first run installs npm deps — allow a few minutes).
 # Port taken? DEMO_PORT=3301 docker compose -f demo/docker-compose.yml up
 #
@@ -31,11 +31,12 @@ services:
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
-      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: "savvycocoa1919-visualtimeline-panel"
+      # the app and its two nested plugins are each checked under their own id
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: "savvycocoa1919-visualtimeline-app,savvycocoa1919-visualtimeline-panel,savvycocoa1919-visualtimeline-datasource"
       GF_PANELS_DISABLE_SANITIZE_HTML: "true"   # only for the iframe-fallback demo panel
     volumes:
       - ../grafana/provisioning:/etc/grafana/provisioning
       - ../grafana/dashboards:/var/lib/grafana/dashboards
-      # mount only the BUILT panel (the build service produces it) — Grafana
+      # mount only the BUILT plugin (the build service produces it) — Grafana
       # preinstalls its own apps into the plugins dir, so no broad mounts
-      - ../dist:/var/lib/grafana/plugins/savvycocoa1919-visualtimeline-panel
+      - ../dist:/var/lib/grafana/plugins/savvycocoa1919-visualtimeline-app

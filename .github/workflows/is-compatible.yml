@@ -6,6 +6,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # The plugin is an app with nested plugins, so there is one module per
+    # plugin; the action checks one module (and reads the plugin.json next
+    # to it). `find` used to pick "the" module.ts and would now print three.
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - ./src/module.tsx
+          - ./src/panel/module.ts
+    name: compatibilitycheck (${{ matrix.module }})
     steps:
       - uses: actions/checkout@v7
         with:
@@ -30,15 +40,9 @@ jobs:
       - name: Build plugin
         run: npm run build
 
-      - name: Find module.ts or module.tsx
-        id: find-module-ts
-        run: |
-          MODULETS="$(find ./src -type f \( -name "module.ts" -o -name "module.tsx" \))"
-          echo "modulets=${MODULETS}" >> $GITHUB_OUTPUT
-
       - name: Compatibility check
         uses: grafana/plugin-actions/is-compatible@is-compatible/v1.0.4
         with:
-          module: ${{ steps.find-module-ts.outputs.modulets }}
+          module: ${{ matrix.module }}
           comment-pr: 'no'
           fail-if-incompatible: 'yes'
