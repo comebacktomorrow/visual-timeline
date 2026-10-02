@@ -29,9 +29,11 @@ var VTCore = (() => {
     buildSourceModel: () => buildSourceModel,
     erasFor: () => erasFor,
     esc: () => esc,
+    framesPath: () => framesPath,
     ghostFor: () => ghostFor,
     headTitle: () => headTitle,
     imageUrlWithKey: () => imageUrlWithKey,
+    makeApiBackend: () => makeApiBackend,
     matchesTags: () => matchesTags,
     missedHeartbeat: () => missedHeartbeat,
     mountGrid: () => mountGrid,
@@ -39,7 +41,9 @@ var VTCore = (() => {
     nextTick: () => nextTick,
     parseTagFilter: () => parseTagFilter,
     pauseInfo: () => pauseInfo,
+    resolveFrameUrl: () => resolveFrameUrl,
     slotClass: () => slotClass,
+    sourcesPath: () => sourcesPath,
     tagChips: () => tagChips,
     tickFormat: () => tickFormat
   });
@@ -578,39 +582,58 @@ var VTCore = (() => {
     u.searchParams.set("k", apiKey);
     return u.href;
   }
-  function makeApiBackend(apiUrl, apiKey) {
-    const base = apiUrl.replace(/\/+$/, "");
+  function sourcesPath(sites) {
+    const q = new URLSearchParams();
+    if (sites) {
+      q.set("site", sites.join(","));
+    }
+    const qs = q.toString();
+    return "/sources" + (qs ? "?" + qs : "");
+  }
+  function framesPath(site, kiosk, from, to, step) {
+    const q = new URLSearchParams();
+    q.set("site", site);
+    q.set("source", kiosk);
+    q.set("from", String(Math.round(from)));
+    q.set("to", String(Math.round(to)));
+    q.set("step", String(step));
+    q.set("variant", "lo");
+    return "/frames?" + q.toString();
+  }
+  function resolveFrameUrl(url, apiBase) {
+    if (!url || !apiBase) {
+      return url;
+    }
+    try {
+      return new URL(url, apiBase.replace(/\/+$/, "") + "/frames").href;
+    } catch {
+      return url;
+    }
+  }
+  function makeApiBackend(apiUrl, apiKey, apiFetch) {
+    const base = (apiUrl || "").replace(/\/+$/, "");
+    const key = apiFetch ? "" : apiKey;
     const opts = () => ({
-      headers: apiKey ? { authorization: "Bearer " + apiKey } : void 0,
+      headers: key ? { authorization: "Bearer " + key } : void 0,
       signal: typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(15e3) : void 0
     });
+    const get = apiFetch ? (path) => apiFetch(path) : (path) => fetch(base + path, opts());
     return {
       async kiosks(sites) {
-        const u = new URL(base + "/sources");
-        if (sites) {
-          u.searchParams.set("site", sites.join(","));
-        }
-        const r = await fetch(u, opts());
+        const r = await get(sourcesPath(sites));
         if (!r.ok) {
           throw new Error("kiosks " + r.status);
         }
         return r.json();
       },
       async frames(site, kiosk, from, to, step) {
-        const u = new URL(base + "/frames");
-        u.searchParams.set("site", site);
-        u.searchParams.set("source", kiosk);
-        u.searchParams.set("from", String(Math.round(from)));
-        u.searchParams.set("to", String(Math.round(to)));
-        u.searchParams.set("step", String(step));
-        u.searchParams.set("variant", "lo");
-        const r = await fetch(u, opts());
+        const r = await get(framesPath(site, kiosk, from, to, step));
         if (!r.ok) {
           throw new Error("frames " + r.status);
         }
         const frames = await r.json();
         for (const f of frames) {
-          f.url = imageUrlWithKey(f.url, base, apiKey);
+          f.url = apiFetch ? resolveFrameUrl(f.url, base) : imageUrlWithKey(f.url, base, key);
         }
         return frames;
       }
@@ -1040,7 +1063,7 @@ var VTCore = (() => {
     const MIN_SLICE_PX = 7;
     const hostWidth = cfg.width || root.clientWidth || 800;
     const pxBudget = Math.max(10, Math.floor((hostWidth - 20) / MIN_SLICE_PX));
-    const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN);
+    const backend = cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN);
     const wrap = makeWrapper(root);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="cards"></div><div class="ann-lane" style="display:none"></div><div class="axis"><div class="base"></div><div class="acur"></div></div>';
@@ -1640,7 +1663,7 @@ var VTCore = (() => {
     const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
     const SPAN = Math.max(1, P.to - P.from);
     const LIVE = P.to > Date.now() - 2 * 60 * 1e3;
-    const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN);
+    const backend = cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN);
     const budget = 120;
     const wrap = makeWrapper(root);
     wrap.classList.toggle("fill", cfg.fit === "fill");
