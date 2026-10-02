@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fix HTML injection (#59): source id, site, location and tags from the
+  registry API were spliced unescaped into the card and grid-tile headers
+  (including the `title` and `alt` attributes), so a hostile or malformed
+  declaration could inject markup. They are now escaped. The standalone
+  app's site chips are built from DOM nodes for the same reason.
 - Docs: README is now written for Grafana catalog readers: what the panel
   shows, the built-in demo data, connecting a backend, the panel options and
   a note on the viewer token. All its links and images are absolute URLs, as

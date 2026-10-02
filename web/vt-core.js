@@ -21,9 +21,12 @@ var VTCore = (() => {
   // src/core.ts
   var core_exports = {};
   __export(core_exports, {
+    esc: () => esc,
+    headTitle: () => headTitle,
     imageUrlWithKey: () => imageUrlWithKey,
     mountGrid: () => mountGrid,
-    mountTimeline: () => mountTimeline
+    mountTimeline: () => mountTimeline,
+    tagChips: () => tagChips
   });
   var STYLE_ID = "ktl-styles";
   var CSS = `
@@ -595,7 +598,7 @@ var VTCore = (() => {
     const label = r === "screen-sleep" ? unintended ? "SCREEN DARK (UNEXPECTED)" : "SCREEN ASLEEP" : r === "system-down" ? "SYSTEM DOWN (PLANNED)" : r === "app-stopped" ? "APP STOPPED" : r === "quiet" ? "QUIET HOURS" : "PAUSED";
     const classes = ["paused"];
     if (r) {
-      classes.push("r-" + r);
+      classes.push("r-" + String(r).replace(/[^\w-]/g, ""));
     }
     if (unintended) {
       classes.push("unintended");
@@ -713,11 +716,14 @@ var VTCore = (() => {
     }
     return true;
   }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
+  }
   function tagChips(decl) {
     if (!decl.tags) {
       return "";
     }
-    const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st">' + k + ":" + v + "</span>").join("");
+    const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st">' + esc(k) + ":" + esc(v) + "</span>").join("");
     return '<span class="tags">' + chips + "</span>";
   }
   function headTitle(decl) {
@@ -1012,7 +1018,7 @@ var VTCore = (() => {
       card.className = "card" + (inline ? " inline-head" : "") + (cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
       const la = model.lastActive;
       const cad = cfg.showDetails && la ? '<span class="cad">\u23F1 ' + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + "</span>" : "";
-      card.innerHTML = '<div class="card-head" title="' + headTitle(decl) + '"><span class="nm">' + kiosk + '</span><span class="inline-brk"></span><span class="st">' + decl.site + (decl.location ? " \xB7 " + decl.location : "") + "</span>" + tagChips(decl) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
+      card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(kiosk) + '</span><span class="inline-brk"></span><span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
       const strip = card.querySelector(".strip");
       if (hostWidth / model.slots.length >= 12) {
         strip.classList.add("sep");
@@ -1558,7 +1564,7 @@ var VTCore = (() => {
       const el = document.createElement("div");
       const inline = cfg.headerMode === "inline" || cfg.headerMode === "inline-gradient";
       el.className = "tile" + (inline ? " inline-head" : "") + (cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
-      el.innerHTML = '<div class="t-head" title="' + headTitle(decl) + '"><span class="nm">' + decl.id + '</span><span class="inline-brk"></span><span class="st">' + decl.site + (decl.location ? " \xB7 " + decl.location : "") + "</span>" + tagChips(decl) + '</div><div class="t-img"><img alt="' + decl.id + '"><span class="t-ts"></span><div class="t-off"></div></div>';
+      el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(decl.id) + '</span><span class="inline-brk"></span><span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
       const rec = {
         decl,
         model,

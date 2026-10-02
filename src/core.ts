@@ -586,7 +586,7 @@ function pauseInfo(x) {
     r === 'app-stopped'  ? 'APP STOPPED' :
     r === 'quiet'        ? 'QUIET HOURS' : 'PAUSED';
   const classes = ['paused'];
-  if (r) {classes.push('r-' + r);}
+  if (r) {classes.push('r-' + String(r).replace(/[^\w-]/g, ''));}
   if (unintended) {classes.push('unintended');}
   return { label, classes };
 }
@@ -717,14 +717,21 @@ function matchesTags(tags, filter) {
   }
   return true;
 }
-function tagChips(decl) {
+/* Source ids, sites, locations and tags come from the registry API, so they
+ * are untrusted. Everything spliced into an innerHTML template goes through
+ * esc() — text AND attribute context (quotes are escaped too). */
+export function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
+}
+export function tagChips(decl) {
   if (!decl.tags) {return '';}
   const chips = Object.entries(decl.tags)
-    .map(([k, v]) => '<span class="st">' + k + ':' + v + '</span>')
+    .map(([k, v]) => '<span class="st">' + esc(k) + ':' + esc(v) + '</span>')
     .join('');
   return '<span class="tags">' + chips + '</span>';
 }
-function headTitle(decl) {
+/* Plain text: escape at the splice point, esc(headTitle(decl)). */
+export function headTitle(decl) {
   const parts = [decl.site];
   if (decl.location) {parts.push(decl.location);}
   if (decl.tags) {for (const [k, v] of Object.entries(decl.tags)) {parts.push(k + ':' + v);}}
@@ -992,9 +999,9 @@ export function mountTimeline(root, cfg) {
       ? '<span class="cad">⏱ ' + fmtDur(la.cadence) + ' · 1/' + fmtDur(la.step) + (la.step > la.cadence ? ' ↓' : '') + '</span>'
       : '';
     card.innerHTML =
-      '<div class="card-head" title="' + headTitle(decl) + '"><span class="nm">' + kiosk + '</span>' +
+      '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(kiosk) + '</span>' +
       '<span class="inline-brk"></span>' +
-      '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span>' + tagChips(decl) + '<span class="ft"></span>' +
+      '<span class="st">' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' + tagChips(decl) + '<span class="ft"></span>' +
       cad + '</div>' +
       '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>' +
       '<div class="card-lane"></div>';
@@ -1485,10 +1492,10 @@ export function mountGrid(root, cfg) {
     el.className = 'tile' + (inline ? ' inline-head' : '') +
       (cfg.headerMode === 'inline-gradient' ? ' inline-grad' : '');
     el.innerHTML =
-      '<div class="t-head" title="' + headTitle(decl) + '"><span class="nm">' + decl.id + '</span>' +
+      '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(decl.id) + '</span>' +
       '<span class="inline-brk"></span>' +
-      '<span class="st">' + decl.site + (decl.location ? ' · ' + decl.location : '') + '</span>' + tagChips(decl) + '</div>' +
-      '<div class="t-img"><img alt="' + decl.id + '"><span class="t-ts"></span><div class="t-off"></div></div>';
+      '<span class="st">' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' + tagChips(decl) + '</div>' +
+      '<div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
     const rec = {
       decl, model, el, shown: null,
       img: el.querySelector('img'),
