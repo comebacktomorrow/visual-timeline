@@ -1331,7 +1331,7 @@ var VTCore = (() => {
     };
   }
 
-  // src/core.ts
+  // src/vt/time/measure.ts
   var TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
   var TICK_LABEL_GAP = 14;
   var measureCtx;
@@ -1342,6 +1342,8 @@ var VTCore = (() => {
     measureCtx.font = TICK_FONT;
     return measureCtx.measureText(text).width;
   }
+
+  // src/core.ts
   var popState = { el: null, keyH: null, retireTimer: null };
   function closePreview() {
     if (popState.retireTimer) {

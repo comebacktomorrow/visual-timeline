@@ -16,6 +16,7 @@ import { copyVars, injectStyles } from './vt/dom/styles';
 import { makeBackend } from './vt/backends/demo';
 import { attachZoneChip, dressZoneChip, zoneChip } from './vt/zones/chip';
 import { annTip, normAnnotations } from './vt/ui/annotations';
+import { measureTickWidth, TICK_LABEL_GAP } from './vt/time/measure';
 
 export { fmtShort, fmtTime, resolveTimeZone, zonedParts, zonedTime } from './vt/time/zones';
 export { alignedStart, axisTicks, nextTick, TICK_STEPS, tickFormat } from './vt/time/ticks';
@@ -28,16 +29,6 @@ export { esc, headTitle, tagChips } from './vt/dom/html';
 export { KTL_VAR_DEFAULTS } from './vt/dom/styles';
 
 /* ======================= timeline core ======================= */
-
-const TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
-const TICK_LABEL_GAP = 14;
-let measureCtx;
-
-function measureTickWidth(text) {
-  if (!measureCtx) {measureCtx = document.createElement('canvas').getContext('2d');}
-  measureCtx.font = TICK_FONT;
-  return measureCtx.measureText(text).width;
-}
 
 /* cursor-anchored larger preview (not full-screen), shared by both modes.
  * Shows the frame at native upload resolution — capture size is the only
