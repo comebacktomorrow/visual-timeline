@@ -134,6 +134,13 @@ images, from your browser.
 - The standalone app and embeddable viewer (`web/`) load `web/vt-core.js`,
   which is built from `src/core.ts` with `npm run build:web`. Commit the
   rebuilt file when you change `src/core.ts` (the `project-checks` workflow fails on drift).
+- `src/core.snapshot.test.ts` snapshots the core's exports, the `VTCore`
+  global and the rendered demo DOM. A change there is either a mistake or a
+  deliberate change to output; for the latter, update with
+  `npx jest -u src/core.snapshot.test.ts` (after `npm run build:web`) and
+  review the snapshot diff in the same PR.
+- `npm run bench:scrub` measures what a cursor move costs with 20 sources;
+  see [perf/README.md](perf/README.md) for options and the baseline.
 - Changes to any `plugin.json` (`src/`, `src/panel/`, `src/datasource/`,
   including the data source's proxy `routes`) need a restart of the Grafana
   server.

@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Scrub benchmark</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #111217;
+      }
+      #host {
+        position: relative;
+        width: 1400px;
+        height: 1600px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="host"></div>
+    <script src="../web/vt-core.js"></script>
+    <script>
+      /* Synthetic frames API for the scrub benchmark (perf/scrub-bench.mjs).
+       * N sources on a fixed past window, fed through the core's injectable fetch
+       * (cfg.apiFetch), so no network or worker is involved. Mix: most sources at
+       * 60 s, some at 30 s, one with an outage, one with a declared pause. */
+      (function () {
+        const q = new URLSearchParams(location.search);
+        const N = Number(q.get('sources') || 20);
+        const HOURS = Number(q.get('hours') || 2);
+        const MODE = q.get('mode') || 'timeline';
+        const TO = Date.UTC(2026, 8, 15, 12, 0, 0);
+        const FROM = TO - HOURS * 3600e3;
+
+        const svg = (hue) =>
+          'data:image/svg+xml,' +
+          encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="192" height="108"><rect width="192" height="108" fill="hsl(${hue} 30% 20%)"/><rect y="70" width="40" height="20" x="20" fill="hsl(${hue} 70% 55%)"/></svg>`
+          );
+
+        const decls = [];
+        for (let i = 0; i < N; i++) {
+          const cadence = i % 4 === 3 ? 30e3 : 60e3;
+          const history = [{ since: FROM - 86400e3, variant: 'lo', cadence }];
+          if (i === 2) {
+            history.push({ since: FROM + 0.4 * (TO - FROM), variant: 'lo', paused: true, reason: 'quiet' });
+            history.push({ since: FROM + 0.6 * (TO - FROM), variant: 'lo', cadence });
+          }
+          decls.push({
+            id: 'src-' + i,
+            site: 'site-' + (i % 4),
+            cadence,
+            history,
+            img: svg((i * 37) % 360),
+            outage: i === 1 ? [FROM + 0.3 * (TO - FROM), FROM + 0.5 * (TO - FROM)] : null,
+          });
+        }
+        const byId = new Map(decls.map((d) => [d.id, d]));
+        const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
+
+        function apiFetch(path) {
+          const u = new URL(path, 'https://bench.invalid');
+          if (u.pathname === '/sources') {
+            return ok(decls.map(({ id, site, cadence, history }) => ({ id, site, cadence, history })));
+          }
+          const d = byId.get(u.searchParams.get('source'));
+          const from = Number(u.searchParams.get('from')),
+            to = Number(u.searchParams.get('to'));
+          const step = Number(u.searchParams.get('step'));
+          const out = [];
+          for (let ts = Math.ceil(from / step) * step; ts <= to; ts += step) {
+            if (d.outage && ts >= d.outage[0] && ts < d.outage[1]) continue;
+            out.push({ source: d.id, ts, url: d.img });
+          }
+          return ok(out);
+        }
+
+        const cfg = { from: FROM, to: TO, width: 1400, timeZone: 'UTC', apiFetch, showDetails: true };
+        const host = document.getElementById('host');
+        window.__bench = {
+          from: FROM,
+          to: TO,
+          sources: N,
+          inst: MODE === 'grid' ? VTCore.mountGrid(host, cfg) : VTCore.mountTimeline(host, cfg),
+        };
+      })();
+    </script>
+  </body>
+</html>
