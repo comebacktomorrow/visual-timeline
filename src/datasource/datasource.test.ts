@@ -19,9 +19,9 @@ const settings = (apiUrl?: string) =>
   }) as unknown as DataSourceInstanceSettings<VisualTimelineOptions>;
 
 const ok = (data: unknown) => jest.fn(async () => ({ status: 200, data }));
-const fail = (status: number) =>
+const fail = (status: number, data: unknown = {}) =>
   jest.fn(async () => {
-    throw { status, data: {} };
+    throw { status, data };
   });
 
 describe('testDatasource', () => {
@@ -42,7 +42,23 @@ describe('testDatasource', () => {
     await expect(ds.testDatasource()).resolves.toMatchObject({ message: 'Connected: the API lists 1 source.' });
   });
 
-  test('a rejected token is reported as such', async () => {
+  test('a token the API rejects is reported as such (Grafana turns the 401 into a 400)', async () => {
+    const ds = new VisualTimelineDataSource(
+      settings('https://frames.example.com'),
+      fail(400, 'Authentication to data source failed')
+    );
+    const r = await ds.testDatasource();
+    expect(r.status).toBe('error');
+    expect(r.message).toMatch(/rejected the viewer token/);
+  });
+
+  test('any other 400 still points at the token', async () => {
+    const ds = new VisualTimelineDataSource(settings('https://frames.example.com'), fail(400, { message: 'bad' }));
+    const r = await ds.testDatasource();
+    expect(r.message).toMatch(/\(400\).*viewer token/);
+  });
+
+  test('a 401 passed through as is is reported as a rejected token', async () => {
     const ds = new VisualTimelineDataSource(settings('https://frames.example.com'), fail(401));
     const r = await ds.testDatasource();
     expect(r.status).toBe('error');
@@ -64,14 +80,20 @@ describe('testDatasource', () => {
   test('a missing API URL fails before any request', async () => {
     const request = ok([]);
     const ds = new VisualTimelineDataSource(settings(undefined), request);
-    await expect(ds.testDatasource()).resolves.toMatchObject({ status: 'error', message: expect.stringMatching(/API URL/) });
+    await expect(ds.testDatasource()).resolves.toMatchObject({
+      status: 'error',
+      message: expect.stringMatching(/API URL/),
+    });
     expect(request).not.toHaveBeenCalled();
   });
 
   test('a URL without a scheme fails before any request', async () => {
     const request = ok([]);
     const ds = new VisualTimelineDataSource(settings('frames.example.com'), request);
-    await expect(ds.testDatasource()).resolves.toMatchObject({ status: 'error', message: expect.stringMatching(/http/) });
+    await expect(ds.testDatasource()).resolves.toMatchObject({
+      status: 'error',
+      message: expect.stringMatching(/http/),
+    });
     expect(request).not.toHaveBeenCalled();
   });
 });

@@ -5,13 +5,7 @@
   "id": "savvycocoa1919-visualtimeline-datasource",
   "metrics": false,
   "info": {
-    "keywords": [
-      "timeline",
-      "screenshot",
-      "camera",
-      "kiosk",
-      "frames"
-    ],
+    "keywords": ["timeline", "screenshot", "camera", "kiosk", "frames"],
     "description": "Connects Visual Timeline panels to a frames API, keeping the API URL and viewer token in Grafana's server-side data source settings instead of the dashboard JSON",
     "author": {
       "name": "Xzibit"

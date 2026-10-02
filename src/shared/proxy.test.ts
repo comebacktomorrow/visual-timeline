@@ -35,7 +35,7 @@ describe('ids and route match the plugin.json files', () => {
 });
 
 describe('makeProxyFetch', () => {
-  test('sends GETs under the proxy base without Grafana\'s own alerts', async () => {
+  test("sends GETs under the proxy base without Grafana's own alerts", async () => {
     const request = jest.fn(async (_o: ProxyRequestOptions) => ({ status: 200, data: [{ id: 'source-1' }] }));
     const api = makeProxyFetch('vt-ds', request);
     const r = await api('/sources?site=a');

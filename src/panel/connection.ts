@@ -24,7 +24,11 @@ export type JsonDataLookup = (uid: string) => object | undefined;
  * Grafana's proxy, which adds the viewer token server-side. Without one,
  * the legacy API URL / API key options apply; with neither, the core falls
  * back to its built-in demo data. */
-export function resolveConnection(options: ConnectionOptions, lookup: JsonDataLookup, request: ProxyRequest): ApiConnection {
+export function resolveConnection(
+  options: ConnectionOptions,
+  lookup: JsonDataLookup,
+  request: ProxyRequest
+): ApiConnection {
   const uid = (options.datasourceUid || '').trim();
   if (uid) {
     const apiUrl = (lookup(uid) as { apiUrl?: unknown } | undefined)?.apiUrl;

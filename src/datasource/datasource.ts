@@ -10,9 +10,19 @@ import { backendRequest } from '../shared/backendRequest';
 import { ApiFetch, makeProxyFetch, ProxyRequest } from '../shared/proxy';
 import type { VisualTimelineOptions, VisualTimelineQuery } from './types';
 
+// What Grafana's data source proxy answers instead of the API's own 401:
+// it turns 401 into 400, so the browser session isn't taken for expired
+const PROXY_AUTH_FAILED = 'Authentication to data source failed';
+
 /** Health-check wording for a failed GET /sources through the proxy. */
-export function describeFailure(status: number, apiUrl: string): string {
+export function describeFailure(status: number, apiUrl: string, body?: unknown): string {
   switch (status) {
+    case 400: {
+      const text = typeof body === 'string' ? body : JSON.stringify(body ?? '');
+      return text.includes(PROXY_AUTH_FAILED)
+        ? `The API at ${apiUrl} rejected the viewer token (Grafana's proxy reports the API's 401 as 400). Check the token, and that the API still accepts it.`
+        : `The API at ${apiUrl} refused the request (400). Grafana's proxy also reports an API 401 as 400, so check the viewer token.`;
+    }
     case 401:
       return `The API at ${apiUrl} rejected the viewer token (401). Check the token, and that the API still accepts it.`;
     case 403:
@@ -38,7 +48,10 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
   readonly apiUrl: string;
   private readonly api: ApiFetch;
 
-  constructor(instanceSettings: DataSourceInstanceSettings<VisualTimelineOptions>, request: ProxyRequest = backendRequest) {
+  constructor(
+    instanceSettings: DataSourceInstanceSettings<VisualTimelineOptions>,
+    request: ProxyRequest = backendRequest
+  ) {
     super(instanceSettings);
     this.apiUrl = (instanceSettings.jsonData?.apiUrl || '').trim().replace(/\/+$/, '');
     this.api = makeProxyFetch(instanceSettings.uid, request);
@@ -60,7 +73,7 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
     }
     const r = await this.api('/sources');
     if (!r.ok) {
-      return { status: 'error', message: describeFailure(r.status, this.apiUrl) };
+      return { status: 'error', message: describeFailure(r.status, this.apiUrl, await r.json()) };
     }
     const body = await r.json();
     if (!Array.isArray(body)) {

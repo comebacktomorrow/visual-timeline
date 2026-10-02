@@ -8,7 +8,11 @@ const API = 'https://frames.example.com';
 const FRAME = `${API}/frame/lo/site-a/source-1/1783488360000.jpg`;
 const SIGNED = `${FRAME}?e=1783574760000&sig=abc123`;
 
-const response = (body: unknown, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+const response = (body: unknown, status = 200) => ({
+  ok: status >= 200 && status < 300,
+  status,
+  json: async () => body,
+});
 
 describe('request paths', () => {
   test('/sources without a site filter has no query string', () => {
@@ -61,7 +65,7 @@ describe('makeApiBackend with an injected fetch (data source proxy mode)', () =>
     expect(globalFetch).not.toHaveBeenCalled();
   });
 
-  test('image URLs stay the API\'s own absolute URLs, and never get a ?k= key', async () => {
+  test("image URLs stay the API's own absolute URLs, and never get a ?k= key", async () => {
     const apiFetch = async () =>
       response([
         { source: 'source-1', ts: 1, url: SIGNED },

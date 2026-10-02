@@ -8,7 +8,7 @@ describe('resolveConnection', () => {
     expect(c).toEqual({ apiUrl: '', apiKey: '' });
   });
 
-  test('legacy options: direct mode with the panel\'s URL and key', () => {
+  test("legacy options: direct mode with the panel's URL and key", () => {
     const c = resolveConnection({ apiUrl: ' https://frames.example.com ', apiKey: ' k ' }, () => undefined, request);
     expect(c).toEqual({ apiUrl: 'https://frames.example.com', apiKey: 'k' });
   });

@@ -53,7 +53,9 @@ export function makeProxyFetch(uid: string, request: ProxyRequest): ApiFetch {
         showSuccessAlert: false,
         // a hung API must surface as an error, as in the core's direct mode
         abortSignal:
-          typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(REQUEST_TIMEOUT_MS) : undefined,
+          typeof AbortSignal !== 'undefined' && AbortSignal.timeout
+            ? AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+            : undefined,
       });
       return { ok: true, status: r.status, json: async () => r.data };
     } catch (err: unknown) {
