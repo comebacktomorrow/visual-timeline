@@ -10,10 +10,15 @@ use it, see the [README](README.md).
 
 Three frontends, one small HTTP contract ([docs/API.md](docs/API.md)):
 
-- `src/` — **Grafana panel** (timeline + multiview grid modes, two-way
-  shared-crosshair sync with other panels, drag-zoom drives the dashboard
-  time range). Ships with built-in demo data — drop it on a dashboard and
-  it works with zero infrastructure.
+- `src/` — **Grafana app plugin** bundling two nested plugins:
+  - the **panel** (timeline + multiview grid modes, two-way
+    shared-crosshair sync with other panels, drag-zoom drives the dashboard
+    time range). Ships with built-in demo data — drop it on a dashboard and
+    it works with zero infrastructure.
+  - the **Visual Timeline API data source**, frontend-only, which holds the
+    API URL and the viewer token. Its `plugin.json` proxy route makes
+    Grafana's server add the token, so a panel set to it never handles the
+    key (see "Where the viewer token lives" in `docs/API.md`).
 - `web/app.html` — **standalone app** with the chrome Grafana normally
   provides: site filter, timeline/grid/both modes, fit/fill, a Grafana-style
   time-range picker, drag-zoom, and within-page cursor sync (hover the timeline, the grid
@@ -34,7 +39,12 @@ this backend; implement `docs/API.md` with anything.
 
 | Path                         | What                                                                            |
 | ---------------------------- | ------------------------------------------------------------------------------- |
-| `src/`                       | Grafana panel plugin source (create-plugin scaffold; `npm run build` → `dist/`) |
+| `src/`                       | Grafana app plugin source (create-plugin scaffold; `npm run build` → `dist/`): `plugin.json` + `module.tsx` are the app |
+| `src/panel/`                 | the nested panel (`savvycocoa1919-visualtimeline-panel`, an id dashboards depend on: never change it) |
+| `src/datasource/`            | the nested data source (`savvycocoa1919-visualtimeline-datasource`): config page, health check, proxy route |
+| `src/core.ts`, `src/theme.ts`, `src/shared/` | shared code: the framework-free timeline core (also built into `web/vt-core.js`), the theme mapping, the proxy client |
+| `webpack.config.ts`          | extends the scaffold's webpack config (copies the nested plugins' logos)        |
+| `tests/`                     | Playwright e2e specs; `tests/mock-api/` is the stand-in frames API they run against |
 | `web/`                       | standalone app, embeddable viewer, fleet simulator                              |
 | `worker/`                    | Cloudflare Worker + R2 reference backend                                        |
 | `demo/`                      | zero-setup Grafana demo (`docker compose -f demo/docker-compose.yml up`)        |
@@ -89,21 +99,31 @@ docker compose -f demo/docker-compose.yml up
 # → http://localhost:3300/d/visual-timeline-demo  (anonymous admin)
 ```
 
-Works from a bare clone — a build stage compiles the panel before Grafana
+Works from a bare clone — a build stage compiles the plugin before Grafana
 starts, so the first run takes a few minutes. Port 3300 taken? Prefix with
 `DEMO_PORT=3301`.
 
-Grafana 11 with the panel mounted and a provisioned dashboard: timeline,
+Grafana 11 with the app mounted and a provisioned dashboard: timeline,
 two multiview grids (follow-crosshair vs latest-only), and a random-walk
-panel to see the two-way crosshair sync. Panels run on built-in demo data;
-set each panel's **API URL** option to a backend for live frames.
+panel to see the two-way crosshair sync. Panels run on built-in demo data.
+For live frames, set each panel's **API URL** option to a backend. A backend
+that needs a viewer token goes in a Visual Timeline API data source instead.
+Its API URL must be reachable from the Grafana container and, for the
+images, from your browser.
 
 ## Development
 
-- `npm run build` builds the panel (webpack, with the configuration in
-  `.config/`, which is managed by Grafana plugin tools — don't edit it).
+- `npm run build` builds the app and its nested panel and data source into
+  `dist/` (`dist/plugin.json` + `module.js`, `dist/panel/`,
+  `dist/datasource/`). It uses webpack with the configuration in `.config/`,
+  which is managed by Grafana plugin tools, so don't edit it. The root
+  `webpack.config.ts` extends it.
 - `npm run server` starts the scaffold's dev Grafana on `:3000` (that's
   separate from the `:3300` demo above); `npm run dev` rebuilds on change.
+  It also starts `vt-mock-api`, a stand-in frames API (`tests/mock-api/`).
+  Two Visual Timeline API data sources point at it, one with the right token
+  and one with a wrong token, and the "Visual Timeline — data source mode"
+  dashboard uses them.
 - `npm run e2e` runs the Playwright suite against the dev Grafana.
 - `npm run test:ci` runs the unit tests, `npm run typecheck` and
   `npm run lint` check types and style.
@@ -114,7 +134,9 @@ set each panel's **API URL** option to a backend for live frames.
 - The standalone app and embeddable viewer (`web/`) load `web/vt-core.js`,
   which is built from `src/core.ts` with `npm run build:web`. Commit the
   rebuilt file when you change `src/core.ts` (the `project-checks` workflow fails on drift).
-- Changes to `src/plugin.json` need a restart of the Grafana server.
+- Changes to any `plugin.json` (`src/`, `src/panel/`, `src/datasource/`,
+  including the data source's proxy `routes`) need a restart of the Grafana
+  server.
 
 ## Upstream updates
 

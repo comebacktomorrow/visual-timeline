@@ -89,6 +89,12 @@ query string is taken to carry its own authorization (a signature, a
 presigned query), and a URL on any other origin is taken to be public, so
 neither is ever handed the viewer key.
 
+A client that reaches the API through a proxy that adds the key for it (the
+Grafana data source, see "Where the viewer token lives") holds no key, so it
+loads every `url` as returned. Return absolute, browser-reachable URLs; a
+relative one is resolved against the API's base URL. If reads need a key, the
+URLs must be signed.
+
 Picking each bucket's frame means scanning every frame in the window, so a
 backend may cap the scan per request. The reference worker stops at 25,000
 frames (about 17 days at a 60 s cadence). When it stops early, the
@@ -184,29 +190,50 @@ three env vars, composable per deployment:
 Default-private posture: set `VIEWER_TOKEN` + `IMG_SIGN_KEY`, leave
 `IMG_BASE` unset.
 
-### Where the viewer token lives (and the 2.0 plan)
+### Where the viewer token lives
 
-The panel is a **panel plugin**, so its API key is a per-panel option in
-the dashboard JSON — plaintext, visible to anyone who can view the
-dashboard (they receive it in the browser regardless: panels fetch
-client-side). Panel plugins have no config page and no `secureJsonData`;
-those are app/datasource plugin features. Practical posture today: use a
-dedicated, revocable viewer token per consumer (a dashboard, a wallboard)
-and treat "can view the dashboard" as "holds that token".
+The Grafana plugin is an app that bundles the panel and a **Visual Timeline
+API data source**, and the data source is where the viewer token belongs:
 
-The keyless architecture — planned as the 2.0 shape, not built — is a
-small companion **datasource plugin**: its config page stores the API URL
-+ key in `secureJsonData` (encrypted server-side), `/sources` and
-`/frames` proxy through Grafana's backend so the key never reaches the
-browser, and the signed image URLs this API already mints are what make
-that cheap — the proxied `/frames` response carries its own short-lived
-image authorization, so `<img>` tags still load straight from the worker
-with no key and no image bytes proxied through Grafana. Grafana's own
-login becomes the viewer-facing auth flow; no second login, no static
-key in any dashboard JSON. (The other conceivable flow — browser SSO à
-la Cloudflare Access in front of the worker — is a poor fit for panels:
-cross-origin cookies + CORS-with-credentials, and it breaks the
-wildcard-CORS embed story.)
+- Its config page stores the API URL in `jsonData.apiUrl` and the token in
+  `secureJsonData.viewerToken`. Grafana encrypts `secureJsonData` and never
+  sends it back to the browser.
+- Its `plugin.json` declares a data source proxy route, `api`
+  (`GET` only), whose URL is `{{ .JsonData.apiUrl }}` and which sets
+  `Authorization: Bearer {{ .SecureJsonData.viewerToken }}`. Grafana's server
+  fills both in. The header is left empty when no token is configured.
+- A panel whose **Data source** option names that data source calls
+  `/api/datasources/proxy/uid/<uid>/api/sources` and `.../api/frames` on
+  Grafana. Grafana forwards them to `<apiUrl>/sources` and `<apiUrl>/frames`
+  with the token added. The dashboard JSON holds only the data source's uid,
+  and Grafana's own login decides who can view.
+- Frame images still load straight from the API: an `<img>` can't carry the
+  token, and image bytes don't pass through Grafana. So a backend with read
+  auth **must sign its image URLs** for this mode (the reference worker's
+  `IMG_SIGN_KEY`). The proxied `/frames` response then carries each image's
+  own short-lived authorization. The panel uses each `url` exactly as
+  returned. It never appends `?k=` in this mode, and it resolves a relative
+  `url` against the API URL, not against Grafana. Unsigned image URLs from a
+  token-protected backend fail to load.
+- The reference worker builds image URLs from the URL it was called on. In
+  this mode that is the data source's API URL, as seen from the Grafana
+  server, so that URL must also be one viewers' browsers can reach.
+- Grafana's proxy reports an API `401` to the browser as `400`
+  ("Authentication to data source failed"), so a rejected token never logs
+  the viewer out of Grafana. The data source's **Save & test** reports it as
+  a rejected token.
+
+The panel's older **API key** option still works for existing dashboards,
+but it is deprecated. It is a per-panel option saved in the dashboard JSON in
+plaintext, and every viewer's browser receives it, because the panel then
+fetches directly. If you keep using it, use a dedicated, revocable viewer
+token per consumer (a dashboard, a wallboard), and treat "can view the
+dashboard" as "holds that token". The **API URL** option on its own remains
+the way to reach an API with open reads.
+
+(The other conceivable flow, browser SSO à la Cloudflare Access in front of
+the worker, is a poor fit for panels: it needs cross-origin cookies and
+CORS-with-credentials, and it breaks the wildcard-CORS embed story.)
 
 ## Try it with curl
 

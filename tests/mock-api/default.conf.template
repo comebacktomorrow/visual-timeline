@@ -1,0 +1,30 @@
+# A stand-in frames API for the dev server and the e2e tests, started by
+# docker-compose.yaml as the `vt-mock-api` service. Reads require the viewer
+# token, like the reference worker with VIEWER_TOKEN set, so a 200 here
+# proves Grafana's data source proxy added it. The nginx image substitutes
+# ${VT_MOCK_VIEWER_TOKEN} from the environment at start-up; nginx's own
+# $variables are left alone.
+server {
+    listen 80;
+    default_type application/json;
+
+    location = /sources {
+        if ($http_authorization != "Bearer ${VT_MOCK_VIEWER_TOKEN}") {
+            return 401 '{"error":"viewer token required"}';
+        }
+        return 200 '[{"id":"e2e-cam","site":"e2e","location":"lab","tags":{"env":"e2e"},"cadence":60000,"history":[]}]';
+    }
+
+    # no frames: the source renders as offline, which is enough to show the
+    # call went through. Tests that need frames mock /frames in the browser.
+    location = /frames {
+        if ($http_authorization != "Bearer ${VT_MOCK_VIEWER_TOKEN}") {
+            return 401 '{"error":"viewer token required"}';
+        }
+        return 200 '[]';
+    }
+
+    location / {
+        return 404 '{"error":"not found"}';
+    }
+}

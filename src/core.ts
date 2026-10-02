@@ -641,41 +641,77 @@ export function imageUrlWithKey(url, apiBase, apiKey) {
   return u.href;
 }
 
-/* API-backed data layer — same shapes as the mock. Used when the panel's
- * apiUrl option points at the kiosk-timeline Worker (CORS is served). */
-function makeApiBackend(apiUrl, apiKey) {
-  const base = apiUrl.replace(/\/+$/, '');
+/* Request paths (with query string) for the two read endpoints, relative to
+ * the API base. Shared by both transports below. */
+export function sourcesPath(sites) {
+  const q = new URLSearchParams();
+  if (sites) {q.set('site', sites.join(','));}
+  const qs = q.toString();
+  return '/sources' + (qs ? '?' + qs : '');
+}
+export function framesPath(site, kiosk, from, to, step) {
+  const q = new URLSearchParams();
+  q.set('site', site);
+  q.set('source', kiosk);
+  q.set('from', String(Math.round(from)));
+  q.set('to', String(Math.round(to)));
+  q.set('step', String(step));
+  q.set('variant', 'lo');
+  return '/frames?' + q.toString();
+}
+
+/* A relative image URL in a /frames response means "relative to that
+ * response". Fetched through a proxy, the response's own URL is the proxy's,
+ * so resolve against the API's public /frames URL instead: the <img> then
+ * loads straight from the API, never through the proxy. */
+export function resolveFrameUrl(url, apiBase) {
+  if (!url || !apiBase) {return url;}
+  try {
+    return new URL(url, apiBase.replace(/\/+$/, '') + '/frames').href;
+  } catch {
+    return url;
+  }
+}
+
+/* API-backed data layer — same shapes as the mock. Two transports:
+ *  - direct: fetch(apiUrl + path), the viewer key (if any) as a Bearer
+ *    header. Used by the standalone app and the panel's API URL option
+ *    (the reference Worker serves CORS).
+ *  - injected: apiFetch(path) does the request — the Grafana panel passes
+ *    one that goes through its data source's proxy, which adds the token
+ *    server-side. It resolves to { ok, status, json() }. The key never
+ *    reaches this code, so no ?k= is ever appended; apiUrl is then only the
+ *    API's public base, for resolving image URLs (see resolveFrameUrl) and
+ *    building the hi-variant URL, never fetched. */
+export function makeApiBackend(apiUrl, apiKey, apiFetch) {
+  const base = (apiUrl || '').replace(/\/+$/, '');
+  const key = apiFetch ? '' : apiKey;
   // fresh options per request: a HUNG backend (dead dev worker still holding
   // its port, half-open connection) must become a catchable timeout error,
   // not a boot that silently never finishes
   const opts = () => ({
-    headers: apiKey ? { authorization: 'Bearer ' + apiKey } : undefined,
+    headers: key ? { authorization: 'Bearer ' + key } : undefined,
     signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined,
   });
+  const get = apiFetch ? (path) => apiFetch(path) : (path) => fetch(base + path, opts());
   return {
     async kiosks(sites) {
-      const u = new URL(base + '/sources');
-      if (sites) {u.searchParams.set('site', sites.join(','));}
-      const r = await fetch(u, opts());
+      const r = await get(sourcesPath(sites));
       if (!r.ok) {throw new Error('kiosks ' + r.status);}
       return r.json();
     },
     async frames(site, kiosk, from, to, step) {
-      const u = new URL(base + '/frames');
-      u.searchParams.set('site', site);
-      u.searchParams.set('source', kiosk);
-      u.searchParams.set('from', String(Math.round(from)));
-      u.searchParams.set('to', String(Math.round(to)));
-      u.searchParams.set('step', String(step));
-      u.searchParams.set('variant', 'lo');
-      const r = await fetch(u, opts());
+      const r = await get(framesPath(site, kiosk, from, to, step));
       if (!r.ok) {throw new Error('frames ' + r.status);}
       const frames = await r.json();
-      for (const f of frames) {f.url = imageUrlWithKey(f.url, base, apiKey);}
+      for (const f of frames) {
+        f.url = apiFetch ? resolveFrameUrl(f.url, base) : imageUrlWithKey(f.url, base, key);
+      }
       return frames;
     },
   };
 }
+
 
 /* Nearest hi-variant URL for the click-in preview (API mode only); the
  * preview falls back to the lo frame if the hi key 404s. The lo frame's
@@ -1187,7 +1223,7 @@ export function mountTimeline(root, cfg) {
   const MIN_SLICE_PX = 7;
   const hostWidth = cfg.width || root.clientWidth || 800;   // plugin passes width; web mounts measure
   const pxBudget = Math.max(10, Math.floor((hostWidth - 20) / MIN_SLICE_PX));
-  const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN, TZ);
+  const backend = cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ);
 
   const wrap = makeWrapper(root);
   wrap.classList.toggle('fill', cfg.fit === 'fill');
@@ -1744,7 +1780,7 @@ export function mountGrid(root, cfg) {
   const TZ = resolveTimeZone(cfg.timeZone);   // as mountTimeline
   const SPAN = Math.max(1, P.to - P.from);
   const LIVE = P.to > Date.now() - 2 * 60 * 1000;
-  const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN, TZ);
+  const backend = cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ);
   const budget = 120;   // temporal buckets for crosshair-follow resolution
 
   const wrap = makeWrapper(root);

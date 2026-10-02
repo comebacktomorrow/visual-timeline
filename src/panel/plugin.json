@@ -1,9 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
-  "type": "app",
+  "type": "panel",
   "name": "Visual Timeline",
-  "id": "savvycocoa1919-visualtimeline-app",
-  "autoEnabled": true,
+  "id": "savvycocoa1919-visualtimeline-panel",
   "info": {
     "keywords": [
       "timeline",
@@ -13,7 +12,7 @@
       "multiview",
       "visual monitoring"
     ],
-    "description": "Scrub-able visual timeline and multiview for image feeds — kiosk screens, security cameras, website thumbnails — with shared-crosshair sync, offline-gap semantics and a data source that keeps the API's viewer token server-side",
+    "description": "Scrub-able visual timeline and multiview for image feeds — kiosk screens, security cameras, website thumbnails — with shared-crosshair sync and offline-gap semantics",
     "author": {
       "name": "Xzibit"
     },
@@ -31,29 +30,12 @@
         "url": "https://github.com/comebacktomorrow/visual-timeline/blob/main/LICENSE"
       }
     ],
-    "screenshots": [
-      {
-        "name": "Timeline and multiview on a dashboard",
-        "path": "img/screenshot-dashboard.png"
-      }
-    ],
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },
-  "includes": [
-    {
-      "type": "panel",
-      "name": "Visual Timeline",
-      "path": "panel/plugin.json"
-    },
-    {
-      "type": "datasource",
-      "name": "Visual Timeline API",
-      "path": "datasource/plugin.json"
-    }
-  ],
   "dependencies": {
     "grafanaDependency": ">=10.4.0",
     "plugins": []
-  }
+  },
+  "skipDataQuery": false
 }
