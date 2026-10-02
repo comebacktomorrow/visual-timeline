@@ -59,12 +59,14 @@ const CSS = `
    hostname bubble on line one, the meta chips on line two — no scrim
    block. The optional gradient variant backs them with a full-height
    left-to-right fade for busy frames. Sits under the magnifier/crosshair
-   and lets all pointer events through. */
+   and lets all pointer events through. The max-heights hold exactly the
+   two lines (16.8px name + 2px gap + a line of 10px chips or 12px status
+   text), so a chip that wraps to a third line is hidden, not a sliver. */
 .ktl .card.inline-head .card-head, .ktl .tile.inline-head .t-head {
   position:absolute; top:0; left:0; z-index:2; max-width:85%;
   flex-wrap:wrap; row-gap:2px; pointer-events:none; overflow:hidden; }
-.ktl .card.inline-head .card-head { padding:5px 0 0 6px; max-height:46px; }
-.ktl .tile.inline-head .t-head { padding:4px 0 0 5px; max-height:44px; }
+.ktl .card.inline-head .card-head { padding:5px 0 0 6px; max-height:42px; }
+.ktl .tile.inline-head .t-head { padding:4px 0 0 5px; max-height:40px; }
 .ktl .inline-brk { display:none; }
 .ktl .card.inline-head .card-head .inline-brk, .ktl .tile.inline-head .t-head .inline-brk {
   display:block; width:100%; height:0; }
@@ -89,12 +91,20 @@ const CSS = `
 .ktl .card-head .nm { flex:0 0 auto; }
 /* chips never wrap: the container wraps instead and clamps to one row,
    so a chip either fits whole or drops out of view (title has it all) */
-.ktl .card-head .tags { display:flex; gap:4px; overflow:hidden; min-width:0; flex-shrink:10;
+.ktl .card-head .tags { display:flex; gap:4px; overflow:hidden; min-width:0; flex-shrink:1000000;
                         flex-wrap:wrap; max-height:17px; align-content:flex-start; }
 .ktl .card-head .tags .st { flex:0 0 auto; }
 .ktl .card-head .nm { font-weight:600; color:var(--ktl-text); }
 .ktl .card-head .st, .ktl .t-head .st { font-size:10px; color:var(--ktl-dim); border:1px solid var(--ktl-border);
                       border-radius:8px; padding:0 6px; white-space:nowrap; }
+/* a source's zone chip ("Sydney · +3h") leads the details: it is what
+   reads the frame's clock. Short of room, the header gives up the tags
+   first, then the site/location chip (ellipsized), then the zone's city;
+   the offset itself always stays */
+.ktl .card-head > .st, .ktl .t-head > .st { min-width:0; overflow:hidden; text-overflow:ellipsis; flex-shrink:10000; }
+.ktl .card-head > .st.tz, .ktl .t-head > .st.tz { display:flex; flex-shrink:1; font-variant-numeric:tabular-nums; }
+.ktl .st.tz .tzc { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.ktl .st.tz .tzo { flex:0 0 auto; white-space:pre; }
 .ktl .card-head .ft { font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex-shrink:1; }
 .ktl .card-head .ft.stale { color:var(--ktl-off); }
 .ktl .card-head .cad { margin-left:auto; font-size:10px; color:var(--ktl-dim); }
@@ -239,7 +249,7 @@ const CSS = `
 .ktl .tile .t-head { display:flex; gap:6px; align-items:center; padding:2px 6px; color:var(--ktl-dim); flex:0 0 auto;
                      flex-wrap:nowrap; overflow:hidden; min-width:0; }
 .ktl .tile .t-head .nm { flex:0 0 auto; }
-.ktl .tile .t-head .tags { display:flex; gap:4px; overflow:hidden; min-width:0; flex-shrink:10;
+.ktl .tile .t-head .tags { display:flex; gap:4px; overflow:hidden; min-width:0; flex-shrink:1000000;
                            flex-wrap:wrap; max-height:17px; align-content:flex-start; }
 .ktl .tile .t-head .tags .st { flex:0 0 auto; }
 .ktl .tile .t-head .nm { font-weight:600; color:var(--ktl-text); }
@@ -282,13 +292,17 @@ const SITES = {
   'site-a': [
     { id: 'source-1', cadence: 60e3, tags: { env: 'prod' } },
     { id: 'source-2', cadence: 60e3 },
-    { id: 'source-3', cadence: 120e3 },
+    // declared zones (#68): one with DST, one on a :45 offset, so the
+    // header offset label shows from (almost) any viewer's zone
+    { id: 'source-3', cadence: 120e3, timezone: 'Australia/Sydney' },
   ],
   'site-b': [
     { id: 'source-4', cadence: 60e3 },
-    { id: 'source-5', cadence: 30e3, tags: { orient: 'portrait' } },
+    { id: 'source-5', cadence: 30e3, tags: { orient: 'portrait' }, timezone: 'Asia/Kathmandu' },
   ],
 };
+const DEMO_ZONES = {};
+for (const ks of Object.values(SITES)) {for (const k of ks) {if (k.timezone) {DEMO_ZONES[k.id] = k.timezone;}}}
 const HUES = { 'source-1': 205, 'source-2': 275, 'source-3': 25, 'source-4': 130, 'source-5': 340 };
 /* demo screen shapes: source-3 is 4:3, source-5 is portrait 9:16 */
 const DIMS = { 'source-3': [288, 216], 'source-5': [216, 384] };
@@ -417,8 +431,107 @@ export const fmtTime = (ts, tz?) => zoneOf(tz).fmt('time', F_TIME).format(ts);
 export const fmtShort = (ts, tz?) => zoneOf(tz).fmt('short', F_SHORT).format(ts);
 const fmtDur = ms => ms % 3600e3 === 0 ? (ms / 3600e3) + 'h' : ms % 60e3 === 0 ? (ms / 60e3) + 'm' : (ms / 1e3) + 's';
 
-/* demo frames draw a clock in the mount's zone, so a frame agrees with its
- * caption and the axis (a real screen shows its own; per-source zones, #68) */
+/* ---- per-source zones (#68) ----
+ * A source may declare where it is (`timezone` in /sources, from the
+ * uploader's X-Timezone header). The panel's zone still runs the axis, the
+ * crosshair and the annotation tooltips; a source's zone only labels its
+ * header and, with cfg.thumbTimes === 'source', its own time text. */
+
+/* the declared zone of a source, or null: absent, blank and unknown names
+ * all mean "none" (never the browser's zone — that would label a source
+ * with the viewer's location). The declared spelling is kept: Intl's
+ * canonical ids are the old names (Asia/Calcutta for Asia/Kolkata). */
+export function sourceTimeZone(decl) {
+  const raw = decl && decl.timezone;
+  if (typeof raw !== 'string') {return null;}
+  const s = raw.trim();
+  if (!s || /^(browser|default|local)$/i.test(s)) {return null;}
+  if (/^(?:etc\/)?utc$/i.test(s)) {return 'UTC';}
+  if (isZone(s)) {return s;}
+  if (!zoneWarned.has(s)) {
+    zoneWarned.add(s);
+    console.warn('[visual-timeline] source declares unknown time zone "' + s + '"; ignoring it');
+  }
+  return null;
+}
+/* a short name for a zone: its city (the IANA name's last segment) */
+export function zoneLabel(tz) {
+  const s = String(tz || '');
+  if (/^(?:etc\/)?utc$/i.test(s)) {return 'UTC';}
+  return s.slice(s.lastIndexOf('/') + 1).replace(/_/g, ' ');
+}
+/* a zone difference as text: +3h, +5h45m, −30m (a real minus); '' for none */
+export function fmtOffset(ms) {
+  const m = Math.round(ms / 60e3);
+  if (!m) {return '';}
+  const a = Math.abs(m), h = Math.floor(a / 60), mm = a % 60;
+  return (m < 0 ? '−' : '+') + (h ? h + 'h' : '') + (mm ? mm + 'm' : '');
+}
+/* how far `tz` is ahead of `refTz` at instant ts, as fmtOffset text. Depends
+ * on the instant: either zone may be on daylight time. */
+export function zoneOffsetText(tz, refTz, ts) {
+  return fmtOffset(zoneOf(tz).offset(ts) - zoneOf(refTz).offset(ts));
+}
+/* the header label: "Sydney · +3h", or just "Sydney" when the source's
+ * clock currently reads the same as the panel's */
+export function zoneHeadText(tz, refTz, ts) {
+  const off = zoneOffsetText(tz, refTz, ts);
+  return zoneLabel(tz) + (off ? ' · ' + off : '');
+}
+/* Time text for one source: in `zone`, and with `suffix` each value carries
+ * its offset from the panel zone (07:31:00 (+3h)) so it can't pass for
+ * panel time. The offset is memoized per minute (zones change offset on
+ * whole minutes), so a scrub costs at most one recompute per minute moved. */
+function zoneTexts(zone, panelTZ, suffix) {
+  let memoMin = NaN, memo = '';
+  const off = (ts) => {
+    const m = Math.floor(ts / 60e3);
+    if (m !== memoMin) { memoMin = m; memo = zone === panelTZ ? '' : zoneOffsetText(zone, panelTZ, ts); }
+    return memo;
+  };
+  const label = zoneLabel(zone);
+  return {
+    zone, label, off,
+    time: (ts) => fmtTime(ts, zone),
+    short: (ts) => fmtShort(ts, zone),
+    sfx: suffix ? (ts) => { const o = off(ts); return o ? ' (' + o + ')' : ''; } : () => '',
+  };
+}
+/* one source's zone state in a mount: srcTZ (null when undeclared), its
+ * texts (header chip), and tt, the time text its captions use: its own
+ * zone's with thumbTimes 'source', else the panel's (panelTT) */
+function zoneFor(decl, panelTZ, thumbTimes, panelTT) {
+  const srcTZ = sourceTimeZone(decl);
+  const texts = srcTZ ? zoneTexts(srcTZ, panelTZ, true) : null;
+  return { srcTZ, texts, tt: texts && thumbTimes === 'source' ? texts : panelTT, el: null, offEl: null, off: null };
+}
+/* the header chip for a zoned source: city, then " · offset". Text and
+ * title are set by attachZoneChip/dressZoneChip with textContent, so a
+ * zone name never becomes markup */
+function zoneChip(srcTZ) {
+  return srcTZ ? '<span class="st tz"><span class="tzc"></span><span class="tzo"></span></span>' : '';
+}
+function attachZoneChip(z, host) {
+  z.el = host.querySelector('.tz');
+  if (!z.el) {return;}
+  z.el.querySelector('.tzc').textContent = z.texts.label;
+  z.offEl = z.el.querySelector('.tzo');
+}
+/* refresh a zone chip's offset for instant ts: one memoized lookup, and the
+ * DOM is touched only when the text changes (a DST change inside the
+ * window, the cursor crossing it) */
+function dressZoneChip(z, ts) {
+  if (!z.el) {return;}
+  const o = z.texts.off(ts);
+  if (o === z.off) {return;}
+  z.off = o;
+  z.offEl.textContent = o ? ' · ' + o : '';
+  z.el.title = 'Source time zone: ' + z.texts.zone + (o ? ' (' + o + ' from panel time)' : ' (same as panel time)');
+}
+
+/* demo frames draw a clock as the screen would: a source with a declared
+ * zone shows its own local time (labelled with the city), the rest the
+ * mount's zone, so they agree with their captions and the axis */
 function makeBackend(P, SPAN, tz) {
   function renderMockFrame(site, kiosk, ts, step) {
     const dims = DIMS[kiosk] || [384, 216];
@@ -434,7 +547,12 @@ function makeBackend(P, SPAN, tz) {
     g.font = 'bold ' + Math.round(Math.min(w * 0.16, h * 0.18)) + 'px monospace';
     g.fillStyle = 'hsl(' + hue + ' 70% 72%)';
     g.textAlign = 'center';
-    g.fillText(fmtTime(ts, tz), w / 2, h * 0.55);
+    const own = DEMO_ZONES[kiosk];
+    g.fillText(fmtTime(ts, own || tz), w / 2, h * 0.55);
+    if (own) {
+      g.font = Math.round(Math.min(h * 0.055, w * 0.06)) + 'px sans-serif';
+      g.fillText(zoneLabel(own) + ' local time', w / 2, h * 0.655);
+    }
     g.textAlign = 'left';
     const phase = (ts / step) % 20 / 20;
     g.fillStyle = 'hsl(' + hue + ' 80% 55%)';
@@ -1145,10 +1263,13 @@ function dressGhost(slots, sl) {
 function makePreview(root, tz) {
   // adopt: a mount created while a retire is pending cancels the close
   if (popState.retireTimer) { clearTimeout(popState.retireTimer); popState.retireTimer = null; }
+  const panelTexts = zoneTexts(tz, tz, false);
   return {
     // expectedTs set = frame is the pending slot's ghost: shown blurred and
-    // captioned as the last frame, never as the expected one
-    open(site, kiosk, frame, x, y, hiUrl, expectedTs) {
+    // captioned as the last frame, never as the expected one. tt: the
+    // source's time text (zoneTexts), the panel's when omitted
+    open(site, kiosk, frame, x, y, hiUrl, expectedTs, tt) {
+      tt = tt || panelTexts;
       closePreview();
       const el = document.createElement('div');
       el.className = 'ktl-pop' + (expectedTs ? ' ghost' : '');
@@ -1156,8 +1277,8 @@ function makePreview(root, tz) {
       el.innerHTML = '<img alt="frame"><div class="cap"></div>';
       const img = el.querySelector('img');
       el.querySelector('.cap').textContent = site + ' / ' + kiosk + ' — ' + (expectedTs
-        ? 'expected ' + fmtShort(expectedTs, tz) + ' · last frame ' + fmtTime(frame.ts, tz)
-        : fmtTime(frame.ts, tz));
+        ? 'expected ' + tt.short(expectedTs) + ' · last frame ' + tt.time(frame.ts)
+        : tt.time(frame.ts)) + tt.sfx(frame.ts);
       el.addEventListener('click', closePreview);
       document.body.appendChild(el);
       const place = () => {
@@ -1220,11 +1341,17 @@ function retireWrapper(wrap) {
   setTimeout(() => wrap.remove(), 1500);
 }
 
-/* cfg: { site, from, to, width, timeZone, onHover(t), onHoverClear() }
+/* cfg: { site, from, to, width, timeZone, thumbTimes, onHover(t), onHoverClear() }
  * timeZone: an IANA name, 'utc', or undefined/'browser' (the viewer's own
  * zone, the default). It sets every time the mount shows as text — axis,
  * cursor, captions, tooltips, the demo frames' clock — and where the axis
- * ticks fall. Data stays UTC epoch ms either way. */
+ * ticks fall. Data stays UTC epoch ms either way.
+ * thumbTimes: 'panel' (default) or 'source'. With 'source', a source that
+ * declares a zone (decl.timezone) shows ITS times — magnifier and preview
+ * captions, last-seen/expected text, image alt text, grid timestamps — in
+ * that zone, each marked with its offset from the panel's: 07:31:00 (+3h).
+ * The axis, cursor label and annotation tooltips stay in the panel zone.
+ * Either way a zoned source's header names its zone: "Sydney · +3h". */
 export function mountTimeline(root, cfg) {
   injectStyles();
   const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
@@ -1259,6 +1386,7 @@ export function mountTimeline(root, cfg) {
   const axisTickList = [];   // filled by buildAxis; consumed by ruleBeyond
   let suppressClick = false;
   const pv = makePreview(root, TZ);
+  const PANEL_TT = zoneTexts(TZ, TZ, false);
 
   /* selection band shown on every card during drag-zoom (fractions of window) */
   function showSelection(fa, fb) {
@@ -1308,6 +1436,7 @@ export function mountTimeline(root, cfg) {
 
   function buildCard(decl, model) {
     const kiosk = decl.id;
+    const zone = zoneFor(decl, TZ, cfg.thumbTimes, PANEL_TT), tt = zone.tt;
     const card = document.createElement('div');
     const inline = cfg.headerMode === 'inline' || cfg.headerMode === 'inline-gradient';
     card.className = 'card' + (inline ? ' inline-head' : '') +
@@ -1318,8 +1447,9 @@ export function mountTimeline(root, cfg) {
       : '';
     card.innerHTML =
       '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(kiosk) + '</span>' +
-      '<span class="inline-brk"></span>' +
-      '<span class="st">' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' + tagChips(decl) + '<span class="ft"></span>' +
+      '<span class="inline-brk"></span>' + zoneChip(zone.srcTZ) +
+      '<span class="st">' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' +
+      tagChips(decl) + '<span class="ft"></span>' +
       cad + '</div>' +
       '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>' +
       '<div class="card-lane"></div>';
@@ -1336,7 +1466,7 @@ export function mountTimeline(root, cfg) {
       el.style.flexGrow = String(sl.span / 1000);
       if (sl.frame) {
         const img = document.createElement('img');
-        img.src = sl.frame.url; img.alt = kiosk + ' ' + fmtTime(sl.ts, TZ);
+        img.src = sl.frame.url; img.alt = kiosk + ' ' + tt.time(sl.ts) + tt.sfx(sl.ts);
         el.appendChild(img);
       }
       strip.appendChild(el);
@@ -1368,8 +1498,8 @@ export function mountTimeline(root, cfg) {
       const sl = model.slotAt(cursorT);
       const f = sl && sl.frame;
       const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
-      if (f) {pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, cfg.apiUrl, cfg.apiKey));}
-      else if (g) {pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl.ts);}
+      if (f) {pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, cfg.apiUrl, cfg.apiKey), null, tt);}
+      else if (g) {pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl.ts, tt);}
     });
     /* magnifier takes the aspect of the actual frames (portrait screens etc.) */
     const magEl = card.querySelector('.mag');
@@ -1410,8 +1540,9 @@ export function mountTimeline(root, cfg) {
       document.addEventListener('mouseup', up);
     });
     q('.cards').appendChild(card);
+    attachZoneChip(zone, card);
     return {
-      card, model,
+      card, model, zone, tt,
       head: card.querySelector('.ft'),
       strip,
       cross: card.querySelector('.xh'),
@@ -1585,13 +1716,16 @@ export function mountTimeline(root, cfg) {
       const w = c.strip.clientWidth, x = frac * w;
       c.cross.style.left = x + 'px';
       const slot = c.model.slotAt(cursorT);
+      const tt = c.tt;
+      // the zone chip's offset at the cursor: changes only across a DST edge
+      if (c.zone.el) {dressZoneChip(c.zone, cursorT);}
       const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
       c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + 'px';
       c.mag.classList.remove('ghost');
       if (slot && slot.frame) {
         c.mag.classList.remove('gap', 'future', 'off'); clearPauseClasses(c.mag);
         c.mag.querySelector('img').src = slot.frame.url;
-        c.mag.querySelector('.cap').textContent = fmtTime(slot.frame.ts, TZ);
+        c.mag.querySelector('.cap').textContent = tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts);
         c.head.textContent = '';                 // healthy: time lives on the magnifier
         c.head.classList.remove('stale'); clearPauseClasses(c.head);
       } else if (slot && slot.paused) {
@@ -1617,8 +1751,8 @@ export function mountTimeline(root, cfg) {
         c.mag.classList.remove('gap', 'off'); clearPauseClasses(c.mag);
         c.mag.classList.add('future');
         if (g) { c.mag.classList.add('ghost'); c.mag.querySelector('img').src = g.url; }
-        c.mag.querySelector('.cap').textContent = (inFlight ? 'expected — ' : 'upcoming — ') + fmtShort(slot.ts, TZ) +
-          (g ? ' · last frame ' + fmtTime(g.ts, TZ) : '');
+        c.mag.querySelector('.cap').textContent = (inFlight ? 'expected — ' : 'upcoming — ') + tt.short(slot.ts) +
+          (g ? ' · last frame ' + tt.time(g.ts) : '') + tt.sfx(slot.ts);
         c.head.textContent = inFlight ? 'expected' : 'upcoming';
         c.head.classList.remove('stale'); clearPauseClasses(c.head);
       } else {
@@ -1627,7 +1761,7 @@ export function mountTimeline(root, cfg) {
         const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
         let last = null;
         for (let j = i; j >= 0; j--) {if (c.model.slots[j].frame) { last = c.model.slots[j].frame; break; }}
-        const msg = last ? 'offline — last seen ' + fmtTime(last.ts, TZ) : 'no data in window';
+        const msg = last ? 'offline — last seen ' + tt.time(last.ts) + tt.sfx(last.ts) : 'no data in window';
         c.mag.querySelector('.cap').textContent = msg;
         c.head.textContent = msg;
         c.head.classList.add('stale');
@@ -1749,7 +1883,7 @@ export function mountTimeline(root, cfg) {
             let img = slot.el.querySelector('img');
             if (!img) { img = document.createElement('img'); slot.el.appendChild(img); }
             img.classList.remove('ghost');
-            img.src = f.url; img.alt = k.id + ' ' + fmtTime(f.ts, TZ);
+            img.src = f.url; img.alt = k.id + ' ' + c.tt.time(f.ts) + c.tt.sfx(f.ts);
           }
           // future slots age into the present; one still empty a full step
           // past its tick has now genuinely missed its heartbeat
@@ -1801,26 +1935,30 @@ export function mountGrid(root, cfg) {
 
   let kiosks = [], tiles = {}, destroyed = false, pollTimer = null, shownT = null;
   const pv = makePreview(root, TZ);
+  const PANEL_TT = zoneTexts(TZ, TZ, false);
 
   function buildTile(decl, model) {
     const el = document.createElement('div');
+    const zone = zoneFor(decl, TZ, cfg.thumbTimes, PANEL_TT);
     const inline = cfg.headerMode === 'inline' || cfg.headerMode === 'inline-gradient';
     el.className = 'tile' + (inline ? ' inline-head' : '') +
       (cfg.headerMode === 'inline-gradient' ? ' inline-grad' : '');
     el.innerHTML =
       '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(decl.id) + '</span>' +
-      '<span class="inline-brk"></span>' +
-      '<span class="st">' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' + tagChips(decl) + '</div>' +
+      '<span class="inline-brk"></span>' + zoneChip(zone.srcTZ) +
+      '<span class="st">' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' +
+      tagChips(decl) + '</div>' +
       '<div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
+    attachZoneChip(zone, el);
     const rec = {
-      decl, model, el, shown: null,
+      decl, model, el, shown: null, zone, tt: zone.tt,
       img: el.querySelector('img'),
       ts: el.querySelector('.t-ts'),
       off: el.querySelector('.t-off'),
     };
     el.addEventListener('click', e => {
-      if (rec.shown && rec.shownExpected) {pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, null, rec.shownExpected);}
-      else if (rec.shown) {pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, cfg.apiUrl, cfg.apiKey));}
+      if (rec.shown && rec.shownExpected) {pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, null, rec.shownExpected, rec.tt);}
+      else if (rec.shown) {pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, cfg.apiUrl, cfg.apiKey), null, rec.tt);}
     });
     q('.grid').appendChild(el);
     return rec;
@@ -1837,9 +1975,13 @@ export function mountGrid(root, cfg) {
   function setShown(t) {
     shownT = t;
     if (cfg.onShown) {cfg.onShown(t);}                // host chrome hook (standalone app)
+    // zone chips: offset at the crosshair, else at the window's live edge
+    const zoneAt = t == null ? Math.min(P.to, Date.now()) : t;
     for (const k of kiosks) {
       const rec = tiles[k.id];
       if (!rec) {continue;}
+      if (rec.zone.el) {dressZoneChip(rec.zone, zoneAt);}
+      const tt = rec.tt;
       let frame = null, offMsg = null, pausedMsg = null, pausedSlot = null, expectedTs = null;
       const la = rec.model.lastActive;
       if (t == null) {
@@ -1848,11 +1990,11 @@ export function mountGrid(root, cfg) {
         frame = lastFrame(rec);
         if (tailPaused) {
           pausedSlot = tail;
-          pausedMsg = pauseInfo(tail).label + (frame ? ' — last frame ' + fmtTime(frame.ts, TZ) : '');
+          pausedMsg = pauseInfo(tail).label + (frame ? ' — last frame ' + tt.time(frame.ts) + tt.sfx(frame.ts) : '');
         }
         else if (!frame) {offMsg = 'no data in window';}
         else if (LIVE && la && Date.now() - frame.ts > 2 * la.step)
-          {offMsg = 'OFFLINE — last seen ' + fmtTime(frame.ts, TZ);}
+          {offMsg = 'OFFLINE — last seen ' + tt.time(frame.ts) + tt.sfx(frame.ts);}
       } else {
         const slot = rec.model.slotAt(t);
         if (slot && slot.paused) {
@@ -1868,12 +2010,12 @@ export function mountGrid(root, cfg) {
               // ghost when there is one (never the red offline tile)
               frame = ghostFor(rec.model.slots, slot);
               if (frame) {expectedTs = slot.ts;}
-              else {offMsg = 'EXPECTED — ' + fmtShort(slot.ts, TZ);}
+              else {offMsg = 'EXPECTED — ' + tt.short(slot.ts) + tt.sfx(slot.ts);}
             } else {
               const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
               let last = null;
               for (let j = i; j >= 0; j--) {if (rec.model.slots[j].frame) { last = rec.model.slots[j].frame; break; }}
-              offMsg = last ? 'OFFLINE — last seen ' + fmtTime(last.ts, TZ) : 'no data';
+              offMsg = last ? 'OFFLINE — last seen ' + tt.time(last.ts) + tt.sfx(last.ts) : 'no data';
             }
           }
         }
@@ -1887,9 +2029,9 @@ export function mountGrid(root, cfg) {
       rec.shownExpected = expectedTs;
       if (frame && !offMsg && !pausedMsg) {
         rec.img.src = frame.url;
-        rec.ts.textContent = expectedTs
-          ? 'expected ' + fmtShort(expectedTs, TZ) + ' · last ' + fmtTime(frame.ts, TZ)
-          : fmtTime(frame.ts, TZ);
+        rec.ts.textContent = (expectedTs
+          ? 'expected ' + tt.short(expectedTs) + ' · last ' + tt.time(frame.ts)
+          : tt.time(frame.ts)) + tt.sfx(frame.ts);
       }
     }
   }
