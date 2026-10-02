@@ -27,6 +27,7 @@ var VTCore = (() => {
     alignedStart: () => alignedStart,
     axisTicks: () => axisTicks,
     buildSourceModel: () => buildSourceModel,
+    clearPauseClasses: () => clearPauseClasses,
     erasFor: () => erasFor,
     esc: () => esc,
     fmtShort: () => fmtShort,
@@ -798,6 +799,14 @@ var VTCore = (() => {
     return eras;
   }
   var PAUSE_CLASSES = ["paused", "unintended", "r-quiet", "r-screen-sleep", "r-app-stopped", "r-system-down"];
+  function clearPauseClasses(el) {
+    el.classList.remove(...PAUSE_CLASSES);
+    for (const c of Array.from(el.classList)) {
+      if (c.startsWith("r-")) {
+        el.classList.remove(c);
+      }
+    }
+  }
   function pauseInfo(x) {
     const r = x && x.reason;
     const unintended = !!x && x.intended === false;
@@ -1597,28 +1606,35 @@ var VTCore = (() => {
         c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + "px";
         c.mag.classList.remove("ghost");
         if (slot && slot.frame) {
-          c.mag.classList.remove("gap", "future", "off", ...PAUSE_CLASSES);
+          c.mag.classList.remove("gap", "future", "off");
+          clearPauseClasses(c.mag);
           c.mag.querySelector("img").src = slot.frame.url;
           c.mag.querySelector(".cap").textContent = fmtTime(slot.frame.ts, TZ);
           c.head.textContent = "";
-          c.head.classList.remove("stale", ...PAUSE_CLASSES);
+          c.head.classList.remove("stale");
+          clearPauseClasses(c.head);
         } else if (slot && slot.paused) {
           const pi = pauseInfo(slot);
-          c.mag.classList.remove("gap", "future", "off", ...PAUSE_CLASSES);
+          c.mag.classList.remove("gap", "future", "off");
+          clearPauseClasses(c.mag);
           c.mag.classList.add(...pi.classes);
           c.mag.querySelector(".cap").textContent = pi.label.toLowerCase();
           c.head.textContent = pi.label.toLowerCase();
-          c.head.classList.remove("stale", ...PAUSE_CLASSES);
+          c.head.classList.remove("stale");
+          clearPauseClasses(c.head);
           c.head.classList.add(...pi.classes);
         } else if (slot && slot.beyond) {
-          c.mag.classList.remove("gap", "future", ...PAUSE_CLASSES);
+          c.mag.classList.remove("gap", "future");
+          clearPauseClasses(c.mag);
           c.mag.classList.add("off");
           c.head.textContent = "";
-          c.head.classList.remove("stale", ...PAUSE_CLASSES);
+          c.head.classList.remove("stale");
+          clearPauseClasses(c.head);
         } else if (slot && slot.future) {
           const inFlight = slot.ts <= Date.now();
           const g = ghostFor(c.model.slots, slot);
-          c.mag.classList.remove("gap", "off", ...PAUSE_CLASSES);
+          c.mag.classList.remove("gap", "off");
+          clearPauseClasses(c.mag);
           c.mag.classList.add("future");
           if (g) {
             c.mag.classList.add("ghost");
@@ -1626,10 +1642,12 @@ var VTCore = (() => {
           }
           c.mag.querySelector(".cap").textContent = (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + fmtShort(slot.ts, TZ) + (g ? " \xB7 last frame " + fmtTime(g.ts, TZ) : "");
           c.head.textContent = inFlight ? "expected" : "upcoming";
-          c.head.classList.remove("stale", ...PAUSE_CLASSES);
+          c.head.classList.remove("stale");
+          clearPauseClasses(c.head);
         } else {
           c.mag.classList.add("gap");
-          c.mag.classList.remove("future", "off", ...PAUSE_CLASSES);
+          c.mag.classList.remove("future", "off");
+          clearPauseClasses(c.mag);
           const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
           let last = null;
           for (let j = i; j >= 0; j--) {
@@ -1642,7 +1660,7 @@ var VTCore = (() => {
           c.mag.querySelector(".cap").textContent = msg;
           c.head.textContent = msg;
           c.head.classList.add("stale");
-          c.head.classList.remove(...PAUSE_CLASSES);
+          clearPauseClasses(c.head);
         }
       }
       if (!external && cfg.onHover) {
@@ -1929,7 +1947,7 @@ var VTCore = (() => {
           }
         }
         rec.el.classList.toggle("offline", !!offMsg);
-        rec.el.classList.remove(...PAUSE_CLASSES);
+        clearPauseClasses(rec.el);
         if (pausedMsg && !offMsg) {
           rec.el.classList.add(...pauseInfo(pausedSlot).classes);
         }

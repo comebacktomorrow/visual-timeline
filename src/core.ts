@@ -737,6 +737,13 @@ export function erasFor(decl, P) {
  * uploader did about it). intended === false is the triage color: explained
  * but nobody asked for it (power-policy blank, display handoff failure). */
 export const PAUSE_CLASSES = ['paused', 'unintended', 'r-quiet', 'r-screen-sleep', 'r-app-stopped', 'r-system-down'];
+/* clear every pause class off an element: PAUSE_CLASSES plus ANY r-<reason>.
+ * pauseInfo passes unknown reasons through as classes, so no fixed list can
+ * cover them, and a leftover one would outlive the band it came from. */
+export function clearPauseClasses(el) {
+  el.classList.remove(...PAUSE_CLASSES);
+  for (const c of Array.from(el.classList)) {if (c.startsWith('r-')) {el.classList.remove(c);}}
+}
 export function pauseInfo(x) {
   const r = x && x.reason;
   const unintended = !!x && x.intended === false;
@@ -1531,41 +1538,41 @@ export function mountTimeline(root, cfg) {
       c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + 'px';
       c.mag.classList.remove('ghost');
       if (slot && slot.frame) {
-        c.mag.classList.remove('gap', 'future', 'off', ...PAUSE_CLASSES);
+        c.mag.classList.remove('gap', 'future', 'off'); clearPauseClasses(c.mag);
         c.mag.querySelector('img').src = slot.frame.url;
         c.mag.querySelector('.cap').textContent = fmtTime(slot.frame.ts, TZ);
         c.head.textContent = '';                 // healthy: time lives on the magnifier
-        c.head.classList.remove('stale', ...PAUSE_CLASSES);
+        c.head.classList.remove('stale'); clearPauseClasses(c.head);
       } else if (slot && slot.paused) {
         // declared silence — neutral (or amber when unintended), not offline-red
         const pi = pauseInfo(slot);
-        c.mag.classList.remove('gap', 'future', 'off', ...PAUSE_CLASSES);
+        c.mag.classList.remove('gap', 'future', 'off'); clearPauseClasses(c.mag);
         c.mag.classList.add(...pi.classes);
         c.mag.querySelector('.cap').textContent = pi.label.toLowerCase();
         c.head.textContent = pi.label.toLowerCase();
-        c.head.classList.remove('stale', ...PAUSE_CLASSES);
+        c.head.classList.remove('stale'); clearPauseClasses(c.head);
         c.head.classList.add(...pi.classes);
       } else if (slot && slot.beyond) {
         // ahead of now: unknown — nothing to preview, only the crosshair
-        c.mag.classList.remove('gap', 'future', ...PAUSE_CLASSES);
+        c.mag.classList.remove('gap', 'future'); clearPauseClasses(c.mag);
         c.mag.classList.add('off');
         c.head.textContent = '';
-        c.head.classList.remove('stale', ...PAUSE_CLASSES);
+        c.head.classList.remove('stale'); clearPauseClasses(c.head);
       } else if (slot && slot.future) {
         // not offline, not stale: either the tick is ahead of now, or it
         // just passed and its frame is still in flight (one-step grace)
         const inFlight = slot.ts <= Date.now();
         const g = ghostFor(c.model.slots, slot);
-        c.mag.classList.remove('gap', 'off', ...PAUSE_CLASSES);
+        c.mag.classList.remove('gap', 'off'); clearPauseClasses(c.mag);
         c.mag.classList.add('future');
         if (g) { c.mag.classList.add('ghost'); c.mag.querySelector('img').src = g.url; }
         c.mag.querySelector('.cap').textContent = (inFlight ? 'expected — ' : 'upcoming — ') + fmtShort(slot.ts, TZ) +
           (g ? ' · last frame ' + fmtTime(g.ts, TZ) : '');
         c.head.textContent = inFlight ? 'expected' : 'upcoming';
-        c.head.classList.remove('stale', ...PAUSE_CLASSES);
+        c.head.classList.remove('stale'); clearPauseClasses(c.head);
       } else {
         c.mag.classList.add('gap');
-        c.mag.classList.remove('future', 'off', ...PAUSE_CLASSES);
+        c.mag.classList.remove('future', 'off'); clearPauseClasses(c.mag);
         const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
         let last = null;
         for (let j = i; j >= 0; j--) {if (c.model.slots[j].frame) { last = c.model.slots[j].frame; break; }}
@@ -1573,7 +1580,7 @@ export function mountTimeline(root, cfg) {
         c.mag.querySelector('.cap').textContent = msg;
         c.head.textContent = msg;
         c.head.classList.add('stale');
-        c.head.classList.remove(...PAUSE_CLASSES);
+        clearPauseClasses(c.head);
       }
     }
     if (!external && cfg.onHover) {cfg.onHover(cursorT);}
@@ -1821,7 +1828,7 @@ export function mountGrid(root, cfg) {
         }
       }
       rec.el.classList.toggle('offline', !!offMsg);
-      rec.el.classList.remove(...PAUSE_CLASSES);
+      clearPauseClasses(rec.el);
       if (pausedMsg && !offMsg) {rec.el.classList.add(...pauseInfo(pausedSlot).classes);}
       rec.off.textContent = offMsg || pausedMsg || '';
       rec.el.classList.toggle('ghost', !!expectedTs);
