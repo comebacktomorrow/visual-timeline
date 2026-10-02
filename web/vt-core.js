@@ -29,6 +29,8 @@ var VTCore = (() => {
     buildSourceModel: () => buildSourceModel,
     erasFor: () => erasFor,
     esc: () => esc,
+    fmtShort: () => fmtShort,
+    fmtTime: () => fmtTime,
     ghostFor: () => ghostFor,
     headTitle: () => headTitle,
     imageUrlWithKey: () => imageUrlWithKey,
@@ -39,9 +41,12 @@ var VTCore = (() => {
     nextTick: () => nextTick,
     parseTagFilter: () => parseTagFilter,
     pauseInfo: () => pauseInfo,
+    resolveTimeZone: () => resolveTimeZone,
     slotClass: () => slotClass,
     tagChips: () => tagChips,
-    tickFormat: () => tickFormat
+    tickFormat: () => tickFormat,
+    zonedParts: () => zonedParts,
+    zonedTime: () => zonedTime
   });
   var STYLE_ID = "ktl-styles";
   var KTL_VAR_DEFAULTS = {
@@ -345,10 +350,136 @@ var VTCore = (() => {
   };
   var HUES = { "source-1": 205, "source-2": 275, "source-3": 25, "source-4": 130, "source-5": 340 };
   var DIMS = { "source-3": [288, 216], "source-5": [216, 384] };
-  var fmtTime = (ts) => new Date(ts).toLocaleTimeString("en-AU", { hour12: false });
-  var fmtShort = (ts) => new Date(ts).toLocaleTimeString("en-AU", { hour12: false, hour: "2-digit", minute: "2-digit" });
+  var LOCAL_TZ = "local";
+  var zoneOk = /* @__PURE__ */ new Map();
+  function isZone(name) {
+    let ok = zoneOk.get(name);
+    if (ok === void 0) {
+      try {
+        new Intl.DateTimeFormat("en-US", { timeZone: name });
+        ok = true;
+      } catch (e) {
+        ok = false;
+      }
+      zoneOk.set(name, ok);
+    }
+    return ok;
+  }
+  function systemZone() {
+    let z = null;
+    try {
+      z = new Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch (e) {
+      z = null;
+    }
+    return z && isZone(z) ? z : LOCAL_TZ;
+  }
+  var zoneWarned = /* @__PURE__ */ new Set();
+  function resolveTimeZone(tz) {
+    const s = tz == null ? "" : String(tz).trim();
+    if (!s || /^(browser|default|local)$/i.test(s)) {
+      return systemZone();
+    }
+    if (/^utc$/i.test(s)) {
+      return "UTC";
+    }
+    if (isZone(s)) {
+      return s;
+    }
+    if (!zoneWarned.has(s)) {
+      zoneWarned.add(s);
+      console.warn('[visual-timeline] unknown time zone "' + s + `"; using the browser's`);
+    }
+    return systemZone();
+  }
+  var zones = /* @__PURE__ */ new Map();
+  function zoneOf(tz) {
+    const id = resolveTimeZone(tz);
+    let z = zones.get(id);
+    if (!z) {
+      const tzOpt = id === LOCAL_TZ ? {} : { timeZone: id };
+      const fmts = /* @__PURE__ */ new Map();
+      let offset;
+      if (id === "UTC") {
+        offset = () => 0;
+      } else if (id === LOCAL_TZ) {
+        offset = (ts) => -new Date(ts).getTimezoneOffset() * 6e4;
+      } else {
+        const pf = new Intl.DateTimeFormat("en-US", Object.assign({
+          hourCycle: "h23",
+          year: "numeric",
+          month: "numeric",
+          day: "numeric",
+          hour: "numeric",
+          minute: "numeric",
+          second: "numeric"
+        }, tzOpt));
+        offset = (ts) => {
+          const p = {};
+          for (const x of pf.formatToParts(ts)) {
+            p[x.type] = x.value;
+          }
+          const wall = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
+          return wall - Math.floor(ts / 1e3) * 1e3;
+        };
+      }
+      z = {
+        id,
+        offset,
+        // en-AU, 24 h: the panel's one display format (locale/12 h are not options)
+        fmt(key, opts) {
+          let f = fmts.get(key);
+          if (!f) {
+            f = new Intl.DateTimeFormat("en-AU", Object.assign({}, opts, tzOpt));
+            fmts.set(key, f);
+          }
+          return f;
+        }
+      };
+      zones.set(id, z);
+    }
+    return z;
+  }
+  var wallOf = (ts, z) => ts + z.offset(ts);
+  function fromWall(w, z) {
+    const before = z.offset(w - 864e5), after = z.offset(w + 864e5);
+    const a = w - before;
+    if (before === after) {
+      return a;
+    }
+    const b = w - after;
+    const aOk = z.offset(a) === before, bOk = z.offset(b) === after;
+    if (aOk && bOk) {
+      return Math.min(a, b);
+    }
+    if (bOk) {
+      return b;
+    }
+    return a;
+  }
+  function zonedParts(ts, tz) {
+    const d = new Date(wallOf(ts, zoneOf(tz)));
+    return {
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth() + 1,
+      day: d.getUTCDate(),
+      hour: d.getUTCHours(),
+      minute: d.getUTCMinutes(),
+      second: d.getUTCSeconds(),
+      ms: d.getUTCMilliseconds()
+    };
+  }
+  function zonedTime(f, tz) {
+    return fromWall(Date.UTC(f.year, f.month - 1, f.day, f.hour || 0, f.minute || 0, f.second || 0, f.ms || 0), zoneOf(tz));
+  }
+  var F_TIME = { hour12: false, hour: "numeric", minute: "numeric", second: "numeric" };
+  var F_SHORT = { hour12: false, hour: "2-digit", minute: "2-digit" };
+  var F_DAY_HM = { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false };
+  var F_DAY = { day: "2-digit", month: "2-digit" };
+  var fmtTime = (ts, tz) => zoneOf(tz).fmt("time", F_TIME).format(ts);
+  var fmtShort = (ts, tz) => zoneOf(tz).fmt("short", F_SHORT).format(ts);
   var fmtDur = (ms) => ms % 36e5 === 0 ? ms / 36e5 + "h" : ms % 6e4 === 0 ? ms / 6e4 + "m" : ms / 1e3 + "s";
-  function makeBackend(P, SPAN) {
+  function makeBackend(P, SPAN, tz) {
     function renderMockFrame(site, kiosk, ts, step) {
       const dims = DIMS[kiosk] || [384, 216];
       const w = dims[0], h = dims[1];
@@ -367,7 +498,7 @@ var VTCore = (() => {
       g.font = "bold " + Math.round(Math.min(w * 0.16, h * 0.18)) + "px monospace";
       g.fillStyle = "hsl(" + hue + " 70% 72%)";
       g.textAlign = "center";
-      g.fillText(fmtTime(ts), w / 2, h * 0.55);
+      g.fillText(fmtTime(ts, tz), w / 2, h * 0.55);
       g.textAlign = "left";
       const phase = ts / step % 20 / 20;
       g.fillStyle = "hsl(" + hue + " 80% 55%)";
@@ -503,7 +634,7 @@ var VTCore = (() => {
         }
       }
     }
-    function render(items, x, y, src) {
+    function render(items, x, y, src, tz) {
       copyVars(src, el);
       el.textContent = "";
       for (const a of items) {
@@ -515,7 +646,7 @@ var VTCore = (() => {
         b.textContent = a.title || "annotation";
         const tm = document.createElement("span");
         tm.className = "tm";
-        tm.textContent = fmtTime(a.ts) + (a.timeEnd ? " \u2192 " + fmtTime(a.timeEnd) : "");
+        tm.textContent = fmtTime(a.ts, tz) + (a.timeEnd ? " \u2192 " + fmtTime(a.timeEnd, tz) : "");
         head.appendChild(b);
         head.appendChild(tm);
         item.appendChild(head);
@@ -549,15 +680,16 @@ var VTCore = (() => {
       el.style.display = "none";
     }
     return {
-      show(items, x, y, src) {
+      // tz: the zone of the panel that opened the tip (one tip serves every panel)
+      show(items, x, y, src, tz) {
         if (!annTipPinned) {
-          render(items, x, y, src);
+          render(items, x, y, src, tz);
         }
       },
-      pin(items, x, y, src) {
+      pin(items, x, y, src, tz) {
         annTipPinned = true;
         el.classList.add("pinned");
-        render(items, x, y, src);
+        render(items, x, y, src, tz);
       },
       hide() {
         if (!annTipPinned) {
@@ -838,54 +970,113 @@ var VTCore = (() => {
     90 * 864e5,
     365 * 864e5
   ];
-  function alignedStart(ts, stepMs) {
-    const d = new Date(ts);
-    if (stepMs >= 30 * 864e5) {
-      d.setHours(0, 0, 0, 0);
-      d.setDate(1);
-    } else if (stepMs >= 864e5) {
-      d.setHours(0, 0, 0, 0);
-    } else if (stepMs >= 36e5) {
-      const stepHr = stepMs / 36e5;
-      d.setHours(Math.floor(d.getHours() / stepHr) * stepHr, 0, 0, 0);
-    } else {
-      const stepMin = stepMs / 6e4;
-      d.setMinutes(Math.floor(d.getMinutes() / stepMin) * stepMin, 0, 0);
-    }
-    return d;
+  var DAY_MS = 864e5;
+  function monthsOf(stepMs) {
+    return stepMs >= 30 * DAY_MS ? Math.round(stepMs / (30 * DAY_MS)) : 0;
   }
-  function nextTick(d, stepMs) {
-    if (stepMs >= 30 * 864e5) {
-      d.setMonth(d.getMonth() + Math.round(stepMs / (30 * 864e5)));
-    } else if (stepMs >= 864e5) {
-      d.setDate(d.getDate() + stepMs / 864e5);
-    } else {
-      d.setTime(+d + stepMs);
+  function offsetChange(lo, hi, o, z) {
+    let a = Math.floor(lo / 1e3), b = Math.ceil(hi / 1e3);
+    while (b - a > 1) {
+      const m = Math.floor((a + b) / 2);
+      if (z.offset(m * 1e3) === o) {
+        a = m;
+      } else {
+        b = m;
+      }
     }
-    return d;
+    return b * 1e3;
   }
-  function axisTicks(from, to, stepMs) {
+  function ceilWall(ts, step, z) {
+    let t = ts;
+    for (let i = 0; i < 6; i++) {
+      const o = z.offset(t);
+      const c = Math.ceil((t + o) / step) * step - o;
+      if (z.offset(c) === o) {
+        return c;
+      }
+      t = offsetChange(t, c, o, z);
+    }
+    return Math.ceil(ts / step) * step;
+  }
+  function floorWall(ts, step, z) {
+    let t = ts;
+    for (let i = 0; i < 6; i++) {
+      const o = z.offset(t);
+      const c = Math.floor((t + o) / step) * step - o;
+      const oc = z.offset(c);
+      if (oc === o) {
+        return c;
+      }
+      t = offsetChange(c, t, oc, z) - 1;
+    }
+    return Math.floor(ts / step) * step;
+  }
+  function monthStart(idx, z) {
+    return fromWall(Date.UTC(Math.floor(idx / 12), (idx % 12 + 12) % 12, 1), z);
+  }
+  function dayStartWall(ts, z) {
+    const w = wallOf(ts, z);
+    return w - (w % DAY_MS + DAY_MS) % DAY_MS;
+  }
+  function alignIn(ts, stepMs, z) {
+    const k = monthsOf(stepMs);
+    if (k) {
+      const d = new Date(wallOf(ts, z));
+      const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
+      return monthStart(Math.floor(idx / k) * k, z);
+    }
+    if (stepMs >= DAY_MS) {
+      return fromWall(dayStartWall(ts, z), z);
+    }
+    return floorWall(ts, stepMs, z);
+  }
+  function nextIn(ts, stepMs, z) {
+    const k = monthsOf(stepMs);
+    let n;
+    if (k) {
+      const d = new Date(wallOf(ts, z));
+      const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
+      n = monthStart(Math.floor(idx / k) * k + k, z);
+    } else if (stepMs >= DAY_MS) {
+      n = fromWall(dayStartWall(ts, z) + Math.round(stepMs / DAY_MS) * DAY_MS, z);
+    } else {
+      n = ceilWall(ts + 1, stepMs, z);
+    }
+    return n > ts ? n : ts + stepMs;
+  }
+  function alignedStart(ts, stepMs, tz) {
+    return alignIn(ts, stepMs, zoneOf(tz));
+  }
+  function nextTick(ts, stepMs, tz) {
+    return nextIn(ts, stepMs, zoneOf(tz));
+  }
+  function axisTicks(from, to, stepMs, tz) {
+    const z = zoneOf(tz);
     const out = [];
-    let d = alignedStart(from, stepMs);
-    while (+d < from) {
-      d = nextTick(d, stepMs);
+    let t = alignIn(from, stepMs, z);
+    while (t < from) {
+      t = nextIn(t, stepMs, z);
     }
-    for (; +d <= to; d = nextTick(d, stepMs)) {
-      out.push(+d);
+    for (; t <= to && out.length < 1e4; t = nextIn(t, stepMs, z)) {
+      out.push(t);
     }
     return out;
   }
-  function tickFormat(stepMs) {
+  function tickFormat(stepMs, tz) {
+    const z = zoneOf(tz);
     if (stepMs < 36e5) {
-      return fmtShort;
+      const f = z.fmt("short", F_SHORT);
+      return (ts) => f.format(ts);
     }
     if (stepMs < 24 * 36e5) {
-      return (ts) => new Date(ts).toLocaleString("en-AU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+      const f = z.fmt("dayhm", F_DAY_HM);
+      return (ts) => f.format(ts);
     }
     if (stepMs < 365 * 864e5) {
-      return (ts) => new Date(ts).toLocaleDateString("en-AU", { day: "2-digit", month: "2-digit" });
+      const f = z.fmt("day", F_DAY);
+      return (ts) => f.format(ts);
     }
-    return (ts) => String(new Date(ts).getFullYear());
+    return (ts) => String(new Date(wallOf(ts, z)).getUTCFullYear());
   }
   var TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
   var TICK_LABEL_GAP = 14;
@@ -951,7 +1142,7 @@ var VTCore = (() => {
       img.src = g.url;
     }
   }
-  function makePreview(root) {
+  function makePreview(root, tz) {
     if (popState.retireTimer) {
       clearTimeout(popState.retireTimer);
       popState.retireTimer = null;
@@ -966,7 +1157,7 @@ var VTCore = (() => {
         copyVars(root, el);
         el.innerHTML = '<img alt="frame"><div class="cap"></div>';
         const img = el.querySelector("img");
-        el.querySelector(".cap").textContent = site + " / " + kiosk + " \u2014 " + (expectedTs ? "expected " + fmtShort(expectedTs) + " \xB7 last frame " + fmtTime(frame.ts) : fmtTime(frame.ts));
+        el.querySelector(".cap").textContent = site + " / " + kiosk + " \u2014 " + (expectedTs ? "expected " + fmtShort(expectedTs, tz) + " \xB7 last frame " + fmtTime(frame.ts, tz) : fmtTime(frame.ts, tz));
         el.addEventListener("click", closePreview);
         document.body.appendChild(el);
         const place = () => {
@@ -1035,12 +1226,13 @@ var VTCore = (() => {
   function mountTimeline(root, cfg) {
     injectStyles();
     const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
+    const TZ = resolveTimeZone(cfg.timeZone);
     const SPAN = Math.max(1, P.to - P.from);
     const LIVE = P.to > Date.now() - 2 * 60 * 1e3;
     const MIN_SLICE_PX = 7;
     const hostWidth = cfg.width || root.clientWidth || 800;
     const pxBudget = Math.max(10, Math.floor((hostWidth - 20) / MIN_SLICE_PX));
-    const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN);
+    const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN, TZ);
     const wrap = makeWrapper(root);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="cards"></div><div class="ann-lane" style="display:none"></div><div class="axis"><div class="base"></div><div class="acur"></div></div>';
@@ -1055,7 +1247,7 @@ var VTCore = (() => {
     let kiosks = [], cards = {}, cursorT = restoreCursor(), destroyed = false, pollTimer = null;
     const axisTickList = [];
     let suppressClick = false;
-    const pv = makePreview(root);
+    const pv = makePreview(root, TZ);
     function showSelection(fa, fb) {
       const a = Math.min(fa, fb), b = Math.max(fa, fb);
       for (const k of kiosks) {
@@ -1127,7 +1319,7 @@ var VTCore = (() => {
         if (sl.frame) {
           const img = document.createElement("img");
           img.src = sl.frame.url;
-          img.alt = kiosk + " " + fmtTime(sl.ts);
+          img.alt = kiosk + " " + fmtTime(sl.ts, TZ);
           el.appendChild(img);
         }
         strip.appendChild(el);
@@ -1234,13 +1426,13 @@ var VTCore = (() => {
       const w = axis.clientWidth;
       const roughMaxTicks = Math.max(3, Math.floor(w / 90));
       const roughStep = TICK_STEPS.find((s) => SPAN / s <= roughMaxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-      const sampleWidth = measureTickWidth(tickFormat(roughStep)(P.to));
+      const sampleWidth = measureTickWidth(tickFormat(roughStep, TZ)(P.to));
       const maxTicks = Math.max(3, Math.floor(w / (sampleWidth + TICK_LABEL_GAP)));
       const tickStep = TICK_STEPS.find((s) => SPAN / s <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-      const fmt = tickFormat(tickStep);
+      const fmt = tickFormat(tickStep, TZ);
       axis.querySelectorAll(".tick").forEach((t) => t.remove());
       axisTickList.length = 0;
-      for (const ts of axisTicks(P.from, P.to, tickStep)) {
+      for (const ts of axisTicks(P.from, P.to, tickStep, TZ)) {
         axisTickList.push(ts);
         const el = document.createElement("div");
         el.className = "tick";
@@ -1317,13 +1509,13 @@ var VTCore = (() => {
           }
           el.addEventListener("mouseenter", () => {
             const r = el.getBoundingClientRect();
-            tip.show(g, r.left + r.width / 2, r.top, el);
+            tip.show(g, r.left + r.width / 2, r.top, el, TZ);
           });
           el.addEventListener("mouseleave", () => tip.hide());
           el.addEventListener("click", (e) => {
             e.stopPropagation();
             const r = el.getBoundingClientRect();
-            tip.pin(g, r.left + r.width / 2, r.top, el);
+            tip.pin(g, r.left + r.width / 2, r.top, el, TZ);
           });
           host.appendChild(el);
         }
@@ -1388,7 +1580,7 @@ var VTCore = (() => {
       const frac = (cursorT - P.from) / SPAN;
       const axis = q(".axis"), ac = q(".acur");
       const acW = ac.offsetWidth || 50;
-      ac.textContent = fmtTime(cursorT);
+      ac.textContent = fmtTime(cursorT, TZ);
       ac.style.left = Math.max(acW / 2, Math.min(axis.clientWidth - acW / 2, frac * axis.clientWidth)) + "px";
       for (const k of kiosks) {
         const c = cards[k.id];
@@ -1407,7 +1599,7 @@ var VTCore = (() => {
         if (slot && slot.frame) {
           c.mag.classList.remove("gap", "future", "off", ...PAUSE_CLASSES);
           c.mag.querySelector("img").src = slot.frame.url;
-          c.mag.querySelector(".cap").textContent = fmtTime(slot.frame.ts);
+          c.mag.querySelector(".cap").textContent = fmtTime(slot.frame.ts, TZ);
           c.head.textContent = "";
           c.head.classList.remove("stale", ...PAUSE_CLASSES);
         } else if (slot && slot.paused) {
@@ -1432,7 +1624,7 @@ var VTCore = (() => {
             c.mag.classList.add("ghost");
             c.mag.querySelector("img").src = g.url;
           }
-          c.mag.querySelector(".cap").textContent = (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + fmtShort(slot.ts) + (g ? " \xB7 last frame " + fmtTime(g.ts) : "");
+          c.mag.querySelector(".cap").textContent = (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + fmtShort(slot.ts, TZ) + (g ? " \xB7 last frame " + fmtTime(g.ts, TZ) : "");
           c.head.textContent = inFlight ? "expected" : "upcoming";
           c.head.classList.remove("stale", ...PAUSE_CLASSES);
         } else {
@@ -1446,7 +1638,7 @@ var VTCore = (() => {
               break;
             }
           }
-          const msg = last ? "offline \u2014 last seen " + fmtTime(last.ts) : "no data in window";
+          const msg = last ? "offline \u2014 last seen " + fmtTime(last.ts, TZ) : "no data in window";
           c.mag.querySelector(".cap").textContent = msg;
           c.head.textContent = msg;
           c.head.classList.add("stale");
@@ -1596,7 +1788,7 @@ var VTCore = (() => {
               }
               img.classList.remove("ghost");
               img.src = f.url;
-              img.alt = k.id + " " + fmtTime(f.ts);
+              img.alt = k.id + " " + fmtTime(f.ts, TZ);
             }
             const overdue = Date.now();
             for (const sl of c.model.slots) {
@@ -1638,16 +1830,17 @@ var VTCore = (() => {
   function mountGrid(root, cfg) {
     injectStyles();
     const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
+    const TZ = resolveTimeZone(cfg.timeZone);
     const SPAN = Math.max(1, P.to - P.from);
     const LIVE = P.to > Date.now() - 2 * 60 * 1e3;
-    const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN);
+    const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN, TZ);
     const budget = 120;
     const wrap = makeWrapper(root);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="grid"></div>';
     const q = (sel) => wrap.querySelector(sel);
     let kiosks = [], tiles = {}, destroyed = false, pollTimer = null, shownT = null;
-    const pv = makePreview(root);
+    const pv = makePreview(root, TZ);
     function buildTile(decl, model) {
       const el = document.createElement("div");
       const inline = cfg.headerMode === "inline" || cfg.headerMode === "inline-gradient";
@@ -1698,11 +1891,11 @@ var VTCore = (() => {
           frame = lastFrame(rec);
           if (tailPaused) {
             pausedSlot = tail;
-            pausedMsg = pauseInfo(tail).label + (frame ? " \u2014 last frame " + fmtTime(frame.ts) : "");
+            pausedMsg = pauseInfo(tail).label + (frame ? " \u2014 last frame " + fmtTime(frame.ts, TZ) : "");
           } else if (!frame) {
             offMsg = "no data in window";
           } else if (LIVE && la && Date.now() - frame.ts > 2 * la.step) {
-            offMsg = "OFFLINE \u2014 last seen " + fmtTime(frame.ts);
+            offMsg = "OFFLINE \u2014 last seen " + fmtTime(frame.ts, TZ);
           }
         } else {
           const slot = rec.model.slotAt(t);
@@ -1719,7 +1912,7 @@ var VTCore = (() => {
                 if (frame) {
                   expectedTs = slot.ts;
                 } else {
-                  offMsg = "EXPECTED \u2014 " + fmtShort(slot.ts);
+                  offMsg = "EXPECTED \u2014 " + fmtShort(slot.ts, TZ);
                 }
               } else {
                 const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
@@ -1730,7 +1923,7 @@ var VTCore = (() => {
                     break;
                   }
                 }
-                offMsg = last ? "OFFLINE \u2014 last seen " + fmtTime(last.ts) : "no data";
+                offMsg = last ? "OFFLINE \u2014 last seen " + fmtTime(last.ts, TZ) : "no data";
               }
             }
           }
@@ -1746,7 +1939,7 @@ var VTCore = (() => {
         rec.shownExpected = expectedTs;
         if (frame && !offMsg && !pausedMsg) {
           rec.img.src = frame.url;
-          rec.ts.textContent = expectedTs ? "expected " + fmtShort(expectedTs) + " \xB7 last " + fmtTime(frame.ts) : fmtTime(frame.ts);
+          rec.ts.textContent = expectedTs ? "expected " + fmtShort(expectedTs, TZ) + " \xB7 last " + fmtTime(frame.ts, TZ) : fmtTime(frame.ts, TZ);
         }
       }
     }
