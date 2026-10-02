@@ -363,15 +363,22 @@ describe('buildSourceModel', () => {
       expect(ghostFor(m.slots, m.slots[m.slots.length - 2])).toBeNull();
     });
 
-    test('grace boundary at build: a tick exactly one step old is offline', async () => {
-      // NOTE: current behaviour; build marks pending while ts + step > now,
-      // but the live poll (missedHeartbeat) keeps it pending while
-      // ts + step >= now — the two disagree for exactly that millisecond.
+    test('grace boundary: build and the live poll agree at exactly one step past the tick', async () => {
+      // #65: build used to mark pending only while ts + step > now, while the
+      // live poll (missedHeartbeat) keeps it pending while ts + step >= now,
+      // so at exactly that millisecond a fresh build said offline and the
+      // poll said pending. Both now say pending, and offline one ms later.
       now = T0 + 61 * MIN;
       const m = await build(decl(), P, backendWith(every(MIN, T0, T0 + 59 * MIN)), BUDGET);
       const sixty = m.slots.find((sl: any) => sl.ts === T0 + 60 * MIN);
-      expect(slotClass(sixty)).toBe(' gap');
-      expect(missedHeartbeat({ ...sixty, future: true }, now)).toBe(false);
+      expect(slotClass(sixty)).toBe(' future');
+      expect(missedHeartbeat(sixty, now)).toBe(false);
+
+      now = T0 + 61 * MIN + 1;
+      const later = await build(decl(), P, backendWith(every(MIN, T0, T0 + 59 * MIN)), BUDGET);
+      const sixtyLater = later.slots.find((sl: any) => sl.ts === T0 + 60 * MIN);
+      expect(slotClass(sixtyLater)).toBe(' gap');
+      expect(missedHeartbeat({ ...sixtyLater, future: true }, now)).toBe(true);
     });
 
     test('a scheduled future cadence change does not spray pending slots past now', async () => {

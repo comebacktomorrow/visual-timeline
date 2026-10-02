@@ -293,11 +293,133 @@ const HUES = { 'source-1': 205, 'source-2': 275, 'source-3': 25, 'source-4': 130
 /* demo screen shapes: source-3 is 4:3, source-5 is portrait 9:16 */
 const DIMS = { 'source-3': [288, 216], 'source-5': [216, 384] };
 
-const fmtTime = ts => new Date(ts).toLocaleTimeString('en-AU', { hour12: false });
-const fmtShort = ts => new Date(ts).toLocaleTimeString('en-AU', { hour12: false, hour: '2-digit', minute: '2-digit' });
+/* ======================= time zones =======================
+ * All data is UTC epoch ms; only DISPLAY (text) and AXIS ALIGNMENT depend
+ * on a zone. A zone is named by a string: an IANA name ('America/New_York'),
+ * 'UTC', or undefined / '' / 'browser' for the viewer's own zone (the
+ * default, and how the panel always rendered). Every time→text and calendar
+ * helper below takes the zone as its LAST argument, so one mount can format
+ * one value in its own zone and the next in another (per-source zones, #68).
+ *
+ * resolveTimeZone() turns a config value into a concrete zone id; a mount
+ * does it once (cfg.timeZone) and passes the result down. The helpers also
+ * accept unresolved values. Formatters are Intl.DateTimeFormat instances
+ * cached per zone and format: building one costs far more than using it,
+ * and scrubbing formats a caption on every pointer move. */
+const LOCAL_TZ = 'local';   // the engine's zone, when Intl cannot name it
+const zoneOk = new Map();
+function isZone(name) {
+  let ok = zoneOk.get(name);
+  if (ok === undefined) {
+    try { new Intl.DateTimeFormat('en-US', { timeZone: name }); ok = true; } catch (e) { ok = false; }
+    zoneOk.set(name, ok);
+  }
+  return ok;
+}
+/* read per call, not cached: a host whose zone changes (an OS setting, a
+ * test switching TZ) picks it up on the next mount */
+function systemZone() {
+  let z = null;
+  try { z = new Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { z = null; }
+  return z && isZone(z) ? z : LOCAL_TZ;
+}
+const zoneWarned = new Set();
+export function resolveTimeZone(tz?) {
+  const s = tz == null ? '' : String(tz).trim();
+  if (!s || /^(browser|default|local)$/i.test(s)) {return systemZone();}
+  if (/^utc$/i.test(s)) {return 'UTC';}
+  if (isZone(s)) {return s;}
+  if (!zoneWarned.has(s)) {
+    zoneWarned.add(s);
+    console.warn('[visual-timeline] unknown time zone "' + s + '"; using the browser\'s');
+  }
+  return systemZone();
+}
+
+/* A zone's offset (wall clock minus UTC, ms) at an instant, plus its cached
+ * formatters. Offsets come from formatToParts, which resolves to the second,
+ * so an offset is constant within each whole second. */
+const zones = new Map();
+function zoneOf(tz) {
+  const id = resolveTimeZone(tz);
+  let z = zones.get(id);
+  if (!z) {
+    const tzOpt = id === LOCAL_TZ ? {} : { timeZone: id };
+    const fmts = new Map();
+    let offset;
+    if (id === 'UTC') {offset = () => 0;}
+    else if (id === LOCAL_TZ) {offset = (ts) => -new Date(ts).getTimezoneOffset() * 60e3;}
+    else {
+      const pf = new Intl.DateTimeFormat('en-US', Object.assign({
+        hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric',
+        hour: 'numeric', minute: 'numeric', second: 'numeric',
+      }, tzOpt));
+      offset = (ts) => {
+        const p = {};
+        for (const x of pf.formatToParts(ts)) {p[x.type] = x.value;}
+        const wall = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
+        return wall - Math.floor(ts / 1000) * 1000;
+      };
+    }
+    z = {
+      id, offset,
+      // en-AU, 24 h: the panel's one display format (locale/12 h are not options)
+      fmt(key, opts) {
+        let f = fmts.get(key);
+        if (!f) { f = new Intl.DateTimeFormat('en-AU', Object.assign({}, opts, tzOpt)); fmts.set(key, f); }
+        return f;
+      },
+    };
+    zones.set(id, z);
+  }
+  return z;
+}
+
+/* wall clock ↔ instant. A "wall" value is the zone's clock reading encoded
+ * as if it were UTC ms (Date.UTC of the fields), so calendar arithmetic on
+ * it has no DST. Going back, a wall time can be NONEXISTENT (skipped by a
+ * spring-forward) or AMBIGUOUS (repeated by a fall-back): like Date's own
+ * local-time constructor, a skipped time moves forward by the gap (02:30 →
+ * 03:30) and a repeated one resolves to the EARLIER instant. */
+const wallOf = (ts, z) => ts + z.offset(ts);
+function fromWall(w, z) {
+  // the offsets in force a day either side: at most one change lies between
+  const before = z.offset(w - 864e5), after = z.offset(w + 864e5);
+  const a = w - before;
+  if (before === after) {return a;}
+  const b = w - after;
+  const aOk = z.offset(a) === before, bOk = z.offset(b) === after;
+  if (aOk && bOk) {return Math.min(a, b);}   // repeated: the earlier one
+  if (bOk) {return b;}
+  return a;   // valid only before the change, or skipped (then a lands the gap's length later)
+}
+/* the zone's wall-clock fields at an instant (month and day 1-based) */
+export function zonedParts(ts, tz?) {
+  const d = new Date(wallOf(ts, zoneOf(tz)));
+  return {
+    year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate(),
+    hour: d.getUTCHours(), minute: d.getUTCMinutes(), second: d.getUTCSeconds(), ms: d.getUTCMilliseconds(),
+  };
+}
+/* the instant a wall-clock reading in the zone names (fields as zonedParts
+ * returns them; time fields default to 0) */
+export function zonedTime(f, tz?) {
+  return fromWall(Date.UTC(f.year, f.month - 1, f.day, f.hour || 0, f.minute || 0, f.second || 0, f.ms || 0), zoneOf(tz));
+}
+
+// toLocaleTimeString's defaults, spelled out: same text as before, now cacheable
+const F_TIME = { hour12: false, hour: 'numeric', minute: 'numeric', second: 'numeric' };
+const F_SHORT = { hour12: false, hour: '2-digit', minute: '2-digit' };
+const F_DAY_HM = { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false };
+const F_DAY = { day: '2-digit', month: '2-digit' };
+/* HH:mm:ss and HH:mm in the zone (en-AU, 24 h) */
+export const fmtTime = (ts, tz?) => zoneOf(tz).fmt('time', F_TIME).format(ts);
+export const fmtShort = (ts, tz?) => zoneOf(tz).fmt('short', F_SHORT).format(ts);
 const fmtDur = ms => ms % 3600e3 === 0 ? (ms / 3600e3) + 'h' : ms % 60e3 === 0 ? (ms / 60e3) + 'm' : (ms / 1e3) + 's';
 
-function makeBackend(P, SPAN) {
+/* demo frames draw a clock in the mount's zone, so a frame agrees with its
+ * caption and the axis (a real screen shows its own; per-source zones, #68) */
+function makeBackend(P, SPAN, tz) {
   function renderMockFrame(site, kiosk, ts, step) {
     const dims = DIMS[kiosk] || [384, 216];
     const w = dims[0], h = dims[1];
@@ -312,7 +434,7 @@ function makeBackend(P, SPAN) {
     g.font = 'bold ' + Math.round(Math.min(w * 0.16, h * 0.18)) + 'px monospace';
     g.fillStyle = 'hsl(' + hue + ' 70% 72%)';
     g.textAlign = 'center';
-    g.fillText(fmtTime(ts), w / 2, h * 0.55);
+    g.fillText(fmtTime(ts, tz), w / 2, h * 0.55);
     g.textAlign = 'left';
     const phase = (ts / step) % 20 / 20;
     g.fillStyle = 'hsl(' + hue + ' 80% 55%)';
@@ -446,7 +568,7 @@ function annTip() {
     }
   }
 
-  function render(items, x, y, src) {
+  function render(items, x, y, src, tz) {
     copyVars(src, el);   // one tip serves every panel: wear the caller's palette
     el.textContent = '';
     for (const a of items) {
@@ -458,7 +580,7 @@ function annTip() {
       b.textContent = a.title || 'annotation';
       const tm = document.createElement('span');
       tm.className = 'tm';
-      tm.textContent = fmtTime(a.ts) + (a.timeEnd ? ' → ' + fmtTime(a.timeEnd) : '');
+      tm.textContent = fmtTime(a.ts, tz) + (a.timeEnd ? ' → ' + fmtTime(a.timeEnd, tz) : '');
       head.appendChild(b); head.appendChild(tm);
       item.appendChild(head);
       if (a.text) {
@@ -493,11 +615,12 @@ function annTip() {
   }
 
   return {
-    show(items, x, y, src) { if (!annTipPinned) {render(items, x, y, src);} },
-    pin(items, x, y, src) {
+    // tz: the zone of the panel that opened the tip (one tip serves every panel)
+    show(items, x, y, src, tz) { if (!annTipPinned) {render(items, x, y, src, tz);} },
+    pin(items, x, y, src, tz) {
       annTipPinned = true;
       el.classList.add('pinned');
-      render(items, x, y, src);
+      render(items, x, y, src, tz);
     },
     hide() { if (!annTipPinned) {el.style.display = 'none';} },
     close,
@@ -614,6 +737,13 @@ export function erasFor(decl, P) {
  * uploader did about it). intended === false is the triage color: explained
  * but nobody asked for it (power-policy blank, display handoff failure). */
 export const PAUSE_CLASSES = ['paused', 'unintended', 'r-quiet', 'r-screen-sleep', 'r-app-stopped', 'r-system-down'];
+/* clear every pause class off an element: PAUSE_CLASSES plus ANY r-<reason>.
+ * pauseInfo passes unknown reasons through as classes, so no fixed list can
+ * cover them, and a leftover one would outlive the band it came from. */
+export function clearPauseClasses(el) {
+  el.classList.remove(...PAUSE_CLASSES);
+  for (const c of Array.from(el.classList)) {if (c.startsWith('r-')) {el.classList.remove(c);}}
+}
 export function pauseInfo(x) {
   const r = x && x.reason;
   const unintended = !!x && x.intended === false;
@@ -654,7 +784,8 @@ export async function buildSourceModel(decl, P, backend, budgetSlots) {
       // tick that just passed has its frame IN FLIGHT (capture + upload +
       // the backend's response cache), and calling it offline for those
       // seconds painted a red live edge that healed on the next poll.
-      slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step > nowMs });
+      // Pending through ts + step itself, offline after: missedHeartbeat's rule.
+      slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowMs });
     }
   }
 
@@ -742,15 +873,18 @@ export function parseTagFilter(expr) {
   const out = {};
   for (const part of String(expr).split(',')) {
     const i = part.indexOf('=');
-    if (i > 0) {out[part.slice(0, i).trim().toLowerCase()] = part.slice(i + 1).trim().toLowerCase();}
+    const key = i >= 0 ? part.slice(0, i).trim().toLowerCase() : '';
+    // blank keys are dropped AFTER trimming: " =x" (as typed after ", ") too
+    if (key) {out[key] = part.slice(i + 1).trim().toLowerCase();}
   }
   return Object.keys(out).length ? out : null;
 }
 export function matchesTags(tags, filter) {
   if (!filter) {return true;}
-  if (!tags) {return false;}
+  // no tags object reads like an empty one: a missing tag is '' either way
+  const t = tags || {};
   for (const k in filter) {
-    if (String(tags[k] == null ? '' : tags[k]).toLowerCase() !== filter[k]) {return false;}
+    if (String(t[k] == null ? '' : t[k]).toLowerCase() !== filter[k]) {return false;}
   }
   return true;
 }
@@ -782,53 +916,127 @@ export const TICK_STEPS = [60e3, 5 * 60e3, 10 * 60e3, 15 * 60e3, 30 * 60e3,
                     9 * 86400e3, 10 * 86400e3, 15 * 86400e3,
                     30 * 86400e3, 90 * 86400e3, 365 * 86400e3];
 
-/* snaps down to the nearest local calendar boundary at or before `ts` for the
- * given step's granularity (minute/hour/midnight/1st-of-month), so ticks land
- * on :00 and local midnight instead of arbitrary epoch-multiple offsets */
-export function alignedStart(ts, stepMs) {
-  const d = new Date(ts);
-  if (stepMs >= 30 * 86400e3) {
-    d.setHours(0, 0, 0, 0);
-    d.setDate(1);
-  } else if (stepMs >= 86400e3) {
-    d.setHours(0, 0, 0, 0);
-  } else if (stepMs >= 3600e3) {
-    const stepHr = stepMs / 3600e3;
-    d.setHours(Math.floor(d.getHours() / stepHr) * stepHr, 0, 0, 0);
-  } else {
-    const stepMin = stepMs / 60e3;
-    d.setMinutes(Math.floor(d.getMinutes() / stepMin) * stepMin, 0, 0);
+/* Calendar alignment in a zone. Three tiers, by step:
+ * - under a day: ticks are the instants whose WALL CLOCK sits on the step's
+ *   grid (minutes or hours since local midnight). Within one offset run that
+ *   is (t + offset) % step === 0; a DST change moves to the next run and
+ *   re-aligns there. So 2-hourly ticks stay on even local hours across a
+ *   change, hourly ticks stay on :00 across Lord Howe's 30-minute shift, a
+ *   skipped hour gets no tick and a repeated hour gets both of its ticks.
+ *   Steps must divide a day (every TICK_STEPS entry does).
+ * - days: local midnight, stepping by calendar days from the window's first
+ *   day (23 h and 25 h days stay on midnight).
+ * - months: the 1st, on calendar multiples of the step: every month (30d),
+ *   quarters starting Jan/Apr/Jul/Oct (90d), 1 January (365d). */
+const DAY_MS = 864e5;
+function monthsOf(stepMs) {
+  return stepMs >= 30 * DAY_MS ? Math.round(stepMs / (30 * DAY_MS)) : 0;   // 365d → 12
+}
+/* the first instant in (lo, hi] whose offset differs from `o` (offset(lo)
+ * is o, offset(hi) is not). Offsets change on whole seconds. */
+function offsetChange(lo, hi, o, z) {
+  let a = Math.floor(lo / 1000), b = Math.ceil(hi / 1000);
+  while (b - a > 1) {
+    const m = Math.floor((a + b) / 2);
+    if (z.offset(m * 1000) === o) {a = m;} else {b = m;}
   }
-  return d;
+  return b * 1000;
+}
+/* first instant >= ts on the sub-day wall grid */
+function ceilWall(ts, step, z) {
+  let t = ts;
+  for (let i = 0; i < 6; i++) {
+    const o = z.offset(t);
+    const c = Math.ceil((t + o) / step) * step - o;
+    if (z.offset(c) === o) {return c;}
+    t = offsetChange(t, c, o, z);   // the run ended before c: retry in the next one
+  }
+  return Math.ceil(ts / step) * step;
+}
+/* last instant <= ts on the sub-day wall grid */
+function floorWall(ts, step, z) {
+  let t = ts;
+  for (let i = 0; i < 6; i++) {
+    const o = z.offset(t);
+    const c = Math.floor((t + o) / step) * step - o;
+    const oc = z.offset(c);
+    if (oc === o) {return c;}
+    t = offsetChange(c, t, oc, z) - 1;   // this run starts after c: retry in the previous one
+  }
+  return Math.floor(ts / step) * step;
+}
+function monthStart(idx, z) {
+  return fromWall(Date.UTC(Math.floor(idx / 12), ((idx % 12) + 12) % 12, 1), z);
+}
+function dayStartWall(ts, z) {
+  const w = wallOf(ts, z);
+  return w - (((w % DAY_MS) + DAY_MS) % DAY_MS);
+}
+function alignIn(ts, stepMs, z) {
+  const k = monthsOf(stepMs);
+  if (k) {
+    const d = new Date(wallOf(ts, z));
+    const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
+    return monthStart(Math.floor(idx / k) * k, z);
+  }
+  if (stepMs >= DAY_MS) {return fromWall(dayStartWall(ts, z), z);}
+  return floorWall(ts, stepMs, z);
+}
+function nextIn(ts, stepMs, z) {
+  const k = monthsOf(stepMs);
+  let n;
+  if (k) {
+    const d = new Date(wallOf(ts, z));
+    const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
+    n = monthStart(Math.floor(idx / k) * k + k, z);
+  } else if (stepMs >= DAY_MS) {
+    n = fromWall(dayStartWall(ts, z) + Math.round(stepMs / DAY_MS) * DAY_MS, z);
+  } else {
+    n = ceilWall(ts + 1, stepMs, z);
+  }
+  return n > ts ? n : ts + stepMs;   // always progress, whatever a zone's history does
 }
 
-/* advances by calendar units (not raw ms) at day+ granularity so DST and
- * variable month lengths don't drift the grid */
-export function nextTick(d, stepMs) {
-  if (stepMs >= 30 * 86400e3) {d.setMonth(d.getMonth() + Math.round(stepMs / (30 * 86400e3)));}
-  else if (stepMs >= 86400e3) {d.setDate(d.getDate() + stepMs / 86400e3);}
-  else {d.setTime(+d + stepMs);}
-  return d;
+/* the last tick boundary at or before `ts` for the step's tier, in the zone:
+ * the sub-day wall grid, local midnight, or the 1st of a month that is a
+ * calendar multiple of the step (any month, a quarter, January) */
+export function alignedStart(ts, stepMs, tz?) {
+  return alignIn(ts, stepMs, zoneOf(tz));
+}
+
+/* the tick after `ts`: the next grid instant below a day, the next midnight
+ * `step` days on from ts's day, or the next month/quarter/year start */
+export function nextTick(ts, stepMs, tz?) {
+  return nextIn(ts, stepMs, zoneOf(tz));
 }
 
 /* every tick in [from, to]: calendar-aligned start, then nextTick steps */
-export function axisTicks(from, to, stepMs) {
+export function axisTicks(from, to, stepMs, tz?) {
+  const z = zoneOf(tz);
   const out = [];
-  let d = alignedStart(from, stepMs);
-  while (+d < from) {d = nextTick(d, stepMs);}
-  for (; +d <= to; d = nextTick(d, stepMs)) {out.push(+d);}
+  let t = alignIn(from, stepMs, z);
+  while (t < from) {t = nextIn(t, stepMs, z);}
+  for (; t <= to && out.length < 10000; t = nextIn(t, stepMs, z)) {out.push(t);}
   return out;
 }
 
 /* one format per zoom tier (not a whole-axis binary switch), matching
- * Grafana's per-increment axis labels */
-export function tickFormat(stepMs) {
-  if (stepMs < 3600e3) {return fmtShort;}
-  if (stepMs < 24 * 3600e3)
-    {return ts => new Date(ts).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });}
-  if (stepMs < 365 * 86400e3)
-    {return ts => new Date(ts).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit' });}
-  return ts => String(new Date(ts).getFullYear());
+ * Grafana's per-increment axis labels, in the zone */
+export function tickFormat(stepMs, tz?) {
+  const z = zoneOf(tz);
+  if (stepMs < 3600e3) {
+    const f = z.fmt('short', F_SHORT);
+    return ts => f.format(ts);
+  }
+  if (stepMs < 24 * 3600e3) {
+    const f = z.fmt('dayhm', F_DAY_HM);
+    return ts => f.format(ts);
+  }
+  if (stepMs < 365 * 86400e3) {
+    const f = z.fmt('day', F_DAY);
+    return ts => f.format(ts);
+  }
+  return ts => String(new Date(wallOf(ts, z)).getUTCFullYear());
 }
 
 const TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -887,7 +1095,7 @@ function dressGhost(slots, sl) {
   if (img.src !== g.url) {img.src = g.url;}
 }
 
-function makePreview(root) {
+function makePreview(root, tz) {
   // adopt: a mount created while a retire is pending cancels the close
   if (popState.retireTimer) { clearTimeout(popState.retireTimer); popState.retireTimer = null; }
   return {
@@ -901,8 +1109,8 @@ function makePreview(root) {
       el.innerHTML = '<img alt="frame"><div class="cap"></div>';
       const img = el.querySelector('img');
       el.querySelector('.cap').textContent = site + ' / ' + kiosk + ' — ' + (expectedTs
-        ? 'expected ' + fmtShort(expectedTs) + ' · last frame ' + fmtTime(frame.ts)
-        : fmtTime(frame.ts));
+        ? 'expected ' + fmtShort(expectedTs, tz) + ' · last frame ' + fmtTime(frame.ts, tz)
+        : fmtTime(frame.ts, tz));
       el.addEventListener('click', closePreview);
       document.body.appendChild(el);
       const place = () => {
@@ -965,16 +1173,21 @@ function retireWrapper(wrap) {
   setTimeout(() => wrap.remove(), 1500);
 }
 
-/* cfg: { site, from, to, width, onHover(t), onHoverClear() } */
+/* cfg: { site, from, to, width, timeZone, onHover(t), onHoverClear() }
+ * timeZone: an IANA name, 'utc', or undefined/'browser' (the viewer's own
+ * zone, the default). It sets every time the mount shows as text — axis,
+ * cursor, captions, tooltips, the demo frames' clock — and where the axis
+ * ticks fall. Data stays UTC epoch ms either way. */
 export function mountTimeline(root, cfg) {
   injectStyles();
   const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
+  const TZ = resolveTimeZone(cfg.timeZone);
   const SPAN = Math.max(1, P.to - P.from);
   const LIVE = P.to > Date.now() - 2 * 60 * 1000;
   const MIN_SLICE_PX = 7;
   const hostWidth = cfg.width || root.clientWidth || 800;   // plugin passes width; web mounts measure
   const pxBudget = Math.max(10, Math.floor((hostWidth - 20) / MIN_SLICE_PX));
-  const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN);
+  const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN, TZ);
 
   const wrap = makeWrapper(root);
   wrap.classList.toggle('fill', cfg.fit === 'fill');
@@ -998,7 +1211,7 @@ export function mountTimeline(root, cfg) {
   let kiosks = [], cards = {}, cursorT = restoreCursor(), destroyed = false, pollTimer = null;
   const axisTickList = [];   // filled by buildAxis; consumed by ruleBeyond
   let suppressClick = false;
-  const pv = makePreview(root);
+  const pv = makePreview(root, TZ);
 
   /* selection band shown on every card during drag-zoom (fractions of window) */
   function showSelection(fa, fb) {
@@ -1076,7 +1289,7 @@ export function mountTimeline(root, cfg) {
       el.style.flexGrow = String(sl.span / 1000);
       if (sl.frame) {
         const img = document.createElement('img');
-        img.src = sl.frame.url; img.alt = kiosk + ' ' + fmtTime(sl.ts);
+        img.src = sl.frame.url; img.alt = kiosk + ' ' + fmtTime(sl.ts, TZ);
         el.appendChild(img);
       }
       strip.appendChild(el);
@@ -1169,16 +1382,16 @@ export function mountTimeline(root, cfg) {
     // label to measure (mirrors Grafana's calculateSpace bootstrap)
     const roughMaxTicks = Math.max(3, Math.floor(w / 90));
     const roughStep = TICK_STEPS.find(s => SPAN / s <= roughMaxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-    const sampleWidth = measureTickWidth(tickFormat(roughStep)(P.to));
+    const sampleWidth = measureTickWidth(tickFormat(roughStep, TZ)(P.to));
 
     // pass 2: real step, sized to the label width that will actually render
     const maxTicks = Math.max(3, Math.floor(w / (sampleWidth + TICK_LABEL_GAP)));
     const tickStep = TICK_STEPS.find(s => SPAN / s <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-    const fmt = tickFormat(tickStep);
+    const fmt = tickFormat(tickStep, TZ);
 
     axis.querySelectorAll('.tick').forEach(t => t.remove());
     axisTickList.length = 0;
-    for (const ts of axisTicks(P.from, P.to, tickStep)) {
+    for (const ts of axisTicks(P.from, P.to, tickStep, TZ)) {
       axisTickList.push(ts);
       const el = document.createElement('div');
       el.className = 'tick';
@@ -1251,7 +1464,7 @@ export function mountTimeline(root, cfg) {
         }
         el.addEventListener('mouseenter', () => {
           const r = el.getBoundingClientRect();
-          tip.show(g, r.left + r.width / 2, r.top, el);
+          tip.show(g, r.left + r.width / 2, r.top, el, TZ);
         });
         el.addEventListener('mouseleave', () => tip.hide());
         el.addEventListener('click', (e) => {
@@ -1259,7 +1472,7 @@ export function mountTimeline(root, cfg) {
           // preview underneath, and don't let the document unpin us
           e.stopPropagation();
           const r = el.getBoundingClientRect();
-          tip.pin(g, r.left + r.width / 2, r.top, el);
+          tip.pin(g, r.left + r.width / 2, r.top, el, TZ);
         });
         host.appendChild(el);
       }
@@ -1313,7 +1526,7 @@ export function mountTimeline(root, cfg) {
 
     const axis = q('.axis'), ac = q('.acur');
     const acW = ac.offsetWidth || 50;
-    ac.textContent = fmtTime(cursorT);
+    ac.textContent = fmtTime(cursorT, TZ);
     ac.style.left = Math.max(acW / 2, Math.min(axis.clientWidth - acW / 2, frac * axis.clientWidth)) + 'px';
 
     for (const k of kiosks) {
@@ -1329,49 +1542,49 @@ export function mountTimeline(root, cfg) {
       c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + 'px';
       c.mag.classList.remove('ghost');
       if (slot && slot.frame) {
-        c.mag.classList.remove('gap', 'future', 'off', ...PAUSE_CLASSES);
+        c.mag.classList.remove('gap', 'future', 'off'); clearPauseClasses(c.mag);
         c.mag.querySelector('img').src = slot.frame.url;
-        c.mag.querySelector('.cap').textContent = fmtTime(slot.frame.ts);
+        c.mag.querySelector('.cap').textContent = fmtTime(slot.frame.ts, TZ);
         c.head.textContent = '';                 // healthy: time lives on the magnifier
-        c.head.classList.remove('stale', ...PAUSE_CLASSES);
+        c.head.classList.remove('stale'); clearPauseClasses(c.head);
       } else if (slot && slot.paused) {
         // declared silence — neutral (or amber when unintended), not offline-red
         const pi = pauseInfo(slot);
-        c.mag.classList.remove('gap', 'future', 'off', ...PAUSE_CLASSES);
+        c.mag.classList.remove('gap', 'future', 'off'); clearPauseClasses(c.mag);
         c.mag.classList.add(...pi.classes);
         c.mag.querySelector('.cap').textContent = pi.label.toLowerCase();
         c.head.textContent = pi.label.toLowerCase();
-        c.head.classList.remove('stale', ...PAUSE_CLASSES);
+        c.head.classList.remove('stale'); clearPauseClasses(c.head);
         c.head.classList.add(...pi.classes);
       } else if (slot && slot.beyond) {
         // ahead of now: unknown — nothing to preview, only the crosshair
-        c.mag.classList.remove('gap', 'future', ...PAUSE_CLASSES);
+        c.mag.classList.remove('gap', 'future'); clearPauseClasses(c.mag);
         c.mag.classList.add('off');
         c.head.textContent = '';
-        c.head.classList.remove('stale', ...PAUSE_CLASSES);
+        c.head.classList.remove('stale'); clearPauseClasses(c.head);
       } else if (slot && slot.future) {
         // not offline, not stale: either the tick is ahead of now, or it
         // just passed and its frame is still in flight (one-step grace)
         const inFlight = slot.ts <= Date.now();
         const g = ghostFor(c.model.slots, slot);
-        c.mag.classList.remove('gap', 'off', ...PAUSE_CLASSES);
+        c.mag.classList.remove('gap', 'off'); clearPauseClasses(c.mag);
         c.mag.classList.add('future');
         if (g) { c.mag.classList.add('ghost'); c.mag.querySelector('img').src = g.url; }
-        c.mag.querySelector('.cap').textContent = (inFlight ? 'expected — ' : 'upcoming — ') + fmtShort(slot.ts) +
-          (g ? ' · last frame ' + fmtTime(g.ts) : '');
+        c.mag.querySelector('.cap').textContent = (inFlight ? 'expected — ' : 'upcoming — ') + fmtShort(slot.ts, TZ) +
+          (g ? ' · last frame ' + fmtTime(g.ts, TZ) : '');
         c.head.textContent = inFlight ? 'expected' : 'upcoming';
-        c.head.classList.remove('stale', ...PAUSE_CLASSES);
+        c.head.classList.remove('stale'); clearPauseClasses(c.head);
       } else {
         c.mag.classList.add('gap');
-        c.mag.classList.remove('future', 'off', ...PAUSE_CLASSES);
+        c.mag.classList.remove('future', 'off'); clearPauseClasses(c.mag);
         const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
         let last = null;
         for (let j = i; j >= 0; j--) {if (c.model.slots[j].frame) { last = c.model.slots[j].frame; break; }}
-        const msg = last ? 'offline — last seen ' + fmtTime(last.ts) : 'no data in window';
+        const msg = last ? 'offline — last seen ' + fmtTime(last.ts, TZ) : 'no data in window';
         c.mag.querySelector('.cap').textContent = msg;
         c.head.textContent = msg;
         c.head.classList.add('stale');
-        c.head.classList.remove(...PAUSE_CLASSES);
+        clearPauseClasses(c.head);
       }
     }
     if (!external && cfg.onHover) {cfg.onHover(cursorT);}
@@ -1489,7 +1702,7 @@ export function mountTimeline(root, cfg) {
             let img = slot.el.querySelector('img');
             if (!img) { img = document.createElement('img'); slot.el.appendChild(img); }
             img.classList.remove('ghost');
-            img.src = f.url; img.alt = k.id + ' ' + fmtTime(f.ts);
+            img.src = f.url; img.alt = k.id + ' ' + fmtTime(f.ts, TZ);
           }
           // future slots age into the present; one still empty a full step
           // past its tick has now genuinely missed its heartbeat
@@ -1528,9 +1741,10 @@ export function mountTimeline(root, cfg) {
 export function mountGrid(root, cfg) {
   injectStyles();
   const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
+  const TZ = resolveTimeZone(cfg.timeZone);   // as mountTimeline
   const SPAN = Math.max(1, P.to - P.from);
   const LIVE = P.to > Date.now() - 2 * 60 * 1000;
-  const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN);
+  const backend = cfg.apiUrl ? makeApiBackend(cfg.apiUrl, cfg.apiKey) : makeBackend(P, SPAN, TZ);
   const budget = 120;   // temporal buckets for crosshair-follow resolution
 
   const wrap = makeWrapper(root);
@@ -1539,7 +1753,7 @@ export function mountGrid(root, cfg) {
   const q = sel => wrap.querySelector(sel);
 
   let kiosks = [], tiles = {}, destroyed = false, pollTimer = null, shownT = null;
-  const pv = makePreview(root);
+  const pv = makePreview(root, TZ);
 
   function buildTile(decl, model) {
     const el = document.createElement('div');
@@ -1587,11 +1801,11 @@ export function mountGrid(root, cfg) {
         frame = lastFrame(rec);
         if (tailPaused) {
           pausedSlot = tail;
-          pausedMsg = pauseInfo(tail).label + (frame ? ' — last frame ' + fmtTime(frame.ts) : '');
+          pausedMsg = pauseInfo(tail).label + (frame ? ' — last frame ' + fmtTime(frame.ts, TZ) : '');
         }
         else if (!frame) {offMsg = 'no data in window';}
         else if (LIVE && la && Date.now() - frame.ts > 2 * la.step)
-          {offMsg = 'OFFLINE — last seen ' + fmtTime(frame.ts);}
+          {offMsg = 'OFFLINE — last seen ' + fmtTime(frame.ts, TZ);}
       } else {
         const slot = rec.model.slotAt(t);
         if (slot && slot.paused) {
@@ -1607,18 +1821,18 @@ export function mountGrid(root, cfg) {
               // ghost when there is one (never the red offline tile)
               frame = ghostFor(rec.model.slots, slot);
               if (frame) {expectedTs = slot.ts;}
-              else {offMsg = 'EXPECTED — ' + fmtShort(slot.ts);}
+              else {offMsg = 'EXPECTED — ' + fmtShort(slot.ts, TZ);}
             } else {
               const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
               let last = null;
               for (let j = i; j >= 0; j--) {if (rec.model.slots[j].frame) { last = rec.model.slots[j].frame; break; }}
-              offMsg = last ? 'OFFLINE — last seen ' + fmtTime(last.ts) : 'no data';
+              offMsg = last ? 'OFFLINE — last seen ' + fmtTime(last.ts, TZ) : 'no data';
             }
           }
         }
       }
       rec.el.classList.toggle('offline', !!offMsg);
-      rec.el.classList.remove(...PAUSE_CLASSES);
+      clearPauseClasses(rec.el);
       if (pausedMsg && !offMsg) {rec.el.classList.add(...pauseInfo(pausedSlot).classes);}
       rec.off.textContent = offMsg || pausedMsg || '';
       rec.el.classList.toggle('ghost', !!expectedTs);
@@ -1627,8 +1841,8 @@ export function mountGrid(root, cfg) {
       if (frame && !offMsg && !pausedMsg) {
         rec.img.src = frame.url;
         rec.ts.textContent = expectedTs
-          ? 'expected ' + fmtShort(expectedTs) + ' · last ' + fmtTime(frame.ts)
-          : fmtTime(frame.ts);
+          ? 'expected ' + fmtShort(expectedTs, TZ) + ' · last ' + fmtTime(frame.ts, TZ)
+          : fmtTime(frame.ts, TZ);
       }
     }
   }

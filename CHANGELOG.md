@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- The panel follows the dashboard's time zone (#68, groundwork). It used to
+  show browser time even on a dashboard set to UTC or to a named zone. The
+  axis, cursor label, magnifier and preview captions, annotation tooltips,
+  grid tile timestamps, "last seen"/"expected" messages and the demo
+  frames' clock now use the dashboard zone, and the panel re-renders when
+  that zone changes. "Default" resolves to the user's or org's preference.
+  On a browser-time dashboard the text is the same as before.
+- Core: `mountTimeline`/`mountGrid` take `cfg.timeZone` (an IANA name,
+  `utc`, or undefined/`browser` for the browser's zone, the default).
+  `resolveTimeZone`, `zonedParts`, `zonedTime`, `fmtTime` and `fmtShort`
+  are exported, and every formatter and calendar helper takes the zone as
+  its last argument. `alignedStart`, `nextTick` and `axisTicks` return
+  epoch ms instead of a `Date`. Formatters are cached per zone.
+- Standalone app and embed: optional `?tz=<IANA name>` or `?tz=utc`. The
+  default is still the browser's zone. In the app the cursor time, window
+  label, range button and time picker use the same zone.
+- Fix axis ticks drifting after a DST change (#65). Hour-scale ticks
+  stepped by raw milliseconds, so after a change 2-hourly ticks in New
+  York landed on odd hours and hourly ticks in Lord Howe moved to :30.
+  Ticks now stay on the zone's wall-clock grid: a skipped hour gets no
+  tick and a repeated hour gets both. Day ticks also reset to midnight at
+  each step, so a DST change at midnight (Santiago) no longer leaves every
+  later tick on 01:00.
+- Fix year ticks sitting on the 1st of the window's first month instead
+  of 1 January, and quarter ticks counting from that month instead of
+  Jan/Apr/Jul/Oct (#65).
+- Fix a pause reason the panel does not know (say `maintenance`) leaving
+  its `r-<reason>` class on the magnifier, card header or tile after the
+  cursor left the band (#65).
+- Fix the tag filter: `env=prod, =x` added a blank key that hid every
+  source, and `env=` matched a source with an empty tags object but not
+  one with no tags at all (#65).
+- Fix a remount showing offline red where the running panel showed
+  pending, at exactly one step past a tick (#65).
 - Fix HTML injection (#59): source id, site, location and tags from the
   registry API were spliced unescaped into the card and grid-tile headers
   (including the `title` and `alt` attributes), so a hostile or malformed

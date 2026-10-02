@@ -3,6 +3,7 @@ import { PanelPlugin, PanelProps, DataHoverEvent, DataHoverClearEvent } from '@g
 import { useTheme2 } from '@grafana/ui';
 import { mountTimeline, mountGrid } from './core';
 import { themeVars } from './theme';
+import { coreTimeZone } from './timezone';
 
 interface VisualTimelineOptions {
   apiUrl?: string;
@@ -100,6 +101,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const annotations = showAnnotations ? extractAnnotations(props.data?.annotations as any[]) : [];
   // remount only when annotation CONTENT changes, not on every data-object identity flip
   const annKey = JSON.stringify(annotations);
+  const timeZone = coreTimeZone(props.timeZone);
 
   useEffect(() => {
     if (!ref.current) {
@@ -109,6 +111,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       site, from, to, width: props.width, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter,
       annotations, showAnnotations, annotationLanes: options.annotationLanes || 'shared',
       headerMode: options.headerMode || 'bar',
+      timeZone,
     };
     const inst: MountInstance =
       mode === 'grid'
@@ -133,7 +136,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey, options.annotationLanes, options.headerMode]);
+  }, [mode, fit, apiUrl, apiKey, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey, options.annotationLanes, options.headerMode, timeZone]);
 
   useEffect(() => {
     const subs = [

@@ -1,4 +1,4 @@
-import { erasFor, pauseInfo, PAUSE_CLASSES } from './core';
+import { clearPauseClasses, erasFor, pauseInfo, PAUSE_CLASSES } from './core';
 
 /* These pin the CURRENT behaviour of src/core.ts as a safety net for the
  * split in #64. A test marked "NOTE: current behaviour" documents something
@@ -188,12 +188,30 @@ describe('pauseInfo', () => {
   });
 
   test('an unknown reason labels as PAUSED but still adds an r-<reason> class', () => {
-    // NOTE: current behaviour; looks wrong because setCursor clears the
-    // magnifier/header classes with PAUSE_CLASSES, which has no entry for an
-    // unknown reason — "r-maintenance" would stick after the cursor leaves
-    // the band.
+    // PAUSE_CLASSES cannot list it; clearPauseClasses (below) clears it anyway
     const info = pauseInfo({ reason: 'maintenance' });
     expect(info).toEqual({ label: 'PAUSED', classes: ['paused', 'r-maintenance'] });
     expect(PAUSE_CLASSES).not.toContain('r-maintenance');
+  });
+});
+
+describe('clearPauseClasses', () => {
+  test('clears an unknown reason’s r-<reason> class too (#65 regression)', () => {
+    // setCursor and the grid used to clear only PAUSE_CLASSES, so
+    // "r-maintenance" stuck to the magnifier/header after the cursor left
+    // the band
+    const el = document.createElement('div');
+    el.className = 'mag gap';
+    el.classList.add(...pauseInfo({ reason: 'maintenance', intended: false }).classes);
+    expect(el.className).toBe('mag gap paused r-maintenance unintended');
+    clearPauseClasses(el);
+    expect(el.className).toBe('mag gap');
+  });
+
+  test('clears every known pause class and leaves the rest alone', () => {
+    const el = document.createElement('div');
+    el.className = 'ft stale ' + PAUSE_CLASSES.join(' ');
+    clearPauseClasses(el);
+    expect(el.className).toBe('ft stale');
   });
 });
