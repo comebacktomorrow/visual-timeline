@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Docs: README is now written for Grafana catalog readers: what the panel
+  shows, the built-in demo data, connecting a backend, the panel options and
+  a note on the viewer token. All its links and images are absolute URLs, as
+  the plugin validator requires (it flagged the relative link to
+  `docs/UPSTREAM-UPDATES.md`). Repository layout, dev setup, testing and the
+  upstream-update pointer moved to the new `CONTRIBUTING.md`.
+
 ## 0.9.23 (2026-10-01)
 
 - Standalone app: the time picker's "Recently used" list is built from
