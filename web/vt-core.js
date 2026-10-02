@@ -358,7 +358,7 @@ var VTCore = (() => {
       eras.push({ from, to, cadence: runCad, paused: !!e.paused, reason: e.reason, intended: e.intended });
     }
     if (!eras.length) {
-      eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false });
+      eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false, reason: void 0, intended: void 0 });
     }
     return eras;
   }

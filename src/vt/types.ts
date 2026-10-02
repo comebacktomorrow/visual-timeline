@@ -43,14 +43,16 @@ export interface Frame {
   kiosk?: string;
 }
 
-/* A span of a source's window on one grid (erasFor). */
+/* A span of a source's window on one grid (erasFor). reason and intended
+ * are always present, undefined when the event that opened the era carried
+ * none. */
 export interface Era {
   from: number;
   to: number;
   cadence: number;
   paused: boolean;
-  reason?: string;
-  intended?: boolean;
+  reason: string | undefined;
+  intended: boolean | undefined;
 }
 
 /* The data layer both mounts read through: the API backend (makeApiBackend)

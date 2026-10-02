@@ -147,9 +147,11 @@ describe('erasFor', () => {
     expect(erasFor(decl, P)).toEqual([era(P.from, P.to, 60e3, { paused: true })]);
   });
 
-  test('an empty window still yields one (bare) era', () => {
+  test('an empty window still yields one era, with the same keys as any other (#77)', () => {
     const empty = { from: T0, to: T0 };
-    expect(erasFor({ cadence: 30e3 }, empty)).toEqual([{ from: T0, to: T0, cadence: 30e3, paused: false }]);
+    // toStrictEqual: reason and intended must be present (as undefined), not missing
+    expect(erasFor({ cadence: 30e3 }, empty)).toStrictEqual([era(T0, T0, 30e3)]);
+    expect(erasFor({ cadence: 30e3 }, P)).toStrictEqual([era(P.from, P.to, 30e3)]);
   });
 });
 

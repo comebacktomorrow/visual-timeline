@@ -33,7 +33,7 @@ export function erasFor(decl: Partial<Pick<SourceDecl, 'cadence' | 'history'>>, 
         prev.reason === e.reason && prev.intended === e.intended) { prev.to = to; continue; }
     eras.push({ from, to, cadence: runCad, paused: !!e.paused, reason: e.reason, intended: e.intended });
   }
-  if (!eras.length) {eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false });}
+  if (!eras.length) {eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false, reason: undefined, intended: undefined });}
   return eras;
 }
 
