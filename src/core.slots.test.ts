@@ -291,6 +291,37 @@ describe('buildSourceModel', () => {
     ]);
   });
 
+  test('the re-inserted start slot is judged against the build-time now (#77)', async () => {
+    // as above, but now is exactly one cadence past the era start (11m10s),
+    // so its start slot is still pending; the clock moves on while frames
+    // are fetched, and the start slot must not see that later now
+    now = T0 + 11 * MIN + 10e3;
+    const P = { from: T0, to: T0 + 60 * MIN };
+    const d = decl({
+      history: [
+        { since: T0 - DAY, paused: true },
+        { since: T0 + 10 * MIN + 10e3 },
+        { since: T0 + 11 * MIN, paused: true },
+        { since: T0 + 30 * MIN },
+      ],
+    });
+    const inner = backendWith([]);
+    const slow = {
+      frames(...args: Parameters<typeof inner.frames>) {
+        now += 1e3;
+        return inner.frames(...args);
+      },
+    };
+    const m = await build(d, P, slow, BUDGET);
+    expect(inner.calls.length).toBeGreaterThan(0);
+    const real = m.slots.filter((sl: any) => !sl.beyond);
+    expect(real.map((sl: any) => [(sl.ts - T0) / 1e3, slotClass(sl).trim()])).toEqual([
+      [0, 'paused'],
+      [610, 'future'],
+      [660, 'paused'],
+    ]);
+  });
+
   test('a goodbye frame on a pause’s start tick stays visible', async () => {
     now = T0 + DAY;
     const P = { from: T0, to: T0 + 60 * MIN };

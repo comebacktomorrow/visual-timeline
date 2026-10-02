@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A source's slots are all judged pending or offline against one "now"
+  taken when the timeline is built, including the start slot of a short
+  era next to a pause (#77).
 - Internal: the timeline core moved from one untyped `src/core.ts` into
   typed modules under `src/vt/` (#64); `src/core.ts` now only re-exports,
   and no `@ts-nocheck` is left. Rendering is unchanged, checked by new

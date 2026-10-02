@@ -390,14 +390,15 @@ var VTCore = (() => {
     const eras = erasFor(decl, P);
     const slots = [];
     const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
-    function shortEraSlot(era, frame, nowMs) {
+    const nowAtBuild = Date.now();
+    function shortEraSlot(era, frame) {
       return {
         ts: era.from,
         span: era.to - era.from,
         frame,
         cadence: era.cadence,
         step: era.cadence,
-        future: era.from + era.cadence >= nowMs
+        future: era.from + era.cadence >= nowAtBuild
       };
     }
     function resolveBoundary(prev, firstIdx) {
@@ -418,7 +419,7 @@ var VTCore = (() => {
       }
       slots.splice(firstIdx - 1, 1);
       if (firstIdx - 1 === prev.startIdx) {
-        slots.splice(prev.startIdx, 0, shortEraSlot(prev, null, Date.now()));
+        slots.splice(prev.startIdx, 0, shortEraSlot(prev, null));
       }
     }
     async function pushActive(era) {
@@ -431,22 +432,20 @@ var VTCore = (() => {
       const step = Math.ceil(raw / Math.min(share, raw)) * era.cadence;
       const start = Math.ceil(era.from / step) * step;
       const n = era.to >= start ? Math.floor((era.to - start) / step) + 1 : 0;
-      const nowMs = Date.now();
       if (n === 0) {
         const half = era.cadence / 2;
         const near = await backend.frames(decl.site, decl.id, era.from - half, era.to + half, era.cadence);
         const frame = near.filter((f) => f.ts >= era.from - half && f.ts <= era.to + half).sort((a, b) => Math.abs(a.ts - era.from) - Math.abs(b.ts - era.from))[0] || null;
-        slots.push(shortEraSlot(era, frame, nowMs));
+        slots.push(shortEraSlot(era, frame));
         return;
       }
       const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
       const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
       for (let i = 0; i < n; i++) {
         const ts = start + i * step;
-        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowMs });
+        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowAtBuild });
       }
     }
-    const nowAtBuild = Date.now();
     const horizon = Math.min(P.to, nowAtBuild);
     let prevActive = null;
     for (const era of eras) {
