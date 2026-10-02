@@ -1054,7 +1054,7 @@ var VTCore = (() => {
     document.head.appendChild(s);
   }
 
-  // src/core.ts
+  // src/vt/backends/demo.ts
   var SITES = {
     "site-a": [
       { id: "source-1", cadence: 6e4, tags: { env: "prod" } },
@@ -1078,29 +1078,6 @@ var VTCore = (() => {
   }
   var HUES = { "source-1": 205, "source-2": 275, "source-3": 25, "source-4": 130, "source-5": 340 };
   var DIMS = { "source-3": [288, 216], "source-5": [216, 384] };
-  function zoneChip(srcTZ) {
-    return srcTZ ? '<span class="st tz"><span class="tzc"></span><span class="tzo"></span></span>' : "";
-  }
-  function attachZoneChip(z, host) {
-    z.el = host.querySelector(".tz");
-    if (!z.el) {
-      return;
-    }
-    z.el.querySelector(".tzc").textContent = z.texts.label;
-    z.offEl = z.el.querySelector(".tzo");
-  }
-  function dressZoneChip(z, ts) {
-    if (!z.el) {
-      return;
-    }
-    const o = z.texts.off(ts);
-    if (o === z.off) {
-      return;
-    }
-    z.off = o;
-    z.offEl.textContent = o ? " \xB7 " + o : "";
-    z.el.title = "Source time zone: " + z.texts.zone + (o ? " (" + o + " from panel time)" : " (same as panel time)");
-  }
   function makeBackend(P, SPAN, tz) {
     function renderMockFrame(site, kiosk, ts, step) {
       const dims = DIMS[kiosk] || [384, 216];
@@ -1194,6 +1171,31 @@ var VTCore = (() => {
         ];
       }
     };
+  }
+
+  // src/core.ts
+  function zoneChip(srcTZ) {
+    return srcTZ ? '<span class="st tz"><span class="tzc"></span><span class="tzo"></span></span>' : "";
+  }
+  function attachZoneChip(z, host) {
+    z.el = host.querySelector(".tz");
+    if (!z.el) {
+      return;
+    }
+    z.el.querySelector(".tzc").textContent = z.texts.label;
+    z.offEl = z.el.querySelector(".tzo");
+  }
+  function dressZoneChip(z, ts) {
+    if (!z.el) {
+      return;
+    }
+    const o = z.texts.off(ts);
+    if (o === z.off) {
+      return;
+    }
+    z.off = o;
+    z.offEl.textContent = o ? " \xB7 " + o : "";
+    z.el.title = "Source time zone: " + z.texts.zone + (o ? " (" + o + " from panel time)" : " (same as panel time)");
   }
   function normAnnotations(raw, P) {
     const out = [];

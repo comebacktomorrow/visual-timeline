@@ -59,7 +59,22 @@ export interface Backend {
   kiosks(sites?: string[] | null): Promise<SourceDecl[]> | SourceDecl[];
   frames(site: string, id: string, from: number, to: number, step: number): Promise<Frame[]>;
   /* demo seam only; raw annotations, normalized by normAnnotations */
-  annotations?(): unknown[];
+  annotations?(): RawAnnotation[];
+}
+
+/* An annotation as a provider hands it over (the panel's flattened
+ * annotation frames, the demo seam, a host page): loosely typed, since
+ * normAnnotations coerces and validates every field. `time` is an alias of
+ * `ts`; `tags` is an array or a comma list. */
+export interface RawAnnotation {
+  ts?: number | string | null;
+  time?: number | string | null;
+  timeEnd?: number | string | null;
+  title?: string;
+  text?: string;
+  tags?: unknown;
+  color?: string;
+  source?: string | null;
 }
 
 /* the injected transport (Grafana: the data source proxy) and what it
