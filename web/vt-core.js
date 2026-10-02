@@ -59,6 +59,701 @@ var VTCore = (() => {
     zonedParts: () => zonedParts,
     zonedTime: () => zonedTime
   });
+
+  // src/vt/time/zones.ts
+  var LOCAL_TZ = "local";
+  var zoneOk = /* @__PURE__ */ new Map();
+  function isZone(name) {
+    let ok = zoneOk.get(name);
+    if (ok === void 0) {
+      try {
+        new Intl.DateTimeFormat("en-US", { timeZone: name });
+        ok = true;
+      } catch (e) {
+        ok = false;
+      }
+      zoneOk.set(name, ok);
+    }
+    return ok;
+  }
+  function systemZone() {
+    let z = null;
+    try {
+      z = new Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch (e) {
+      z = null;
+    }
+    return z && isZone(z) ? z : LOCAL_TZ;
+  }
+  var zoneWarned = /* @__PURE__ */ new Set();
+  function resolveTimeZone(tz) {
+    const s = tz == null ? "" : String(tz).trim();
+    if (!s || /^(browser|default|local)$/i.test(s)) {
+      return systemZone();
+    }
+    if (/^utc$/i.test(s)) {
+      return "UTC";
+    }
+    if (isZone(s)) {
+      return s;
+    }
+    if (!zoneWarned.has(s)) {
+      zoneWarned.add(s);
+      console.warn('[visual-timeline] unknown time zone "' + s + `"; using the browser's`);
+    }
+    return systemZone();
+  }
+  var zones = /* @__PURE__ */ new Map();
+  function zoneOf(tz) {
+    const id = resolveTimeZone(tz);
+    let z = zones.get(id);
+    if (!z) {
+      const tzOpt = id === LOCAL_TZ ? {} : { timeZone: id };
+      const fmts = /* @__PURE__ */ new Map();
+      let offset;
+      if (id === "UTC") {
+        offset = () => 0;
+      } else if (id === LOCAL_TZ) {
+        offset = (ts) => -new Date(ts).getTimezoneOffset() * 6e4;
+      } else {
+        const pf = new Intl.DateTimeFormat("en-US", Object.assign({
+          hourCycle: "h23",
+          year: "numeric",
+          month: "numeric",
+          day: "numeric",
+          hour: "numeric",
+          minute: "numeric",
+          second: "numeric"
+        }, tzOpt));
+        offset = (ts) => {
+          const p = {};
+          for (const x of pf.formatToParts(ts)) {
+            p[x.type] = x.value;
+          }
+          const wall = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
+          return wall - Math.floor(ts / 1e3) * 1e3;
+        };
+      }
+      z = {
+        id,
+        offset,
+        // en-AU, 24 h: the panel's one display format (locale/12 h are not options)
+        fmt(key, opts) {
+          let f = fmts.get(key);
+          if (!f) {
+            f = new Intl.DateTimeFormat("en-AU", Object.assign({}, opts, tzOpt));
+            fmts.set(key, f);
+          }
+          return f;
+        }
+      };
+      zones.set(id, z);
+    }
+    return z;
+  }
+  var wallOf = (ts, z) => ts + z.offset(ts);
+  function fromWall(w, z) {
+    const before = z.offset(w - 864e5), after = z.offset(w + 864e5);
+    const a = w - before;
+    if (before === after) {
+      return a;
+    }
+    const b = w - after;
+    const aOk = z.offset(a) === before, bOk = z.offset(b) === after;
+    if (aOk && bOk) {
+      return Math.min(a, b);
+    }
+    if (bOk) {
+      return b;
+    }
+    return a;
+  }
+  function zonedParts(ts, tz) {
+    const d = new Date(wallOf(ts, zoneOf(tz)));
+    return {
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth() + 1,
+      day: d.getUTCDate(),
+      hour: d.getUTCHours(),
+      minute: d.getUTCMinutes(),
+      second: d.getUTCSeconds(),
+      ms: d.getUTCMilliseconds()
+    };
+  }
+  function zonedTime(f, tz) {
+    return fromWall(Date.UTC(f.year, f.month - 1, f.day, f.hour || 0, f.minute || 0, f.second || 0, f.ms || 0), zoneOf(tz));
+  }
+  var F_TIME = { hour12: false, hour: "numeric", minute: "numeric", second: "numeric" };
+  var F_SHORT = { hour12: false, hour: "2-digit", minute: "2-digit" };
+  var F_DAY_HM = { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false };
+  var F_DAY = { day: "2-digit", month: "2-digit" };
+  var fmtTime = (ts, tz) => zoneOf(tz).fmt("time", F_TIME).format(ts);
+  var fmtShort = (ts, tz) => zoneOf(tz).fmt("short", F_SHORT).format(ts);
+  var fmtDur = (ms) => ms % 36e5 === 0 ? ms / 36e5 + "h" : ms % 6e4 === 0 ? ms / 6e4 + "m" : ms / 1e3 + "s";
+
+  // src/vt/time/ticks.ts
+  var TICK_STEPS = [
+    6e4,
+    5 * 6e4,
+    10 * 6e4,
+    15 * 6e4,
+    30 * 6e4,
+    36e5,
+    2 * 36e5,
+    3 * 36e5,
+    6 * 36e5,
+    12 * 36e5,
+    24 * 36e5,
+    2 * 864e5,
+    3 * 864e5,
+    4 * 864e5,
+    5 * 864e5,
+    6 * 864e5,
+    7 * 864e5,
+    8 * 864e5,
+    9 * 864e5,
+    10 * 864e5,
+    15 * 864e5,
+    30 * 864e5,
+    90 * 864e5,
+    365 * 864e5
+  ];
+  var DAY_MS = 864e5;
+  function monthsOf(stepMs) {
+    return stepMs >= 30 * DAY_MS ? Math.round(stepMs / (30 * DAY_MS)) : 0;
+  }
+  function offsetChange(lo, hi, o, z) {
+    let a = Math.floor(lo / 1e3), b = Math.ceil(hi / 1e3);
+    while (b - a > 1) {
+      const m = Math.floor((a + b) / 2);
+      if (z.offset(m * 1e3) === o) {
+        a = m;
+      } else {
+        b = m;
+      }
+    }
+    return b * 1e3;
+  }
+  function ceilWall(ts, step, z) {
+    let t = ts;
+    for (let i = 0; i < 6; i++) {
+      const o = z.offset(t);
+      const c = Math.ceil((t + o) / step) * step - o;
+      if (z.offset(c) === o) {
+        return c;
+      }
+      t = offsetChange(t, c, o, z);
+    }
+    return Math.ceil(ts / step) * step;
+  }
+  function floorWall(ts, step, z) {
+    let t = ts;
+    for (let i = 0; i < 6; i++) {
+      const o = z.offset(t);
+      const c = Math.floor((t + o) / step) * step - o;
+      const oc = z.offset(c);
+      if (oc === o) {
+        return c;
+      }
+      t = offsetChange(c, t, oc, z) - 1;
+    }
+    return Math.floor(ts / step) * step;
+  }
+  function monthStart(idx, z) {
+    return fromWall(Date.UTC(Math.floor(idx / 12), (idx % 12 + 12) % 12, 1), z);
+  }
+  function dayStartWall(ts, z) {
+    const w = wallOf(ts, z);
+    return w - (w % DAY_MS + DAY_MS) % DAY_MS;
+  }
+  function alignIn(ts, stepMs, z) {
+    const k = monthsOf(stepMs);
+    if (k) {
+      const d = new Date(wallOf(ts, z));
+      const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
+      return monthStart(Math.floor(idx / k) * k, z);
+    }
+    if (stepMs >= DAY_MS) {
+      return fromWall(dayStartWall(ts, z), z);
+    }
+    return floorWall(ts, stepMs, z);
+  }
+  function nextIn(ts, stepMs, z) {
+    const k = monthsOf(stepMs);
+    let n;
+    if (k) {
+      const d = new Date(wallOf(ts, z));
+      const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
+      n = monthStart(Math.floor(idx / k) * k + k, z);
+    } else if (stepMs >= DAY_MS) {
+      n = fromWall(dayStartWall(ts, z) + Math.round(stepMs / DAY_MS) * DAY_MS, z);
+    } else {
+      n = ceilWall(ts + 1, stepMs, z);
+    }
+    return n > ts ? n : ts + stepMs;
+  }
+  function alignedStart(ts, stepMs, tz) {
+    return alignIn(ts, stepMs, zoneOf(tz));
+  }
+  function nextTick(ts, stepMs, tz) {
+    return nextIn(ts, stepMs, zoneOf(tz));
+  }
+  function axisTicks(from, to, stepMs, tz) {
+    const z = zoneOf(tz);
+    const out = [];
+    let t = alignIn(from, stepMs, z);
+    while (t < from) {
+      t = nextIn(t, stepMs, z);
+    }
+    for (; t <= to && out.length < 1e4; t = nextIn(t, stepMs, z)) {
+      out.push(t);
+    }
+    return out;
+  }
+  function tickFormat(stepMs, tz) {
+    const z = zoneOf(tz);
+    if (stepMs < 36e5) {
+      const f = z.fmt("short", F_SHORT);
+      return (ts) => f.format(ts);
+    }
+    if (stepMs < 24 * 36e5) {
+      const f = z.fmt("dayhm", F_DAY_HM);
+      return (ts) => f.format(ts);
+    }
+    if (stepMs < 365 * 864e5) {
+      const f = z.fmt("day", F_DAY);
+      return (ts) => f.format(ts);
+    }
+    return (ts) => String(new Date(wallOf(ts, z)).getUTCFullYear());
+  }
+
+  // src/vt/model/eras.ts
+  function erasFor(decl, P) {
+    const hist = (decl.history || []).filter((h) => (h.variant || "lo") === "lo").slice().sort((a, b) => a.since - b.since);
+    let runCad = decl.cadence || 6e4;
+    if (hist.length && hist[0].cadence) {
+      runCad = hist[0].cadence;
+    }
+    const evts = [{ since: -864e13, cadence: runCad, paused: false, reason: void 0, intended: void 0 }];
+    for (const h of hist) {
+      evts.push({ since: h.since, cadence: h.cadence, paused: !!h.paused, reason: h.reason, intended: h.intended });
+    }
+    const eras = [];
+    for (let i = 0; i < evts.length; i++) {
+      const e = evts[i];
+      const next = evts[i + 1];
+      if (e.cadence) {
+        runCad = e.cadence;
+      }
+      const from = Math.max(e.since, P.from);
+      const to = Math.min(next ? next.since : P.to, P.to);
+      if (to <= from) {
+        continue;
+      }
+      const prev = eras[eras.length - 1];
+      if (prev && prev.paused === !!e.paused && prev.cadence === runCad && prev.reason === e.reason && prev.intended === e.intended) {
+        prev.to = to;
+        continue;
+      }
+      eras.push({ from, to, cadence: runCad, paused: !!e.paused, reason: e.reason, intended: e.intended });
+    }
+    if (!eras.length) {
+      eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false });
+    }
+    return eras;
+  }
+  var PAUSE_CLASSES = ["paused", "unintended", "r-quiet", "r-screen-sleep", "r-app-stopped", "r-system-down"];
+  function clearPauseClasses(el) {
+    el.classList.remove(...PAUSE_CLASSES);
+    for (const c of Array.from(el.classList)) {
+      if (c.startsWith("r-")) {
+        el.classList.remove(c);
+      }
+    }
+  }
+  function pauseInfo(x) {
+    const r = x && x.reason;
+    const unintended = !!x && x.intended === false;
+    const label = r === "screen-sleep" ? unintended ? "SCREEN DARK (UNEXPECTED)" : "SCREEN ASLEEP" : r === "system-down" ? "SYSTEM DOWN (PLANNED)" : r === "app-stopped" ? "APP STOPPED" : r === "quiet" ? "QUIET HOURS" : "PAUSED";
+    const classes = ["paused"];
+    if (r) {
+      classes.push("r-" + String(r).replace(/[^\w-]/g, ""));
+    }
+    if (unintended) {
+      classes.push("unintended");
+    }
+    return { label, classes };
+  }
+
+  // src/vt/model/slots.ts
+  async function buildSourceModel(decl, P, backend, budgetSlots) {
+    const eras = erasFor(decl, P);
+    const slots = [];
+    const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
+    function shortEraSlot(era, frame, nowMs) {
+      return {
+        ts: era.from,
+        span: era.to - era.from,
+        frame,
+        cadence: era.cadence,
+        step: era.cadence,
+        future: era.from + era.cadence >= nowMs
+      };
+    }
+    function resolveBoundary(prev, firstIdx) {
+      if (!prev || firstIdx <= prev.startIdx || firstIdx >= slots.length) {
+        return;
+      }
+      const p = slots[firstIdx - 1];
+      const first = slots[firstIdx];
+      if (p.paused || p.beyond || p.ts !== prev.to) {
+        return;
+      }
+      const laterDrawsIt = !first.paused && !first.beyond && first.ts === p.ts;
+      if (!laterDrawsIt && !(first.paused && !p.frame)) {
+        return;
+      }
+      if (laterDrawsIt && !first.frame && p.frame) {
+        first.frame = p.frame;
+      }
+      slots.splice(firstIdx - 1, 1);
+      if (firstIdx - 1 === prev.startIdx) {
+        slots.splice(prev.startIdx, 0, shortEraSlot(prev, null, Date.now()));
+      }
+    }
+    async function pushActive(era) {
+      if (era.to - era.from <= 0) {
+        return;
+      }
+      const eraSpan = era.to - era.from;
+      const share = Math.max(4, Math.round(budgetSlots * (eraSpan / totalActive)));
+      const raw = Math.max(1, Math.ceil(eraSpan / era.cadence));
+      const step = Math.ceil(raw / Math.min(share, raw)) * era.cadence;
+      const start = Math.ceil(era.from / step) * step;
+      const n = era.to >= start ? Math.floor((era.to - start) / step) + 1 : 0;
+      const nowMs = Date.now();
+      if (n === 0) {
+        const half = era.cadence / 2;
+        const near = await backend.frames(decl.site, decl.id, era.from - half, era.to + half, era.cadence);
+        const frame = near.filter((f) => f.ts >= era.from - half && f.ts <= era.to + half).sort((a, b) => Math.abs(a.ts - era.from) - Math.abs(b.ts - era.from))[0] || null;
+        slots.push(shortEraSlot(era, frame, nowMs));
+        return;
+      }
+      const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
+      const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
+      for (let i = 0; i < n; i++) {
+        const ts = start + i * step;
+        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowMs });
+      }
+    }
+    const nowAtBuild = Date.now();
+    const horizon = Math.min(P.to, nowAtBuild);
+    let prevActive = null;
+    for (const era of eras) {
+      const eFrom = era.from;
+      const eTo = Math.min(era.to, horizon);
+      const isTail = era === eras[eras.length - 1];
+      const firstIdx = slots.length;
+      const prev = prevActive;
+      prevActive = null;
+      if (!era.paused) {
+        if (eTo > eFrom) {
+          const span = { from: eFrom, to: eTo, cadence: era.cadence };
+          await pushActive(span);
+          resolveBoundary(prev, firstIdx);
+          prevActive = { ...span, startIdx: firstIdx };
+        }
+        continue;
+      }
+      if (!isTail) {
+        if (eTo > eFrom) {
+          slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
+          resolveBoundary(prev, firstIdx);
+        }
+        continue;
+      }
+      if (eTo <= eFrom) {
+        continue;
+      }
+      const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, era.cadence);
+      const tailIdx = slots.length;
+      const resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
+      if (resume) {
+        const resumeTs = resume.ts;
+        slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended });
+        if (eTo > resumeTs) {
+          await pushActive({ from: resumeTs, to: eTo, cadence: era.cadence });
+        }
+      } else {
+        slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
+      }
+      resolveBoundary(prev, tailIdx);
+    }
+    if (P.to > horizon) {
+      const last = slots[slots.length - 1];
+      const covered = !last ? horizon : last.paused || last.beyond ? last.ts + last.span : last.ts + last.step / 2;
+      const fillerFrom = Math.min(Math.max(covered, horizon - 1), P.to);
+      if (P.to - fillerFrom > 0) {
+        slots.push({ ts: fillerFrom, span: P.to - fillerFrom, beyond: true });
+      }
+    }
+    function slotAt(t) {
+      for (const sl of slots) {
+        const edge = sl.paused || sl.beyond;
+        const from = edge ? sl.ts : sl.ts - sl.span / 2;
+        const to = edge ? sl.ts + sl.span : sl.ts + sl.span / 2;
+        if (t < to) {
+          if (sl.beyond) {
+            const i = slots.indexOf(sl);
+            const prev = i > 0 ? slots[i - 1] : null;
+            if (prev && !prev.beyond && t < sl.ts + (prev.step || 0) / 2) {
+              return prev;
+            }
+          }
+          return t >= from || sl === slots[0] ? sl : sl;
+        }
+      }
+      return slots[slots.length - 1] || null;
+    }
+    const lastActive = [...slots].reverse().find((sl) => !sl.paused && !sl.beyond) || null;
+    return { eras, slots, slotAt, lastActive };
+  }
+  function ghostFor(slots, sl) {
+    for (let j = slots.indexOf(sl) - 1; j >= 0; j--) {
+      if (slots[j].frame) {
+        return slots[j].frame;
+      }
+      if (!slots[j].future) {
+        return null;
+      }
+    }
+    return null;
+  }
+  function slotClass(sl) {
+    return sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? "" : sl.future ? " future" : " gap";
+  }
+  function missedHeartbeat(sl, now) {
+    return sl.future && !sl.frame && sl.ts + sl.step < now;
+  }
+
+  // src/vt/model/filters.ts
+  function parseVar(v) {
+    if (!v || v === "All" || v === "$__all") {
+      return null;
+    }
+    return v.replace(/^\{|\}$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  function parseTagFilter(expr) {
+    if (!expr) {
+      return null;
+    }
+    const out = {};
+    for (const part of String(expr).split(",")) {
+      const i = part.indexOf("=");
+      const key = i >= 0 ? part.slice(0, i).trim().toLowerCase() : "";
+      if (key) {
+        out[key] = part.slice(i + 1).trim().toLowerCase();
+      }
+    }
+    return Object.keys(out).length ? out : null;
+  }
+  function matchesTags(tags, filter) {
+    if (!filter) {
+      return true;
+    }
+    const t = tags || {};
+    for (const k in filter) {
+      if (String(t[k] == null ? "" : t[k]).toLowerCase() !== filter[k]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // src/vt/zones/source.ts
+  function sourceTimeZone(decl) {
+    const raw = decl && decl.timezone;
+    if (typeof raw !== "string") {
+      return null;
+    }
+    const s = raw.trim();
+    if (!s || /^(browser|default|local)$/i.test(s)) {
+      return null;
+    }
+    if (/^(?:etc\/)?utc$/i.test(s)) {
+      return "UTC";
+    }
+    if (isZone(s)) {
+      return s;
+    }
+    if (!zoneWarned.has(s)) {
+      zoneWarned.add(s);
+      console.warn('[visual-timeline] source declares unknown time zone "' + s + '"; ignoring it');
+    }
+    return null;
+  }
+  function zoneLabel(tz) {
+    const s = String(tz || "");
+    if (/^(?:etc\/)?utc$/i.test(s)) {
+      return "UTC";
+    }
+    return s.slice(s.lastIndexOf("/") + 1).replace(/_/g, " ");
+  }
+  function fmtOffset(ms) {
+    const m = Math.round(ms / 6e4);
+    if (!m) {
+      return "";
+    }
+    const a = Math.abs(m), h = Math.floor(a / 60), mm = a % 60;
+    return (m < 0 ? "\u2212" : "+") + (h ? h + "h" : "") + (mm ? mm + "m" : "");
+  }
+  function zoneOffsetText(tz, refTz, ts) {
+    return fmtOffset(zoneOf(tz).offset(ts) - zoneOf(refTz).offset(ts));
+  }
+  function zoneHeadText(tz, refTz, ts) {
+    const off = zoneOffsetText(tz, refTz, ts);
+    return zoneLabel(tz) + (off ? " \xB7 " + off : "");
+  }
+  function zoneTexts(zone, panelTZ, suffix) {
+    let memoMin = NaN, memo = "";
+    const off = (ts) => {
+      const m = Math.floor(ts / 6e4);
+      if (m !== memoMin) {
+        memoMin = m;
+        memo = zone === panelTZ ? "" : zoneOffsetText(zone, panelTZ, ts);
+      }
+      return memo;
+    };
+    const label = zoneLabel(zone);
+    return {
+      zone,
+      label,
+      off,
+      time: (ts) => fmtTime(ts, zone),
+      short: (ts) => fmtShort(ts, zone),
+      sfx: suffix ? (ts) => {
+        const o = off(ts);
+        return o ? " (" + o + ")" : "";
+      } : () => ""
+    };
+  }
+  function zoneFor(decl, panelTZ, thumbTimes, panelTT) {
+    const srcTZ = sourceTimeZone(decl);
+    const texts = srcTZ ? zoneTexts(srcTZ, panelTZ, true) : null;
+    return { srcTZ, texts, tt: texts && thumbTimes === "source" ? texts : panelTT, el: null, offEl: null, off: null };
+  }
+
+  // src/vt/backends/api.ts
+  function imageUrlWithKey(url, apiBase, apiKey) {
+    if (!apiKey || !url) {
+      return url;
+    }
+    const u = new URL(url, apiBase);
+    if (u.search || u.origin !== new URL(apiBase).origin) {
+      return url;
+    }
+    u.searchParams.set("k", apiKey);
+    return u.href;
+  }
+  function sourcesPath(sites) {
+    const q = new URLSearchParams();
+    if (sites) {
+      q.set("site", sites.join(","));
+    }
+    const qs = q.toString();
+    return "/sources" + (qs ? "?" + qs : "");
+  }
+  function framesPath(site, kiosk, from, to, step) {
+    const q = new URLSearchParams();
+    q.set("site", site);
+    q.set("source", kiosk);
+    q.set("from", String(Math.round(from)));
+    q.set("to", String(Math.round(to)));
+    q.set("step", String(step));
+    q.set("variant", "lo");
+    return "/frames?" + q.toString();
+  }
+  function resolveFrameUrl(url, apiBase) {
+    if (!url || !apiBase) {
+      return url;
+    }
+    try {
+      return new URL(url, apiBase.replace(/\/+$/, "") + "/frames").href;
+    } catch {
+      return url;
+    }
+  }
+  function makeApiBackend(apiUrl, apiKey, apiFetch) {
+    const base = (apiUrl || "").replace(/\/+$/, "");
+    const key = apiFetch ? "" : apiKey;
+    const opts = () => ({
+      headers: key ? { authorization: "Bearer " + key } : void 0,
+      signal: typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(15e3) : void 0
+    });
+    const get = apiFetch ? (path) => apiFetch(path) : (path) => fetch(base + path, opts());
+    return {
+      async kiosks(sites) {
+        const r = await get(sourcesPath(sites));
+        if (!r.ok) {
+          throw new Error("kiosks " + r.status);
+        }
+        return r.json();
+      },
+      async frames(site, kiosk, from, to, step) {
+        const r = await get(framesPath(site, kiosk, from, to, step));
+        if (!r.ok) {
+          throw new Error("frames " + r.status);
+        }
+        const frames = await r.json();
+        for (const f of frames) {
+          f.url = apiFetch ? resolveFrameUrl(f.url, base) : imageUrlWithKey(f.url, base, key);
+        }
+        return frames;
+      }
+    };
+  }
+  function hiUrlFor(frame, decl, apiUrl, apiKey) {
+    if (!decl.hiCadence || !frame) {
+      return null;
+    }
+    const url = frame.url || "";
+    const qAt = url.indexOf("?");
+    const path = qAt >= 0 ? url.slice(0, qAt) : url;
+    const at = path.lastIndexOf("/frame/");
+    const base = at >= 0 ? path.slice(0, at) : apiUrl ? apiUrl.replace(/\/+$/, "") : null;
+    if (base === null) {
+      return null;
+    }
+    const q = qAt >= 0 ? url.slice(qAt) : apiKey ? "?k=" + encodeURIComponent(apiKey) : "";
+    const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
+    return base + "/frame/hi/" + encodeURIComponent(decl.site) + "/" + encodeURIComponent(decl.id) + "/" + hiTs + ".jpg" + q;
+  }
+
+  // src/vt/dom/html.ts
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
+  }
+  function tagChips(decl) {
+    if (!decl.tags) {
+      return "";
+    }
+    const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st">' + esc(k) + ":" + esc(v) + "</span>").join("");
+    return '<span class="tags">' + chips + "</span>";
+  }
+  function headTitle(decl) {
+    const parts = [decl.site];
+    if (decl.location) {
+      parts.push(decl.location);
+    }
+    if (decl.tags) {
+      for (const [k, v] of Object.entries(decl.tags)) {
+        parts.push(k + ":" + v);
+      }
+    }
+    return parts.join(" \xB7 ");
+  }
+
+  // src/core.ts
   var STYLE_ID = "ktl-styles";
   var KTL_VAR_DEFAULTS = {
     "--ktl-bg": "#181b1f",
@@ -381,206 +1076,6 @@ var VTCore = (() => {
   }
   var HUES = { "source-1": 205, "source-2": 275, "source-3": 25, "source-4": 130, "source-5": 340 };
   var DIMS = { "source-3": [288, 216], "source-5": [216, 384] };
-  var LOCAL_TZ = "local";
-  var zoneOk = /* @__PURE__ */ new Map();
-  function isZone(name) {
-    let ok = zoneOk.get(name);
-    if (ok === void 0) {
-      try {
-        new Intl.DateTimeFormat("en-US", { timeZone: name });
-        ok = true;
-      } catch (e) {
-        ok = false;
-      }
-      zoneOk.set(name, ok);
-    }
-    return ok;
-  }
-  function systemZone() {
-    let z = null;
-    try {
-      z = new Intl.DateTimeFormat().resolvedOptions().timeZone;
-    } catch (e) {
-      z = null;
-    }
-    return z && isZone(z) ? z : LOCAL_TZ;
-  }
-  var zoneWarned = /* @__PURE__ */ new Set();
-  function resolveTimeZone(tz) {
-    const s = tz == null ? "" : String(tz).trim();
-    if (!s || /^(browser|default|local)$/i.test(s)) {
-      return systemZone();
-    }
-    if (/^utc$/i.test(s)) {
-      return "UTC";
-    }
-    if (isZone(s)) {
-      return s;
-    }
-    if (!zoneWarned.has(s)) {
-      zoneWarned.add(s);
-      console.warn('[visual-timeline] unknown time zone "' + s + `"; using the browser's`);
-    }
-    return systemZone();
-  }
-  var zones = /* @__PURE__ */ new Map();
-  function zoneOf(tz) {
-    const id = resolveTimeZone(tz);
-    let z = zones.get(id);
-    if (!z) {
-      const tzOpt = id === LOCAL_TZ ? {} : { timeZone: id };
-      const fmts = /* @__PURE__ */ new Map();
-      let offset;
-      if (id === "UTC") {
-        offset = () => 0;
-      } else if (id === LOCAL_TZ) {
-        offset = (ts) => -new Date(ts).getTimezoneOffset() * 6e4;
-      } else {
-        const pf = new Intl.DateTimeFormat("en-US", Object.assign({
-          hourCycle: "h23",
-          year: "numeric",
-          month: "numeric",
-          day: "numeric",
-          hour: "numeric",
-          minute: "numeric",
-          second: "numeric"
-        }, tzOpt));
-        offset = (ts) => {
-          const p = {};
-          for (const x of pf.formatToParts(ts)) {
-            p[x.type] = x.value;
-          }
-          const wall = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
-          return wall - Math.floor(ts / 1e3) * 1e3;
-        };
-      }
-      z = {
-        id,
-        offset,
-        // en-AU, 24 h: the panel's one display format (locale/12 h are not options)
-        fmt(key, opts) {
-          let f = fmts.get(key);
-          if (!f) {
-            f = new Intl.DateTimeFormat("en-AU", Object.assign({}, opts, tzOpt));
-            fmts.set(key, f);
-          }
-          return f;
-        }
-      };
-      zones.set(id, z);
-    }
-    return z;
-  }
-  var wallOf = (ts, z) => ts + z.offset(ts);
-  function fromWall(w, z) {
-    const before = z.offset(w - 864e5), after = z.offset(w + 864e5);
-    const a = w - before;
-    if (before === after) {
-      return a;
-    }
-    const b = w - after;
-    const aOk = z.offset(a) === before, bOk = z.offset(b) === after;
-    if (aOk && bOk) {
-      return Math.min(a, b);
-    }
-    if (bOk) {
-      return b;
-    }
-    return a;
-  }
-  function zonedParts(ts, tz) {
-    const d = new Date(wallOf(ts, zoneOf(tz)));
-    return {
-      year: d.getUTCFullYear(),
-      month: d.getUTCMonth() + 1,
-      day: d.getUTCDate(),
-      hour: d.getUTCHours(),
-      minute: d.getUTCMinutes(),
-      second: d.getUTCSeconds(),
-      ms: d.getUTCMilliseconds()
-    };
-  }
-  function zonedTime(f, tz) {
-    return fromWall(Date.UTC(f.year, f.month - 1, f.day, f.hour || 0, f.minute || 0, f.second || 0, f.ms || 0), zoneOf(tz));
-  }
-  var F_TIME = { hour12: false, hour: "numeric", minute: "numeric", second: "numeric" };
-  var F_SHORT = { hour12: false, hour: "2-digit", minute: "2-digit" };
-  var F_DAY_HM = { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false };
-  var F_DAY = { day: "2-digit", month: "2-digit" };
-  var fmtTime = (ts, tz) => zoneOf(tz).fmt("time", F_TIME).format(ts);
-  var fmtShort = (ts, tz) => zoneOf(tz).fmt("short", F_SHORT).format(ts);
-  var fmtDur = (ms) => ms % 36e5 === 0 ? ms / 36e5 + "h" : ms % 6e4 === 0 ? ms / 6e4 + "m" : ms / 1e3 + "s";
-  function sourceTimeZone(decl) {
-    const raw = decl && decl.timezone;
-    if (typeof raw !== "string") {
-      return null;
-    }
-    const s = raw.trim();
-    if (!s || /^(browser|default|local)$/i.test(s)) {
-      return null;
-    }
-    if (/^(?:etc\/)?utc$/i.test(s)) {
-      return "UTC";
-    }
-    if (isZone(s)) {
-      return s;
-    }
-    if (!zoneWarned.has(s)) {
-      zoneWarned.add(s);
-      console.warn('[visual-timeline] source declares unknown time zone "' + s + '"; ignoring it');
-    }
-    return null;
-  }
-  function zoneLabel(tz) {
-    const s = String(tz || "");
-    if (/^(?:etc\/)?utc$/i.test(s)) {
-      return "UTC";
-    }
-    return s.slice(s.lastIndexOf("/") + 1).replace(/_/g, " ");
-  }
-  function fmtOffset(ms) {
-    const m = Math.round(ms / 6e4);
-    if (!m) {
-      return "";
-    }
-    const a = Math.abs(m), h = Math.floor(a / 60), mm = a % 60;
-    return (m < 0 ? "\u2212" : "+") + (h ? h + "h" : "") + (mm ? mm + "m" : "");
-  }
-  function zoneOffsetText(tz, refTz, ts) {
-    return fmtOffset(zoneOf(tz).offset(ts) - zoneOf(refTz).offset(ts));
-  }
-  function zoneHeadText(tz, refTz, ts) {
-    const off = zoneOffsetText(tz, refTz, ts);
-    return zoneLabel(tz) + (off ? " \xB7 " + off : "");
-  }
-  function zoneTexts(zone, panelTZ, suffix) {
-    let memoMin = NaN, memo = "";
-    const off = (ts) => {
-      const m = Math.floor(ts / 6e4);
-      if (m !== memoMin) {
-        memoMin = m;
-        memo = zone === panelTZ ? "" : zoneOffsetText(zone, panelTZ, ts);
-      }
-      return memo;
-    };
-    const label = zoneLabel(zone);
-    return {
-      zone,
-      label,
-      off,
-      time: (ts) => fmtTime(ts, zone),
-      short: (ts) => fmtShort(ts, zone),
-      sfx: suffix ? (ts) => {
-        const o = off(ts);
-        return o ? " (" + o + ")" : "";
-      } : () => ""
-    };
-  }
-  function zoneFor(decl, panelTZ, thumbTimes, panelTT) {
-    const srcTZ = sourceTimeZone(decl);
-    const texts = srcTZ ? zoneTexts(srcTZ, panelTZ, true) : null;
-    return { srcTZ, texts, tt: texts && thumbTimes === "source" ? texts : panelTT, el: null, offEl: null, off: null };
-  }
   function zoneChip(srcTZ) {
     return srcTZ ? '<span class="st tz"><span class="tzc"></span><span class="tzo"></span></span>' : "";
   }
@@ -829,466 +1324,6 @@ var VTCore = (() => {
       close
     };
   }
-  function imageUrlWithKey(url, apiBase, apiKey) {
-    if (!apiKey || !url) {
-      return url;
-    }
-    const u = new URL(url, apiBase);
-    if (u.search || u.origin !== new URL(apiBase).origin) {
-      return url;
-    }
-    u.searchParams.set("k", apiKey);
-    return u.href;
-  }
-  function sourcesPath(sites) {
-    const q = new URLSearchParams();
-    if (sites) {
-      q.set("site", sites.join(","));
-    }
-    const qs = q.toString();
-    return "/sources" + (qs ? "?" + qs : "");
-  }
-  function framesPath(site, kiosk, from, to, step) {
-    const q = new URLSearchParams();
-    q.set("site", site);
-    q.set("source", kiosk);
-    q.set("from", String(Math.round(from)));
-    q.set("to", String(Math.round(to)));
-    q.set("step", String(step));
-    q.set("variant", "lo");
-    return "/frames?" + q.toString();
-  }
-  function resolveFrameUrl(url, apiBase) {
-    if (!url || !apiBase) {
-      return url;
-    }
-    try {
-      return new URL(url, apiBase.replace(/\/+$/, "") + "/frames").href;
-    } catch {
-      return url;
-    }
-  }
-  function makeApiBackend(apiUrl, apiKey, apiFetch) {
-    const base = (apiUrl || "").replace(/\/+$/, "");
-    const key = apiFetch ? "" : apiKey;
-    const opts = () => ({
-      headers: key ? { authorization: "Bearer " + key } : void 0,
-      signal: typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(15e3) : void 0
-    });
-    const get = apiFetch ? (path) => apiFetch(path) : (path) => fetch(base + path, opts());
-    return {
-      async kiosks(sites) {
-        const r = await get(sourcesPath(sites));
-        if (!r.ok) {
-          throw new Error("kiosks " + r.status);
-        }
-        return r.json();
-      },
-      async frames(site, kiosk, from, to, step) {
-        const r = await get(framesPath(site, kiosk, from, to, step));
-        if (!r.ok) {
-          throw new Error("frames " + r.status);
-        }
-        const frames = await r.json();
-        for (const f of frames) {
-          f.url = apiFetch ? resolveFrameUrl(f.url, base) : imageUrlWithKey(f.url, base, key);
-        }
-        return frames;
-      }
-    };
-  }
-  function hiUrlFor(frame, decl, apiUrl, apiKey) {
-    if (!decl.hiCadence || !frame) {
-      return null;
-    }
-    const url = frame.url || "";
-    const qAt = url.indexOf("?");
-    const path = qAt >= 0 ? url.slice(0, qAt) : url;
-    const at = path.lastIndexOf("/frame/");
-    const base = at >= 0 ? path.slice(0, at) : apiUrl ? apiUrl.replace(/\/+$/, "") : null;
-    if (base === null) {
-      return null;
-    }
-    const q = qAt >= 0 ? url.slice(qAt) : apiKey ? "?k=" + encodeURIComponent(apiKey) : "";
-    const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
-    return base + "/frame/hi/" + encodeURIComponent(decl.site) + "/" + encodeURIComponent(decl.id) + "/" + hiTs + ".jpg" + q;
-  }
-  function parseVar(v) {
-    if (!v || v === "All" || v === "$__all") {
-      return null;
-    }
-    return v.replace(/^\{|\}$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
-  }
-  function erasFor(decl, P) {
-    const hist = (decl.history || []).filter((h) => (h.variant || "lo") === "lo").slice().sort((a, b) => a.since - b.since);
-    let runCad = decl.cadence || 6e4;
-    if (hist.length && hist[0].cadence) {
-      runCad = hist[0].cadence;
-    }
-    const evts = [{ since: -864e13, cadence: runCad, paused: false, reason: void 0, intended: void 0 }];
-    for (const h of hist) {
-      evts.push({ since: h.since, cadence: h.cadence, paused: !!h.paused, reason: h.reason, intended: h.intended });
-    }
-    const eras = [];
-    for (let i = 0; i < evts.length; i++) {
-      const e = evts[i];
-      const next = evts[i + 1];
-      if (e.cadence) {
-        runCad = e.cadence;
-      }
-      const from = Math.max(e.since, P.from);
-      const to = Math.min(next ? next.since : P.to, P.to);
-      if (to <= from) {
-        continue;
-      }
-      const prev = eras[eras.length - 1];
-      if (prev && prev.paused === !!e.paused && prev.cadence === runCad && prev.reason === e.reason && prev.intended === e.intended) {
-        prev.to = to;
-        continue;
-      }
-      eras.push({ from, to, cadence: runCad, paused: !!e.paused, reason: e.reason, intended: e.intended });
-    }
-    if (!eras.length) {
-      eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false });
-    }
-    return eras;
-  }
-  var PAUSE_CLASSES = ["paused", "unintended", "r-quiet", "r-screen-sleep", "r-app-stopped", "r-system-down"];
-  function clearPauseClasses(el) {
-    el.classList.remove(...PAUSE_CLASSES);
-    for (const c of Array.from(el.classList)) {
-      if (c.startsWith("r-")) {
-        el.classList.remove(c);
-      }
-    }
-  }
-  function pauseInfo(x) {
-    const r = x && x.reason;
-    const unintended = !!x && x.intended === false;
-    const label = r === "screen-sleep" ? unintended ? "SCREEN DARK (UNEXPECTED)" : "SCREEN ASLEEP" : r === "system-down" ? "SYSTEM DOWN (PLANNED)" : r === "app-stopped" ? "APP STOPPED" : r === "quiet" ? "QUIET HOURS" : "PAUSED";
-    const classes = ["paused"];
-    if (r) {
-      classes.push("r-" + String(r).replace(/[^\w-]/g, ""));
-    }
-    if (unintended) {
-      classes.push("unintended");
-    }
-    return { label, classes };
-  }
-  async function buildSourceModel(decl, P, backend, budgetSlots) {
-    const eras = erasFor(decl, P);
-    const slots = [];
-    const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
-    function shortEraSlot(era, frame, nowMs) {
-      return {
-        ts: era.from,
-        span: era.to - era.from,
-        frame,
-        cadence: era.cadence,
-        step: era.cadence,
-        future: era.from + era.cadence >= nowMs
-      };
-    }
-    function resolveBoundary(prev, firstIdx) {
-      if (!prev || firstIdx <= prev.startIdx || firstIdx >= slots.length) {
-        return;
-      }
-      const p = slots[firstIdx - 1];
-      const first = slots[firstIdx];
-      if (p.paused || p.beyond || p.ts !== prev.to) {
-        return;
-      }
-      const laterDrawsIt = !first.paused && !first.beyond && first.ts === p.ts;
-      if (!laterDrawsIt && !(first.paused && !p.frame)) {
-        return;
-      }
-      if (laterDrawsIt && !first.frame && p.frame) {
-        first.frame = p.frame;
-      }
-      slots.splice(firstIdx - 1, 1);
-      if (firstIdx - 1 === prev.startIdx) {
-        slots.splice(prev.startIdx, 0, shortEraSlot(prev, null, Date.now()));
-      }
-    }
-    async function pushActive(era) {
-      if (era.to - era.from <= 0) {
-        return;
-      }
-      const eraSpan = era.to - era.from;
-      const share = Math.max(4, Math.round(budgetSlots * (eraSpan / totalActive)));
-      const raw = Math.max(1, Math.ceil(eraSpan / era.cadence));
-      const step = Math.ceil(raw / Math.min(share, raw)) * era.cadence;
-      const start = Math.ceil(era.from / step) * step;
-      const n = era.to >= start ? Math.floor((era.to - start) / step) + 1 : 0;
-      const nowMs = Date.now();
-      if (n === 0) {
-        const half = era.cadence / 2;
-        const near = await backend.frames(decl.site, decl.id, era.from - half, era.to + half, era.cadence);
-        const frame = near.filter((f) => f.ts >= era.from - half && f.ts <= era.to + half).sort((a, b) => Math.abs(a.ts - era.from) - Math.abs(b.ts - era.from))[0] || null;
-        slots.push(shortEraSlot(era, frame, nowMs));
-        return;
-      }
-      const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
-      const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
-      for (let i = 0; i < n; i++) {
-        const ts = start + i * step;
-        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowMs });
-      }
-    }
-    const nowAtBuild = Date.now();
-    const horizon = Math.min(P.to, nowAtBuild);
-    let prevActive = null;
-    for (const era of eras) {
-      const eFrom = era.from;
-      const eTo = Math.min(era.to, horizon);
-      const isTail = era === eras[eras.length - 1];
-      const firstIdx = slots.length;
-      const prev = prevActive;
-      prevActive = null;
-      if (!era.paused) {
-        if (eTo > eFrom) {
-          const span = { from: eFrom, to: eTo, cadence: era.cadence };
-          await pushActive(span);
-          resolveBoundary(prev, firstIdx);
-          prevActive = { ...span, startIdx: firstIdx };
-        }
-        continue;
-      }
-      if (!isTail) {
-        if (eTo > eFrom) {
-          slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
-          resolveBoundary(prev, firstIdx);
-        }
-        continue;
-      }
-      if (eTo <= eFrom) {
-        continue;
-      }
-      const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, era.cadence);
-      const tailIdx = slots.length;
-      const resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
-      if (resume) {
-        const resumeTs = resume.ts;
-        slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended });
-        if (eTo > resumeTs) {
-          await pushActive({ from: resumeTs, to: eTo, cadence: era.cadence });
-        }
-      } else {
-        slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
-      }
-      resolveBoundary(prev, tailIdx);
-    }
-    if (P.to > horizon) {
-      const last = slots[slots.length - 1];
-      const covered = !last ? horizon : last.paused || last.beyond ? last.ts + last.span : last.ts + last.step / 2;
-      const fillerFrom = Math.min(Math.max(covered, horizon - 1), P.to);
-      if (P.to - fillerFrom > 0) {
-        slots.push({ ts: fillerFrom, span: P.to - fillerFrom, beyond: true });
-      }
-    }
-    function slotAt(t) {
-      for (const sl of slots) {
-        const edge = sl.paused || sl.beyond;
-        const from = edge ? sl.ts : sl.ts - sl.span / 2;
-        const to = edge ? sl.ts + sl.span : sl.ts + sl.span / 2;
-        if (t < to) {
-          if (sl.beyond) {
-            const i = slots.indexOf(sl);
-            const prev = i > 0 ? slots[i - 1] : null;
-            if (prev && !prev.beyond && t < sl.ts + (prev.step || 0) / 2) {
-              return prev;
-            }
-          }
-          return t >= from || sl === slots[0] ? sl : sl;
-        }
-      }
-      return slots[slots.length - 1] || null;
-    }
-    const lastActive = [...slots].reverse().find((sl) => !sl.paused && !sl.beyond) || null;
-    return { eras, slots, slotAt, lastActive };
-  }
-  function parseTagFilter(expr) {
-    if (!expr) {
-      return null;
-    }
-    const out = {};
-    for (const part of String(expr).split(",")) {
-      const i = part.indexOf("=");
-      const key = i >= 0 ? part.slice(0, i).trim().toLowerCase() : "";
-      if (key) {
-        out[key] = part.slice(i + 1).trim().toLowerCase();
-      }
-    }
-    return Object.keys(out).length ? out : null;
-  }
-  function matchesTags(tags, filter) {
-    if (!filter) {
-      return true;
-    }
-    const t = tags || {};
-    for (const k in filter) {
-      if (String(t[k] == null ? "" : t[k]).toLowerCase() !== filter[k]) {
-        return false;
-      }
-    }
-    return true;
-  }
-  function esc(s) {
-    return String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
-  }
-  function tagChips(decl) {
-    if (!decl.tags) {
-      return "";
-    }
-    const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st">' + esc(k) + ":" + esc(v) + "</span>").join("");
-    return '<span class="tags">' + chips + "</span>";
-  }
-  function headTitle(decl) {
-    const parts = [decl.site];
-    if (decl.location) {
-      parts.push(decl.location);
-    }
-    if (decl.tags) {
-      for (const [k, v] of Object.entries(decl.tags)) {
-        parts.push(k + ":" + v);
-      }
-    }
-    return parts.join(" \xB7 ");
-  }
-  var TICK_STEPS = [
-    6e4,
-    5 * 6e4,
-    10 * 6e4,
-    15 * 6e4,
-    30 * 6e4,
-    36e5,
-    2 * 36e5,
-    3 * 36e5,
-    6 * 36e5,
-    12 * 36e5,
-    24 * 36e5,
-    2 * 864e5,
-    3 * 864e5,
-    4 * 864e5,
-    5 * 864e5,
-    6 * 864e5,
-    7 * 864e5,
-    8 * 864e5,
-    9 * 864e5,
-    10 * 864e5,
-    15 * 864e5,
-    30 * 864e5,
-    90 * 864e5,
-    365 * 864e5
-  ];
-  var DAY_MS = 864e5;
-  function monthsOf(stepMs) {
-    return stepMs >= 30 * DAY_MS ? Math.round(stepMs / (30 * DAY_MS)) : 0;
-  }
-  function offsetChange(lo, hi, o, z) {
-    let a = Math.floor(lo / 1e3), b = Math.ceil(hi / 1e3);
-    while (b - a > 1) {
-      const m = Math.floor((a + b) / 2);
-      if (z.offset(m * 1e3) === o) {
-        a = m;
-      } else {
-        b = m;
-      }
-    }
-    return b * 1e3;
-  }
-  function ceilWall(ts, step, z) {
-    let t = ts;
-    for (let i = 0; i < 6; i++) {
-      const o = z.offset(t);
-      const c = Math.ceil((t + o) / step) * step - o;
-      if (z.offset(c) === o) {
-        return c;
-      }
-      t = offsetChange(t, c, o, z);
-    }
-    return Math.ceil(ts / step) * step;
-  }
-  function floorWall(ts, step, z) {
-    let t = ts;
-    for (let i = 0; i < 6; i++) {
-      const o = z.offset(t);
-      const c = Math.floor((t + o) / step) * step - o;
-      const oc = z.offset(c);
-      if (oc === o) {
-        return c;
-      }
-      t = offsetChange(c, t, oc, z) - 1;
-    }
-    return Math.floor(ts / step) * step;
-  }
-  function monthStart(idx, z) {
-    return fromWall(Date.UTC(Math.floor(idx / 12), (idx % 12 + 12) % 12, 1), z);
-  }
-  function dayStartWall(ts, z) {
-    const w = wallOf(ts, z);
-    return w - (w % DAY_MS + DAY_MS) % DAY_MS;
-  }
-  function alignIn(ts, stepMs, z) {
-    const k = monthsOf(stepMs);
-    if (k) {
-      const d = new Date(wallOf(ts, z));
-      const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
-      return monthStart(Math.floor(idx / k) * k, z);
-    }
-    if (stepMs >= DAY_MS) {
-      return fromWall(dayStartWall(ts, z), z);
-    }
-    return floorWall(ts, stepMs, z);
-  }
-  function nextIn(ts, stepMs, z) {
-    const k = monthsOf(stepMs);
-    let n;
-    if (k) {
-      const d = new Date(wallOf(ts, z));
-      const idx = d.getUTCFullYear() * 12 + d.getUTCMonth();
-      n = monthStart(Math.floor(idx / k) * k + k, z);
-    } else if (stepMs >= DAY_MS) {
-      n = fromWall(dayStartWall(ts, z) + Math.round(stepMs / DAY_MS) * DAY_MS, z);
-    } else {
-      n = ceilWall(ts + 1, stepMs, z);
-    }
-    return n > ts ? n : ts + stepMs;
-  }
-  function alignedStart(ts, stepMs, tz) {
-    return alignIn(ts, stepMs, zoneOf(tz));
-  }
-  function nextTick(ts, stepMs, tz) {
-    return nextIn(ts, stepMs, zoneOf(tz));
-  }
-  function axisTicks(from, to, stepMs, tz) {
-    const z = zoneOf(tz);
-    const out = [];
-    let t = alignIn(from, stepMs, z);
-    while (t < from) {
-      t = nextIn(t, stepMs, z);
-    }
-    for (; t <= to && out.length < 1e4; t = nextIn(t, stepMs, z)) {
-      out.push(t);
-    }
-    return out;
-  }
-  function tickFormat(stepMs, tz) {
-    const z = zoneOf(tz);
-    if (stepMs < 36e5) {
-      const f = z.fmt("short", F_SHORT);
-      return (ts) => f.format(ts);
-    }
-    if (stepMs < 24 * 36e5) {
-      const f = z.fmt("dayhm", F_DAY_HM);
-      return (ts) => f.format(ts);
-    }
-    if (stepMs < 365 * 864e5) {
-      const f = z.fmt("day", F_DAY);
-      return (ts) => f.format(ts);
-    }
-    return (ts) => String(new Date(wallOf(ts, z)).getUTCFullYear());
-  }
   var TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
   var TICK_LABEL_GAP = 14;
   var measureCtx;
@@ -1313,23 +1348,6 @@ var VTCore = (() => {
       document.removeEventListener("keydown", popState.keyH);
       popState.keyH = null;
     }
-  }
-  function ghostFor(slots, sl) {
-    for (let j = slots.indexOf(sl) - 1; j >= 0; j--) {
-      if (slots[j].frame) {
-        return slots[j].frame;
-      }
-      if (!slots[j].future) {
-        return null;
-      }
-    }
-    return null;
-  }
-  function slotClass(sl) {
-    return sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? "" : sl.future ? " future" : " gap";
-  }
-  function missedHeartbeat(sl, now) {
-    return sl.future && !sl.frame && sl.ts + sl.step < now;
   }
   function dressGhost(slots, sl) {
     if (!sl.el) {

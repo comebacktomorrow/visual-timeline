@@ -54,10 +54,11 @@ function every(step: number, a: number, b: number, except: (ts: number) => boole
 /* compact view of a slot list: [minutes after T0, class] */
 const view = (slots: any[]) => slots.map((sl) => [(sl.ts - T0) / MIN, slotClass(sl).trim()]);
 
-/* core.ts is untyped (@ts-nocheck); read its model loosely */
+/* the decls and backends here are partial stand-ins; read the model loosely */
 type Model = { eras: any[]; slots: any[]; slotAt: (t: number) => any; lastActive: any };
+type BuildArgs = Parameters<typeof buildSourceModel>;
 const build = (d: object, P: { from: number; to: number }, backend: object, budget: number): Promise<Model> =>
-  buildSourceModel(d, P, backend, budget);
+  buildSourceModel(d as BuildArgs[0], P, backend as BuildArgs[2], budget);
 
 const decl = (extra: Record<string, unknown> = {}) => ({ id: 'source-1', site: 'site-a', cadence: 60e3, ...extra });
 
