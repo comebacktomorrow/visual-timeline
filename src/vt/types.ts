@@ -59,7 +59,34 @@ export interface Backend {
   kiosks(sites?: string[] | null): Promise<SourceDecl[]> | SourceDecl[];
   frames(site: string, id: string, from: number, to: number, step: number): Promise<Frame[]>;
   /* demo seam only; raw annotations, normalized by normAnnotations */
-  annotations?(): unknown[];
+  annotations?(): RawAnnotation[];
+}
+
+/* An annotation as a provider hands it over (the panel's flattened
+ * annotation frames, the demo seam, a host page): loosely typed, since
+ * normAnnotations coerces and validates every field. `time` is an alias of
+ * `ts`; `tags` is an array or a comma list. */
+export interface RawAnnotation {
+  ts?: number | string | null;
+  time?: number | string | null;
+  timeEnd?: number | string | null;
+  title?: string;
+  text?: string;
+  tags?: unknown;
+  color?: string;
+  source?: string | null;
+}
+/* a normalized annotation (normAnnotations): timeEnd set only for a region;
+ * source / siteScope from a source:/kiosk: or site: tag (or `source`) */
+export interface Annotation {
+  ts: number;
+  timeEnd: number | null;
+  title: string;
+  text: string;
+  tags: string[];
+  color: string;
+  source: string | null;
+  siteScope: string | null;
 }
 
 /* the injected transport (Grafana: the data source proxy) and what it
@@ -116,4 +143,51 @@ export interface SourceModel {
   slots: Slot[];
   slotAt(t: number): Slot | null;
   lastActive: TickSlot | null;
+}
+
+/* ---- mounts (mountTimeline, mountGrid) ---- */
+
+/* A mount's window: the query window plus the site/source variables, parsed
+ * (parseVar: null selects all) */
+export interface MountWindow extends TimeWindow {
+  site: string[] | null;
+  source: string[] | null;
+}
+
+/* What a host passes to mountTimeline / mountGrid: every cfg field either
+ * mount reads. The string options are typed loosely (hosts pass whatever
+ * their option holds); the comments give the values the mounts act on. */
+export interface MountConfig {
+  from: number;
+  to: number;
+  site?: string | null;        // a Grafana variable value: 'a,b', '{a,b}', 'All', '$__all'
+  source?: string | null;
+  tagFilter?: string | null;   // "env=prod, room=lobby"
+  hideEmpty?: boolean;
+  timeZone?: string;           // IANA name, 'utc', or undefined/'browser'
+  thumbTimes?: string;         // 'panel' (default) | 'source'
+  width?: number;              // host width in px; web mounts measure the root
+  fit?: string;                // 'fill' crops frames to cover; anything else fits
+  headerMode?: string;         // 'bar' (default) | 'inline' | 'inline-gradient'
+  showDetails?: boolean;       // timeline: the cadence chip
+  apiUrl?: string;
+  apiKey?: string;
+  apiFetch?: ApiFetch;
+  annotations?: RawAnnotation[];   // timeline: host annotations (else the demo seam's)
+  showAnnotations?: boolean;       // timeline: false hides them
+  annotationLanes?: string;        // timeline: 'shared' (default) | 'per-source'
+  onHover?: (t: number) => void;               // timeline: a local hover moved the cursor
+  onHoverClear?: () => void;                   // timeline: the mouse left a strip
+  onCursor?: (t: number) => void;              // timeline: every cursor move (host chrome)
+  onZoom?: (from: number, to: number) => void; // timeline: drag-select released
+  onShown?: (t: number | null) => void;        // grid: shown time changed (null = latest)
+}
+
+/* What both mounts return. The timeline has isHovering, the grid
+ * clearExternal. */
+export interface MountInstance {
+  setExternalCursor(t: number): void;
+  isHovering?(): boolean;
+  clearExternal?(): void;
+  destroy(): void;
 }

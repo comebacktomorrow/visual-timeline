@@ -656,22 +656,22 @@ var VTCore = (() => {
     return u.href;
   }
   function sourcesPath(sites) {
-    const q = new URLSearchParams();
+    const q2 = new URLSearchParams();
     if (sites) {
-      q.set("site", sites.join(","));
+      q2.set("site", sites.join(","));
     }
-    const qs = q.toString();
+    const qs = q2.toString();
     return "/sources" + (qs ? "?" + qs : "");
   }
   function framesPath(site, kiosk, from, to, step) {
-    const q = new URLSearchParams();
-    q.set("site", site);
-    q.set("source", kiosk);
-    q.set("from", String(Math.round(from)));
-    q.set("to", String(Math.round(to)));
-    q.set("step", String(step));
-    q.set("variant", "lo");
-    return "/frames?" + q.toString();
+    const q2 = new URLSearchParams();
+    q2.set("site", site);
+    q2.set("source", kiosk);
+    q2.set("from", String(Math.round(from)));
+    q2.set("to", String(Math.round(to)));
+    q2.set("step", String(step));
+    q2.set("variant", "lo");
+    return "/frames?" + q2.toString();
   }
   function resolveFrameUrl(url, apiBase) {
     if (!url || !apiBase) {
@@ -724,9 +724,9 @@ var VTCore = (() => {
     if (base === null) {
       return null;
     }
-    const q = qAt >= 0 ? url.slice(qAt) : apiKey ? "?k=" + encodeURIComponent(apiKey) : "";
+    const q2 = qAt >= 0 ? url.slice(qAt) : apiKey ? "?k=" + encodeURIComponent(apiKey) : "";
     const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
-    return base + "/frame/hi/" + encodeURIComponent(decl.site) + "/" + encodeURIComponent(decl.id) + "/" + hiTs + ".jpg" + q;
+    return base + "/frame/hi/" + encodeURIComponent(decl.site) + "/" + encodeURIComponent(decl.id) + "/" + hiTs + ".jpg" + q2;
   }
 
   // src/vt/dom/html.ts
@@ -753,7 +753,7 @@ var VTCore = (() => {
     return parts.join(" \xB7 ");
   }
 
-  // src/core.ts
+  // src/vt/dom/styles.ts
   var STYLE_ID = "ktl-styles";
   var KTL_VAR_DEFAULTS = {
     "--ktl-bg": "#181b1f",
@@ -1053,6 +1053,8 @@ var VTCore = (() => {
     s.textContent = CSS;
     document.head.appendChild(s);
   }
+
+  // src/vt/backends/demo.ts
   var SITES = {
     "site-a": [
       { id: "source-1", cadence: 6e4, tags: { env: "prod" } },
@@ -1076,29 +1078,6 @@ var VTCore = (() => {
   }
   var HUES = { "source-1": 205, "source-2": 275, "source-3": 25, "source-4": 130, "source-5": 340 };
   var DIMS = { "source-3": [288, 216], "source-5": [216, 384] };
-  function zoneChip(srcTZ) {
-    return srcTZ ? '<span class="st tz"><span class="tzc"></span><span class="tzo"></span></span>' : "";
-  }
-  function attachZoneChip(z, host) {
-    z.el = host.querySelector(".tz");
-    if (!z.el) {
-      return;
-    }
-    z.el.querySelector(".tzc").textContent = z.texts.label;
-    z.offEl = z.el.querySelector(".tzo");
-  }
-  function dressZoneChip(z, ts) {
-    if (!z.el) {
-      return;
-    }
-    const o = z.texts.off(ts);
-    if (o === z.off) {
-      return;
-    }
-    z.off = o;
-    z.offEl.textContent = o ? " \xB7 " + o : "";
-    z.el.title = "Source time zone: " + z.texts.zone + (o ? " (" + o + " from panel time)" : " (same as panel time)");
-  }
   function makeBackend(P, SPAN, tz) {
     function renderMockFrame(site, kiosk, ts, step) {
       const dims = DIMS[kiosk] || [384, 216];
@@ -1193,6 +1172,8 @@ var VTCore = (() => {
       }
     };
   }
+
+  // src/vt/ui/annotations.ts
   function normAnnotations(raw, P) {
     const out = [];
     for (const a of raw || []) {
@@ -1324,16 +1305,8 @@ var VTCore = (() => {
       close
     };
   }
-  var TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
-  var TICK_LABEL_GAP = 14;
-  var measureCtx;
-  function measureTickWidth(text) {
-    if (!measureCtx) {
-      measureCtx = document.createElement("canvas").getContext("2d");
-    }
-    measureCtx.font = TICK_FONT;
-    return measureCtx.measureText(text).width;
-  }
+
+  // src/vt/ui/preview.ts
   var popState = { el: null, keyH: null, retireTimer: null };
   function closePreview() {
     if (popState.retireTimer) {
@@ -1347,28 +1320,6 @@ var VTCore = (() => {
     if (popState.keyH) {
       document.removeEventListener("keydown", popState.keyH);
       popState.keyH = null;
-    }
-  }
-  function dressGhost(slots, sl) {
-    if (!sl.el) {
-      return;
-    }
-    const g = sl.future && !sl.frame ? ghostFor(slots, sl) : null;
-    let img = sl.el.querySelector("img.ghost");
-    if (!g) {
-      if (img) {
-        img.remove();
-      }
-      return;
-    }
-    if (!img) {
-      img = document.createElement("img");
-      img.className = "ghost";
-      img.alt = "";
-      sl.el.appendChild(img);
-    }
-    if (img.src !== g.url) {
-      img.src = g.url;
     }
   }
   function makePreview(root, tz) {
@@ -1423,6 +1374,8 @@ var VTCore = (() => {
       }
     };
   }
+
+  // src/vt/ui/wrapper.ts
   function makeWrapper(root) {
     const wrap = document.createElement("div");
     wrap.className = "ktl";
@@ -1455,6 +1408,620 @@ var VTCore = (() => {
     wrap.dataset.stale = "1";
     setTimeout(() => wrap.remove(), 1500);
   }
+  function q(wrap, sel) {
+    return wrap.querySelector(sel);
+  }
+
+  // src/vt/zones/chip.ts
+  function zoneChip(srcTZ) {
+    return srcTZ ? '<span class="st tz"><span class="tzc"></span><span class="tzo"></span></span>' : "";
+  }
+  function attachZoneChip(z, host) {
+    z.el = host.querySelector(".tz");
+    if (!z.el) {
+      return;
+    }
+    z.el.querySelector(".tzc").textContent = z.texts.label;
+    z.offEl = z.el.querySelector(".tzo");
+  }
+  function dressZoneChip(z, ts) {
+    if (!z.el) {
+      return;
+    }
+    const o = z.texts.off(ts);
+    if (o === z.off) {
+      return;
+    }
+    z.off = o;
+    z.offEl.textContent = o ? " \xB7 " + o : "";
+    z.el.title = "Source time zone: " + z.texts.zone + (o ? " (" + o + " from panel time)" : " (same as panel time)");
+  }
+
+  // src/vt/timeline/cursor.ts
+  function restoreCursor(root, P) {
+    const saved = Number(root.dataset.ktlCursor);
+    if (root.dataset.ktlPinned === "1" && Number.isFinite(saved)) {
+      return Math.max(P.from, Math.min(P.to, saved));
+    }
+    return Math.min(P.to, Date.now());
+  }
+  function showSelection(s, fa, fb) {
+    const a = Math.min(fa, fb), b = Math.max(fa, fb);
+    for (const k of s.kiosks) {
+      const c = s.cards[k.id];
+      if (!c) {
+        continue;
+      }
+      const w = c.strip.clientWidth;
+      c.sel.style.display = "block";
+      c.sel.style.left = a * w + "px";
+      c.sel.style.width = (b - a) * w + "px";
+    }
+  }
+  function hideSelection(s) {
+    for (const k of s.kiosks) {
+      if (s.cards[k.id]) {
+        s.cards[k.id].sel.style.display = "none";
+      }
+    }
+  }
+  function setCursor(s, t, hoveredCard, external) {
+    s.cursorT = Math.max(s.P.from, Math.min(s.P.to, t));
+    s.root.dataset.ktlCursor = String(s.cursorT);
+    if (!external) {
+      s.root.dataset.ktlPinned = "1";
+    }
+    if (s.cfg.onCursor) {
+      s.cfg.onCursor(s.cursorT);
+    }
+    const frac = (s.cursorT - s.P.from) / s.SPAN;
+    const axis = q(s.wrap, ".axis"), ac = q(s.wrap, ".acur");
+    const acW = ac.offsetWidth || 50;
+    ac.textContent = fmtTime(s.cursorT, s.TZ);
+    ac.style.left = Math.max(acW / 2, Math.min(axis.clientWidth - acW / 2, frac * axis.clientWidth)) + "px";
+    for (const k of s.kiosks) {
+      const c = s.cards[k.id];
+      if (!c) {
+        continue;
+      }
+      if (!external) {
+        c.card.classList.toggle("hovered", hoveredCard === c.card);
+      }
+      const w = c.strip.clientWidth, x = frac * w;
+      c.cross.style.left = x + "px";
+      const slot = c.model.slotAt(s.cursorT);
+      const tt = c.tt;
+      if (c.zone.el) {
+        dressZoneChip(c.zone, s.cursorT);
+      }
+      const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
+      c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + "px";
+      c.mag.classList.remove("ghost");
+      if (slot && slot.frame) {
+        c.mag.classList.remove("gap", "future", "off");
+        clearPauseClasses(c.mag);
+        c.mag.querySelector("img").src = slot.frame.url;
+        c.mag.querySelector(".cap").textContent = tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts);
+        c.head.textContent = "";
+        c.head.classList.remove("stale");
+        clearPauseClasses(c.head);
+      } else if (slot && slot.paused) {
+        const pi = pauseInfo(slot);
+        c.mag.classList.remove("gap", "future", "off");
+        clearPauseClasses(c.mag);
+        c.mag.classList.add(...pi.classes);
+        c.mag.querySelector(".cap").textContent = pi.label.toLowerCase();
+        c.head.textContent = pi.label.toLowerCase();
+        c.head.classList.remove("stale");
+        clearPauseClasses(c.head);
+        c.head.classList.add(...pi.classes);
+      } else if (slot && slot.beyond) {
+        c.mag.classList.remove("gap", "future");
+        clearPauseClasses(c.mag);
+        c.mag.classList.add("off");
+        c.head.textContent = "";
+        c.head.classList.remove("stale");
+        clearPauseClasses(c.head);
+      } else if (slot && slot.future) {
+        const inFlight = slot.ts <= Date.now();
+        const g = ghostFor(c.model.slots, slot);
+        c.mag.classList.remove("gap", "off");
+        clearPauseClasses(c.mag);
+        c.mag.classList.add("future");
+        if (g) {
+          c.mag.classList.add("ghost");
+          c.mag.querySelector("img").src = g.url;
+        }
+        c.mag.querySelector(".cap").textContent = (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + tt.short(slot.ts) + (g ? " \xB7 last frame " + tt.time(g.ts) : "") + tt.sfx(slot.ts);
+        c.head.textContent = inFlight ? "expected" : "upcoming";
+        c.head.classList.remove("stale");
+        clearPauseClasses(c.head);
+      } else {
+        c.mag.classList.add("gap");
+        c.mag.classList.remove("future", "off");
+        clearPauseClasses(c.mag);
+        const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
+        let last = null;
+        for (let j = i; j >= 0; j--) {
+          if (c.model.slots[j].frame) {
+            last = c.model.slots[j].frame;
+            break;
+          }
+        }
+        const msg = last ? "offline \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : "no data in window";
+        c.mag.querySelector(".cap").textContent = msg;
+        c.head.textContent = msg;
+        c.head.classList.add("stale");
+        clearPauseClasses(c.head);
+      }
+    }
+    if (!external && s.cfg.onHover) {
+      s.cfg.onHover(s.cursorT);
+    }
+  }
+
+  // src/vt/time/measure.ts
+  var TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
+  var TICK_LABEL_GAP = 14;
+  var measureCtx;
+  function measureTickWidth(text) {
+    if (!measureCtx) {
+      measureCtx = document.createElement("canvas").getContext("2d");
+    }
+    measureCtx.font = TICK_FONT;
+    return measureCtx.measureText(text).width;
+  }
+
+  // src/vt/timeline/axis.ts
+  function buildAxis(s) {
+    const axis = q(s.wrap, ".axis");
+    const w = axis.clientWidth;
+    const roughMaxTicks = Math.max(3, Math.floor(w / 90));
+    const roughStep = TICK_STEPS.find((st) => s.SPAN / st <= roughMaxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
+    const sampleWidth = measureTickWidth(tickFormat(roughStep, s.TZ)(s.P.to));
+    const maxTicks = Math.max(3, Math.floor(w / (sampleWidth + TICK_LABEL_GAP)));
+    const tickStep = TICK_STEPS.find((st) => s.SPAN / st <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
+    const fmt = tickFormat(tickStep, s.TZ);
+    axis.querySelectorAll(".tick").forEach((t) => t.remove());
+    s.axisTickList.length = 0;
+    for (const ts of axisTicks(s.P.from, s.P.to, tickStep, s.TZ)) {
+      s.axisTickList.push(ts);
+      const el = document.createElement("div");
+      el.className = "tick";
+      el.style.left = (ts - s.P.from) / s.SPAN * w + "px";
+      el.textContent = fmt(ts);
+      axis.appendChild(el);
+    }
+  }
+  function ruleBeyond(s, sl) {
+    if (!sl || !sl.beyond || !sl.el) {
+      return;
+    }
+    sl.el.querySelectorAll(".bt").forEach((t) => t.remove());
+    for (const ts of s.axisTickList) {
+      if (ts <= sl.ts || ts > sl.ts + sl.span) {
+        continue;
+      }
+      const t = document.createElement("div");
+      t.className = "bt";
+      t.style.left = ((ts - sl.ts) / sl.span * 100).toFixed(3) + "%";
+      sl.el.appendChild(t);
+    }
+  }
+  function ruleAllBeyond(s) {
+    for (const k of s.kiosks) {
+      const c = s.cards[k.id];
+      if (!c) {
+        continue;
+      }
+      const last = c.model.slots[c.model.slots.length - 1];
+      if (last && last.beyond) {
+        ruleBeyond(s, last);
+      }
+    }
+  }
+
+  // src/vt/ui/ghost.ts
+  function dressGhost(slots, sl) {
+    if (!sl.el) {
+      return;
+    }
+    const g = sl.future && !sl.frame ? ghostFor(slots, sl) : null;
+    let img = sl.el.querySelector("img.ghost");
+    if (!g) {
+      if (img) {
+        img.remove();
+      }
+      return;
+    }
+    if (!img) {
+      img = document.createElement("img");
+      img.className = "ghost";
+      img.alt = "";
+      sl.el.appendChild(img);
+    }
+    if (img.src !== g.url) {
+      img.src = g.url;
+    }
+  }
+
+  // src/vt/timeline/card.ts
+  function dressStrip(model) {
+    for (const sl of model.slots) {
+      if (!sl.el || sl.frame) {
+        continue;
+      }
+      sl.el.style.backgroundPosition = -sl.el.offsetLeft + "px 0";
+      if (sl.paused && sl.el.offsetWidth >= 90 && !sl.el.querySelector(".band-label")) {
+        const lab = document.createElement("span");
+        lab.className = "band-label";
+        lab.textContent = pauseInfo(sl).label;
+        sl.el.appendChild(lab);
+      }
+    }
+  }
+  function dressAll(s, tries) {
+    const anySized = s.kiosks.some((k) => s.cards[k.id] && s.cards[k.id].strip.clientWidth > 0);
+    if (!anySized) {
+      if (tries > 0 && !s.destroyed) {
+        setTimeout(() => dressAll(s, tries - 1), 500);
+      }
+      return;
+    }
+    for (const k of s.kiosks) {
+      if (s.cards[k.id]) {
+        dressStrip(s.cards[k.id].model);
+      }
+    }
+  }
+  function buildCard(s, decl, model) {
+    const kiosk = decl.id;
+    const zone = zoneFor(decl, s.TZ, s.cfg.thumbTimes, s.PANEL_TT), tt = zone.tt;
+    const card = document.createElement("div");
+    const inline = s.cfg.headerMode === "inline" || s.cfg.headerMode === "inline-gradient";
+    card.className = "card" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
+    const la = model.lastActive;
+    const cad = s.cfg.showDetails && la ? '<span class="cad">\u23F1 ' + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + "</span>" : "";
+    card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
+    const strip = card.querySelector(".strip");
+    if (s.hostWidth / model.slots.length >= 12) {
+      strip.classList.add("sep");
+    }
+    const slots = model.slots;
+    for (const sl of slots) {
+      const el = document.createElement("div");
+      el.className = "slot" + slotClass(sl);
+      if (sl.paused) {
+        el.title = pauseInfo(sl).label.toLowerCase();
+      }
+      el.style.flexGrow = String(sl.span / 1e3);
+      if (sl.frame) {
+        const img = document.createElement("img");
+        img.src = sl.frame.url;
+        img.alt = kiosk + " " + tt.time(sl.ts) + tt.sfx(sl.ts);
+        el.appendChild(img);
+      }
+      strip.appendChild(el);
+      sl.el = el;
+    }
+    for (const sl of slots) {
+      if (sl.future) {
+        dressGhost(slots, sl);
+      }
+    }
+    dressStrip(model);
+    const hoverAt = (e) => {
+      const r = strip.getBoundingClientRect();
+      if (!r.width) {
+        return;
+      }
+      const t = s.P.from + s.SPAN * ((e.clientX - r.left) / r.width);
+      setCursor(s, t, card, false);
+    };
+    strip.addEventListener("mousemove", hoverAt);
+    strip.addEventListener("mouseenter", (e) => {
+      s.wrap.classList.add("strip-hover");
+      hoverAt(e);
+    });
+    strip.addEventListener("mouseleave", () => {
+      s.wrap.classList.remove("strip-hover");
+      if (s.cfg.onHoverClear) {
+        s.cfg.onHoverClear();
+      }
+    });
+    strip.addEventListener("click", (e) => {
+      if (s.suppressClick) {
+        s.suppressClick = false;
+        return;
+      }
+      const sl = model.slotAt(s.cursorT);
+      const f = sl && sl.frame;
+      const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
+      if (f) {
+        s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, s.cfg.apiUrl, s.cfg.apiKey), null, tt);
+      } else if (g) {
+        s.pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl.ts, tt);
+      }
+    });
+    const magEl = card.querySelector(".mag");
+    const magImg = magEl.querySelector("img");
+    magImg.addEventListener("load", () => {
+      if (magImg.naturalWidth && magImg.naturalHeight) {
+        magEl.style.aspectRatio = String(magImg.naturalWidth / magImg.naturalHeight);
+      }
+    });
+    strip.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) {
+        return;
+      }
+      e.preventDefault();
+      const r = strip.getBoundingClientRect();
+      const fracOf = (x) => Math.max(0, Math.min(1, (x - r.left) / r.width));
+      const f0 = fracOf(e.clientX);
+      let dragged = false;
+      const move = (ev) => {
+        if (s.destroyed) {
+          return up(ev);
+        }
+        const f1 = fracOf(ev.clientX);
+        if (Math.abs(f1 - f0) * r.width > 5) {
+          dragged = true;
+        }
+        if (dragged) {
+          showSelection(s, f0, f1);
+          setCursor(s, s.P.from + s.SPAN * f1, card, false);
+        }
+      };
+      const up = (ev) => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        hideSelection(s);
+        if (dragged && !s.destroyed) {
+          s.suppressClick = true;
+          const f1 = fracOf(ev.clientX);
+          const a = Math.min(f0, f1), b = Math.max(f0, f1);
+          if (b > a && s.cfg.onZoom) {
+            s.cfg.onZoom(Math.round(s.P.from + s.SPAN * a), Math.round(s.P.from + s.SPAN * b));
+          }
+        }
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
+    q(s.wrap, ".cards").appendChild(card);
+    attachZoneChip(zone, card);
+    return {
+      card,
+      model,
+      zone,
+      tt,
+      head: card.querySelector(".ft"),
+      strip,
+      cross: card.querySelector(".xh"),
+      sel: card.querySelector(".sel"),
+      mag: card.querySelector(".mag"),
+      lane: card.querySelector(".card-lane")
+    };
+  }
+
+  // src/vt/timeline/annotations.ts
+  function renderAnnotations(s, anns) {
+    const tip = annTip();
+    const fracOf = (t) => (Math.max(s.P.from, Math.min(s.P.to, t)) - s.P.from) / s.SPAN;
+    const pct = (f) => (f * 100).toFixed(3) + "%";
+    function addRegion(host, a) {
+      const el = document.createElement("div");
+      el.className = "ann-region";
+      el.style.left = pct(fracOf(a.ts));
+      el.style.width = pct(fracOf(a.timeEnd) - fracOf(a.ts));
+      if (a.color) {
+        el.style.background = a.color + "22";
+        el.style.borderColor = a.color + "88";
+      }
+      host.appendChild(el);
+    }
+    function addMarkers(host, items) {
+      const groups = [];
+      for (const a of items) {
+        const g = groups[groups.length - 1];
+        if (g && (fracOf(a.ts) - fracOf(g[0].ts)) * s.hostWidth < 10) {
+          g.push(a);
+        } else {
+          groups.push([a]);
+        }
+      }
+      for (const g of groups) {
+        const el = document.createElement("div");
+        el.className = "ann" + (g.length > 1 ? " multi" : "");
+        el.style.left = pct(fracOf(g[0].ts));
+        if (g[0].color) {
+          el.style.background = g[0].color;
+        }
+        el.title = "";
+        if (g.length > 1) {
+          const n = document.createElement("span");
+          n.className = "n";
+          n.textContent = String(g.length);
+          el.appendChild(n);
+        }
+        el.addEventListener("mouseenter", () => {
+          const r = el.getBoundingClientRect();
+          tip.show(g, r.left + r.width / 2, r.top, el, s.TZ);
+        });
+        el.addEventListener("mouseleave", () => tip.hide());
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const r = el.getBoundingClientRect();
+          tip.pin(g, r.left + r.width / 2, r.top, el, s.TZ);
+        });
+        host.appendChild(el);
+      }
+    }
+    const appliesTo = (a, k) => (!a.source || a.source === k.id) && (!a.siteScope || a.siteScope === k.site);
+    const isGlobal = (a) => !a.source && !a.siteScope;
+    if (s.cfg.annotationLanes === "per-source") {
+      for (const k of s.kiosks) {
+        const c = s.cards[k.id];
+        const items = anns.filter((a) => appliesTo(a, k));
+        if (!items.length) {
+          continue;
+        }
+        c.card.classList.add("has-lane");
+        for (const a of items) {
+          if (a.timeEnd) {
+            addRegion(c.strip, a);
+            addRegion(c.lane, a);
+          }
+        }
+        addMarkers(c.lane, items);
+      }
+      return;
+    }
+    const laneItems = [], perCard = {};
+    for (const a of anns) {
+      if (isGlobal(a)) {
+        laneItems.push(a);
+      } else {
+        for (const k of s.kiosks) {
+          if (appliesTo(a, k)) {
+            (perCard[k.id] ||= []).push(a);
+          }
+        }
+      }
+      if (a.timeEnd) {
+        const hosts = isGlobal(a) ? s.kiosks.map((k) => s.cards[k.id].strip).concat([q(s.wrap, ".ann-lane")]) : s.kiosks.filter((k) => appliesTo(a, k)).map((k) => s.cards[k.id].strip);
+        for (const h of hosts) {
+          addRegion(h, a);
+        }
+      }
+    }
+    for (const [id, items] of Object.entries(perCard)) {
+      addMarkers(s.cards[id].strip, items);
+    }
+    if (laneItems.length) {
+      addMarkers(q(s.wrap, ".ann-lane"), laneItems);
+    }
+    if (laneItems.length || anns.some((a) => a.timeEnd && isGlobal(a))) {
+      q(s.wrap, ".ann-lane").style.display = "";
+    }
+  }
+
+  // src/vt/timeline/poll.ts
+  function startPoll(s) {
+    const steps = s.kiosks.map((k) => s.cards[k.id].model.lastActive && s.cards[k.id].model.lastActive.step).filter(Boolean);
+    const minStep = steps.length ? Math.min.apply(null, steps) : 6e4;
+    s.pollTimer = setInterval(async () => {
+      for (const k of s.kiosks) {
+        const c = s.cards[k.id];
+        const mSlots = c.model.slots;
+        const filler = mSlots.length && mSlots[mSlots.length - 1].beyond ? mSlots[mSlots.length - 1] : null;
+        if (filler) {
+          const nowP = Date.now();
+          const prev = mSlots.length > 1 ? mSlots[mSlots.length - 2] : null;
+          if (prev && prev.paused) {
+            const grow = Math.min(nowP, filler.ts + filler.span) - filler.ts;
+            if (grow > 0) {
+              prev.span += grow;
+              filler.ts += grow;
+              filler.span -= grow;
+              if (prev.el) {
+                prev.el.style.flexGrow = String(prev.span / 1e3);
+              }
+              if (filler.span <= 0) {
+                if (filler.el) {
+                  filler.el.remove();
+                }
+                mSlots.pop();
+              } else {
+                if (filler.el) {
+                  filler.el.style.flexGrow = String(filler.span / 1e3);
+                }
+                ruleBeyond(s, filler);
+              }
+            }
+          } else if (prev && prev.step) {
+            let nextTs = prev.ts + prev.step;
+            while (mSlots[mSlots.length - 1] && mSlots[mSlots.length - 1].beyond && nextTs <= nowP) {
+              const f = mSlots[mSlots.length - 1];
+              const sl = { ts: nextTs, span: prev.step, frame: null, cadence: prev.cadence, step: prev.step, future: true };
+              const el = document.createElement("div");
+              el.className = "slot future";
+              el.style.flexGrow = String(sl.span / 1e3);
+              if (f.el && f.el.parentNode) {
+                f.el.parentNode.insertBefore(el, f.el);
+              }
+              sl.el = el;
+              mSlots.splice(mSlots.length - 1, 0, sl);
+              f.span -= sl.span;
+              f.ts += sl.span;
+              if (f.span <= 0) {
+                if (f.el) {
+                  f.el.remove();
+                }
+                mSlots.pop();
+              } else {
+                if (f.el) {
+                  f.el.style.flexGrow = String(f.span / 1e3);
+                }
+                ruleBeyond(s, f);
+              }
+              nextTs += prev.step;
+            }
+          }
+        }
+        const la = c.model.lastActive;
+        if (!la) {
+          continue;
+        }
+        let lastTs = s.P.from;
+        for (let i = c.model.slots.length - 1; i >= 0; i--) {
+          if (c.model.slots[i].frame) {
+            lastTs = c.model.slots[i].ts;
+            break;
+          }
+        }
+        const fresh = await s.backend.frames(k.site, k.id, lastTs + 1, Date.now(), la.step);
+        if (s.destroyed) {
+          return;
+        }
+        for (const f of fresh) {
+          const slot = c.model.slotAt(f.ts);
+          if (!slot || slot.paused || slot.beyond) {
+            continue;
+          }
+          if (slot.frame && f.ts <= slot.frame.ts) {
+            continue;
+          }
+          slot.frame = f;
+          slot.future = false;
+          slot.el.classList.remove("gap", "future");
+          let img = slot.el.querySelector("img");
+          if (!img) {
+            img = document.createElement("img");
+            slot.el.appendChild(img);
+          }
+          img.classList.remove("ghost");
+          img.src = f.url;
+          img.alt = k.id + " " + c.tt.time(f.ts) + c.tt.sfx(f.ts);
+        }
+        const overdue = Date.now();
+        for (const sl of c.model.slots) {
+          if (missedHeartbeat(sl, overdue)) {
+            sl.future = false;
+            if (sl.el) {
+              sl.el.classList.remove("future");
+              sl.el.classList.add("gap");
+            }
+          }
+        }
+        for (const sl of c.model.slots) {
+          dressGhost(c.model.slots, sl);
+        }
+      }
+    }, Math.min(minStep, 1e4));
+  }
+
+  // src/vt/timeline/mount.ts
   function mountTimeline(root, cfg) {
     injectStyles();
     const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
@@ -1468,454 +2035,45 @@ var VTCore = (() => {
     const wrap = makeWrapper(root);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="cards"></div><div class="ann-lane" style="display:none"></div><div class="axis"><div class="base"></div><div class="acur"></div></div>';
-    const q = (sel) => wrap.querySelector(sel);
-    function restoreCursor() {
-      const saved = Number(root.dataset.ktlCursor);
-      if (root.dataset.ktlPinned === "1" && Number.isFinite(saved)) {
-        return Math.max(P.from, Math.min(P.to, saved));
-      }
-      return Math.min(P.to, Date.now());
-    }
-    let kiosks = [], cards = {}, cursorT = restoreCursor(), destroyed = false, pollTimer = null;
-    const axisTickList = [];
-    let suppressClick = false;
-    const pv = makePreview(root, TZ);
-    const PANEL_TT = zoneTexts(TZ, TZ, false);
-    function showSelection(fa, fb) {
-      const a = Math.min(fa, fb), b = Math.max(fa, fb);
-      for (const k of kiosks) {
-        const c = cards[k.id];
-        if (!c) {
-          continue;
-        }
-        const w = c.strip.clientWidth;
-        c.sel.style.display = "block";
-        c.sel.style.left = a * w + "px";
-        c.sel.style.width = (b - a) * w + "px";
-      }
-    }
-    function hideSelection() {
-      for (const k of kiosks) {
-        if (cards[k.id]) {
-          cards[k.id].sel.style.display = "none";
-        }
-      }
-    }
-    function dressStrip(model) {
-      for (const sl of model.slots) {
-        if (!sl.el || sl.frame) {
-          continue;
-        }
-        sl.el.style.backgroundPosition = -sl.el.offsetLeft + "px 0";
-        if (sl.paused && sl.el.offsetWidth >= 90 && !sl.el.querySelector(".band-label")) {
-          const lab = document.createElement("span");
-          lab.className = "band-label";
-          lab.textContent = pauseInfo(sl).label;
-          sl.el.appendChild(lab);
-        }
-      }
-    }
-    function dressAll(tries) {
-      const anySized = kiosks.some((k) => cards[k.id] && cards[k.id].strip.clientWidth > 0);
-      if (!anySized) {
-        if (tries > 0 && !destroyed) {
-          setTimeout(() => dressAll(tries - 1), 500);
-        }
-        return;
-      }
-      for (const k of kiosks) {
-        if (cards[k.id]) {
-          dressStrip(cards[k.id].model);
-        }
-      }
-    }
-    function buildCard(decl, model) {
-      const kiosk = decl.id;
-      const zone = zoneFor(decl, TZ, cfg.thumbTimes, PANEL_TT), tt = zone.tt;
-      const card = document.createElement("div");
-      const inline = cfg.headerMode === "inline" || cfg.headerMode === "inline-gradient";
-      card.className = "card" + (inline ? " inline-head" : "") + (cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
-      const la = model.lastActive;
-      const cad = cfg.showDetails && la ? '<span class="cad">\u23F1 ' + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + "</span>" : "";
-      card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
-      const strip = card.querySelector(".strip");
-      if (hostWidth / model.slots.length >= 12) {
-        strip.classList.add("sep");
-      }
-      const slots = model.slots;
-      for (const sl of slots) {
-        const el = document.createElement("div");
-        el.className = "slot" + slotClass(sl);
-        if (sl.paused) {
-          el.title = pauseInfo(sl).label.toLowerCase();
-        }
-        el.style.flexGrow = String(sl.span / 1e3);
-        if (sl.frame) {
-          const img = document.createElement("img");
-          img.src = sl.frame.url;
-          img.alt = kiosk + " " + tt.time(sl.ts) + tt.sfx(sl.ts);
-          el.appendChild(img);
-        }
-        strip.appendChild(el);
-        sl.el = el;
-      }
-      for (const sl of slots) {
-        if (sl.future) {
-          dressGhost(slots, sl);
-        }
-      }
-      dressStrip(model);
-      const hoverAt = (e) => {
-        const r = strip.getBoundingClientRect();
-        if (!r.width) {
-          return;
-        }
-        const t = P.from + SPAN * ((e.clientX - r.left) / r.width);
-        setCursor(t, card, false);
-      };
-      strip.addEventListener("mousemove", hoverAt);
-      strip.addEventListener("mouseenter", (e) => {
-        wrap.classList.add("strip-hover");
-        hoverAt(e);
-      });
-      strip.addEventListener("mouseleave", () => {
-        wrap.classList.remove("strip-hover");
-        if (cfg.onHoverClear) {
-          cfg.onHoverClear();
-        }
-      });
-      strip.addEventListener("click", (e) => {
-        if (suppressClick) {
-          suppressClick = false;
-          return;
-        }
-        const sl = model.slotAt(cursorT);
-        const f = sl && sl.frame;
-        const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
-        if (f) {
-          pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, cfg.apiUrl, cfg.apiKey), null, tt);
-        } else if (g) {
-          pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl.ts, tt);
-        }
-      });
-      const magEl = card.querySelector(".mag");
-      const magImg = magEl.querySelector("img");
-      magImg.addEventListener("load", () => {
-        if (magImg.naturalWidth && magImg.naturalHeight) {
-          magEl.style.aspectRatio = String(magImg.naturalWidth / magImg.naturalHeight);
-        }
-      });
-      strip.addEventListener("mousedown", (e) => {
-        if (e.button !== 0) {
-          return;
-        }
-        e.preventDefault();
-        const r = strip.getBoundingClientRect();
-        const fracOf = (x) => Math.max(0, Math.min(1, (x - r.left) / r.width));
-        const f0 = fracOf(e.clientX);
-        let dragged = false;
-        const move = (ev) => {
-          if (destroyed) {
-            return up(ev);
-          }
-          const f1 = fracOf(ev.clientX);
-          if (Math.abs(f1 - f0) * r.width > 5) {
-            dragged = true;
-          }
-          if (dragged) {
-            showSelection(f0, f1);
-            setCursor(P.from + SPAN * f1, card, false);
-          }
-        };
-        const up = (ev) => {
-          document.removeEventListener("mousemove", move);
-          document.removeEventListener("mouseup", up);
-          hideSelection();
-          if (dragged && !destroyed) {
-            suppressClick = true;
-            const f1 = fracOf(ev.clientX);
-            const a = Math.min(f0, f1), b = Math.max(f0, f1);
-            if (b > a && cfg.onZoom) {
-              cfg.onZoom(Math.round(P.from + SPAN * a), Math.round(P.from + SPAN * b));
-            }
-          }
-        };
-        document.addEventListener("mousemove", move);
-        document.addEventListener("mouseup", up);
-      });
-      q(".cards").appendChild(card);
-      attachZoneChip(zone, card);
-      return {
-        card,
-        model,
-        zone,
-        tt,
-        head: card.querySelector(".ft"),
-        strip,
-        cross: card.querySelector(".xh"),
-        sel: card.querySelector(".sel"),
-        mag: card.querySelector(".mag"),
-        lane: card.querySelector(".card-lane")
-      };
-    }
-    function buildAxis() {
-      const axis = q(".axis");
-      const w = axis.clientWidth;
-      const roughMaxTicks = Math.max(3, Math.floor(w / 90));
-      const roughStep = TICK_STEPS.find((s) => SPAN / s <= roughMaxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-      const sampleWidth = measureTickWidth(tickFormat(roughStep, TZ)(P.to));
-      const maxTicks = Math.max(3, Math.floor(w / (sampleWidth + TICK_LABEL_GAP)));
-      const tickStep = TICK_STEPS.find((s) => SPAN / s <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-      const fmt = tickFormat(tickStep, TZ);
-      axis.querySelectorAll(".tick").forEach((t) => t.remove());
-      axisTickList.length = 0;
-      for (const ts of axisTicks(P.from, P.to, tickStep, TZ)) {
-        axisTickList.push(ts);
-        const el = document.createElement("div");
-        el.className = "tick";
-        el.style.left = (ts - P.from) / SPAN * w + "px";
-        el.textContent = fmt(ts);
-        axis.appendChild(el);
-      }
-    }
-    function ruleBeyond(sl) {
-      if (!sl || !sl.beyond || !sl.el) {
-        return;
-      }
-      sl.el.querySelectorAll(".bt").forEach((t) => t.remove());
-      for (const ts of axisTickList) {
-        if (ts <= sl.ts || ts > sl.ts + sl.span) {
-          continue;
-        }
-        const t = document.createElement("div");
-        t.className = "bt";
-        t.style.left = ((ts - sl.ts) / sl.span * 100).toFixed(3) + "%";
-        sl.el.appendChild(t);
-      }
-    }
-    function ruleAllBeyond() {
-      for (const k of kiosks) {
-        const c = cards[k.id];
-        if (!c) {
-          continue;
-        }
-        const last = c.model.slots[c.model.slots.length - 1];
-        if (last && last.beyond) {
-          ruleBeyond(last);
-        }
-      }
-    }
-    function renderAnnotations(anns) {
-      const tip = annTip();
-      const fracOf = (t) => (Math.max(P.from, Math.min(P.to, t)) - P.from) / SPAN;
-      const pct = (f) => (f * 100).toFixed(3) + "%";
-      function addRegion(host, a) {
-        const el = document.createElement("div");
-        el.className = "ann-region";
-        el.style.left = pct(fracOf(a.ts));
-        el.style.width = pct(fracOf(a.timeEnd) - fracOf(a.ts));
-        if (a.color) {
-          el.style.background = a.color + "22";
-          el.style.borderColor = a.color + "88";
-        }
-        host.appendChild(el);
-      }
-      function addMarkers(host, items) {
-        const groups = [];
-        for (const a of items) {
-          const g = groups[groups.length - 1];
-          if (g && (fracOf(a.ts) - fracOf(g[0].ts)) * hostWidth < 10) {
-            g.push(a);
-          } else {
-            groups.push([a]);
-          }
-        }
-        for (const g of groups) {
-          const el = document.createElement("div");
-          el.className = "ann" + (g.length > 1 ? " multi" : "");
-          el.style.left = pct(fracOf(g[0].ts));
-          if (g[0].color) {
-            el.style.background = g[0].color;
-          }
-          el.title = "";
-          if (g.length > 1) {
-            const n = document.createElement("span");
-            n.className = "n";
-            n.textContent = String(g.length);
-            el.appendChild(n);
-          }
-          el.addEventListener("mouseenter", () => {
-            const r = el.getBoundingClientRect();
-            tip.show(g, r.left + r.width / 2, r.top, el, TZ);
-          });
-          el.addEventListener("mouseleave", () => tip.hide());
-          el.addEventListener("click", (e) => {
-            e.stopPropagation();
-            const r = el.getBoundingClientRect();
-            tip.pin(g, r.left + r.width / 2, r.top, el, TZ);
-          });
-          host.appendChild(el);
-        }
-      }
-      const appliesTo = (a, k) => (!a.source || a.source === k.id) && (!a.siteScope || a.siteScope === k.site);
-      const isGlobal = (a) => !a.source && !a.siteScope;
-      if (cfg.annotationLanes === "per-source") {
-        for (const k of kiosks) {
-          const c = cards[k.id];
-          const items = anns.filter((a) => appliesTo(a, k));
-          if (!items.length) {
-            continue;
-          }
-          c.card.classList.add("has-lane");
-          for (const a of items) {
-            if (a.timeEnd) {
-              addRegion(c.strip, a);
-              addRegion(c.lane, a);
-            }
-          }
-          addMarkers(c.lane, items);
-        }
-        return;
-      }
-      const laneItems = [], perCard = {};
-      for (const a of anns) {
-        if (isGlobal(a)) {
-          laneItems.push(a);
-        } else {
-          for (const k of kiosks) {
-            if (appliesTo(a, k)) {
-              (perCard[k.id] ||= []).push(a);
-            }
-          }
-        }
-        if (a.timeEnd) {
-          const hosts = isGlobal(a) ? kiosks.map((k) => cards[k.id].strip).concat([q(".ann-lane")]) : kiosks.filter((k) => appliesTo(a, k)).map((k) => cards[k.id].strip);
-          for (const h of hosts) {
-            addRegion(h, a);
-          }
-        }
-      }
-      for (const [id, items] of Object.entries(perCard)) {
-        addMarkers(cards[id].strip, items);
-      }
-      if (laneItems.length) {
-        addMarkers(q(".ann-lane"), laneItems);
-      }
-      if (laneItems.length || anns.some((a) => a.timeEnd && isGlobal(a))) {
-        q(".ann-lane").style.display = "";
-      }
-    }
-    function setCursor(t, hoveredCard, external) {
-      cursorT = Math.max(P.from, Math.min(P.to, t));
-      root.dataset.ktlCursor = String(cursorT);
-      if (!external) {
-        root.dataset.ktlPinned = "1";
-      }
-      if (cfg.onCursor) {
-        cfg.onCursor(cursorT);
-      }
-      const frac = (cursorT - P.from) / SPAN;
-      const axis = q(".axis"), ac = q(".acur");
-      const acW = ac.offsetWidth || 50;
-      ac.textContent = fmtTime(cursorT, TZ);
-      ac.style.left = Math.max(acW / 2, Math.min(axis.clientWidth - acW / 2, frac * axis.clientWidth)) + "px";
-      for (const k of kiosks) {
-        const c = cards[k.id];
-        if (!c) {
-          continue;
-        }
-        if (!external) {
-          c.card.classList.toggle("hovered", hoveredCard === c.card);
-        }
-        const w = c.strip.clientWidth, x = frac * w;
-        c.cross.style.left = x + "px";
-        const slot = c.model.slotAt(cursorT);
-        const tt = c.tt;
-        if (c.zone.el) {
-          dressZoneChip(c.zone, cursorT);
-        }
-        const magW = c.mag.offsetWidth || c.strip.clientHeight * 16 / 9;
-        c.mag.style.left = Math.max(0, Math.min(w - magW, x - magW / 2)) + "px";
-        c.mag.classList.remove("ghost");
-        if (slot && slot.frame) {
-          c.mag.classList.remove("gap", "future", "off");
-          clearPauseClasses(c.mag);
-          c.mag.querySelector("img").src = slot.frame.url;
-          c.mag.querySelector(".cap").textContent = tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts);
-          c.head.textContent = "";
-          c.head.classList.remove("stale");
-          clearPauseClasses(c.head);
-        } else if (slot && slot.paused) {
-          const pi = pauseInfo(slot);
-          c.mag.classList.remove("gap", "future", "off");
-          clearPauseClasses(c.mag);
-          c.mag.classList.add(...pi.classes);
-          c.mag.querySelector(".cap").textContent = pi.label.toLowerCase();
-          c.head.textContent = pi.label.toLowerCase();
-          c.head.classList.remove("stale");
-          clearPauseClasses(c.head);
-          c.head.classList.add(...pi.classes);
-        } else if (slot && slot.beyond) {
-          c.mag.classList.remove("gap", "future");
-          clearPauseClasses(c.mag);
-          c.mag.classList.add("off");
-          c.head.textContent = "";
-          c.head.classList.remove("stale");
-          clearPauseClasses(c.head);
-        } else if (slot && slot.future) {
-          const inFlight = slot.ts <= Date.now();
-          const g = ghostFor(c.model.slots, slot);
-          c.mag.classList.remove("gap", "off");
-          clearPauseClasses(c.mag);
-          c.mag.classList.add("future");
-          if (g) {
-            c.mag.classList.add("ghost");
-            c.mag.querySelector("img").src = g.url;
-          }
-          c.mag.querySelector(".cap").textContent = (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + tt.short(slot.ts) + (g ? " \xB7 last frame " + tt.time(g.ts) : "") + tt.sfx(slot.ts);
-          c.head.textContent = inFlight ? "expected" : "upcoming";
-          c.head.classList.remove("stale");
-          clearPauseClasses(c.head);
-        } else {
-          c.mag.classList.add("gap");
-          c.mag.classList.remove("future", "off");
-          clearPauseClasses(c.mag);
-          const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
-          let last = null;
-          for (let j = i; j >= 0; j--) {
-            if (c.model.slots[j].frame) {
-              last = c.model.slots[j].frame;
-              break;
-            }
-          }
-          const msg = last ? "offline \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : "no data in window";
-          c.mag.querySelector(".cap").textContent = msg;
-          c.head.textContent = msg;
-          c.head.classList.add("stale");
-          clearPauseClasses(c.head);
-        }
-      }
-      if (!external && cfg.onHover) {
-        cfg.onHover(cursorT);
-      }
-    }
+    const s = {
+      root,
+      cfg,
+      P,
+      TZ,
+      SPAN,
+      LIVE,
+      hostWidth,
+      pxBudget,
+      backend,
+      wrap,
+      kiosks: [],
+      cards: {},
+      cursorT: restoreCursor(root, P),
+      destroyed: false,
+      pollTimer: null,
+      axisTickList: [],
+      // filled by buildAxis; consumed by ruleBeyond
+      suppressClick: false,
+      pv: makePreview(root, TZ),
+      PANEL_TT: zoneTexts(TZ, TZ, false)
+    };
     (async function boot() {
       try {
-        kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
+        s.kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
       } catch (e) {
         console.warn("[visual-timeline] sources fetch failed:", e);
-        if (destroyed) {
+        if (s.destroyed) {
           return;
         }
         const err = document.createElement("div");
         err.className = "boot-err";
         err.textContent = "frames API unreachable \u2014 " + (e && e.message ? e.message : e);
-        q(".cards").appendChild(err);
+        q(s.wrap, ".cards").appendChild(err);
         await revealWrapper(root, wrap);
         return;
       }
-      for (const k of kiosks) {
-        if (destroyed) {
+      for (const k of s.kiosks) {
+        if (s.destroyed) {
           return;
         }
         let model;
@@ -1925,158 +2083,193 @@ var VTCore = (() => {
           console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
           continue;
         }
-        if (destroyed) {
+        if (s.destroyed) {
           return;
         }
         if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {
           continue;
         }
-        cards[k.id] = buildCard(k, model);
+        s.cards[k.id] = buildCard(s, k, model);
       }
-      kiosks = kiosks.filter((k) => cards[k.id]);
-      buildAxis();
-      ruleAllBeyond();
+      s.kiosks = s.kiosks.filter((k) => s.cards[k.id]);
+      buildAxis(s);
+      ruleAllBeyond(s);
       const rawAnns = cfg.annotations && cfg.annotations.length ? cfg.annotations : backend.annotations ? backend.annotations() : [];
       if (cfg.showAnnotations !== false) {
-        renderAnnotations(normAnnotations(rawAnns, P));
+        renderAnnotations(s, normAnnotations(rawAnns, P));
       }
-      setCursor(cursorT, null, true);
+      setCursor(s, s.cursorT, null, true);
       await revealWrapper(root, wrap);
-      dressAll(20);
+      dressAll(s, 20);
       if (LIVE) {
-        const steps = kiosks.map((k) => cards[k.id].model.lastActive && cards[k.id].model.lastActive.step).filter(Boolean);
-        const minStep = steps.length ? Math.min.apply(null, steps) : 6e4;
-        pollTimer = setInterval(async () => {
-          for (const k of kiosks) {
-            const c = cards[k.id];
-            const mSlots = c.model.slots;
-            const filler = mSlots.length && mSlots[mSlots.length - 1].beyond ? mSlots[mSlots.length - 1] : null;
-            if (filler) {
-              const nowP = Date.now();
-              const prev = mSlots.length > 1 ? mSlots[mSlots.length - 2] : null;
-              if (prev && prev.paused) {
-                const grow = Math.min(nowP, filler.ts + filler.span) - filler.ts;
-                if (grow > 0) {
-                  prev.span += grow;
-                  filler.ts += grow;
-                  filler.span -= grow;
-                  if (prev.el) {
-                    prev.el.style.flexGrow = String(prev.span / 1e3);
-                  }
-                  if (filler.span <= 0) {
-                    if (filler.el) {
-                      filler.el.remove();
-                    }
-                    mSlots.pop();
-                  } else {
-                    if (filler.el) {
-                      filler.el.style.flexGrow = String(filler.span / 1e3);
-                    }
-                    ruleBeyond(filler);
-                  }
-                }
-              } else if (prev && prev.step) {
-                let nextTs = prev.ts + prev.step;
-                while (mSlots[mSlots.length - 1] && mSlots[mSlots.length - 1].beyond && nextTs <= nowP) {
-                  const f = mSlots[mSlots.length - 1];
-                  const sl = { ts: nextTs, span: prev.step, frame: null, cadence: prev.cadence, step: prev.step, future: true };
-                  const el = document.createElement("div");
-                  el.className = "slot future";
-                  el.style.flexGrow = String(sl.span / 1e3);
-                  if (f.el && f.el.parentNode) {
-                    f.el.parentNode.insertBefore(el, f.el);
-                  }
-                  sl.el = el;
-                  mSlots.splice(mSlots.length - 1, 0, sl);
-                  f.span -= sl.span;
-                  f.ts += sl.span;
-                  if (f.span <= 0) {
-                    if (f.el) {
-                      f.el.remove();
-                    }
-                    mSlots.pop();
-                  } else {
-                    if (f.el) {
-                      f.el.style.flexGrow = String(f.span / 1e3);
-                    }
-                    ruleBeyond(f);
-                  }
-                  nextTs += prev.step;
-                }
-              }
-            }
-            const la = c.model.lastActive;
-            if (!la) {
-              continue;
-            }
-            let lastTs = P.from;
-            for (let i = c.model.slots.length - 1; i >= 0; i--) {
-              if (c.model.slots[i].frame) {
-                lastTs = c.model.slots[i].ts;
-                break;
-              }
-            }
-            const fresh = await backend.frames(k.site, k.id, lastTs + 1, Date.now(), la.step);
-            if (destroyed) {
-              return;
-            }
-            for (const f of fresh) {
-              const slot = c.model.slotAt(f.ts);
-              if (!slot || slot.paused || slot.beyond) {
-                continue;
-              }
-              if (slot.frame && f.ts <= slot.frame.ts) {
-                continue;
-              }
-              slot.frame = f;
-              slot.future = false;
-              slot.el.classList.remove("gap", "future");
-              let img = slot.el.querySelector("img");
-              if (!img) {
-                img = document.createElement("img");
-                slot.el.appendChild(img);
-              }
-              img.classList.remove("ghost");
-              img.src = f.url;
-              img.alt = k.id + " " + c.tt.time(f.ts) + c.tt.sfx(f.ts);
-            }
-            const overdue = Date.now();
-            for (const sl of c.model.slots) {
-              if (missedHeartbeat(sl, overdue)) {
-                sl.future = false;
-                if (sl.el) {
-                  sl.el.classList.remove("future");
-                  sl.el.classList.add("gap");
-                }
-              }
-            }
-            for (const sl of c.model.slots) {
-              dressGhost(c.model.slots, sl);
-            }
-          }
-        }, Math.min(minStep, 1e4));
+        startPoll(s);
       }
     })();
     return {
       setExternalCursor(t) {
-        if (!destroyed) {
-          setCursor(t, null, true);
+        if (!s.destroyed) {
+          setCursor(s, t, null, true);
         }
       },
       isHovering() {
         return wrap.classList.contains("strip-hover");
       },
       destroy() {
-        destroyed = true;
-        if (pollTimer) {
-          clearInterval(pollTimer);
+        s.destroyed = true;
+        if (s.pollTimer) {
+          clearInterval(s.pollTimer);
         }
-        pv.retire();
+        s.pv.retire();
         annTip().close();
         retireWrapper(wrap);
       }
     };
   }
+
+  // src/vt/grid/tile.ts
+  function buildTile(s, decl, model) {
+    const el = document.createElement("div");
+    const zone = zoneFor(decl, s.TZ, s.cfg.thumbTimes, s.PANEL_TT);
+    const inline = s.cfg.headerMode === "inline" || s.cfg.headerMode === "inline-gradient";
+    el.className = "tile" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
+    el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
+    attachZoneChip(zone, el);
+    const rec = {
+      decl,
+      model,
+      el,
+      shown: null,
+      zone,
+      tt: zone.tt,
+      img: el.querySelector("img"),
+      ts: el.querySelector(".t-ts"),
+      off: el.querySelector(".t-off")
+    };
+    el.addEventListener("click", (e) => {
+      if (rec.shown && rec.shownExpected) {
+        s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, null, rec.shownExpected, rec.tt);
+      } else if (rec.shown) {
+        s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, s.cfg.apiUrl, s.cfg.apiKey), null, rec.tt);
+      }
+    });
+    q(s.wrap, ".grid").appendChild(el);
+    return rec;
+  }
+  function lastFrame(rec) {
+    for (let i = rec.model.slots.length - 1; i >= 0; i--) {
+      if (rec.model.slots[i].frame) {
+        return rec.model.slots[i].frame;
+      }
+    }
+    return null;
+  }
+  function setShown(s, t) {
+    s.shownT = t;
+    if (s.cfg.onShown) {
+      s.cfg.onShown(t);
+    }
+    const zoneAt = t == null ? Math.min(s.P.to, Date.now()) : t;
+    for (const k of s.kiosks) {
+      const rec = s.tiles[k.id];
+      if (!rec) {
+        continue;
+      }
+      if (rec.zone.el) {
+        dressZoneChip(rec.zone, zoneAt);
+      }
+      const tt = rec.tt;
+      let frame = null, offMsg = null, pausedMsg = null, pausedSlot = null, expectedTs = null;
+      const la = rec.model.lastActive;
+      if (t == null) {
+        const tail = rec.model.slots.length ? rec.model.slots[rec.model.slots.length - 1] : null;
+        const tailPaused = tail && tail.paused;
+        frame = lastFrame(rec);
+        if (tailPaused) {
+          pausedSlot = tail;
+          pausedMsg = pauseInfo(tail).label + (frame ? " \u2014 last frame " + tt.time(frame.ts) + tt.sfx(frame.ts) : "");
+        } else if (!frame) {
+          offMsg = "no data in window";
+        } else if (s.LIVE && la && Date.now() - frame.ts > 2 * la.step) {
+          offMsg = "OFFLINE \u2014 last seen " + tt.time(frame.ts) + tt.sfx(frame.ts);
+        }
+      } else {
+        const slot = rec.model.slotAt(t);
+        if (slot && slot.paused) {
+          pausedSlot = slot;
+          pausedMsg = pauseInfo(slot).label;
+        } else {
+          frame = slot && slot.frame;
+          if (!frame) {
+            if (slot && slot.beyond) {
+              offMsg = "\u2014";
+            } else if (slot && slot.future) {
+              frame = ghostFor(rec.model.slots, slot);
+              if (frame) {
+                expectedTs = slot.ts;
+              } else {
+                offMsg = "EXPECTED \u2014 " + tt.short(slot.ts) + tt.sfx(slot.ts);
+              }
+            } else {
+              const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
+              let last = null;
+              for (let j = i; j >= 0; j--) {
+                if (rec.model.slots[j].frame) {
+                  last = rec.model.slots[j].frame;
+                  break;
+                }
+              }
+              offMsg = last ? "OFFLINE \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : "no data";
+            }
+          }
+        }
+      }
+      rec.el.classList.toggle("offline", !!offMsg);
+      clearPauseClasses(rec.el);
+      if (pausedMsg && !offMsg) {
+        rec.el.classList.add(...pauseInfo(pausedSlot).classes);
+      }
+      rec.off.textContent = offMsg || pausedMsg || "";
+      rec.el.classList.toggle("ghost", !!expectedTs);
+      rec.shown = frame;
+      rec.shownExpected = expectedTs;
+      if (frame && !offMsg && !pausedMsg) {
+        rec.img.src = frame.url;
+        rec.ts.textContent = (expectedTs ? "expected " + tt.short(expectedTs) + " \xB7 last " + tt.time(frame.ts) : tt.time(frame.ts)) + tt.sfx(frame.ts);
+      }
+    }
+  }
+
+  // src/vt/grid/poll.ts
+  function startPoll2(s) {
+    s.pollTimer = setInterval(async () => {
+      for (const k of s.kiosks) {
+        const rec = s.tiles[k.id];
+        const la = rec.model.lastActive;
+        if (!la) {
+          continue;
+        }
+        const last = lastFrame(rec);
+        const fresh = await s.backend.frames(k.site, k.id, (last ? last.ts : s.P.from) + 1, Date.now(), la.step);
+        if (s.destroyed) {
+          return;
+        }
+        for (const f of fresh) {
+          const slot = rec.model.slotAt(f.ts);
+          if (!slot || slot.paused || slot.beyond) {
+            continue;
+          }
+          if (!slot.frame || f.ts > slot.frame.ts) {
+            slot.frame = f;
+          }
+        }
+      }
+      if (s.shownT == null) {
+        setShown(s, null);
+      }
+    }, 1e4);
+  }
+
+  // src/vt/grid/mount.ts
   function mountGrid(root, cfg) {
     injectStyles();
     const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
@@ -2088,138 +2281,40 @@ var VTCore = (() => {
     const wrap = makeWrapper(root);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="grid"></div>';
-    const q = (sel) => wrap.querySelector(sel);
-    let kiosks = [], tiles = {}, destroyed = false, pollTimer = null, shownT = null;
-    const pv = makePreview(root, TZ);
-    const PANEL_TT = zoneTexts(TZ, TZ, false);
-    function buildTile(decl, model) {
-      const el = document.createElement("div");
-      const zone = zoneFor(decl, TZ, cfg.thumbTimes, PANEL_TT);
-      const inline = cfg.headerMode === "inline" || cfg.headerMode === "inline-gradient";
-      el.className = "tile" + (inline ? " inline-head" : "") + (cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
-      el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
-      attachZoneChip(zone, el);
-      const rec = {
-        decl,
-        model,
-        el,
-        shown: null,
-        zone,
-        tt: zone.tt,
-        img: el.querySelector("img"),
-        ts: el.querySelector(".t-ts"),
-        off: el.querySelector(".t-off")
-      };
-      el.addEventListener("click", (e) => {
-        if (rec.shown && rec.shownExpected) {
-          pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, null, rec.shownExpected, rec.tt);
-        } else if (rec.shown) {
-          pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, cfg.apiUrl, cfg.apiKey), null, rec.tt);
-        }
-      });
-      q(".grid").appendChild(el);
-      return rec;
-    }
-    function lastFrame(rec) {
-      for (let i = rec.model.slots.length - 1; i >= 0; i--) {
-        if (rec.model.slots[i].frame) {
-          return rec.model.slots[i].frame;
-        }
-      }
-      return null;
-    }
-    function setShown(t) {
-      shownT = t;
-      if (cfg.onShown) {
-        cfg.onShown(t);
-      }
-      const zoneAt = t == null ? Math.min(P.to, Date.now()) : t;
-      for (const k of kiosks) {
-        const rec = tiles[k.id];
-        if (!rec) {
-          continue;
-        }
-        if (rec.zone.el) {
-          dressZoneChip(rec.zone, zoneAt);
-        }
-        const tt = rec.tt;
-        let frame = null, offMsg = null, pausedMsg = null, pausedSlot = null, expectedTs = null;
-        const la = rec.model.lastActive;
-        if (t == null) {
-          const tail = rec.model.slots.length ? rec.model.slots[rec.model.slots.length - 1] : null;
-          const tailPaused = tail && tail.paused;
-          frame = lastFrame(rec);
-          if (tailPaused) {
-            pausedSlot = tail;
-            pausedMsg = pauseInfo(tail).label + (frame ? " \u2014 last frame " + tt.time(frame.ts) + tt.sfx(frame.ts) : "");
-          } else if (!frame) {
-            offMsg = "no data in window";
-          } else if (LIVE && la && Date.now() - frame.ts > 2 * la.step) {
-            offMsg = "OFFLINE \u2014 last seen " + tt.time(frame.ts) + tt.sfx(frame.ts);
-          }
-        } else {
-          const slot = rec.model.slotAt(t);
-          if (slot && slot.paused) {
-            pausedSlot = slot;
-            pausedMsg = pauseInfo(slot).label;
-          } else {
-            frame = slot && slot.frame;
-            if (!frame) {
-              if (slot && slot.beyond) {
-                offMsg = "\u2014";
-              } else if (slot && slot.future) {
-                frame = ghostFor(rec.model.slots, slot);
-                if (frame) {
-                  expectedTs = slot.ts;
-                } else {
-                  offMsg = "EXPECTED \u2014 " + tt.short(slot.ts) + tt.sfx(slot.ts);
-                }
-              } else {
-                const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
-                let last = null;
-                for (let j = i; j >= 0; j--) {
-                  if (rec.model.slots[j].frame) {
-                    last = rec.model.slots[j].frame;
-                    break;
-                  }
-                }
-                offMsg = last ? "OFFLINE \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : "no data";
-              }
-            }
-          }
-        }
-        rec.el.classList.toggle("offline", !!offMsg);
-        clearPauseClasses(rec.el);
-        if (pausedMsg && !offMsg) {
-          rec.el.classList.add(...pauseInfo(pausedSlot).classes);
-        }
-        rec.off.textContent = offMsg || pausedMsg || "";
-        rec.el.classList.toggle("ghost", !!expectedTs);
-        rec.shown = frame;
-        rec.shownExpected = expectedTs;
-        if (frame && !offMsg && !pausedMsg) {
-          rec.img.src = frame.url;
-          rec.ts.textContent = (expectedTs ? "expected " + tt.short(expectedTs) + " \xB7 last " + tt.time(frame.ts) : tt.time(frame.ts)) + tt.sfx(frame.ts);
-        }
-      }
-    }
+    const s = {
+      root,
+      cfg,
+      P,
+      TZ,
+      SPAN,
+      LIVE,
+      backend,
+      wrap,
+      kiosks: [],
+      tiles: {},
+      destroyed: false,
+      pollTimer: null,
+      shownT: null,
+      pv: makePreview(root, TZ),
+      PANEL_TT: zoneTexts(TZ, TZ, false)
+    };
     (async function boot() {
       try {
-        kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
+        s.kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
       } catch (e) {
         console.warn("[visual-timeline] sources fetch failed:", e);
-        if (destroyed) {
+        if (s.destroyed) {
           return;
         }
         const err = document.createElement("div");
         err.className = "boot-err";
         err.textContent = "frames API unreachable \u2014 " + (e && e.message ? e.message : e);
-        q(".grid").appendChild(err);
+        q(s.wrap, ".grid").appendChild(err);
         await revealWrapper(root, wrap);
         return;
       }
-      for (const k of kiosks) {
-        if (destroyed) {
+      for (const k of s.kiosks) {
+        if (s.destroyed) {
           return;
         }
         let model;
@@ -2229,63 +2324,38 @@ var VTCore = (() => {
           console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
           continue;
         }
-        if (destroyed) {
+        if (s.destroyed) {
           return;
         }
         if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {
           continue;
         }
-        tiles[k.id] = buildTile(k, model);
+        s.tiles[k.id] = buildTile(s, k, model);
       }
-      kiosks = kiosks.filter((k) => tiles[k.id]);
-      setShown(null);
+      s.kiosks = s.kiosks.filter((k) => s.tiles[k.id]);
+      setShown(s, null);
       await revealWrapper(root, wrap);
       if (LIVE) {
-        pollTimer = setInterval(async () => {
-          for (const k of kiosks) {
-            const rec = tiles[k.id];
-            const la = rec.model.lastActive;
-            if (!la) {
-              continue;
-            }
-            const last = lastFrame(rec);
-            const fresh = await backend.frames(k.site, k.id, (last ? last.ts : P.from) + 1, Date.now(), la.step);
-            if (destroyed) {
-              return;
-            }
-            for (const f of fresh) {
-              const slot = rec.model.slotAt(f.ts);
-              if (!slot || slot.paused || slot.beyond) {
-                continue;
-              }
-              if (!slot.frame || f.ts > slot.frame.ts) {
-                slot.frame = f;
-              }
-            }
-          }
-          if (shownT == null) {
-            setShown(null);
-          }
-        }, 1e4);
+        startPoll2(s);
       }
     })();
     return {
       setExternalCursor(t) {
-        if (!destroyed) {
-          setShown(Math.max(P.from, Math.min(P.to, t)));
+        if (!s.destroyed) {
+          setShown(s, Math.max(P.from, Math.min(P.to, t)));
         }
       },
       clearExternal() {
-        if (!destroyed) {
-          setShown(null);
+        if (!s.destroyed) {
+          setShown(s, null);
         }
       },
       destroy() {
-        destroyed = true;
-        if (pollTimer) {
-          clearInterval(pollTimer);
+        s.destroyed = true;
+        if (s.pollTimer) {
+          clearInterval(s.pollTimer);
         }
-        pv.retire();
+        s.pv.retire();
         retireWrapper(wrap);
       }
     };

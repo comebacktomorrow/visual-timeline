@@ -1,6 +1,6 @@
 import { framesPath, hiUrlFor as untypedHiUrlFor, makeApiBackend as untypedMakeApiBackend, resolveFrameUrl, sourcesPath } from './core';
 
-// core.ts is untyped JS semantics (@ts-nocheck): give the test a signature
+// the tests pass loose shapes (partial frames and decls): give them the signatures they use
 type ApiFetch = (path: string) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 const makeApiBackend = untypedMakeApiBackend as (apiUrl: string, apiKey: string, apiFetch?: ApiFetch) => any;
 const hiUrlFor = untypedHiUrlFor as (frame: { ts: number; url?: string } | null, decl: object, apiUrl?: string, apiKey?: string) => string | null;

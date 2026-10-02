@@ -42,7 +42,7 @@ this backend; implement `docs/API.md` with anything.
 | `src/`                       | Grafana app plugin source (create-plugin scaffold; `npm run build` → `dist/`): `plugin.json` + `module.tsx` are the app |
 | `src/panel/`                 | the nested panel (`savvycocoa1919-visualtimeline-panel`, an id dashboards depend on: never change it) |
 | `src/datasource/`            | the nested data source (`savvycocoa1919-visualtimeline-datasource`): config page, health check, proxy route |
-| `src/core.ts`, `src/theme.ts`, `src/shared/` | shared code: the framework-free timeline core (also built into `web/vt-core.js`), the theme mapping, the proxy client |
+| `src/core.ts`, `src/vt/`, `src/theme.ts`, `src/shared/` | shared code: the framework-free timeline core (`src/vt/`, typed modules with no React or Grafana imports; `src/core.ts` is its entry point and only re-exports, also built into `web/vt-core.js`), the theme mapping, the proxy client |
 | `webpack.config.ts`          | extends the scaffold's webpack config (copies the nested plugins' logos)        |
 | `tests/`                     | Playwright e2e specs; `tests/mock-api/` is the stand-in frames API they run against |
 | `web/`                       | standalone app, embeddable viewer, fleet simulator                              |
@@ -133,7 +133,7 @@ images, from your browser.
   Cloudflare account needed).
 - The standalone app and embeddable viewer (`web/`) load `web/vt-core.js`,
   which is built from `src/core.ts` with `npm run build:web`. Commit the
-  rebuilt file when you change `src/core.ts` (the `project-checks` workflow fails on drift).
+  rebuilt file when you change `src/core.ts` or anything under `src/vt/` (the `project-checks` workflow fails on drift).
 - `src/core.snapshot.test.ts` snapshots the core's exports, the `VTCore`
   global and the rendered demo DOM. A change there is either a mistake or a
   deliberate change to output; for the latter, update with
