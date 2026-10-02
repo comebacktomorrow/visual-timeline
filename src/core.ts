@@ -546,7 +546,7 @@ function parseVar(v) {
  * silence rather than the red offline hatch. Resume is inferred from data:
  * a frame arriving inside a paused era ends it (crash-safe — a source that
  * dies unexpectedly never declares, so its silence stays "offline"). */
-function erasFor(decl, P) {
+export function erasFor(decl, P) {
   const hist = (decl.history || [])
     .filter((h) => (h.variant || 'lo') === 'lo')
     .slice()
@@ -576,8 +576,8 @@ function erasFor(decl, P) {
  * carries the meaning ("screen asleep" is a world-state; "paused" is what the
  * uploader did about it). intended === false is the triage color: explained
  * but nobody asked for it (power-policy blank, display handoff failure). */
-const PAUSE_CLASSES = ['paused', 'unintended', 'r-quiet', 'r-screen-sleep', 'r-app-stopped', 'r-system-down'];
-function pauseInfo(x) {
+export const PAUSE_CLASSES = ['paused', 'unintended', 'r-quiet', 'r-screen-sleep', 'r-app-stopped', 'r-system-down'];
+export function pauseInfo(x) {
   const r = x && x.reason;
   const unintended = !!x && x.intended === false;
   const label =
@@ -594,7 +594,7 @@ function pauseInfo(x) {
 /* One flat slot list across all eras. Each slot knows its time span (for
  * proportional width — x↔time stays linear across era boundaries), its
  * era's cadence/step (gap + staleness thresholds), or paused:true. */
-async function buildSourceModel(decl, P, backend, budgetSlots) {
+export async function buildSourceModel(decl, P, backend, budgetSlots) {
   const eras = erasFor(decl, P);
   const slots = [];
   const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
@@ -700,7 +700,7 @@ async function buildSourceModel(decl, P, backend, budgetSlots) {
 }
 
 /* panel-side tag filtering: "env=prod, room=lobby" must ALL match */
-function parseTagFilter(expr) {
+export function parseTagFilter(expr) {
   if (!expr) {return null;}
   const out = {};
   for (const part of String(expr).split(',')) {
@@ -709,7 +709,7 @@ function parseTagFilter(expr) {
   }
   return Object.keys(out).length ? out : null;
 }
-function matchesTags(tags, filter) {
+export function matchesTags(tags, filter) {
   if (!filter) {return true;}
   if (!tags) {return false;}
   for (const k in filter) {
@@ -738,7 +738,7 @@ export function headTitle(decl) {
   return parts.join(' · ');
 }
 
-const TICK_STEPS = [60e3, 5 * 60e3, 10 * 60e3, 15 * 60e3, 30 * 60e3,
+export const TICK_STEPS = [60e3, 5 * 60e3, 10 * 60e3, 15 * 60e3, 30 * 60e3,
                     3600e3, 2 * 3600e3, 3 * 3600e3, 6 * 3600e3, 12 * 3600e3,
                     24 * 3600e3, 2 * 86400e3, 3 * 86400e3, 4 * 86400e3,
                     5 * 86400e3, 6 * 86400e3, 7 * 86400e3, 8 * 86400e3,
@@ -748,7 +748,7 @@ const TICK_STEPS = [60e3, 5 * 60e3, 10 * 60e3, 15 * 60e3, 30 * 60e3,
 /* snaps down to the nearest local calendar boundary at or before `ts` for the
  * given step's granularity (minute/hour/midnight/1st-of-month), so ticks land
  * on :00 and local midnight instead of arbitrary epoch-multiple offsets */
-function alignedStart(ts, stepMs) {
+export function alignedStart(ts, stepMs) {
   const d = new Date(ts);
   if (stepMs >= 30 * 86400e3) {
     d.setHours(0, 0, 0, 0);
@@ -767,16 +767,25 @@ function alignedStart(ts, stepMs) {
 
 /* advances by calendar units (not raw ms) at day+ granularity so DST and
  * variable month lengths don't drift the grid */
-function nextTick(d, stepMs) {
+export function nextTick(d, stepMs) {
   if (stepMs >= 30 * 86400e3) {d.setMonth(d.getMonth() + Math.round(stepMs / (30 * 86400e3)));}
   else if (stepMs >= 86400e3) {d.setDate(d.getDate() + stepMs / 86400e3);}
   else {d.setTime(+d + stepMs);}
   return d;
 }
 
+/* every tick in [from, to]: calendar-aligned start, then nextTick steps */
+export function axisTicks(from, to, stepMs) {
+  const out = [];
+  let d = alignedStart(from, stepMs);
+  while (+d < from) {d = nextTick(d, stepMs);}
+  for (; +d <= to; d = nextTick(d, stepMs)) {out.push(+d);}
+  return out;
+}
+
 /* one format per zoom tier (not a whole-axis binary switch), matching
  * Grafana's per-increment axis labels */
-function tickFormat(stepMs) {
+export function tickFormat(stepMs) {
   if (stepMs < 3600e3) {return fmtShort;}
   if (stepMs < 24 * 3600e3)
     {return ts => new Date(ts).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });}
@@ -813,12 +822,22 @@ function closePreview() {
 /* The pending slot's "last known" frame: the nearest earlier frame, carried
  * only across other pending slots. A gap, a pause band or the window start
  * in between means there's nothing honest to carry. */
-function ghostFor(slots, sl) {
+export function ghostFor(slots, sl) {
   for (let j = slots.indexOf(sl) - 1; j >= 0; j--) {
     if (slots[j].frame) {return slots[j].frame;}
     if (!slots[j].future) {return null;}
   }
   return null;
+}
+/* A strip slot's state classes (appended to "slot"): a pause band, the
+ * beyond-now spacer, a frame, pending ("future") or offline ("gap"). */
+export function slotClass(sl) {
+  return sl.paused ? ' ' + pauseInfo(sl).classes.join(' ') : sl.beyond ? ' beyond' : sl.frame ? '' : sl.future ? ' future' : ' gap';
+}
+/* a pending slot still empty a full step past its tick has missed its
+ * heartbeat: the live poll turns it from pending into offline */
+export function missedHeartbeat(sl, now) {
+  return sl.future && !sl.frame && sl.ts + sl.step < now;
 }
 /* keep a strip slot's ghost <img> in step with its state: present only
  * while the slot is pending and has something to carry */
@@ -1012,7 +1031,7 @@ export function mountTimeline(root, cfg) {
     const slots = model.slots;
     for (const sl of slots) {
       const el = document.createElement('div');
-      el.className = 'slot' + (sl.paused ? ' ' + pauseInfo(sl).classes.join(' ') : sl.beyond ? ' beyond' : sl.frame ? '' : sl.future ? ' future' : ' gap');
+      el.className = 'slot' + slotClass(sl);
       if (sl.paused) {el.title = pauseInfo(sl).label.toLowerCase();}
       // width ∝ time span, so x↔time stays linear across era boundaries
       el.style.flexGrow = String(sl.span / 1000);
@@ -1120,10 +1139,7 @@ export function mountTimeline(root, cfg) {
 
     axis.querySelectorAll('.tick').forEach(t => t.remove());
     axisTickList.length = 0;
-    let d = alignedStart(P.from, tickStep);
-    while (+d < P.from) {d = nextTick(d, tickStep);}
-    for (; +d <= P.to; d = nextTick(d, tickStep)) {
-      const ts = +d;
+    for (const ts of axisTicks(P.from, P.to, tickStep)) {
       axisTickList.push(ts);
       const el = document.createElement('div');
       el.className = 'tick';
@@ -1440,7 +1456,7 @@ export function mountTimeline(root, cfg) {
           // past its tick has now genuinely missed its heartbeat
           const overdue = Date.now();
           for (const sl of c.model.slots) {
-            if (sl.future && !sl.frame && sl.ts + sl.step < overdue) {
+            if (missedHeartbeat(sl, overdue)) {
               sl.future = false;
               if (sl.el) { sl.el.classList.remove('future'); sl.el.classList.add('gap'); }
             }

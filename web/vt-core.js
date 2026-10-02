@@ -21,12 +21,26 @@ var VTCore = (() => {
   // src/core.ts
   var core_exports = {};
   __export(core_exports, {
+    PAUSE_CLASSES: () => PAUSE_CLASSES,
+    TICK_STEPS: () => TICK_STEPS,
+    alignedStart: () => alignedStart,
+    axisTicks: () => axisTicks,
+    buildSourceModel: () => buildSourceModel,
+    erasFor: () => erasFor,
     esc: () => esc,
+    ghostFor: () => ghostFor,
     headTitle: () => headTitle,
     imageUrlWithKey: () => imageUrlWithKey,
+    matchesTags: () => matchesTags,
+    missedHeartbeat: () => missedHeartbeat,
     mountGrid: () => mountGrid,
     mountTimeline: () => mountTimeline,
-    tagChips: () => tagChips
+    nextTick: () => nextTick,
+    parseTagFilter: () => parseTagFilter,
+    pauseInfo: () => pauseInfo,
+    slotClass: () => slotClass,
+    tagChips: () => tagChips,
+    tickFormat: () => tickFormat
   });
   var STYLE_ID = "ktl-styles";
   var CSS = `
@@ -790,6 +804,17 @@ var VTCore = (() => {
     }
     return d;
   }
+  function axisTicks(from, to, stepMs) {
+    const out = [];
+    let d = alignedStart(from, stepMs);
+    while (+d < from) {
+      d = nextTick(d, stepMs);
+    }
+    for (; +d <= to; d = nextTick(d, stepMs)) {
+      out.push(+d);
+    }
+    return out;
+  }
   function tickFormat(stepMs) {
     if (stepMs < 36e5) {
       return fmtShort;
@@ -837,6 +862,12 @@ var VTCore = (() => {
       }
     }
     return null;
+  }
+  function slotClass(sl) {
+    return sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? "" : sl.future ? " future" : " gap";
+  }
+  function missedHeartbeat(sl, now) {
+    return sl.future && !sl.frame && sl.ts + sl.step < now;
   }
   function dressGhost(slots, sl) {
     if (!sl.el) {
@@ -1026,7 +1057,7 @@ var VTCore = (() => {
       const slots = model.slots;
       for (const sl of slots) {
         const el = document.createElement("div");
-        el.className = "slot" + (sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? "" : sl.future ? " future" : " gap");
+        el.className = "slot" + slotClass(sl);
         if (sl.paused) {
           el.title = pauseInfo(sl).label.toLowerCase();
         }
@@ -1147,12 +1178,7 @@ var VTCore = (() => {
       const fmt = tickFormat(tickStep);
       axis.querySelectorAll(".tick").forEach((t) => t.remove());
       axisTickList.length = 0;
-      let d = alignedStart(P.from, tickStep);
-      while (+d < P.from) {
-        d = nextTick(d, tickStep);
-      }
-      for (; +d <= P.to; d = nextTick(d, tickStep)) {
-        const ts = +d;
+      for (const ts of axisTicks(P.from, P.to, tickStep)) {
         axisTickList.push(ts);
         const el = document.createElement("div");
         el.className = "tick";
@@ -1512,7 +1538,7 @@ var VTCore = (() => {
             }
             const overdue = Date.now();
             for (const sl of c.model.slots) {
-              if (sl.future && !sl.frame && sl.ts + sl.step < overdue) {
+              if (missedHeartbeat(sl, overdue)) {
                 sl.future = false;
                 if (sl.el) {
                   sl.el.classList.remove("future");
