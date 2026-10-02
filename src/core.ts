@@ -6,9 +6,15 @@
 
 import { fmtDur, fmtShort, fmtTime, isZone, resolveTimeZone, zoneOf, zoneWarned } from './vt/time/zones';
 import { axisTicks, TICK_STEPS, tickFormat } from './vt/time/ticks';
+import { clearPauseClasses, pauseInfo } from './vt/model/eras';
+import { buildSourceModel, ghostFor, missedHeartbeat, slotClass } from './vt/model/slots';
+import { matchesTags, parseTagFilter, parseVar } from './vt/model/filters';
 
 export { fmtShort, fmtTime, resolveTimeZone, zonedParts, zonedTime } from './vt/time/zones';
 export { alignedStart, axisTicks, nextTick, TICK_STEPS, tickFormat } from './vt/time/ticks';
+export { clearPauseClasses, erasFor, PAUSE_CLASSES, pauseInfo } from './vt/model/eras';
+export { buildSourceModel, ghostFor, missedHeartbeat, slotClass } from './vt/model/slots';
+export { matchesTags, parseTagFilter } from './vt/model/filters';
 
 /* ======================= styles (injected once) ======================= */
 const STYLE_ID = 'ktl-styles';
@@ -739,256 +745,7 @@ export function hiUrlFor(frame, decl, apiUrl, apiKey) {
 }
 
 /* ======================= timeline core ======================= */
-function parseVar(v) {
-  if (!v || v === 'All' || v === '$__all') {return null;}
-  return v.replace(/^\{|\}$/g, '').split(',').map(s => s.trim()).filter(Boolean);
-}
 
-/* ======================= cadence events → eras =======================
- * A source's registry history is a stream of CADENCE EVENTS — declarations
- * that change the contract in force from that moment on: a new pace, or a
- * pause ("I will deliberately send nothing"). Eras are the spans between
- * events; the timeline renders each era on its own grid, so sparse frames
- * during a slow era aren't gaps and declared pauses render as neutral
- * silence rather than the red offline hatch. Resume is inferred from data:
- * a frame arriving inside a paused era ends it (crash-safe — a source that
- * dies unexpectedly never declares, so its silence stays "offline"). */
-export function erasFor(decl, P) {
-  const hist = (decl.history || [])
-    .filter((h) => (h.variant || 'lo') === 'lo')
-    .slice()
-    .sort((a, b) => a.since - b.since);
-  let runCad = decl.cadence || 60e3;
-  if (hist.length && hist[0].cadence) {runCad = hist[0].cadence;}
-  const evts = [{ since: -8.64e15, cadence: runCad, paused: false, reason: undefined, intended: undefined }];
-  for (const h of hist) {evts.push({ since: h.since, cadence: h.cadence, paused: !!h.paused, reason: h.reason, intended: h.intended });}
-  const eras = [];
-  for (let i = 0; i < evts.length; i++) {
-    const e = evts[i];
-    const next = evts[i + 1];
-    if (e.cadence) {runCad = e.cadence;}
-    const from = Math.max(e.since, P.from);
-    const to = Math.min(next ? next.since : P.to, P.to);
-    if (to <= from) {continue;}
-    const prev = eras[eras.length - 1];
-    if (prev && prev.paused === !!e.paused && prev.cadence === runCad &&
-        prev.reason === e.reason && prev.intended === e.intended) { prev.to = to; continue; }
-    eras.push({ from, to, cadence: runCad, paused: !!e.paused, reason: e.reason, intended: e.intended });
-  }
-  if (!eras.length) {eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false });}
-  return eras;
-}
-
-/* Presentation of a paused era/slot: the pause is the MECHANIC, the reason
- * carries the meaning ("screen asleep" is a world-state; "paused" is what the
- * uploader did about it). intended === false is the triage color: explained
- * but nobody asked for it (power-policy blank, display handoff failure). */
-export const PAUSE_CLASSES = ['paused', 'unintended', 'r-quiet', 'r-screen-sleep', 'r-app-stopped', 'r-system-down'];
-/* clear every pause class off an element: PAUSE_CLASSES plus ANY r-<reason>.
- * pauseInfo passes unknown reasons through as classes, so no fixed list can
- * cover them, and a leftover one would outlive the band it came from. */
-export function clearPauseClasses(el) {
-  el.classList.remove(...PAUSE_CLASSES);
-  for (const c of Array.from(el.classList)) {if (c.startsWith('r-')) {el.classList.remove(c);}}
-}
-export function pauseInfo(x) {
-  const r = x && x.reason;
-  const unintended = !!x && x.intended === false;
-  const label =
-    r === 'screen-sleep' ? (unintended ? 'SCREEN DARK (UNEXPECTED)' : 'SCREEN ASLEEP') :
-    r === 'system-down'  ? 'SYSTEM DOWN (PLANNED)' :
-    r === 'app-stopped'  ? 'APP STOPPED' :
-    r === 'quiet'        ? 'QUIET HOURS' : 'PAUSED';
-  const classes = ['paused'];
-  if (r) {classes.push('r-' + String(r).replace(/[^\w-]/g, ''));}
-  if (unintended) {classes.push('unintended');}
-  return { label, classes };
-}
-
-/* One flat slot list across all eras. Each slot knows its time span (for
- * proportional width — x↔time stays linear across era boundaries), its
- * era's cadence/step (gap + staleness thresholds), or paused:true. */
-export async function buildSourceModel(decl, P, backend, budgetSlots) {
-  const eras = erasFor(decl, P);
-  const slots = [];
-  const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
-
-  // the one slot of an active era with no grid tick of its own (#65)
-  function shortEraSlot(era, frame, nowMs) {
-    return { ts: era.from, span: era.to - era.from, frame, cadence: era.cadence, step: era.cadence,
-      future: era.from + era.cadence >= nowMs };
-  }
-
-  /* Where a closed active era meets the next era, its last tick can sit ON
-   * the boundary. The later era owns that tick (#65): drop the earlier
-   * era's copy when the later era draws the same tick itself, or when it's
-   * an empty gap slot right before a pause band. A boundary tick that holds
-   * a frame the later era won't show (off the later grid, or a goodbye
-   * frame at a pause's start) stays, so no frame is lost. If that leaves
-   * the earlier era with no slot, it gets the one-slot-at-its-start form. */
-  function resolveBoundary(prev, firstIdx) {
-    if (!prev || firstIdx <= prev.startIdx || firstIdx >= slots.length) {return;}
-    const p = slots[firstIdx - 1];
-    const first = slots[firstIdx];
-    if (p.paused || p.beyond || p.ts !== prev.to) {return;}
-    const laterDrawsIt = !first.paused && !first.beyond && first.ts === p.ts;
-    if (!laterDrawsIt && !(first.paused && !p.frame)) {return;}
-    if (laterDrawsIt && !first.frame && p.frame) {first.frame = p.frame;}
-    slots.splice(firstIdx - 1, 1);
-    if (firstIdx - 1 === prev.startIdx) {
-      slots.splice(prev.startIdx, 0, shortEraSlot(prev, null, Date.now()));
-    }
-  }
-
-  async function pushActive(era) {
-    if (era.to - era.from <= 0) {return;}   // degenerate span — nothing to render
-    const eraSpan = era.to - era.from;
-    const share = Math.max(4, Math.round(budgetSlots * (eraSpan / totalActive)));
-    const raw = Math.max(1, Math.ceil(eraSpan / era.cadence));
-    const step = Math.ceil(raw / Math.min(share, raw)) * era.cadence;
-    const start = Math.ceil(era.from / step) * step;
-    const n = era.to >= start ? Math.floor((era.to - start) / step) + 1 : 0;
-    const nowMs = Date.now();
-    if (n === 0) {
-      // No grid tick inside (shorter than a step, between two grid points):
-      // one slot at the era's start, spanning the era (#65). Uploads snap to
-      // the NEAREST grid point, so the frame it sent can sit up to half a
-      // cadence outside it.
-      const half = era.cadence / 2;
-      const near = await backend.frames(decl.site, decl.id, era.from - half, era.to + half, era.cadence);
-      const frame = near
-        .filter((f) => f.ts >= era.from - half && f.ts <= era.to + half)
-        .sort((a, b) => Math.abs(a.ts - era.from) - Math.abs(b.ts - era.from))[0] || null;
-      slots.push(shortEraSlot(era, frame, nowMs));
-      return;
-    }
-    const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
-    const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
-    for (let i = 0; i < n; i++) {
-      const ts = start + i * step;
-      // a slot keeps "future" grace until ONE FULL STEP past its tick — the
-      // same boundary the live poll uses to age future slots into gaps. A
-      // tick that just passed has its frame IN FLIGHT (capture + upload +
-      // the backend's response cache), and calling it offline for those
-      // seconds painted a red live edge that healed on the next poll.
-      // Pending through ts + step itself, offline after: missedHeartbeat's rule.
-      slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowMs });
-    }
-  }
-
-  // Beyond-now horizon: the window can extend past now, but nothing is
-  // KNOWN there — every era is clamped to min(now, P.to) and ONE inert
-  // .beyond spacer covers the remainder (keeps x↔time linear; the poll
-  // carves real slots out of it, or grows a tail pause band into it, as
-  // time actually passes). Bands that painted prediction as knowledge
-  // ("system down forever into the future") stop at now — and so do
-  // active eras bounded by FUTURE events (a scheduled cadence change
-  // must not spray pending slots across the next 45 minutes).
-  const nowAtBuild = Date.now();
-  const horizon = Math.min(P.to, nowAtBuild);
-  let prevActive = null;   // the last active era pushed, for resolveBoundary
-  for (const era of eras) {
-    const eFrom = era.from;
-    const eTo = Math.min(era.to, horizon);
-    const isTail = era === eras[eras.length - 1];
-    const firstIdx = slots.length;
-    const prev = prevActive;
-    prevActive = null;
-    if (!era.paused) {
-      if (eTo > eFrom) {
-        const span = { from: eFrom, to: eTo, cadence: era.cadence };
-        await pushActive(span);
-        resolveBoundary(prev, firstIdx);
-        prevActive = { ...span, startIdx: firstIdx };
-      }
-      continue;
-    }
-    // BOUNDED paused era (a later history event closes it): the registry is
-    // the truth — render the whole span paused, no probe. Probing here is
-    // what broke sandwiched pauses: uploads snap to the NEAREST grid point,
-    // so the goodbye frame sent just before the declare can carry a key up
-    // to cadence/2 AFTER era.from — a phantom "resume" that split the era
-    // into a sliver of pause plus a frameless "active" run of offline-red.
-    if (!isTail) {
-      if (eTo > eFrom) {
-        slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
-        resolveBoundary(prev, firstIdx);
-      }
-      continue;
-    }
-    // TAIL paused era: no closing event yet — infer resume from frames
-    // (crash-safe: a source that dies while paused never resumes). Ignore
-    // the first cadence of the era: that's where the round-half-up goodbye
-    // straggler lands; a real resume that fast is indistinguishable anyway
-    // and costs at most one cadence of detection lag. The band is clamped
-    // to NOW — the future portion of the window is unknown, not paused.
-    if (eTo <= eFrom) {continue;}
-    const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, era.cadence);
-    const tailIdx = slots.length;
-    const resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
-    if (resume) {
-      const resumeTs = resume.ts;
-      slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended });
-      if (eTo > resumeTs) {await pushActive({ from: resumeTs, to: eTo, cadence: era.cadence });}
-    } else {
-      slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
-    }
-    resolveBoundary(prev, tailIdx);
-  }
-  // one spacer for everything past the horizon
-  if (P.to > horizon) {
-    const last = slots[slots.length - 1];
-    const covered = !last ? horizon
-      : (last.paused || last.beyond) ? last.ts + last.span
-      : last.ts + last.step / 2;
-    const fillerFrom = Math.min(Math.max(covered, horizon - 1), P.to);
-    if (P.to - fillerFrom > 0) {slots.push({ ts: fillerFrom, span: P.to - fillerFrom, beyond: true });}
-  }
-
-  function slotAt(t) {
-    for (const sl of slots) {
-      const edge = sl.paused || sl.beyond;   // bands/fillers span [ts, ts+span); ticks are centered
-      const from = edge ? sl.ts : sl.ts - sl.span / 2;
-      const to = edge ? sl.ts + sl.span : sl.ts + sl.span / 2;
-      if (t < to) {
-        if (sl.beyond) {
-          // the filler's leading half-step is the tail of the last real
-          // slot's coverage — resolve to it so the live-edge rest cursor
-          // shows the latest frame instead of the unknown-future dash
-          const i = slots.indexOf(sl);
-          const prev = i > 0 ? slots[i - 1] : null;
-          if (prev && !prev.beyond && t < sl.ts + (prev.step || 0) / 2) {return prev;}
-        }
-        return t >= from || sl === slots[0] ? sl : sl;
-      }
-    }
-    return slots[slots.length - 1] || null;
-  }
-  const lastActive = [...slots].reverse().find((sl) => !sl.paused && !sl.beyond) || null;
-  return { eras, slots, slotAt, lastActive };
-}
-
-/* panel-side tag filtering: "env=prod, room=lobby" must ALL match */
-export function parseTagFilter(expr) {
-  if (!expr) {return null;}
-  const out = {};
-  for (const part of String(expr).split(',')) {
-    const i = part.indexOf('=');
-    const key = i >= 0 ? part.slice(0, i).trim().toLowerCase() : '';
-    // blank keys are dropped AFTER trimming: " =x" (as typed after ", ") too
-    if (key) {out[key] = part.slice(i + 1).trim().toLowerCase();}
-  }
-  return Object.keys(out).length ? out : null;
-}
-export function matchesTags(tags, filter) {
-  if (!filter) {return true;}
-  // no tags object reads like an empty one: a missing tag is '' either way
-  const t = tags || {};
-  for (const k in filter) {
-    if (String(t[k] == null ? '' : t[k]).toLowerCase() !== filter[k]) {return false;}
-  }
-  return true;
-}
 /* Source ids, sites, locations and tags come from the registry API, so they
  * are untrusted. Everything spliced into an innerHTML template goes through
  * esc() — text AND attribute context (quotes are escaped too). */
@@ -1034,26 +791,6 @@ function closePreview() {
   if (popState.retireTimer) { clearTimeout(popState.retireTimer); popState.retireTimer = null; }
   if (popState.el) { popState.el.remove(); popState.el = null; }
   if (popState.keyH) { document.removeEventListener('keydown', popState.keyH); popState.keyH = null; }
-}
-/* The pending slot's "last known" frame: the nearest earlier frame, carried
- * only across other pending slots. A gap, a pause band or the window start
- * in between means there's nothing honest to carry. */
-export function ghostFor(slots, sl) {
-  for (let j = slots.indexOf(sl) - 1; j >= 0; j--) {
-    if (slots[j].frame) {return slots[j].frame;}
-    if (!slots[j].future) {return null;}
-  }
-  return null;
-}
-/* A strip slot's state classes (appended to "slot"): a pause band, the
- * beyond-now spacer, a frame, pending ("future") or offline ("gap"). */
-export function slotClass(sl) {
-  return sl.paused ? ' ' + pauseInfo(sl).classes.join(' ') : sl.beyond ? ' beyond' : sl.frame ? '' : sl.future ? ' future' : ' gap';
-}
-/* a pending slot still empty a full step past its tick has missed its
- * heartbeat: the live poll turns it from pending into offline */
-export function missedHeartbeat(sl, now) {
-  return sl.future && !sl.frame && sl.ts + sl.step < now;
 }
 /* keep a strip slot's ghost <img> in step with its state: present only
  * while the slot is pending and has something to carry */

@@ -327,6 +327,249 @@ var VTCore = (() => {
     return (ts) => String(new Date(wallOf(ts, z)).getUTCFullYear());
   }
 
+  // src/vt/model/eras.ts
+  function erasFor(decl, P) {
+    const hist = (decl.history || []).filter((h) => (h.variant || "lo") === "lo").slice().sort((a, b) => a.since - b.since);
+    let runCad = decl.cadence || 6e4;
+    if (hist.length && hist[0].cadence) {
+      runCad = hist[0].cadence;
+    }
+    const evts = [{ since: -864e13, cadence: runCad, paused: false, reason: void 0, intended: void 0 }];
+    for (const h of hist) {
+      evts.push({ since: h.since, cadence: h.cadence, paused: !!h.paused, reason: h.reason, intended: h.intended });
+    }
+    const eras = [];
+    for (let i = 0; i < evts.length; i++) {
+      const e = evts[i];
+      const next = evts[i + 1];
+      if (e.cadence) {
+        runCad = e.cadence;
+      }
+      const from = Math.max(e.since, P.from);
+      const to = Math.min(next ? next.since : P.to, P.to);
+      if (to <= from) {
+        continue;
+      }
+      const prev = eras[eras.length - 1];
+      if (prev && prev.paused === !!e.paused && prev.cadence === runCad && prev.reason === e.reason && prev.intended === e.intended) {
+        prev.to = to;
+        continue;
+      }
+      eras.push({ from, to, cadence: runCad, paused: !!e.paused, reason: e.reason, intended: e.intended });
+    }
+    if (!eras.length) {
+      eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false });
+    }
+    return eras;
+  }
+  var PAUSE_CLASSES = ["paused", "unintended", "r-quiet", "r-screen-sleep", "r-app-stopped", "r-system-down"];
+  function clearPauseClasses(el) {
+    el.classList.remove(...PAUSE_CLASSES);
+    for (const c of Array.from(el.classList)) {
+      if (c.startsWith("r-")) {
+        el.classList.remove(c);
+      }
+    }
+  }
+  function pauseInfo(x) {
+    const r = x && x.reason;
+    const unintended = !!x && x.intended === false;
+    const label = r === "screen-sleep" ? unintended ? "SCREEN DARK (UNEXPECTED)" : "SCREEN ASLEEP" : r === "system-down" ? "SYSTEM DOWN (PLANNED)" : r === "app-stopped" ? "APP STOPPED" : r === "quiet" ? "QUIET HOURS" : "PAUSED";
+    const classes = ["paused"];
+    if (r) {
+      classes.push("r-" + String(r).replace(/[^\w-]/g, ""));
+    }
+    if (unintended) {
+      classes.push("unintended");
+    }
+    return { label, classes };
+  }
+
+  // src/vt/model/slots.ts
+  async function buildSourceModel(decl, P, backend, budgetSlots) {
+    const eras = erasFor(decl, P);
+    const slots = [];
+    const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
+    function shortEraSlot(era, frame, nowMs) {
+      return {
+        ts: era.from,
+        span: era.to - era.from,
+        frame,
+        cadence: era.cadence,
+        step: era.cadence,
+        future: era.from + era.cadence >= nowMs
+      };
+    }
+    function resolveBoundary(prev, firstIdx) {
+      if (!prev || firstIdx <= prev.startIdx || firstIdx >= slots.length) {
+        return;
+      }
+      const p = slots[firstIdx - 1];
+      const first = slots[firstIdx];
+      if (p.paused || p.beyond || p.ts !== prev.to) {
+        return;
+      }
+      const laterDrawsIt = !first.paused && !first.beyond && first.ts === p.ts;
+      if (!laterDrawsIt && !(first.paused && !p.frame)) {
+        return;
+      }
+      if (laterDrawsIt && !first.frame && p.frame) {
+        first.frame = p.frame;
+      }
+      slots.splice(firstIdx - 1, 1);
+      if (firstIdx - 1 === prev.startIdx) {
+        slots.splice(prev.startIdx, 0, shortEraSlot(prev, null, Date.now()));
+      }
+    }
+    async function pushActive(era) {
+      if (era.to - era.from <= 0) {
+        return;
+      }
+      const eraSpan = era.to - era.from;
+      const share = Math.max(4, Math.round(budgetSlots * (eraSpan / totalActive)));
+      const raw = Math.max(1, Math.ceil(eraSpan / era.cadence));
+      const step = Math.ceil(raw / Math.min(share, raw)) * era.cadence;
+      const start = Math.ceil(era.from / step) * step;
+      const n = era.to >= start ? Math.floor((era.to - start) / step) + 1 : 0;
+      const nowMs = Date.now();
+      if (n === 0) {
+        const half = era.cadence / 2;
+        const near = await backend.frames(decl.site, decl.id, era.from - half, era.to + half, era.cadence);
+        const frame = near.filter((f) => f.ts >= era.from - half && f.ts <= era.to + half).sort((a, b) => Math.abs(a.ts - era.from) - Math.abs(b.ts - era.from))[0] || null;
+        slots.push(shortEraSlot(era, frame, nowMs));
+        return;
+      }
+      const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
+      const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
+      for (let i = 0; i < n; i++) {
+        const ts = start + i * step;
+        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowMs });
+      }
+    }
+    const nowAtBuild = Date.now();
+    const horizon = Math.min(P.to, nowAtBuild);
+    let prevActive = null;
+    for (const era of eras) {
+      const eFrom = era.from;
+      const eTo = Math.min(era.to, horizon);
+      const isTail = era === eras[eras.length - 1];
+      const firstIdx = slots.length;
+      const prev = prevActive;
+      prevActive = null;
+      if (!era.paused) {
+        if (eTo > eFrom) {
+          const span = { from: eFrom, to: eTo, cadence: era.cadence };
+          await pushActive(span);
+          resolveBoundary(prev, firstIdx);
+          prevActive = { ...span, startIdx: firstIdx };
+        }
+        continue;
+      }
+      if (!isTail) {
+        if (eTo > eFrom) {
+          slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
+          resolveBoundary(prev, firstIdx);
+        }
+        continue;
+      }
+      if (eTo <= eFrom) {
+        continue;
+      }
+      const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, era.cadence);
+      const tailIdx = slots.length;
+      const resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
+      if (resume) {
+        const resumeTs = resume.ts;
+        slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended });
+        if (eTo > resumeTs) {
+          await pushActive({ from: resumeTs, to: eTo, cadence: era.cadence });
+        }
+      } else {
+        slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
+      }
+      resolveBoundary(prev, tailIdx);
+    }
+    if (P.to > horizon) {
+      const last = slots[slots.length - 1];
+      const covered = !last ? horizon : last.paused || last.beyond ? last.ts + last.span : last.ts + last.step / 2;
+      const fillerFrom = Math.min(Math.max(covered, horizon - 1), P.to);
+      if (P.to - fillerFrom > 0) {
+        slots.push({ ts: fillerFrom, span: P.to - fillerFrom, beyond: true });
+      }
+    }
+    function slotAt(t) {
+      for (const sl of slots) {
+        const edge = sl.paused || sl.beyond;
+        const from = edge ? sl.ts : sl.ts - sl.span / 2;
+        const to = edge ? sl.ts + sl.span : sl.ts + sl.span / 2;
+        if (t < to) {
+          if (sl.beyond) {
+            const i = slots.indexOf(sl);
+            const prev = i > 0 ? slots[i - 1] : null;
+            if (prev && !prev.beyond && t < sl.ts + (prev.step || 0) / 2) {
+              return prev;
+            }
+          }
+          return t >= from || sl === slots[0] ? sl : sl;
+        }
+      }
+      return slots[slots.length - 1] || null;
+    }
+    const lastActive = [...slots].reverse().find((sl) => !sl.paused && !sl.beyond) || null;
+    return { eras, slots, slotAt, lastActive };
+  }
+  function ghostFor(slots, sl) {
+    for (let j = slots.indexOf(sl) - 1; j >= 0; j--) {
+      if (slots[j].frame) {
+        return slots[j].frame;
+      }
+      if (!slots[j].future) {
+        return null;
+      }
+    }
+    return null;
+  }
+  function slotClass(sl) {
+    return sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? "" : sl.future ? " future" : " gap";
+  }
+  function missedHeartbeat(sl, now) {
+    return sl.future && !sl.frame && sl.ts + sl.step < now;
+  }
+
+  // src/vt/model/filters.ts
+  function parseVar(v) {
+    if (!v || v === "All" || v === "$__all") {
+      return null;
+    }
+    return v.replace(/^\{|\}$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  function parseTagFilter(expr) {
+    if (!expr) {
+      return null;
+    }
+    const out = {};
+    for (const part of String(expr).split(",")) {
+      const i = part.indexOf("=");
+      const key = i >= 0 ? part.slice(0, i).trim().toLowerCase() : "";
+      if (key) {
+        out[key] = part.slice(i + 1).trim().toLowerCase();
+      }
+    }
+    return Object.keys(out).length ? out : null;
+  }
+  function matchesTags(tags, filter) {
+    if (!filter) {
+      return true;
+    }
+    const t = tags || {};
+    for (const k in filter) {
+      if (String(t[k] == null ? "" : t[k]).toLowerCase() !== filter[k]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   // src/core.ts
   var STYLE_ID = "ktl-styles";
   var KTL_VAR_DEFAULTS = {
@@ -1053,226 +1296,6 @@ var VTCore = (() => {
     const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
     return base + "/frame/hi/" + encodeURIComponent(decl.site) + "/" + encodeURIComponent(decl.id) + "/" + hiTs + ".jpg" + q;
   }
-  function parseVar(v) {
-    if (!v || v === "All" || v === "$__all") {
-      return null;
-    }
-    return v.replace(/^\{|\}$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
-  }
-  function erasFor(decl, P) {
-    const hist = (decl.history || []).filter((h) => (h.variant || "lo") === "lo").slice().sort((a, b) => a.since - b.since);
-    let runCad = decl.cadence || 6e4;
-    if (hist.length && hist[0].cadence) {
-      runCad = hist[0].cadence;
-    }
-    const evts = [{ since: -864e13, cadence: runCad, paused: false, reason: void 0, intended: void 0 }];
-    for (const h of hist) {
-      evts.push({ since: h.since, cadence: h.cadence, paused: !!h.paused, reason: h.reason, intended: h.intended });
-    }
-    const eras = [];
-    for (let i = 0; i < evts.length; i++) {
-      const e = evts[i];
-      const next = evts[i + 1];
-      if (e.cadence) {
-        runCad = e.cadence;
-      }
-      const from = Math.max(e.since, P.from);
-      const to = Math.min(next ? next.since : P.to, P.to);
-      if (to <= from) {
-        continue;
-      }
-      const prev = eras[eras.length - 1];
-      if (prev && prev.paused === !!e.paused && prev.cadence === runCad && prev.reason === e.reason && prev.intended === e.intended) {
-        prev.to = to;
-        continue;
-      }
-      eras.push({ from, to, cadence: runCad, paused: !!e.paused, reason: e.reason, intended: e.intended });
-    }
-    if (!eras.length) {
-      eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false });
-    }
-    return eras;
-  }
-  var PAUSE_CLASSES = ["paused", "unintended", "r-quiet", "r-screen-sleep", "r-app-stopped", "r-system-down"];
-  function clearPauseClasses(el) {
-    el.classList.remove(...PAUSE_CLASSES);
-    for (const c of Array.from(el.classList)) {
-      if (c.startsWith("r-")) {
-        el.classList.remove(c);
-      }
-    }
-  }
-  function pauseInfo(x) {
-    const r = x && x.reason;
-    const unintended = !!x && x.intended === false;
-    const label = r === "screen-sleep" ? unintended ? "SCREEN DARK (UNEXPECTED)" : "SCREEN ASLEEP" : r === "system-down" ? "SYSTEM DOWN (PLANNED)" : r === "app-stopped" ? "APP STOPPED" : r === "quiet" ? "QUIET HOURS" : "PAUSED";
-    const classes = ["paused"];
-    if (r) {
-      classes.push("r-" + String(r).replace(/[^\w-]/g, ""));
-    }
-    if (unintended) {
-      classes.push("unintended");
-    }
-    return { label, classes };
-  }
-  async function buildSourceModel(decl, P, backend, budgetSlots) {
-    const eras = erasFor(decl, P);
-    const slots = [];
-    const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
-    function shortEraSlot(era, frame, nowMs) {
-      return {
-        ts: era.from,
-        span: era.to - era.from,
-        frame,
-        cadence: era.cadence,
-        step: era.cadence,
-        future: era.from + era.cadence >= nowMs
-      };
-    }
-    function resolveBoundary(prev, firstIdx) {
-      if (!prev || firstIdx <= prev.startIdx || firstIdx >= slots.length) {
-        return;
-      }
-      const p = slots[firstIdx - 1];
-      const first = slots[firstIdx];
-      if (p.paused || p.beyond || p.ts !== prev.to) {
-        return;
-      }
-      const laterDrawsIt = !first.paused && !first.beyond && first.ts === p.ts;
-      if (!laterDrawsIt && !(first.paused && !p.frame)) {
-        return;
-      }
-      if (laterDrawsIt && !first.frame && p.frame) {
-        first.frame = p.frame;
-      }
-      slots.splice(firstIdx - 1, 1);
-      if (firstIdx - 1 === prev.startIdx) {
-        slots.splice(prev.startIdx, 0, shortEraSlot(prev, null, Date.now()));
-      }
-    }
-    async function pushActive(era) {
-      if (era.to - era.from <= 0) {
-        return;
-      }
-      const eraSpan = era.to - era.from;
-      const share = Math.max(4, Math.round(budgetSlots * (eraSpan / totalActive)));
-      const raw = Math.max(1, Math.ceil(eraSpan / era.cadence));
-      const step = Math.ceil(raw / Math.min(share, raw)) * era.cadence;
-      const start = Math.ceil(era.from / step) * step;
-      const n = era.to >= start ? Math.floor((era.to - start) / step) + 1 : 0;
-      const nowMs = Date.now();
-      if (n === 0) {
-        const half = era.cadence / 2;
-        const near = await backend.frames(decl.site, decl.id, era.from - half, era.to + half, era.cadence);
-        const frame = near.filter((f) => f.ts >= era.from - half && f.ts <= era.to + half).sort((a, b) => Math.abs(a.ts - era.from) - Math.abs(b.ts - era.from))[0] || null;
-        slots.push(shortEraSlot(era, frame, nowMs));
-        return;
-      }
-      const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
-      const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
-      for (let i = 0; i < n; i++) {
-        const ts = start + i * step;
-        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowMs });
-      }
-    }
-    const nowAtBuild = Date.now();
-    const horizon = Math.min(P.to, nowAtBuild);
-    let prevActive = null;
-    for (const era of eras) {
-      const eFrom = era.from;
-      const eTo = Math.min(era.to, horizon);
-      const isTail = era === eras[eras.length - 1];
-      const firstIdx = slots.length;
-      const prev = prevActive;
-      prevActive = null;
-      if (!era.paused) {
-        if (eTo > eFrom) {
-          const span = { from: eFrom, to: eTo, cadence: era.cadence };
-          await pushActive(span);
-          resolveBoundary(prev, firstIdx);
-          prevActive = { ...span, startIdx: firstIdx };
-        }
-        continue;
-      }
-      if (!isTail) {
-        if (eTo > eFrom) {
-          slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
-          resolveBoundary(prev, firstIdx);
-        }
-        continue;
-      }
-      if (eTo <= eFrom) {
-        continue;
-      }
-      const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, era.cadence);
-      const tailIdx = slots.length;
-      const resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
-      if (resume) {
-        const resumeTs = resume.ts;
-        slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended });
-        if (eTo > resumeTs) {
-          await pushActive({ from: resumeTs, to: eTo, cadence: era.cadence });
-        }
-      } else {
-        slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
-      }
-      resolveBoundary(prev, tailIdx);
-    }
-    if (P.to > horizon) {
-      const last = slots[slots.length - 1];
-      const covered = !last ? horizon : last.paused || last.beyond ? last.ts + last.span : last.ts + last.step / 2;
-      const fillerFrom = Math.min(Math.max(covered, horizon - 1), P.to);
-      if (P.to - fillerFrom > 0) {
-        slots.push({ ts: fillerFrom, span: P.to - fillerFrom, beyond: true });
-      }
-    }
-    function slotAt(t) {
-      for (const sl of slots) {
-        const edge = sl.paused || sl.beyond;
-        const from = edge ? sl.ts : sl.ts - sl.span / 2;
-        const to = edge ? sl.ts + sl.span : sl.ts + sl.span / 2;
-        if (t < to) {
-          if (sl.beyond) {
-            const i = slots.indexOf(sl);
-            const prev = i > 0 ? slots[i - 1] : null;
-            if (prev && !prev.beyond && t < sl.ts + (prev.step || 0) / 2) {
-              return prev;
-            }
-          }
-          return t >= from || sl === slots[0] ? sl : sl;
-        }
-      }
-      return slots[slots.length - 1] || null;
-    }
-    const lastActive = [...slots].reverse().find((sl) => !sl.paused && !sl.beyond) || null;
-    return { eras, slots, slotAt, lastActive };
-  }
-  function parseTagFilter(expr) {
-    if (!expr) {
-      return null;
-    }
-    const out = {};
-    for (const part of String(expr).split(",")) {
-      const i = part.indexOf("=");
-      const key = i >= 0 ? part.slice(0, i).trim().toLowerCase() : "";
-      if (key) {
-        out[key] = part.slice(i + 1).trim().toLowerCase();
-      }
-    }
-    return Object.keys(out).length ? out : null;
-  }
-  function matchesTags(tags, filter) {
-    if (!filter) {
-      return true;
-    }
-    const t = tags || {};
-    for (const k in filter) {
-      if (String(t[k] == null ? "" : t[k]).toLowerCase() !== filter[k]) {
-        return false;
-      }
-    }
-    return true;
-  }
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
   }
@@ -1319,23 +1342,6 @@ var VTCore = (() => {
       document.removeEventListener("keydown", popState.keyH);
       popState.keyH = null;
     }
-  }
-  function ghostFor(slots, sl) {
-    for (let j = slots.indexOf(sl) - 1; j >= 0; j--) {
-      if (slots[j].frame) {
-        return slots[j].frame;
-      }
-      if (!slots[j].future) {
-        return null;
-      }
-    }
-    return null;
-  }
-  function slotClass(sl) {
-    return sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? "" : sl.future ? " future" : " gap";
-  }
-  function missedHeartbeat(sl, now) {
-    return sl.future && !sl.frame && sl.ts + sl.step < now;
   }
   function dressGhost(slots, sl) {
     if (!sl.el) {
