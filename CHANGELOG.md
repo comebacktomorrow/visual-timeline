@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Click-in preview: the hi-res frame now loads behind a Visual Timeline API
+  data source too. Its URL is derived from the lo frame's own URL (same base
+  and signature, per the `/frame/{variant}/…` contract) instead of the
+  panel's API URL, which data source mode doesn't have. Site and source id
+  are URL-encoded as path segments (#66).
 - The panel follows the dashboard's time zone (#68, groundwork). It used to
   show browser time even on a dashboard set to UTC or to a named zone. The
   axis, cursor label, magnifier and preview captions, annotation tooltips,

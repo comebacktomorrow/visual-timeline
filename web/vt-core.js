@@ -35,6 +35,7 @@ var VTCore = (() => {
     framesPath: () => framesPath,
     ghostFor: () => ghostFor,
     headTitle: () => headTitle,
+    hiUrlFor: () => hiUrlFor,
     imageUrlWithKey: () => imageUrlWithKey,
     makeApiBackend: () => makeApiBackend,
     matchesTags: () => matchesTags,
@@ -773,13 +774,20 @@ var VTCore = (() => {
     };
   }
   function hiUrlFor(frame, decl, apiUrl, apiKey) {
-    if (!apiUrl || !decl.hiCadence) {
+    if (!decl.hiCadence || !frame) {
       return null;
     }
+    const url = frame.url || "";
+    const qAt = url.indexOf("?");
+    const path = qAt >= 0 ? url.slice(0, qAt) : url;
+    const at = path.lastIndexOf("/frame/");
+    const base = at >= 0 ? path.slice(0, at) : apiUrl ? apiUrl.replace(/\/+$/, "") : null;
+    if (base === null) {
+      return null;
+    }
+    const q = qAt >= 0 ? url.slice(qAt) : apiKey ? "?k=" + encodeURIComponent(apiKey) : "";
     const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
-    const qAt = frame.url ? frame.url.indexOf("?") : -1;
-    const q = qAt >= 0 ? frame.url.slice(qAt) : apiKey ? "?k=" + encodeURIComponent(apiKey) : "";
-    return apiUrl.replace(/\/+$/, "") + "/frame/hi/" + decl.site + "/" + decl.id + "/" + hiTs + ".jpg" + q;
+    return base + "/frame/hi/" + encodeURIComponent(decl.site) + "/" + encodeURIComponent(decl.id) + "/" + hiTs + ".jpg" + q;
   }
   function parseVar(v) {
     if (!v || v === "All" || v === "$__all") {
