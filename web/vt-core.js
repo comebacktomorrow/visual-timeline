@@ -1343,7 +1343,7 @@ var VTCore = (() => {
     return measureCtx.measureText(text).width;
   }
 
-  // src/core.ts
+  // src/vt/ui/preview.ts
   var popState = { el: null, keyH: null, retireTimer: null };
   function closePreview() {
     if (popState.retireTimer) {
@@ -1357,28 +1357,6 @@ var VTCore = (() => {
     if (popState.keyH) {
       document.removeEventListener("keydown", popState.keyH);
       popState.keyH = null;
-    }
-  }
-  function dressGhost(slots, sl) {
-    if (!sl.el) {
-      return;
-    }
-    const g = sl.future && !sl.frame ? ghostFor(slots, sl) : null;
-    let img = sl.el.querySelector("img.ghost");
-    if (!g) {
-      if (img) {
-        img.remove();
-      }
-      return;
-    }
-    if (!img) {
-      img = document.createElement("img");
-      img.className = "ghost";
-      img.alt = "";
-      sl.el.appendChild(img);
-    }
-    if (img.src !== g.url) {
-      img.src = g.url;
     }
   }
   function makePreview(root, tz) {
@@ -1432,6 +1410,30 @@ var VTCore = (() => {
         }
       }
     };
+  }
+
+  // src/core.ts
+  function dressGhost(slots, sl) {
+    if (!sl.el) {
+      return;
+    }
+    const g = sl.future && !sl.frame ? ghostFor(slots, sl) : null;
+    let img = sl.el.querySelector("img.ghost");
+    if (!g) {
+      if (img) {
+        img.remove();
+      }
+      return;
+    }
+    if (!img) {
+      img = document.createElement("img");
+      img.className = "ghost";
+      img.alt = "";
+      sl.el.appendChild(img);
+    }
+    if (img.src !== g.url) {
+      img.src = g.url;
+    }
   }
   function makeWrapper(root) {
     const wrap = document.createElement("div");

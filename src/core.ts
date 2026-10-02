@@ -12,11 +12,12 @@ import { matchesTags, parseTagFilter, parseVar } from './vt/model/filters';
 import { zoneFor, zoneTexts } from './vt/zones/source';
 import { hiUrlFor, makeApiBackend } from './vt/backends/api';
 import { esc, headTitle, tagChips } from './vt/dom/html';
-import { copyVars, injectStyles } from './vt/dom/styles';
+import { injectStyles } from './vt/dom/styles';
 import { makeBackend } from './vt/backends/demo';
 import { attachZoneChip, dressZoneChip, zoneChip } from './vt/zones/chip';
 import { annTip, normAnnotations } from './vt/ui/annotations';
 import { measureTickWidth, TICK_LABEL_GAP } from './vt/time/measure';
+import { makePreview } from './vt/ui/preview';
 
 export { fmtShort, fmtTime, resolveTimeZone, zonedParts, zonedTime } from './vt/time/zones';
 export { alignedStart, axisTicks, nextTick, TICK_STEPS, tickFormat } from './vt/time/ticks';
@@ -30,21 +31,6 @@ export { KTL_VAR_DEFAULTS } from './vt/dom/styles';
 
 /* ======================= timeline core ======================= */
 
-/* cursor-anchored larger preview (not full-screen), shared by both modes.
- * Shows the frame at native upload resolution — capture size is the only
- * quality knob; no separate hi-res fetch. Esc / click dismisses. */
-/* Click-in preview. ONE per document, leased across the double-buffered
- * remounts a dashboard refresh causes: destroy() RETIRES it (delayed close)
- * and the successor mount adopts it by cancelling that close — so an open
- * preview survives refresh ticks instead of vanishing mid-inspection. A
- * real unmount (navigating away) has no successor, and the delayed close
- * fires. */
-const popState = { el: null, keyH: null, retireTimer: null };
-function closePreview() {
-  if (popState.retireTimer) { clearTimeout(popState.retireTimer); popState.retireTimer = null; }
-  if (popState.el) { popState.el.remove(); popState.el = null; }
-  if (popState.keyH) { document.removeEventListener('keydown', popState.keyH); popState.keyH = null; }
-}
 /* keep a strip slot's ghost <img> in step with its state: present only
  * while the slot is pending and has something to carry */
 function dressGhost(slots, sl) {
@@ -54,52 +40,6 @@ function dressGhost(slots, sl) {
   if (!g) { if (img) {img.remove();} return; }
   if (!img) { img = document.createElement('img'); img.className = 'ghost'; img.alt = ''; sl.el.appendChild(img); }
   if (img.src !== g.url) {img.src = g.url;}
-}
-
-function makePreview(root, tz) {
-  // adopt: a mount created while a retire is pending cancels the close
-  if (popState.retireTimer) { clearTimeout(popState.retireTimer); popState.retireTimer = null; }
-  const panelTexts = zoneTexts(tz, tz, false);
-  return {
-    // expectedTs set = frame is the pending slot's ghost: shown blurred and
-    // captioned as the last frame, never as the expected one. tt: the
-    // source's time text (zoneTexts), the panel's when omitted
-    open(site, kiosk, frame, x, y, hiUrl, expectedTs, tt) {
-      tt = tt || panelTexts;
-      closePreview();
-      const el = document.createElement('div');
-      el.className = 'ktl-pop' + (expectedTs ? ' ghost' : '');
-      copyVars(root, el);
-      el.innerHTML = '<img alt="frame"><div class="cap"></div>';
-      const img = el.querySelector('img');
-      el.querySelector('.cap').textContent = site + ' / ' + kiosk + ' — ' + (expectedTs
-        ? 'expected ' + tt.short(expectedTs) + ' · last frame ' + tt.time(frame.ts)
-        : tt.time(frame.ts)) + tt.sfx(frame.ts);
-      el.addEventListener('click', closePreview);
-      document.body.appendChild(el);
-      const place = () => {
-        if (!el.isConnected) {return;}
-        const r = el.getBoundingClientRect();
-        el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x + 14)) + 'px';
-        el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y - r.height / 2)) + 'px';
-      };
-      img.onload = place;
-      img.onerror = () => { img.onerror = null; img.src = frame.url; };  // hi 404 → lo
-      img.src = hiUrl || frame.url;
-      place();
-      popState.el = el;
-      popState.keyH = e => { if (e.key === 'Escape') {closePreview();} };
-      document.addEventListener('keydown', popState.keyH);
-    },
-    close: closePreview,
-    retire() {
-      // destroy() path: don't kill an open preview a refresh remount is
-      // about to adopt; no successor within the grace = real unmount
-      if (popState.el && !popState.retireTimer) {
-        popState.retireTimer = setTimeout(closePreview, 1500);
-      }
-    },
-  };
 }
 
 /* Double-buffered remounts. A dashboard refresh tears the panel down and
