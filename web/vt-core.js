@@ -903,8 +903,9 @@ var VTCore = (() => {
 .ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,var(--ktl-unint-a),var(--ktl-unint-a) 7px,var(--ktl-unint-b) 7px,var(--ktl-unint-b) 14px); }
 /* hatch continuity: each slot is its own element, so a per-element gradient
  * restarts at every slot edge \u2014 a run of narrow slots shows only the first
- * stripe color and reads as a SOLID block. buildCard aligns each empty
- * slot's background-position to its offset in the strip, so the diagonals
+ * stripe color and reads as a SOLID block. dressStrip aligns each empty
+ * slot's background-position to its offset in the strip (at build, and for
+ * the slots the live poll adds), so the diagonals
  * run continuously across runs. (NOT background-attachment:fixed \u2014 Chrome
  * refuses to paint fixed backgrounds inside Grafana's transformed panels.)
  * A wide pause band also carries its label inline \u2014 a strip that is ALL
@@ -1922,6 +1923,7 @@ var VTCore = (() => {
       for (const k of s.kiosks) {
         const c = s.cards[k.id];
         const mSlots = c.model.slots;
+        let reshaped = false;
         const filler = mSlots.length && mSlots[mSlots.length - 1].beyond ? mSlots[mSlots.length - 1] : null;
         if (filler) {
           const nowP = Date.now();
@@ -1929,6 +1931,7 @@ var VTCore = (() => {
           if (prev && prev.paused) {
             const grow = Math.min(nowP, filler.ts + filler.span) - filler.ts;
             if (grow > 0) {
+              reshaped = true;
               prev.span += grow;
               filler.ts += grow;
               filler.span -= grow;
@@ -1960,6 +1963,7 @@ var VTCore = (() => {
               }
               sl.el = el;
               mSlots.splice(mSlots.length - 1, 0, sl);
+              reshaped = true;
               f.span -= sl.span;
               f.ts += sl.span;
               if (f.span <= 0) {
@@ -1976,6 +1980,9 @@ var VTCore = (() => {
               nextTs += prev.step;
             }
           }
+        }
+        if (reshaped && c.strip.clientWidth > 0) {
+          dressStrip(c.model);
         }
         const la = c.model.lastActive;
         if (!la) {

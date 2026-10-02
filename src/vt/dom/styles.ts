@@ -129,8 +129,9 @@ const CSS = `
 .ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,var(--ktl-unint-a),var(--ktl-unint-a) 7px,var(--ktl-unint-b) 7px,var(--ktl-unint-b) 14px); }
 /* hatch continuity: each slot is its own element, so a per-element gradient
  * restarts at every slot edge — a run of narrow slots shows only the first
- * stripe color and reads as a SOLID block. buildCard aligns each empty
- * slot's background-position to its offset in the strip, so the diagonals
+ * stripe color and reads as a SOLID block. dressStrip aligns each empty
+ * slot's background-position to its offset in the strip (at build, and for
+ * the slots the live poll adds), so the diagonals
  * run continuously across runs. (NOT background-attachment:fixed — Chrome
  * refuses to paint fixed backgrounds inside Grafana's transformed panels.)
  * A wide pause band also carries its label inline — a strip that is ALL

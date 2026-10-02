@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Offline stretches that start while a live timeline is open now hatch in
+  continuous diagonals like the ones drawn at load, instead of restarting
+  the stripes at every slot (#77).
 - An unknown time zone name used both as the panel zone and as a source's
   declared zone now logs both console warnings, once each (#77).
 - A source's slots are all judged pending or offline against one "now"

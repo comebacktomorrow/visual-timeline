@@ -17,8 +17,9 @@ import type { Card, TimelineState } from './state';
  *   slot edge; narrow runs otherwise read as one solid block)
  * - wide pause bands carry their label inline: a strip that is ALL
  *   "screen dark" should say so without requiring a hover
- * Needs real layout — called at build (visible mounts) and again after
- * reveal with retries (panels that mount before they have a size). */
+ * Needs real layout — called at build (visible mounts), again after
+ * reveal with retries (panels that mount before they have a size), and by
+ * the live poll after it carves new slots out of the beyond filler. */
 export function dressStrip(model: SourceModel): void {
   for (const sl of model.slots) {
     if (!sl.el || sl.frame) {continue;}
