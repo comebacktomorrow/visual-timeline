@@ -40,9 +40,23 @@ JPEG body. Headers:
 | `X-Variant` | no | `lo` (default) or `hi` |
 | `X-Timestamp` | no | epoch ms (backfill); default now; snapped to the cadence grid |
 | `X-Location` | no | area/zone label within the site |
+| `X-Timezone` | no | where the source is, as an IANA time zone name (`Australia/Sydney`, `America/New_York`) or `UTC`. Lets viewers label the source with its zone and show its times in local time. An invalid name is a `400`. |
 | `X-Tags` | no | free-form labels: `env=prod,room=lobby` (≤8 pairs; keys `[a-z0-9_-]`, values `[a-z0-9 ._-]`) |
 
 Response: `{"ok":true,"key":"lo/<site>/<source>/<ts>.jpg","ts":<snapped ms>}`
+
+`X-Location`, `X-Timezone` and `X-Tags` are source metadata: send them on
+every upload or only now and then. Leaving one out keeps the value already
+registered; sending a new value replaces it.
+
+`X-Timezone` names a zone, not an offset: send `Europe/London`, not `+01:00`
+or `BST`, so that viewers follow the source's daylight-saving changes. Use
+the IANA spelling (the name is matched case-insensitively against the
+runtime's zone list and stored as listed; a name outside that list is kept
+as sent). The reference worker answers an invalid name with
+`400 {"error":"bad timezone: X-Timezone must be an IANA time zone name such as Europe/London or UTC"}`.
+Data stays UTC epoch milliseconds either way: the zone only changes how
+times are displayed.
 
 ### `POST /declare`
 
@@ -63,14 +77,24 @@ Registry of known sources (built from upload declarations; cadence changes
 and pauses are recorded in `history`). `site` omitted/`All` = every site.
 
 ```json
-[{"id":"source-1","site":"site-a","location":"lobby","tags":{"env":"prod"},
-  "cadence":60000,"hiCadence":300000,
+[{"id":"source-1","site":"site-a","location":"lobby","timezone":"Australia/Sydney",
+  "tags":{"env":"prod"},"cadence":60000,"hiCadence":300000,
   "history":[{"since":1783488360000,"variant":"lo","cadence":60000},
              {"since":1783524213946,"variant":"lo","paused":true}]}]
 ```
 Cadences are milliseconds. `history` entries mark eras: a `cadence` entry
 starts a new pace, a `paused:true` entry starts declared silence, and the
-next non-paused upload ends it.
+next non-paused upload ends it. `timezone` is present only when the source
+declared one (`X-Timezone`); clients treat a missing or unknown zone as "not
+declared" and show the source's times in their own display zone, as before.
+
+The Visual Timeline panel shows a declared zone in the source's header as
+its city and its offset from the dashboard's zone (`Sydney · +3h`). Its
+**Thumbnail times** option (standalone app and embed: `?thumbs=source`) then
+shows that source's own times (thumbnail timestamps, magnifier and preview
+captions, last-seen messages) in its zone, marked with the offset:
+`07:31:00 (+3h)`. The time axis and the crosshair stay in the dashboard's
+zone.
 
 ### `GET /frames?site=&source=&from=&to=&step=&variant=`
 
@@ -246,6 +270,7 @@ curl -X POST $BASE/upload \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Site: site-a" -H "X-Source: source-1" \
   -H "X-Cadence: 60" -H "X-Location: lobby" \
+  -H "X-Timezone: Australia/Sydney" \
   -H "Content-Type: image/jpeg" \
   --data-binary @some-frame.jpg
 
@@ -293,3 +318,12 @@ queue. A gap is the signal that the source was down; queued late frames
 would erase it. See `web/sim.html` (browser canvas) for a reference
 uploader; a Windows screen-capture uploader is ~40 lines of PowerShell
 around `Graphics.CopyFromScreen` + `Invoke-RestMethod`.
+
+Send `X-Timezone` with the machine's own zone if the frames show a clock
+(a kiosk screen, a camera overlay), so viewers can read it: in a browser,
+`Intl.DateTimeFormat().resolvedOptions().timeZone`; on Linux,
+`timedatectl show -p Timezone --value`; in Python,
+`tzlocal.get_localzone_name()`. On Windows, `Get-TimeZone` returns a Windows
+zone id (`AUS Eastern Standard Time`), not an IANA name: map it first
+(`[System.TimeZoneInfo]::TryConvertWindowsIdToIanaId` on .NET 6+).
+Timestamps stay UTC epoch milliseconds whatever the zone.

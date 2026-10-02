@@ -57,12 +57,19 @@ annotation query on any data source. Point annotations are diamond markers and
 regions shade their span. An annotation tagged `source:<id>` pins to that
 source's strip; the rest share a lane above the axis.
 
+Times follow the dashboard's time zone. A source can also say where it is,
+with the `X-Timezone` upload header (an IANA name such as
+`Australia/Sydney`). Its header then shows its city and how far its clock is
+from the dashboard's, for example `Sydney · +3h`, and the **Thumbnail times**
+option can show its frame times in its own local time.
+
 ## Try it with no backend
 
 With **API URL** left empty, the panel renders built-in demo data: five
 simulated sources across two sites, including an outage, a cadence change, a
-declared pause and some annotations. Add the panel to a dashboard and it works
-immediately, with no infrastructure and no account.
+declared pause, two sources in other time zones and some annotations. Add the
+panel to a dashboard and it works immediately, with no infrastructure and no
+account.
 
 ## Connect it to your own images
 
@@ -126,6 +133,7 @@ So:
 | **Tag filter**                          | Only show sources whose declared tags match all the given pairs, for example `env=prod, room=lobby`.                                                                                             |
 | **Show cadence details**                | Show each source's capture cadence and display resolution (for tuning).                                                                                                                          |
 | **Header**                              | Bar (a header row per source), Inline (hostname and details float over the image), or Inline with a gradient behind them for busy frames.                                                        |
+| **Thumbnail times**                     | Dashboard time, or Source local time: a source that declares a time zone shows its frame times in that zone, marked with the offset, e.g. `07:31:00 (+3h)`. The axis and crosshair stay in dashboard time. |
 | **Image fit**                           | Fit letterboxes the whole frame; Fill crops to cover. Never stretches.                                                                                                                           |
 
 ## About the viewer token

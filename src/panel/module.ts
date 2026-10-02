@@ -23,6 +23,7 @@ interface VisualTimelineOptions {
   showAnnotations?: boolean;
   annotationLanes?: 'shared' | 'per-source';
   headerMode?: 'bar' | 'inline' | 'inline-gradient';
+  thumbTimes?: 'panel' | 'source';
 }
 
 interface PanelAnnotation {
@@ -122,6 +123,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       site, from, to, width: props.width, fit, apiUrl, apiKey, apiFetch, showDetails, hideEmpty, tagFilter,
       annotations, showAnnotations, annotationLanes: options.annotationLanes || 'shared',
       headerMode: options.headerMode || 'bar',
+      thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
       timeZone,
     };
     const inst: MountInstance =
@@ -147,7 +149,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, fit, apiUrl, apiKey, apiFetch, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey, options.annotationLanes, options.headerMode, timeZone]);
+  }, [mode, fit, apiUrl, apiKey, apiFetch, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone]);
 
   useEffect(() => {
     const subs = [
@@ -295,6 +297,19 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
           { value: 'bar', label: 'Bar' },
           { value: 'inline', label: 'Inline' },
           { value: 'inline-gradient', label: 'Inline · gradient' },
+        ],
+      },
+    })
+    .addRadio({
+      path: 'thumbTimes',
+      name: 'Thumbnail times',
+      description:
+        'Which clock a source\'s own times use: thumbnail timestamps, magnifier and preview captions, and last-seen/expected messages. Source local time uses the zone the source declares (X-Timezone) and marks each time with its offset from the dashboard, e.g. 07:31:00 (+3h); sources without a declared zone keep dashboard time. The time axis and crosshair always use the dashboard time zone.',
+      defaultValue: 'panel',
+      settings: {
+        options: [
+          { value: 'panel', label: 'Dashboard time' },
+          { value: 'source', label: 'Source local time' },
         ],
       },
     })

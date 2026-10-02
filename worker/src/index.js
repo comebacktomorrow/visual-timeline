@@ -3,10 +3,11 @@
  * Contracts (docs/API.md). Nouns: a SITE groups image SOURCES.
  *   POST /upload                      JPEG body; X-Site, X-Source, X-Cadence (s),
  *                                     X-Variant (lo|hi), X-Timestamp? (ms, backfill),
- *                                     X-Location?, Authorization: Bearer <per-site
- *                                     token>. Timestamp snapped to the cadence grid.
+ *                                     X-Location?, X-Timezone? (IANA name),
+ *                                     Authorization: Bearer <per-site token>.
+ *                                     Timestamp snapped to the cadence grid.
  *                                     (X-Kiosk accepted as a deprecated alias.)
- *   GET  /sources?site=csv            → [{id, site, location, cadence, hiCadence}]
+ *   GET  /sources?site=csv            → [{id, site, location, timezone, cadence, hiCadence}]
  *                                     (cadence ms; /kiosks is a deprecated alias)
  *   GET  /frames?site&source&from&to&step&variant
  *                                     → [{source, ts, url}], ≤1 frame per step
@@ -21,7 +22,7 @@
  *
  * R2 layout: {variant}/{site}/{source}/{epoch-ms}.jpg  (epoch cadence-aligned),
  *            index.json — source registry {sites: {site: {source: {cadence,
- *            hiCadence, location, history: [{since, variant, cadence}]}}}},
+ *            hiCadence, location, timezone, history: [{since, variant, cadence}]}}}},
  *            updated only when a declaration changes (etag-conditional, verified).
  */
 
@@ -41,7 +42,7 @@ const INDEX_KEY = 'index.json';
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
-  'access-control-allow-headers': 'authorization, content-type, x-site, x-source, x-kiosk, x-cadence, x-variant, x-timestamp, x-location, x-tags',
+  'access-control-allow-headers': 'authorization, content-type, x-site, x-source, x-kiosk, x-cadence, x-variant, x-timestamp, x-location, x-timezone, x-tags',
   'access-control-expose-headers': 'x-frames-truncated-after',
   'access-control-max-age': '86400',
 };
@@ -188,9 +189,14 @@ async function handleUpload(request, env) {
   const variant = (request.headers.get('x-variant') || 'lo').toLowerCase();
   const location = (request.headers.get('x-location') || '').toLowerCase().trim().slice(0, 64);
   const tags = parseTags(request.headers.get('x-tags'));
+  const tzRaw = (request.headers.get('x-timezone') || '').trim();
+  const timezone = tzRaw ? canonicalZone(tzRaw) : '';
 
   if (!ID_RE.test(site) || !ID_RE.test(source)) {return json({ error: 'bad site/source' }, 400);}
   if (location && !/^[a-z0-9 _.-]+$/.test(location)) {return json({ error: 'bad location' }, 400);}
+  if (tzRaw && !timezone) {
+    return json({ error: 'bad timezone: X-Timezone must be an IANA time zone name such as Europe/London or UTC' }, 400);
+  }
   if (!Number.isInteger(cadenceS) || cadenceS < 5 || cadenceS > 3600) {return json({ error: 'bad cadence' }, 400);}
   if (!VARIANTS.has(variant)) {return json({ error: 'bad variant' }, 400);}
   if (!(await authorize(request, env, site))) {return json({ error: 'unauthorized' }, 401);}
@@ -212,8 +218,35 @@ async function handleUpload(request, env) {
   await env.FRAMES.put(key, body, {
     httpMetadata: { contentType: 'image/jpeg', cacheControl: FRAME_CACHE },
   });
-  await ensureRegistered(env, site, source, variant, cadence, ts, location, tags);
+  await ensureRegistered(env, site, source, variant, cadence, ts, location, tags, timezone);
   return json({ ok: true, key, ts });
+}
+
+/* X-Timezone: where the source is, so viewers can label its clock. An IANA
+ * name from the runtime's list (matched case-insensitively, stored in the
+ * list's spelling), or UTC. A name the list doesn't carry but Intl still
+ * resolves is kept as sent when it has the Area/Location shape: runtimes
+ * list older canonical names (Asia/Calcutta, not Asia/Kolkata) and newer
+ * tzdata renames must not be refused. Offsets ("+05:00") and abbreviations
+ * ("EST") are not zones. Returns '' when invalid. */
+let zoneList = null;
+function canonicalZone(raw) {
+  if (raw.length > 64) {return '';}
+  if (/^(?:etc\/)?(?:utc|uct|zulu|universal)$/i.test(raw)) {return 'UTC';}
+  if (!zoneList) {
+    zoneList = new Map();
+    const names = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
+    for (const n of names) {zoneList.set(n.toLowerCase(), n);}
+  }
+  const listed = zoneList.get(raw.toLowerCase());
+  if (listed) {return listed;}
+  if (!/^[A-Za-z]+(?:\/[A-Za-z0-9_+-]+)+$/.test(raw)) {return '';}
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: raw });
+    return raw;
+  } catch {
+    return '';
+  }
 }
 
 /* Free-form source tags: "env=prod,room=lobby" → {env: 'prod', room: 'lobby'}.
@@ -233,8 +266,8 @@ function parseTags(raw) {
 
 /* Register the source's declared cadence in index.json. Writes only when the
  * declaration changed; concurrent writers resolved by verify-after-write. */
-async function ensureRegistered(env, site, source, variant, cadence, ts, location, tags) {
-  const memo = `${site}/${source}/${variant}/${cadence}/${location || ''}/${JSON.stringify(tags || {})}`;
+async function ensureRegistered(env, site, source, variant, cadence, ts, location, tags, timezone) {
+  const memo = `${site}/${source}/${variant}/${cadence}/${location || ''}/${timezone || ''}/${JSON.stringify(tags || {})}`;
   if (isRegistered(memo)) {return;}
   const field = variant === 'hi' ? 'hiCadence' : 'cadence';
 
@@ -247,14 +280,16 @@ async function ensureRegistered(env, site, source, variant, cadence, ts, locatio
     const wasPaused = !!(lastEvt && lastEvt.paused);
     const cadChanged = entry[field] !== cadence;
     const locChanged = !!location && entry.location !== location;
+    const tzChanged = !!timezone && entry.timezone !== timezone;
     const tagsChanged = !!tags && JSON.stringify(entry.tags || null) !== JSON.stringify(tags);
-    if (!cadChanged && !locChanged && !tagsChanged && !wasPaused) { registered.set(memo, Date.now()); return; }
+    if (!cadChanged && !locChanged && !tzChanged && !tagsChanged && !wasPaused) { registered.set(memo, Date.now()); return; }
 
     if (cadChanged || wasPaused) {
       entry[field] = cadence;
       entry.history.push({ since: ts, variant, cadence });   // resume and/or pace change
     }
     if (locChanged) {entry.location = location;}
+    if (tzChanged) {entry.timezone = timezone;}
     if (tagsChanged) {entry.tags = tags;}
     const opts = cur ? { onlyIf: { etagMatches: cur.etag } } : {};
     const put = await env.FRAMES.put(INDEX_KEY, JSON.stringify(index), opts);
@@ -264,6 +299,7 @@ async function ensureRegistered(env, site, source, variant, cadence, ts, locatio
     const check = await env.FRAMES.get(INDEX_KEY);
     const seen = check && (await check.json()).sites?.[site]?.[source];
     if (seen && seen[field] === cadence && (!location || seen.location === location) &&
+        (!timezone || seen.timezone === timezone) &&
         (!tags || JSON.stringify(seen.tags || null) === JSON.stringify(tags))) {
       registered.set(memo, Date.now());
       return;
@@ -350,7 +386,7 @@ async function handleSources(url, env, ctx, viewer) {
     if (viewer.sites && !viewer.sites.includes(site)) {continue;}
     if (filter && !filter.includes(site)) {continue;}
     for (const [id, meta] of Object.entries(sources)) {
-      out.push({ id, site, location: meta.location, tags: meta.tags, cadence: meta.cadence, hiCadence: meta.hiCadence, history: meta.history });
+      out.push({ id, site, location: meta.location, timezone: meta.timezone, tags: meta.tags, cadence: meta.cadence, hiCadence: meta.hiCadence, history: meta.history });
     }
   }
   out.sort((a, b) => a.site.localeCompare(b.site) || a.id.localeCompare(b.id));

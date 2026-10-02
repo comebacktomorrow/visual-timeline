@@ -207,6 +207,9 @@ const P = {
   hideEmpty: qs.get('hideEmpty') === '1',
   annLanes: qs.get('annLanes') === 'per-source' ? 'per-source' : 'shared',
   header: ['inline', 'inline-gradient'].includes(qs.get('header')) ? qs.get('header') : 'bar',
+  // ?thumbs=source: thumbnails, captions and offline text in each source's
+  // declared zone (offset-marked); the axis and readouts stay in TZ
+  thumbs: qs.get('thumbs') === 'source' ? 'source' : 'panel',
 };
 /* ?tz=<IANA name>|utc shows every time in that zone (the core's axis,
  * captions and tooltips, plus this page's readouts and time picker);
@@ -403,6 +406,7 @@ const TP_QUICK = [
     tagFilter: P.tags, hideEmpty: P.hideEmpty,
     annotationLanes: P.annLanes,
     headerMode: P.header,
+    thumbTimes: P.thumbs,
     timeZone: TZ,
   });
 
