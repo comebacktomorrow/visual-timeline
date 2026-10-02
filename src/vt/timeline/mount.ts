@@ -1,6 +1,5 @@
 // @ts-nocheck
 import { fmtDur, resolveTimeZone } from '../time/zones';
-import { axisTicks, TICK_STEPS, tickFormat } from '../time/ticks';
 import { pauseInfo } from '../model/eras';
 import { buildSourceModel, ghostFor, missedHeartbeat, slotClass } from '../model/slots';
 import { matchesTags, parseTagFilter, parseVar } from '../model/filters';
@@ -11,12 +10,12 @@ import { injectStyles } from '../dom/styles';
 import { makeBackend } from '../backends/demo';
 import { attachZoneChip, zoneChip } from '../zones/chip';
 import { annTip, normAnnotations } from '../ui/annotations';
-import { measureTickWidth, TICK_LABEL_GAP } from '../time/measure';
 import { makePreview } from '../ui/preview';
 import { dressGhost } from '../ui/ghost';
 import { makeWrapper, retireWrapper, revealWrapper } from '../ui/wrapper';
 import type { TimelineState } from './state';
 import { hideSelection, restoreCursor, setCursor, showSelection } from './cursor';
+import { buildAxis, ruleAllBeyond, ruleBeyond } from './axis';
 
 /* ======================= timeline core ======================= */
 
@@ -59,7 +58,7 @@ export function mountTimeline(root, cfg) {
     pv: makePreview(root, TZ),
     PANEL_TT: zoneTexts(TZ, TZ, false),
   };
-  const { cards, axisTickList, pv, PANEL_TT } = s;
+  const { cards, pv, PANEL_TT } = s;
 
 
 
@@ -210,56 +209,7 @@ export function mountTimeline(root, cfg) {
     };
   }
 
-  function buildAxis() {
-    const axis = q('.axis');
-    const w = axis.clientWidth;
 
-    // pass 1: rough step from a flat guess, just to pick a representative
-    // label to measure (mirrors Grafana's calculateSpace bootstrap)
-    const roughMaxTicks = Math.max(3, Math.floor(w / 90));
-    const roughStep = TICK_STEPS.find(s => SPAN / s <= roughMaxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-    const sampleWidth = measureTickWidth(tickFormat(roughStep, TZ)(P.to));
-
-    // pass 2: real step, sized to the label width that will actually render
-    const maxTicks = Math.max(3, Math.floor(w / (sampleWidth + TICK_LABEL_GAP)));
-    const tickStep = TICK_STEPS.find(s => SPAN / s <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-    const fmt = tickFormat(tickStep, TZ);
-
-    axis.querySelectorAll('.tick').forEach(t => t.remove());
-    axisTickList.length = 0;
-    for (const ts of axisTicks(P.from, P.to, tickStep, TZ)) {
-      axisTickList.push(ts);
-      const el = document.createElement('div');
-      el.className = 'tick';
-      el.style.left = ((ts - P.from) / SPAN * w) + 'px';
-      el.textContent = fmt(ts);
-      axis.appendChild(el);
-    }
-  }
-
-  /* The beyond-now spacer looks EMPTY, not black — the card's own surface,
-   * ruled only by hairlines continuing the axis ticks (black is a signal in
-   * a screenshot timeline; the future is the absence of signal). Re-run
-   * whenever the spacer's geometry changes (poll carving/band growth). */
-  function ruleBeyond(sl) {
-    if (!sl || !sl.beyond || !sl.el) {return;}
-    sl.el.querySelectorAll('.bt').forEach(t => t.remove());
-    for (const ts of axisTickList) {
-      if (ts <= sl.ts || ts > sl.ts + sl.span) {continue;}
-      const t = document.createElement('div');
-      t.className = 'bt';
-      t.style.left = (((ts - sl.ts) / sl.span) * 100).toFixed(3) + '%';
-      sl.el.appendChild(t);
-    }
-  }
-  function ruleAllBeyond() {
-    for (const k of s.kiosks) {
-      const c = cards[k.id];
-      if (!c) {continue;}
-      const last = c.model.slots[c.model.slots.length - 1];
-      if (last && last.beyond) {ruleBeyond(last);}
-    }
-  }
 
   /* Annotations: per-source markers ride that source's strip; the rest
    * share one lane above the axis. Regions shade their span; markers
@@ -388,8 +338,8 @@ export function mountTimeline(root, cfg) {
       cards[k.id] = buildCard(k, model);
     }
     s.kiosks = s.kiosks.filter((k) => cards[k.id]);
-    buildAxis();
-    ruleAllBeyond();
+    buildAxis(s);
+    ruleAllBeyond(s);
     // host-provided annotations (Grafana: the dashboard's own annotation
     // queries, whatever data source they run on) win; the mock seam only
     // fills demo mode so the feature is visible without a backend
@@ -423,7 +373,7 @@ export function mountTimeline(root, cfg) {
                 filler.ts += grow; filler.span -= grow;
                 if (prev.el) {prev.el.style.flexGrow = String(prev.span / 1000);}
                 if (filler.span <= 0) { if (filler.el) {filler.el.remove();} mSlots.pop(); }
-                else { if (filler.el) {filler.el.style.flexGrow = String(filler.span / 1000);} ruleBeyond(filler); }
+                else { if (filler.el) {filler.el.style.flexGrow = String(filler.span / 1000);} ruleBeyond(s, filler); }
               }
             } else if (prev && prev.step) {
               let nextTs = prev.ts + prev.step;
@@ -438,7 +388,7 @@ export function mountTimeline(root, cfg) {
                 mSlots.splice(mSlots.length - 1, 0, sl);
                 f.span -= sl.span; f.ts += sl.span;
                 if (f.span <= 0) { if (f.el) {f.el.remove();} mSlots.pop(); }
-                else { if (f.el) {f.el.style.flexGrow = String(f.span / 1000);} ruleBeyond(f); }
+                else { if (f.el) {f.el.style.flexGrow = String(f.span / 1000);} ruleBeyond(s, f); }
                 nextTs += prev.step;
               }
             }

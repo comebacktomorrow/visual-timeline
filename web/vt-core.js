@@ -1331,18 +1331,6 @@ var VTCore = (() => {
     };
   }
 
-  // src/vt/time/measure.ts
-  var TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
-  var TICK_LABEL_GAP = 14;
-  var measureCtx;
-  function measureTickWidth(text) {
-    if (!measureCtx) {
-      measureCtx = document.createElement("canvas").getContext("2d");
-    }
-    measureCtx.font = TICK_FONT;
-    return measureCtx.measureText(text).width;
-  }
-
   // src/vt/ui/preview.ts
   var popState = { el: null, keyH: null, retireTimer: null };
   function closePreview() {
@@ -1596,6 +1584,67 @@ var VTCore = (() => {
     }
   }
 
+  // src/vt/time/measure.ts
+  var TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
+  var TICK_LABEL_GAP = 14;
+  var measureCtx;
+  function measureTickWidth(text) {
+    if (!measureCtx) {
+      measureCtx = document.createElement("canvas").getContext("2d");
+    }
+    measureCtx.font = TICK_FONT;
+    return measureCtx.measureText(text).width;
+  }
+
+  // src/vt/timeline/axis.ts
+  function buildAxis(s) {
+    const axis = q(s.wrap, ".axis");
+    const w = axis.clientWidth;
+    const roughMaxTicks = Math.max(3, Math.floor(w / 90));
+    const roughStep = TICK_STEPS.find((st) => s.SPAN / st <= roughMaxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
+    const sampleWidth = measureTickWidth(tickFormat(roughStep, s.TZ)(s.P.to));
+    const maxTicks = Math.max(3, Math.floor(w / (sampleWidth + TICK_LABEL_GAP)));
+    const tickStep = TICK_STEPS.find((st) => s.SPAN / st <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
+    const fmt = tickFormat(tickStep, s.TZ);
+    axis.querySelectorAll(".tick").forEach((t) => t.remove());
+    s.axisTickList.length = 0;
+    for (const ts of axisTicks(s.P.from, s.P.to, tickStep, s.TZ)) {
+      s.axisTickList.push(ts);
+      const el = document.createElement("div");
+      el.className = "tick";
+      el.style.left = (ts - s.P.from) / s.SPAN * w + "px";
+      el.textContent = fmt(ts);
+      axis.appendChild(el);
+    }
+  }
+  function ruleBeyond(s, sl) {
+    if (!sl || !sl.beyond || !sl.el) {
+      return;
+    }
+    sl.el.querySelectorAll(".bt").forEach((t) => t.remove());
+    for (const ts of s.axisTickList) {
+      if (ts <= sl.ts || ts > sl.ts + sl.span) {
+        continue;
+      }
+      const t = document.createElement("div");
+      t.className = "bt";
+      t.style.left = ((ts - sl.ts) / sl.span * 100).toFixed(3) + "%";
+      sl.el.appendChild(t);
+    }
+  }
+  function ruleAllBeyond(s) {
+    for (const k of s.kiosks) {
+      const c = s.cards[k.id];
+      if (!c) {
+        continue;
+      }
+      const last = c.model.slots[c.model.slots.length - 1];
+      if (last && last.beyond) {
+        ruleBeyond(s, last);
+      }
+    }
+  }
+
   // src/vt/timeline/mount.ts
   function mountTimeline(root, cfg) {
     injectStyles();
@@ -1633,7 +1682,7 @@ var VTCore = (() => {
       pv: makePreview(root, TZ),
       PANEL_TT: zoneTexts(TZ, TZ, false)
     };
-    const { cards, axisTickList, pv, PANEL_TT } = s;
+    const { cards, pv, PANEL_TT } = s;
     function dressStrip(model) {
       for (const sl of model.slots) {
         if (!sl.el || sl.frame) {
@@ -1791,53 +1840,6 @@ var VTCore = (() => {
         lane: card.querySelector(".card-lane")
       };
     }
-    function buildAxis() {
-      const axis = q2(".axis");
-      const w = axis.clientWidth;
-      const roughMaxTicks = Math.max(3, Math.floor(w / 90));
-      const roughStep = TICK_STEPS.find((s2) => SPAN / s2 <= roughMaxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-      const sampleWidth = measureTickWidth(tickFormat(roughStep, TZ)(P.to));
-      const maxTicks = Math.max(3, Math.floor(w / (sampleWidth + TICK_LABEL_GAP)));
-      const tickStep = TICK_STEPS.find((s2) => SPAN / s2 <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-      const fmt = tickFormat(tickStep, TZ);
-      axis.querySelectorAll(".tick").forEach((t) => t.remove());
-      axisTickList.length = 0;
-      for (const ts of axisTicks(P.from, P.to, tickStep, TZ)) {
-        axisTickList.push(ts);
-        const el = document.createElement("div");
-        el.className = "tick";
-        el.style.left = (ts - P.from) / SPAN * w + "px";
-        el.textContent = fmt(ts);
-        axis.appendChild(el);
-      }
-    }
-    function ruleBeyond(sl) {
-      if (!sl || !sl.beyond || !sl.el) {
-        return;
-      }
-      sl.el.querySelectorAll(".bt").forEach((t) => t.remove());
-      for (const ts of axisTickList) {
-        if (ts <= sl.ts || ts > sl.ts + sl.span) {
-          continue;
-        }
-        const t = document.createElement("div");
-        t.className = "bt";
-        t.style.left = ((ts - sl.ts) / sl.span * 100).toFixed(3) + "%";
-        sl.el.appendChild(t);
-      }
-    }
-    function ruleAllBeyond() {
-      for (const k of s.kiosks) {
-        const c = cards[k.id];
-        if (!c) {
-          continue;
-        }
-        const last = c.model.slots[c.model.slots.length - 1];
-        if (last && last.beyond) {
-          ruleBeyond(last);
-        }
-      }
-    }
     function renderAnnotations(anns) {
       const tip = annTip();
       const fracOf = (t) => (Math.max(P.from, Math.min(P.to, t)) - P.from) / SPAN;
@@ -1973,8 +1975,8 @@ var VTCore = (() => {
         cards[k.id] = buildCard(k, model);
       }
       s.kiosks = s.kiosks.filter((k) => cards[k.id]);
-      buildAxis();
-      ruleAllBeyond();
+      buildAxis(s);
+      ruleAllBeyond(s);
       const rawAnns = cfg.annotations && cfg.annotations.length ? cfg.annotations : backend.annotations ? backend.annotations() : [];
       if (cfg.showAnnotations !== false) {
         renderAnnotations(normAnnotations(rawAnns, P));
@@ -2011,7 +2013,7 @@ var VTCore = (() => {
                     if (filler.el) {
                       filler.el.style.flexGrow = String(filler.span / 1e3);
                     }
-                    ruleBeyond(filler);
+                    ruleBeyond(s, filler);
                   }
                 }
               } else if (prev && prev.step) {
@@ -2038,7 +2040,7 @@ var VTCore = (() => {
                     if (f.el) {
                       f.el.style.flexGrow = String(f.span / 1e3);
                     }
-                    ruleBeyond(f);
+                    ruleBeyond(s, f);
                   }
                   nextTs += prev.step;
                 }
