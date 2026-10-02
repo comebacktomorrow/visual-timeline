@@ -570,6 +570,79 @@ var VTCore = (() => {
     return true;
   }
 
+  // src/vt/zones/source.ts
+  function sourceTimeZone(decl) {
+    const raw = decl && decl.timezone;
+    if (typeof raw !== "string") {
+      return null;
+    }
+    const s = raw.trim();
+    if (!s || /^(browser|default|local)$/i.test(s)) {
+      return null;
+    }
+    if (/^(?:etc\/)?utc$/i.test(s)) {
+      return "UTC";
+    }
+    if (isZone(s)) {
+      return s;
+    }
+    if (!zoneWarned.has(s)) {
+      zoneWarned.add(s);
+      console.warn('[visual-timeline] source declares unknown time zone "' + s + '"; ignoring it');
+    }
+    return null;
+  }
+  function zoneLabel(tz) {
+    const s = String(tz || "");
+    if (/^(?:etc\/)?utc$/i.test(s)) {
+      return "UTC";
+    }
+    return s.slice(s.lastIndexOf("/") + 1).replace(/_/g, " ");
+  }
+  function fmtOffset(ms) {
+    const m = Math.round(ms / 6e4);
+    if (!m) {
+      return "";
+    }
+    const a = Math.abs(m), h = Math.floor(a / 60), mm = a % 60;
+    return (m < 0 ? "\u2212" : "+") + (h ? h + "h" : "") + (mm ? mm + "m" : "");
+  }
+  function zoneOffsetText(tz, refTz, ts) {
+    return fmtOffset(zoneOf(tz).offset(ts) - zoneOf(refTz).offset(ts));
+  }
+  function zoneHeadText(tz, refTz, ts) {
+    const off = zoneOffsetText(tz, refTz, ts);
+    return zoneLabel(tz) + (off ? " \xB7 " + off : "");
+  }
+  function zoneTexts(zone, panelTZ, suffix) {
+    let memoMin = NaN, memo = "";
+    const off = (ts) => {
+      const m = Math.floor(ts / 6e4);
+      if (m !== memoMin) {
+        memoMin = m;
+        memo = zone === panelTZ ? "" : zoneOffsetText(zone, panelTZ, ts);
+      }
+      return memo;
+    };
+    const label = zoneLabel(zone);
+    return {
+      zone,
+      label,
+      off,
+      time: (ts) => fmtTime(ts, zone),
+      short: (ts) => fmtShort(ts, zone),
+      sfx: suffix ? (ts) => {
+        const o = off(ts);
+        return o ? " (" + o + ")" : "";
+      } : () => ""
+    };
+  }
+  function zoneFor(decl, panelTZ, thumbTimes, panelTT) {
+    const srcTZ = sourceTimeZone(decl);
+    const texts = srcTZ ? zoneTexts(srcTZ, panelTZ, true) : null;
+    return { srcTZ, texts, tt: texts && thumbTimes === "source" ? texts : panelTT, el: null, offEl: null, off: null };
+  }
+
   // src/core.ts
   var STYLE_ID = "ktl-styles";
   var KTL_VAR_DEFAULTS = {
@@ -893,77 +966,6 @@ var VTCore = (() => {
   }
   var HUES = { "source-1": 205, "source-2": 275, "source-3": 25, "source-4": 130, "source-5": 340 };
   var DIMS = { "source-3": [288, 216], "source-5": [216, 384] };
-  function sourceTimeZone(decl) {
-    const raw = decl && decl.timezone;
-    if (typeof raw !== "string") {
-      return null;
-    }
-    const s = raw.trim();
-    if (!s || /^(browser|default|local)$/i.test(s)) {
-      return null;
-    }
-    if (/^(?:etc\/)?utc$/i.test(s)) {
-      return "UTC";
-    }
-    if (isZone(s)) {
-      return s;
-    }
-    if (!zoneWarned.has(s)) {
-      zoneWarned.add(s);
-      console.warn('[visual-timeline] source declares unknown time zone "' + s + '"; ignoring it');
-    }
-    return null;
-  }
-  function zoneLabel(tz) {
-    const s = String(tz || "");
-    if (/^(?:etc\/)?utc$/i.test(s)) {
-      return "UTC";
-    }
-    return s.slice(s.lastIndexOf("/") + 1).replace(/_/g, " ");
-  }
-  function fmtOffset(ms) {
-    const m = Math.round(ms / 6e4);
-    if (!m) {
-      return "";
-    }
-    const a = Math.abs(m), h = Math.floor(a / 60), mm = a % 60;
-    return (m < 0 ? "\u2212" : "+") + (h ? h + "h" : "") + (mm ? mm + "m" : "");
-  }
-  function zoneOffsetText(tz, refTz, ts) {
-    return fmtOffset(zoneOf(tz).offset(ts) - zoneOf(refTz).offset(ts));
-  }
-  function zoneHeadText(tz, refTz, ts) {
-    const off = zoneOffsetText(tz, refTz, ts);
-    return zoneLabel(tz) + (off ? " \xB7 " + off : "");
-  }
-  function zoneTexts(zone, panelTZ, suffix) {
-    let memoMin = NaN, memo = "";
-    const off = (ts) => {
-      const m = Math.floor(ts / 6e4);
-      if (m !== memoMin) {
-        memoMin = m;
-        memo = zone === panelTZ ? "" : zoneOffsetText(zone, panelTZ, ts);
-      }
-      return memo;
-    };
-    const label = zoneLabel(zone);
-    return {
-      zone,
-      label,
-      off,
-      time: (ts) => fmtTime(ts, zone),
-      short: (ts) => fmtShort(ts, zone),
-      sfx: suffix ? (ts) => {
-        const o = off(ts);
-        return o ? " (" + o + ")" : "";
-      } : () => ""
-    };
-  }
-  function zoneFor(decl, panelTZ, thumbTimes, panelTT) {
-    const srcTZ = sourceTimeZone(decl);
-    const texts = srcTZ ? zoneTexts(srcTZ, panelTZ, true) : null;
-    return { srcTZ, texts, tt: texts && thumbTimes === "source" ? texts : panelTT, el: null, offEl: null, off: null };
-  }
   function zoneChip(srcTZ) {
     return srcTZ ? '<span class="st tz"><span class="tzc"></span><span class="tzo"></span></span>' : "";
   }
