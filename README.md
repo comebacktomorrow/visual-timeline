@@ -57,6 +57,9 @@ annotation query on any data source. Point annotations are diamond markers and
 regions shade their span. An annotation tagged `source:<id>` pins to that
 source's strip; the rest share a lane above the axis.
 
+The panel follows Grafana's light and dark themes, including a live switch,
+and scrubbing stays smooth with many sources.
+
 Times follow the dashboard's time zone. A source can also say where it is,
 with the `X-Timezone` upload header (an IANA name such as
 `Australia/Sydney`). Its header then shows its city and how far its clock is
@@ -119,22 +122,22 @@ So:
 
 ## Panel options
 
-| Option                                  | What it does                                                                                                                                                                                     |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Data source**                         | A Visual Timeline API data source. API calls go through Grafana, which adds the viewer token. While one is set, the two options below are hidden and ignored.                                     |
-| **API URL**                             | Base URL of the frames API, for an API with open reads. With no data source and no URL, the panel shows the built-in demo data.                                                                 |
-| **API key**                             | Deprecated. A viewer token saved in plaintext in the dashboard JSON. Use a data source instead. See [the viewer token](#about-the-viewer-token).                                                 |
-| **Sites**                               | Site filter: a dashboard variable (default `${site:csv}`) or a literal site id. Keep the variable here so the panel refreshes when it changes. A dashboard without the variable shows all sites. |
-| **Display mode**                        | Timeline or Multiview grid.                                                                                                                                                                      |
-| **Follow shared crosshair**             | Grid mode only. Show the frame at the crosshair time from other panels; off shows the most recent frame in range.                                                                                |
-| **Show annotations**                    | Timeline mode only. Draw the dashboard's annotations on the timeline (on by default).                                                                                                            |
-| **Annotation lanes**                    | Timeline mode, with annotations on. A single shared lane above the axis, or one lane per source carrying its own events plus the global ones.                                                    |
-| **Hide sources with no data in window** | Omit sources with no frames in the current time range instead of showing them as offline.                                                                                                        |
-| **Tag filter**                          | Only show sources whose declared tags match all the given pairs, for example `env=prod, room=lobby`.                                                                                             |
-| **Show cadence details**                | Show each source's capture cadence and display resolution (for tuning).                                                                                                                          |
-| **Header**                              | Bar (a header row per source), Inline (hostname and details float over the image), or Inline with a gradient behind them for busy frames.                                                        |
+| Option                                  | What it does                                                                                                                                                                                               |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Data source**                         | A Visual Timeline API data source. API calls go through Grafana, which adds the viewer token. While one is set, the two options below are hidden and ignored.                                              |
+| **API URL**                             | Base URL of the frames API, for an API with open reads. With no data source and no URL, the panel shows the built-in demo data.                                                                            |
+| **API key**                             | Deprecated. A viewer token saved in plaintext in the dashboard JSON. Use a data source instead. See [the viewer token](#about-the-viewer-token).                                                           |
+| **Sites**                               | Site filter: a dashboard variable (default `${site:csv}`) or a literal site id. Keep the variable here so the panel refreshes when it changes. A dashboard without the variable shows all sites.           |
+| **Display mode**                        | Timeline or Multiview grid.                                                                                                                                                                                |
+| **Follow shared crosshair**             | Grid mode only. Show the frame at the crosshair time from other panels; off shows the most recent frame in range.                                                                                          |
+| **Show annotations**                    | Timeline mode only. Draw the dashboard's annotations on the timeline (on by default).                                                                                                                      |
+| **Annotation lanes**                    | Timeline mode, with annotations on. A single shared lane above the axis, or one lane per source carrying its own events plus the global ones.                                                              |
+| **Hide sources with no data in window** | Omit sources with no frames in the current time range instead of showing them as offline.                                                                                                                  |
+| **Tag filter**                          | Only show sources whose declared tags match all the given pairs, for example `env=prod, room=lobby`.                                                                                                       |
+| **Show cadence details**                | Show each source's capture cadence and display resolution (for tuning).                                                                                                                                    |
+| **Header**                              | Bar (a header row per source), Inline (hostname and details float over the image), or Inline with a gradient behind them for busy frames.                                                                  |
 | **Thumbnail times**                     | Dashboard time, or Source local time: a source that declares a time zone shows its frame times in that zone, marked with the offset, e.g. `07:31:00 (+3h)`. The axis and crosshair stay in dashboard time. |
-| **Image fit**                           | Fit letterboxes the whole frame; Fill crops to cover. Never stretches.                                                                                                                           |
+| **Image fit**                           | Fit letterboxes the whole frame; Fill crops to cover. Never stretches.                                                                                                                                     |
 
 ## About the viewer token
 

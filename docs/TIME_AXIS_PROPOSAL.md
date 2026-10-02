@@ -11,7 +11,8 @@
 > instants whose wall clock in that zone sits on the step's grid, so they
 > stay on it across any offset change. Quarter and year steps align to
 > calendar quarters and 1 January. The `alignedStart`/`nextTick` sketch
-> below is superseded by the zone-aware versions in `src/core.ts`.
+> below is superseded by the zone-aware versions in `src/vt/time/ticks.ts`
+> (the core moved out of `src/core.ts` into `src/vt/` in #64).
 
 ## Current state (`buildAxis()`, `src/core.ts:978`)
 

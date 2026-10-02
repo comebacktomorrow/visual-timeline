@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Internal: the timeline core moved from one untyped `src/core.ts` into
+  typed modules under `src/vt/` (#64); `src/core.ts` now only re-exports,
+  and no `@ts-nocheck` is left. Rendering is unchanged, checked by new
+  snapshot tests of the exports, the `VTCore` global and the rendered demo
+  DOM. `npm run bench:scrub` measures scrubbing cost (see `perf/README.md`).
 - Scrubbing is faster with many sources: moving the cursor used to force
   two layouts per source (each card's widths were read after the previous
   card's styles were written). All widths are now read first, so a move
