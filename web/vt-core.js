@@ -643,6 +643,92 @@ var VTCore = (() => {
     return { srcTZ, texts, tt: texts && thumbTimes === "source" ? texts : panelTT, el: null, offEl: null, off: null };
   }
 
+  // src/vt/backends/api.ts
+  function imageUrlWithKey(url, apiBase, apiKey) {
+    if (!apiKey || !url) {
+      return url;
+    }
+    const u = new URL(url, apiBase);
+    if (u.search || u.origin !== new URL(apiBase).origin) {
+      return url;
+    }
+    u.searchParams.set("k", apiKey);
+    return u.href;
+  }
+  function sourcesPath(sites) {
+    const q = new URLSearchParams();
+    if (sites) {
+      q.set("site", sites.join(","));
+    }
+    const qs = q.toString();
+    return "/sources" + (qs ? "?" + qs : "");
+  }
+  function framesPath(site, kiosk, from, to, step) {
+    const q = new URLSearchParams();
+    q.set("site", site);
+    q.set("source", kiosk);
+    q.set("from", String(Math.round(from)));
+    q.set("to", String(Math.round(to)));
+    q.set("step", String(step));
+    q.set("variant", "lo");
+    return "/frames?" + q.toString();
+  }
+  function resolveFrameUrl(url, apiBase) {
+    if (!url || !apiBase) {
+      return url;
+    }
+    try {
+      return new URL(url, apiBase.replace(/\/+$/, "") + "/frames").href;
+    } catch {
+      return url;
+    }
+  }
+  function makeApiBackend(apiUrl, apiKey, apiFetch) {
+    const base = (apiUrl || "").replace(/\/+$/, "");
+    const key = apiFetch ? "" : apiKey;
+    const opts = () => ({
+      headers: key ? { authorization: "Bearer " + key } : void 0,
+      signal: typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(15e3) : void 0
+    });
+    const get = apiFetch ? (path) => apiFetch(path) : (path) => fetch(base + path, opts());
+    return {
+      async kiosks(sites) {
+        const r = await get(sourcesPath(sites));
+        if (!r.ok) {
+          throw new Error("kiosks " + r.status);
+        }
+        return r.json();
+      },
+      async frames(site, kiosk, from, to, step) {
+        const r = await get(framesPath(site, kiosk, from, to, step));
+        if (!r.ok) {
+          throw new Error("frames " + r.status);
+        }
+        const frames = await r.json();
+        for (const f of frames) {
+          f.url = apiFetch ? resolveFrameUrl(f.url, base) : imageUrlWithKey(f.url, base, key);
+        }
+        return frames;
+      }
+    };
+  }
+  function hiUrlFor(frame, decl, apiUrl, apiKey) {
+    if (!decl.hiCadence || !frame) {
+      return null;
+    }
+    const url = frame.url || "";
+    const qAt = url.indexOf("?");
+    const path = qAt >= 0 ? url.slice(0, qAt) : url;
+    const at = path.lastIndexOf("/frame/");
+    const base = at >= 0 ? path.slice(0, at) : apiUrl ? apiUrl.replace(/\/+$/, "") : null;
+    if (base === null) {
+      return null;
+    }
+    const q = qAt >= 0 ? url.slice(qAt) : apiKey ? "?k=" + encodeURIComponent(apiKey) : "";
+    const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
+    return base + "/frame/hi/" + encodeURIComponent(decl.site) + "/" + encodeURIComponent(decl.id) + "/" + hiTs + ".jpg" + q;
+  }
+
   // src/core.ts
   var STYLE_ID = "ktl-styles";
   var KTL_VAR_DEFAULTS = {
@@ -1213,90 +1299,6 @@ var VTCore = (() => {
       },
       close
     };
-  }
-  function imageUrlWithKey(url, apiBase, apiKey) {
-    if (!apiKey || !url) {
-      return url;
-    }
-    const u = new URL(url, apiBase);
-    if (u.search || u.origin !== new URL(apiBase).origin) {
-      return url;
-    }
-    u.searchParams.set("k", apiKey);
-    return u.href;
-  }
-  function sourcesPath(sites) {
-    const q = new URLSearchParams();
-    if (sites) {
-      q.set("site", sites.join(","));
-    }
-    const qs = q.toString();
-    return "/sources" + (qs ? "?" + qs : "");
-  }
-  function framesPath(site, kiosk, from, to, step) {
-    const q = new URLSearchParams();
-    q.set("site", site);
-    q.set("source", kiosk);
-    q.set("from", String(Math.round(from)));
-    q.set("to", String(Math.round(to)));
-    q.set("step", String(step));
-    q.set("variant", "lo");
-    return "/frames?" + q.toString();
-  }
-  function resolveFrameUrl(url, apiBase) {
-    if (!url || !apiBase) {
-      return url;
-    }
-    try {
-      return new URL(url, apiBase.replace(/\/+$/, "") + "/frames").href;
-    } catch {
-      return url;
-    }
-  }
-  function makeApiBackend(apiUrl, apiKey, apiFetch) {
-    const base = (apiUrl || "").replace(/\/+$/, "");
-    const key = apiFetch ? "" : apiKey;
-    const opts = () => ({
-      headers: key ? { authorization: "Bearer " + key } : void 0,
-      signal: typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(15e3) : void 0
-    });
-    const get = apiFetch ? (path) => apiFetch(path) : (path) => fetch(base + path, opts());
-    return {
-      async kiosks(sites) {
-        const r = await get(sourcesPath(sites));
-        if (!r.ok) {
-          throw new Error("kiosks " + r.status);
-        }
-        return r.json();
-      },
-      async frames(site, kiosk, from, to, step) {
-        const r = await get(framesPath(site, kiosk, from, to, step));
-        if (!r.ok) {
-          throw new Error("frames " + r.status);
-        }
-        const frames = await r.json();
-        for (const f of frames) {
-          f.url = apiFetch ? resolveFrameUrl(f.url, base) : imageUrlWithKey(f.url, base, key);
-        }
-        return frames;
-      }
-    };
-  }
-  function hiUrlFor(frame, decl, apiUrl, apiKey) {
-    if (!decl.hiCadence || !frame) {
-      return null;
-    }
-    const url = frame.url || "";
-    const qAt = url.indexOf("?");
-    const path = qAt >= 0 ? url.slice(0, qAt) : url;
-    const at = path.lastIndexOf("/frame/");
-    const base = at >= 0 ? path.slice(0, at) : apiUrl ? apiUrl.replace(/\/+$/, "") : null;
-    if (base === null) {
-      return null;
-    }
-    const q = qAt >= 0 ? url.slice(qAt) : apiKey ? "?k=" + encodeURIComponent(apiKey) : "";
-    const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
-    return base + "/frame/hi/" + encodeURIComponent(decl.site) + "/" + encodeURIComponent(decl.id) + "/" + hiTs + ".jpg" + q;
   }
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
