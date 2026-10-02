@@ -14,10 +14,23 @@ the decisions are in steps 2 and 6.
 - **Never edit `.config/`.** It belongs to `@grafana/create-plugin` and only
   changes through the scaffold update (step 5). `CLAUDE.md`, `AGENTS.md`,
   `GEMINI.md` and `.claude/` are also scaffold templates.
-- **Keep `grafanaDependency` at `>=10.4.0`.** New scaffolds default to
+- **Keep `grafanaDependency` at `>=10.4.0`** in all three `plugin.json`
+  files (`src/`, `src/panel/`, `src/datasource/`). New scaffolds default to
   `>=13.2.0`; copying that would drop every 10.4–13.1 install for no benefit.
   The e2e matrix (10.4 up to nightly) is what decides whether the range
   still holds.
+- **The plugin is an app with two nested plugins.** `src/plugin.json` is the
+  app (`savvycocoa1919-visualtimeline-app`); the panel
+  (`savvycocoa1919-visualtimeline-panel`, an id dashboards depend on) and the
+  data source live in `src/panel/` and `src/datasource/`. The scaffold builds
+  nested plugins natively. Two files extend it from outside `.config/`:
+  `webpack.config.ts` (copies the nested plugins' logos; `npm run build` and
+  `npm run dev` must keep pointing at it, so check a scaffold PR's
+  `package.json` scripts) and `docker-compose.yaml` (allows all three ids to
+  load unsigned). The scaffold derives `.config/docker-compose-base.yaml`'s
+  container name and plugin mount folder from `src/plugin.json`, so they
+  switch from `-panel` to `-app` on the next scaffold update. Nothing here
+  depends on those names.
 - **`@grafana/*` and `react` are webpack externals.** Grafana supplies them at
   runtime, so bumping them here only changes typings, tests and tooling, not
   what the panel runs against. That's why a React major can land safely as
@@ -185,7 +198,7 @@ walking `node_modules`, so point it at GitHub instead:
 
 ```bash
 npm run build
-PID=savvycocoa1919-visualtimeline-panel; ZIP=$PID-$(date +%Y%m%d-%H%M%S).zip
+PID=savvycocoa1919-visualtimeline-app; ZIP=$PID-$(date +%Y%m%d-%H%M%S).zip
 rm -rf /tmp/$PID && cp -r dist /tmp/$PID && (cd /tmp && zip -qr $ZIP $PID)
 docker run --platform linux/amd64 --rm -v /tmp:/archives grafana/plugin-validator-cli \
   -sourceCodeUri https://github.com/comebacktomorrow/visual-timeline /archives/$ZIP
@@ -224,7 +237,9 @@ and opens a "bump @grafana/create-plugin configuration" PR when they differ.
   npm, so a release in the plugin-tools changelog may not be picked up yet.
 - The scaffold PR usually touches only `.config/`. Its migrations may also
   add or remove `devDependencies`, so read its `package.json` diff before
-  merging.
+  merging. If it rewrites the `build`/`dev` scripts back to
+  `.config/webpack/webpack.config.ts`, restore `./webpack.config.ts`, or the
+  nested plugins ship without their logos.
 
 ## 6. Merge order
 

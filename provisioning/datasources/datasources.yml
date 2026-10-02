@@ -5,3 +5,27 @@ datasources:
     type: testdata
     uid: trlxrdZVk
     isDefault: true
+
+  # Visual Timeline API data sources against the mock frames API that
+  # docker-compose.yaml starts (tests/mock-api). The viewer token comes from
+  # the environment, as a real one would; the second one is deliberately
+  # wrong, so the API's 401 can be seen through the proxy.
+  - name: Visual Timeline API (mock)
+    type: savvycocoa1919-visualtimeline-datasource
+    uid: vt-mock-api
+    access: proxy
+    editable: true
+    jsonData:
+      apiUrl: http://vt-mock-api
+    secureJsonData:
+      viewerToken: ${VT_MOCK_VIEWER_TOKEN}
+
+  - name: Visual Timeline API (mock, wrong token)
+    type: savvycocoa1919-visualtimeline-datasource
+    uid: vt-mock-api-wrong-token
+    access: proxy
+    editable: true
+    jsonData:
+      apiUrl: http://vt-mock-api
+    secureJsonData:
+      viewerToken: not-the-mock-token

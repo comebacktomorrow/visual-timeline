@@ -9,6 +9,16 @@ security cameras, website thumbnails, anything that can post a JPEG on a
 heartbeat. Hover to set a global time cursor across every source; gaps show
 offline periods at their true temporal width; drag to zoom.
 
+The plugin is a Grafana app that installs two plugins:
+
+- the **Visual Timeline panel**, which draws the timeline and the multiview
+  grid;
+- the **Visual Timeline API data source**, which keeps your API's URL and
+  viewer token in Grafana's server-side settings. It is optional, and only
+  needed for an API whose reads need a token.
+
+The app is enabled on install and has no pages of its own.
+
 ![Visual Timeline panels on a Grafana dashboard: a timeline and multiview grids](https://raw.githubusercontent.com/comebacktomorrow/visual-timeline/main/src/img/screenshot-dashboard.png)
 
 ## What it shows
@@ -57,9 +67,19 @@ immediately, with no infrastructure and no account.
 ## Connect it to your own images
 
 The panel talks to a small HTTP API (sources registry, frames by time window,
-and the frame images). It isn't tied to any one backend. Set the panel's
-**API URL** option to the base URL of a server that implements the contract,
-and set **API key** if that server requires a viewer token.
+and the frame images). It isn't tied to any one backend. There are two ways to
+connect it:
+
+- **Through a Visual Timeline API data source (recommended, and the only
+  way that keeps a viewer token secret).** In Grafana, go to
+  **Connections → Data sources → Add new data source**, pick **Visual
+  Timeline API**, enter the API URL and the viewer token, and click **Save &
+  test**. Then pick that data source in the panel's **Data source** option.
+  The token is stored encrypted, and Grafana's server adds it to the panel's
+  API calls (`/sources`, `/frames`), so it never reaches the dashboard JSON
+  or the viewer's browser.
+- **Directly, for an API with open reads.** Set the panel's **API URL**
+  option to the API's base URL. The browser then calls the API itself.
 
 - The API contract, with curl examples, is in
   [docs/API.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md).
@@ -75,16 +95,28 @@ and set **API key** if that server requires a viewer token.
   failure drop the frame and move on. See "Implementing your own uploader" in
   the API document.
 
-The panel fetches from the browser, so the API must be reachable from the
-machines viewing the dashboard (the reference worker sends permissive CORS
-headers).
+Either way, the frame images load straight from the API into the viewer's
+browser, never through Grafana, because an `<img>` tag can't carry a token.
+So:
+
+- With a data source, the API must be reachable from the Grafana server
+  (for the API calls). The image URLs it returns must be reachable from the
+  viewers' browsers. An API that requires a viewer token for reads must
+  **sign its image URLs**, so each URL authorizes itself. The reference
+  worker does this when `IMG_SIGN_KEY` is set. It builds image URLs from the
+  address it was called on, so give the data source an API URL that browsers
+  can reach as well.
+- With the API URL option, the browser makes every call, so the API must be
+  reachable from the viewers' machines and must allow cross-origin requests.
+  The reference worker sends permissive CORS headers.
 
 ## Panel options
 
 | Option                                  | What it does                                                                                                                                                                                     |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **API URL**                             | Base URL of the frames API. Empty uses the built-in demo data.                                                                                                                                   |
-| **API key**                             | Viewer token for the API, if it requires one. See [the viewer token](#about-the-viewer-token).                                                                                                   |
+| **Data source**                         | A Visual Timeline API data source. API calls go through Grafana, which adds the viewer token. While one is set, the two options below are hidden and ignored.                                     |
+| **API URL**                             | Base URL of the frames API, for an API with open reads. With no data source and no URL, the panel shows the built-in demo data.                                                                 |
+| **API key**                             | Deprecated. A viewer token saved in plaintext in the dashboard JSON. Use a data source instead. See [the viewer token](#about-the-viewer-token).                                                 |
 | **Sites**                               | Site filter: a dashboard variable (default `${site:csv}`) or a literal site id. Keep the variable here so the panel refreshes when it changes. A dashboard without the variable shows all sites. |
 | **Display mode**                        | Timeline or Multiview grid.                                                                                                                                                                      |
 | **Follow shared crosshair**             | Grid mode only. Show the frame at the crosshair time from other panels; off shows the most recent frame in range.                                                                                |
@@ -98,30 +130,47 @@ headers).
 
 ## About the viewer token
 
-Grafana panel plugins have no config page and no encrypted secret storage, so
-the **API key** is a per-panel option saved in the dashboard JSON, in
-plaintext. Anyone who can view the dashboard can see it (their browser needs
-it to fetch the images). Today's practical posture:
+Keep the viewer token in a **Visual Timeline API data source**. The token is
+stored encrypted in Grafana and is sent only by Grafana's server, as an
+`Authorization: Bearer` header on the panel's calls to `/sources` and
+`/frames`. The browser never receives it, and the dashboard JSON stores only
+the data source's uid. Grafana's login is what controls who can view. For the
+images to load, the API must sign its image URLs (see above).
+
+The panel's older **API key** option still works, so existing dashboards keep
+working, but it is deprecated. It is saved in the dashboard JSON in plaintext,
+and every viewer's browser receives it. If you still use it:
 
 - Use a **dedicated, scoped, revocable viewer token** per consumer (a
   dashboard, a wallboard), never your upload token. The reference worker
   supports named viewer tokens that can be limited to specific sites, so a
   leaked dashboard costs one revocable entry.
 - Enable signed image URLs on the backend so the long-lived token never
-  appears in image URLs; the panel only sends the key to the API's own origin
-  and never to signed or third-party image URLs.
+  appears in image URLs. The panel sends the key only to the API's own origin,
+  never to signed or third-party image URLs.
 - Treat "can view this dashboard" as "holds this token".
 
-A keyless design, where a companion datasource plugin keeps the key in
-Grafana's encrypted storage, is planned but not built. The
+The
 [API document](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md)
 has the details.
 
 ## Requirements
 
 - Grafana 10.4.0 or later (`>=10.4.0`).
+- The app must stay enabled. It is enabled on install. Grafana treats an
+  app's panel and data source as disabled while the app is disabled.
 - For your own data: a server that implements the frames API (the included
-  reference worker, or your own), reachable from viewers' browsers.
+  reference worker, or your own). See
+  [Connect it to your own images](#connect-it-to-your-own-images) for what
+  needs to reach it.
+
+## Upgrading from the panel-only plugin
+
+Earlier versions were a standalone panel plugin with the same panel id,
+`savvycocoa1919-visualtimeline-panel`. The app ships that panel under the same
+id, so existing dashboards keep working without changes. Uninstall the old
+panel plugin when you install the app, so that only one copy of the panel id
+is installed.
 
 ## Contributing
 
