@@ -2126,6 +2126,119 @@ var VTCore = (() => {
     };
   }
 
+  // src/vt/grid/tile.ts
+  function buildTile(s, decl, model) {
+    const el = document.createElement("div");
+    const zone = zoneFor(decl, s.TZ, s.cfg.thumbTimes, s.PANEL_TT);
+    const inline = s.cfg.headerMode === "inline" || s.cfg.headerMode === "inline-gradient";
+    el.className = "tile" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
+    el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
+    attachZoneChip(zone, el);
+    const rec = {
+      decl,
+      model,
+      el,
+      shown: null,
+      zone,
+      tt: zone.tt,
+      img: el.querySelector("img"),
+      ts: el.querySelector(".t-ts"),
+      off: el.querySelector(".t-off")
+    };
+    el.addEventListener("click", (e) => {
+      if (rec.shown && rec.shownExpected) {
+        s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, null, rec.shownExpected, rec.tt);
+      } else if (rec.shown) {
+        s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, s.cfg.apiUrl, s.cfg.apiKey), null, rec.tt);
+      }
+    });
+    q(s.wrap, ".grid").appendChild(el);
+    return rec;
+  }
+  function lastFrame(rec) {
+    for (let i = rec.model.slots.length - 1; i >= 0; i--) {
+      if (rec.model.slots[i].frame) {
+        return rec.model.slots[i].frame;
+      }
+    }
+    return null;
+  }
+  function setShown(s, t) {
+    s.shownT = t;
+    if (s.cfg.onShown) {
+      s.cfg.onShown(t);
+    }
+    const zoneAt = t == null ? Math.min(s.P.to, Date.now()) : t;
+    for (const k of s.kiosks) {
+      const rec = s.tiles[k.id];
+      if (!rec) {
+        continue;
+      }
+      if (rec.zone.el) {
+        dressZoneChip(rec.zone, zoneAt);
+      }
+      const tt = rec.tt;
+      let frame = null, offMsg = null, pausedMsg = null, pausedSlot = null, expectedTs = null;
+      const la = rec.model.lastActive;
+      if (t == null) {
+        const tail = rec.model.slots.length ? rec.model.slots[rec.model.slots.length - 1] : null;
+        const tailPaused = tail && tail.paused;
+        frame = lastFrame(rec);
+        if (tailPaused) {
+          pausedSlot = tail;
+          pausedMsg = pauseInfo(tail).label + (frame ? " \u2014 last frame " + tt.time(frame.ts) + tt.sfx(frame.ts) : "");
+        } else if (!frame) {
+          offMsg = "no data in window";
+        } else if (s.LIVE && la && Date.now() - frame.ts > 2 * la.step) {
+          offMsg = "OFFLINE \u2014 last seen " + tt.time(frame.ts) + tt.sfx(frame.ts);
+        }
+      } else {
+        const slot = rec.model.slotAt(t);
+        if (slot && slot.paused) {
+          pausedSlot = slot;
+          pausedMsg = pauseInfo(slot).label;
+        } else {
+          frame = slot && slot.frame;
+          if (!frame) {
+            if (slot && slot.beyond) {
+              offMsg = "\u2014";
+            } else if (slot && slot.future) {
+              frame = ghostFor(rec.model.slots, slot);
+              if (frame) {
+                expectedTs = slot.ts;
+              } else {
+                offMsg = "EXPECTED \u2014 " + tt.short(slot.ts) + tt.sfx(slot.ts);
+              }
+            } else {
+              const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
+              let last = null;
+              for (let j = i; j >= 0; j--) {
+                if (rec.model.slots[j].frame) {
+                  last = rec.model.slots[j].frame;
+                  break;
+                }
+              }
+              offMsg = last ? "OFFLINE \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : "no data";
+            }
+          }
+        }
+      }
+      rec.el.classList.toggle("offline", !!offMsg);
+      clearPauseClasses(rec.el);
+      if (pausedMsg && !offMsg) {
+        rec.el.classList.add(...pauseInfo(pausedSlot).classes);
+      }
+      rec.off.textContent = offMsg || pausedMsg || "";
+      rec.el.classList.toggle("ghost", !!expectedTs);
+      rec.shown = frame;
+      rec.shownExpected = expectedTs;
+      if (frame && !offMsg && !pausedMsg) {
+        rec.img.src = frame.url;
+        rec.ts.textContent = (expectedTs ? "expected " + tt.short(expectedTs) + " \xB7 last " + tt.time(frame.ts) : tt.time(frame.ts)) + tt.sfx(frame.ts);
+      }
+    }
+  }
+
   // src/vt/grid/mount.ts
   function mountGrid(root, cfg) {
     injectStyles();
@@ -2157,117 +2270,6 @@ var VTCore = (() => {
       PANEL_TT: zoneTexts(TZ, TZ, false)
     };
     const { tiles, pv, PANEL_TT } = s;
-    function buildTile(decl, model) {
-      const el = document.createElement("div");
-      const zone = zoneFor(decl, TZ, cfg.thumbTimes, PANEL_TT);
-      const inline = cfg.headerMode === "inline" || cfg.headerMode === "inline-gradient";
-      el.className = "tile" + (inline ? " inline-head" : "") + (cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
-      el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
-      attachZoneChip(zone, el);
-      const rec = {
-        decl,
-        model,
-        el,
-        shown: null,
-        zone,
-        tt: zone.tt,
-        img: el.querySelector("img"),
-        ts: el.querySelector(".t-ts"),
-        off: el.querySelector(".t-off")
-      };
-      el.addEventListener("click", (e) => {
-        if (rec.shown && rec.shownExpected) {
-          pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, null, rec.shownExpected, rec.tt);
-        } else if (rec.shown) {
-          pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, cfg.apiUrl, cfg.apiKey), null, rec.tt);
-        }
-      });
-      q2(".grid").appendChild(el);
-      return rec;
-    }
-    function lastFrame(rec) {
-      for (let i = rec.model.slots.length - 1; i >= 0; i--) {
-        if (rec.model.slots[i].frame) {
-          return rec.model.slots[i].frame;
-        }
-      }
-      return null;
-    }
-    function setShown(t) {
-      s.shownT = t;
-      if (cfg.onShown) {
-        cfg.onShown(t);
-      }
-      const zoneAt = t == null ? Math.min(P.to, Date.now()) : t;
-      for (const k of s.kiosks) {
-        const rec = tiles[k.id];
-        if (!rec) {
-          continue;
-        }
-        if (rec.zone.el) {
-          dressZoneChip(rec.zone, zoneAt);
-        }
-        const tt = rec.tt;
-        let frame = null, offMsg = null, pausedMsg = null, pausedSlot = null, expectedTs = null;
-        const la = rec.model.lastActive;
-        if (t == null) {
-          const tail = rec.model.slots.length ? rec.model.slots[rec.model.slots.length - 1] : null;
-          const tailPaused = tail && tail.paused;
-          frame = lastFrame(rec);
-          if (tailPaused) {
-            pausedSlot = tail;
-            pausedMsg = pauseInfo(tail).label + (frame ? " \u2014 last frame " + tt.time(frame.ts) + tt.sfx(frame.ts) : "");
-          } else if (!frame) {
-            offMsg = "no data in window";
-          } else if (LIVE && la && Date.now() - frame.ts > 2 * la.step) {
-            offMsg = "OFFLINE \u2014 last seen " + tt.time(frame.ts) + tt.sfx(frame.ts);
-          }
-        } else {
-          const slot = rec.model.slotAt(t);
-          if (slot && slot.paused) {
-            pausedSlot = slot;
-            pausedMsg = pauseInfo(slot).label;
-          } else {
-            frame = slot && slot.frame;
-            if (!frame) {
-              if (slot && slot.beyond) {
-                offMsg = "\u2014";
-              } else if (slot && slot.future) {
-                frame = ghostFor(rec.model.slots, slot);
-                if (frame) {
-                  expectedTs = slot.ts;
-                } else {
-                  offMsg = "EXPECTED \u2014 " + tt.short(slot.ts) + tt.sfx(slot.ts);
-                }
-              } else {
-                const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
-                let last = null;
-                for (let j = i; j >= 0; j--) {
-                  if (rec.model.slots[j].frame) {
-                    last = rec.model.slots[j].frame;
-                    break;
-                  }
-                }
-                offMsg = last ? "OFFLINE \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : "no data";
-              }
-            }
-          }
-        }
-        rec.el.classList.toggle("offline", !!offMsg);
-        clearPauseClasses(rec.el);
-        if (pausedMsg && !offMsg) {
-          rec.el.classList.add(...pauseInfo(pausedSlot).classes);
-        }
-        rec.off.textContent = offMsg || pausedMsg || "";
-        rec.el.classList.toggle("ghost", !!expectedTs);
-        rec.shown = frame;
-        rec.shownExpected = expectedTs;
-        if (frame && !offMsg && !pausedMsg) {
-          rec.img.src = frame.url;
-          rec.ts.textContent = (expectedTs ? "expected " + tt.short(expectedTs) + " \xB7 last " + tt.time(frame.ts) : tt.time(frame.ts)) + tt.sfx(frame.ts);
-        }
-      }
-    }
     (async function boot() {
       try {
         s.kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
@@ -2300,10 +2302,10 @@ var VTCore = (() => {
         if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {
           continue;
         }
-        tiles[k.id] = buildTile(k, model);
+        tiles[k.id] = buildTile(s, k, model);
       }
       s.kiosks = s.kiosks.filter((k) => tiles[k.id]);
-      setShown(null);
+      setShown(s, null);
       await revealWrapper(root, wrap);
       if (LIVE) {
         s.pollTimer = setInterval(async () => {
@@ -2329,7 +2331,7 @@ var VTCore = (() => {
             }
           }
           if (s.shownT == null) {
-            setShown(null);
+            setShown(s, null);
           }
         }, 1e4);
       }
@@ -2337,12 +2339,12 @@ var VTCore = (() => {
     return {
       setExternalCursor(t) {
         if (!s.destroyed) {
-          setShown(Math.max(P.from, Math.min(P.to, t)));
+          setShown(s, Math.max(P.from, Math.min(P.to, t)));
         }
       },
       clearExternal() {
         if (!s.destroyed) {
-          setShown(null);
+          setShown(s, null);
         }
       },
       destroy() {
