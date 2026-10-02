@@ -9,6 +9,28 @@
   a goodbye frame at a pause's start) is kept. An active era too short to
   contain a tick gets one slot at its start, spanning it, showing the frame
   it sent even when that frame snapped just outside it.
+- Per-source time zones (#68). A source can declare its zone with the new
+  optional `X-Timezone: <IANA name>` header on `/upload`. The reference
+  worker validates it (an invalid name is a `400` with a clear message),
+  stores it with the source like `X-Location`, and returns it as `timezone`
+  in `/sources`. Sources without one behave exactly as before.
+- The timeline card and grid tile header of a source with a declared zone
+  shows its city and its offset from the dashboard zone, e.g.
+  `Sydney · +3h` or `Kathmandu · +5h45m` (just the city when the clocks
+  agree). The offset is taken at the cursor, so it follows DST changes.
+- New panel option **Thumbnail times**: Dashboard time (default, as
+  before) or Source local time. With Source local time a zoned source's
+  thumbnail timestamps, magnifier and preview captions and "last
+  seen"/"expected" messages use its own zone, marked with the offset
+  (`07:31:00 (+3h)`). The axis, crosshair and annotation tooltips stay in
+  the dashboard zone. Core: `cfg.thumbTimes` (`'panel'`/`'source'`);
+  standalone app and embed: `?thumbs=source`.
+- Demo data: source-3 is in Australia/Sydney and source-5 in Asia/Kathmandu,
+  and their frames show their own local clock, as a real screen would. The
+  simulator (`web/sim.html`) uploads them the same way.
+- Inline headers clip at exactly two lines: a chip that wraps to a third
+  line no longer shows as a sliver. A narrow header now ellipsizes the site
+  chip instead of cutting it off.
 - Click-in preview: the hi-res frame now loads behind a Visual Timeline API
   data source too. Its URL is derived from the lo frame's own URL (same base
   and signature, per the `/frame/{variant}/…` contract) instead of the

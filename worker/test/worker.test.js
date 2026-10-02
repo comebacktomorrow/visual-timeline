@@ -102,3 +102,96 @@ test('signed image URLs authorize their own source and nothing else', async () =
   const otherSource = url.pathname.replace('/source-1/', '/source-2/');
   assert.equal((await call(otherSource + url.search, env)).status, 401, 'signature is scoped to its source');
 });
+
+/* ---------------- X-Timezone (#68) ---------------- */
+
+/* an R2 that keeps what is put: index.json round-trips with etags, so an
+ * upload's registration can be read back through /sources */
+function storeR2() {
+  const objs = new Map();
+  let n = 0;
+  const obj = (key) => {
+    const o = objs.get(key);
+    return o && { body: o.body, etag: o.etag, httpEtag: `"${o.etag}"`, text: async () => o.body, json: async () => JSON.parse(o.body) };
+  };
+  return {
+    objs,
+    async get(key) { return obj(key) || null; },
+    async put(key, body, opts = {}) {
+      const cur = objs.get(key);
+      const want = opts.onlyIf && opts.onlyIf.etagMatches;
+      if (want && (!cur || cur.etag !== want)) {return null;}
+      objs.set(key, { body: typeof body === 'string' ? body : '<jpeg>', etag: 'e' + ++n });
+      return {};
+    },
+    async list() { return { objects: [], truncated: false }; },
+  };
+}
+const tzEnv = () => ({ FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'site-a': 'tok-a' }) });
+let tzSeq = 0;
+function upload(env, extra = {}) {
+  // a fresh source per call: the worker memoizes registrations per isolate
+  const source = extra.source || `tz-src-${++tzSeq}`;
+  const headers = {
+    authorization: 'Bearer tok-a', 'x-site': 'site-a', 'x-source': source, 'x-cadence': '60',
+    'content-type': 'image/jpeg', 'content-length': '4', ...extra.headers,
+  };
+  return { source, res: call('/upload', env, { method: 'POST', headers, body: 'jpeg' }) };
+}
+const sourceOf = async (env, id) => (await (await call('/sources', env)).json()).find((s) => s.id === id);
+
+test('X-Timezone is stored with the source and returned by /sources', async () => {
+  const env = tzEnv();
+  const { source, res } = upload(env, { headers: { 'x-timezone': 'Australia/Sydney' } });
+  assert.equal((await res).status, 200);
+  assert.equal((await sourceOf(env, source)).timezone, 'Australia/Sydney');
+});
+
+test('X-Timezone matches case-insensitively and keeps the canonical spelling; UTC spellings are UTC', async () => {
+  const env = tzEnv();
+  const a = upload(env, { headers: { 'x-timezone': 'america/new_york' } });
+  assert.equal((await a.res).status, 200);
+  assert.equal((await sourceOf(env, a.source)).timezone, 'America/New_York');
+  for (const utc of ['UTC', 'utc', 'Etc/UTC']) {
+    const u = upload(env, { headers: { 'x-timezone': utc } });
+    assert.equal((await u.res).status, 200, utc);
+    assert.equal((await sourceOf(env, u.source)).timezone, 'UTC', utc);
+  }
+  // a current IANA name that a runtime's list may spell the old way (Calcutta)
+  const k = upload(env, { headers: { 'x-timezone': 'Asia/Kolkata' } });
+  assert.equal((await k.res).status, 200);
+  assert.equal((await sourceOf(env, k.source)).timezone, 'Asia/Kolkata');
+});
+
+test('an invalid X-Timezone is a 400 that says what is expected, and registers nothing', async () => {
+  const env = tzEnv();
+  for (const bad of ['Mars/Olympus_Mons', 'EST', '+05:00', 'Sydney', 'x'.repeat(65), 'Europe/<b>']) {
+    const { source, res } = upload(env, { headers: { 'x-timezone': bad } });
+    const r = await res;
+    assert.equal(r.status, 400, bad);
+    assert.match((await r.json()).error, /X-Timezone must be an IANA time zone name/);
+    assert.equal(await sourceOf(env, source), undefined, 'nothing registered for ' + bad);
+  }
+});
+
+test('without X-Timezone a source has no timezone field, and a later upload without it keeps one', async () => {
+  const env = tzEnv();
+  const plain = upload(env);
+  assert.equal((await plain.res).status, 200);
+  const s = await sourceOf(env, plain.source);
+  assert.ok(s, 'registered');
+  assert.equal('timezone' in s, false);
+
+  const zoned = upload(env, { headers: { 'x-timezone': 'Asia/Kathmandu' } });
+  assert.equal((await zoned.res).status, 200);
+  const again = upload(env, { source: zoned.source, headers: { 'x-cadence': '120' } });
+  assert.equal((await again.res).status, 200);
+  const z = await sourceOf(env, zoned.source);
+  assert.equal(z.cadence, 120000);
+  assert.equal(z.timezone, 'Asia/Kathmandu');
+});
+
+test('X-Timezone is an allowed CORS request header', async () => {
+  const res = await call('/upload', tzEnv(), { method: 'OPTIONS' });
+  assert.match(res.headers.get('access-control-allow-headers'), /x-timezone/);
+});

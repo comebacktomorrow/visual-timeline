@@ -79,6 +79,8 @@ const key = qs.get('k') || '';
     headerMode: ['inline', 'inline-gradient'].includes(qs.get('header')) ? qs.get('header') : 'bar',
     // ?tz=<IANA name>|utc; the browser's zone without it
     timeZone: qs.get('tz') || undefined,
+    // ?thumbs=source: a source's own times in its declared zone
+    thumbTimes: qs.get('thumbs') === 'source' ? 'source' : 'panel',
   });
 })();
 </script>
