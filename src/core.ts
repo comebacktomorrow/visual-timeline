@@ -784,7 +784,8 @@ export async function buildSourceModel(decl, P, backend, budgetSlots) {
       // tick that just passed has its frame IN FLIGHT (capture + upload +
       // the backend's response cache), and calling it offline for those
       // seconds painted a red live edge that healed on the next poll.
-      slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step > nowMs });
+      // Pending through ts + step itself, offline after: missedHeartbeat's rule.
+      slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowMs });
     }
   }
 

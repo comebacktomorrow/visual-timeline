@@ -839,7 +839,7 @@ var VTCore = (() => {
       const nowMs = Date.now();
       for (let i = 0; i < n; i++) {
         const ts = start + i * step;
-        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step > nowMs });
+        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowMs });
       }
     }
     const nowAtBuild = Date.now();
