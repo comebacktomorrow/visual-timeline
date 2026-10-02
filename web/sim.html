@@ -24,15 +24,16 @@
 /* Simulates the kiosk agents: renders mock signage frames on canvas and
  * uploads them with the real headers (X-Site/X-Source/X-Cadence/X-Variant/
  * X-Timestamp + bearer token). source-2 has an outage in the backfill window;
- * source-1 also uploads a hi variant at a slower cadence. Same site/source
- * layout as the panel's built-in demo data. */
+ * source-1 also uploads a hi variant at a slower cadence; source-3 and
+ * source-5 declare a time zone (X-Timezone) and draw their clock in it. Same
+ * site/source layout as the panel's built-in demo data. */
 const TOKENS = { 'site-a': 'dev-token', 'site-b': 'dev-token' };
 const KIOSKS = [
   { id: 'source-1', site: 'site-a', cadence: 60,  dims: [384, 216], hue: 205, hiCadence: 300, hiDims: [768, 432] },
   { id: 'source-2', site: 'site-a', cadence: 60,  dims: [384, 216], hue: 275, outage: [0.35, 0.55] },
-  { id: 'source-3', site: 'site-a', cadence: 120, dims: [288, 216], hue: 25 },
+  { id: 'source-3', site: 'site-a', cadence: 120, dims: [288, 216], hue: 25, timezone: 'Australia/Sydney' },
   { id: 'source-4', site: 'site-b', cadence: 60,  dims: [384, 216], hue: 130 },
-  { id: 'source-5', site: 'site-b', cadence: 30,  dims: [216, 384], hue: 340 },
+  { id: 'source-5', site: 'site-b', cadence: 30,  dims: [216, 384], hue: 340, timezone: 'Asia/Kathmandu' },
 ];
 const BACKFILL_MS = 60 * 60 * 1000;
 
@@ -44,7 +45,7 @@ function log(msg, cls) {
   logEl.prepend(line);
 }
 
-const fmtTime = ts => new Date(ts).toLocaleTimeString('en-AU', { hour12: false });
+const fmtTime = (ts, timeZone) => new Date(ts).toLocaleTimeString('en-AU', { hour12: false, timeZone });
 
 function renderFrame(k, ts, dims) {
   const [w, h] = dims;
@@ -58,7 +59,7 @@ function renderFrame(k, ts, dims) {
   g.font = `bold ${Math.round(Math.min(w * 0.16, h * 0.18))}px monospace`;
   g.fillStyle = `hsl(${k.hue} 70% 72%)`;
   g.textAlign = 'center';
-  g.fillText(fmtTime(ts), w / 2, h * 0.55);
+  g.fillText(fmtTime(ts, k.timezone), w / 2, h * 0.55);   // a screen shows its own local time
   g.textAlign = 'left';
   const phase = (ts / (k.cadence * 1000)) % 20 / 20;
   g.fillStyle = `hsl(${k.hue} 80% 55%)`;
@@ -79,6 +80,7 @@ async function upload(k, ts, variant) {
       'x-cadence': String(cadence),
       'x-variant': variant,
       'x-timestamp': String(ts),
+      ...(k.timezone ? { 'x-timezone': k.timezone } : {}),
     },
     body: blob,
   });
