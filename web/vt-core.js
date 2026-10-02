@@ -1375,30 +1375,6 @@ var VTCore = (() => {
     };
   }
 
-  // src/vt/ui/ghost.ts
-  function dressGhost(slots, sl) {
-    if (!sl.el) {
-      return;
-    }
-    const g = sl.future && !sl.frame ? ghostFor(slots, sl) : null;
-    let img = sl.el.querySelector("img.ghost");
-    if (!g) {
-      if (img) {
-        img.remove();
-      }
-      return;
-    }
-    if (!img) {
-      img = document.createElement("img");
-      img.className = "ghost";
-      img.alt = "";
-      sl.el.appendChild(img);
-    }
-    if (img.src !== g.url) {
-      img.src = g.url;
-    }
-  }
-
   // src/vt/ui/wrapper.ts
   function makeWrapper(root) {
     const wrap = document.createElement("div");
@@ -1642,6 +1618,30 @@ var VTCore = (() => {
       if (last && last.beyond) {
         ruleBeyond(s, last);
       }
+    }
+  }
+
+  // src/vt/ui/ghost.ts
+  function dressGhost(slots, sl) {
+    if (!sl.el) {
+      return;
+    }
+    const g = sl.future && !sl.frame ? ghostFor(slots, sl) : null;
+    let img = sl.el.querySelector("img.ghost");
+    if (!g) {
+      if (img) {
+        img.remove();
+      }
+      return;
+    }
+    if (!img) {
+      img = document.createElement("img");
+      img.className = "ghost";
+      img.alt = "";
+      sl.el.appendChild(img);
+    }
+    if (img.src !== g.url) {
+      img.src = g.url;
     }
   }
 
@@ -1906,6 +1906,121 @@ var VTCore = (() => {
     }
   }
 
+  // src/vt/timeline/poll.ts
+  function startPoll(s) {
+    const steps = s.kiosks.map((k) => s.cards[k.id].model.lastActive && s.cards[k.id].model.lastActive.step).filter(Boolean);
+    const minStep = steps.length ? Math.min.apply(null, steps) : 6e4;
+    s.pollTimer = setInterval(async () => {
+      for (const k of s.kiosks) {
+        const c = s.cards[k.id];
+        const mSlots = c.model.slots;
+        const filler = mSlots.length && mSlots[mSlots.length - 1].beyond ? mSlots[mSlots.length - 1] : null;
+        if (filler) {
+          const nowP = Date.now();
+          const prev = mSlots.length > 1 ? mSlots[mSlots.length - 2] : null;
+          if (prev && prev.paused) {
+            const grow = Math.min(nowP, filler.ts + filler.span) - filler.ts;
+            if (grow > 0) {
+              prev.span += grow;
+              filler.ts += grow;
+              filler.span -= grow;
+              if (prev.el) {
+                prev.el.style.flexGrow = String(prev.span / 1e3);
+              }
+              if (filler.span <= 0) {
+                if (filler.el) {
+                  filler.el.remove();
+                }
+                mSlots.pop();
+              } else {
+                if (filler.el) {
+                  filler.el.style.flexGrow = String(filler.span / 1e3);
+                }
+                ruleBeyond(s, filler);
+              }
+            }
+          } else if (prev && prev.step) {
+            let nextTs = prev.ts + prev.step;
+            while (mSlots[mSlots.length - 1] && mSlots[mSlots.length - 1].beyond && nextTs <= nowP) {
+              const f = mSlots[mSlots.length - 1];
+              const sl = { ts: nextTs, span: prev.step, frame: null, cadence: prev.cadence, step: prev.step, future: true };
+              const el = document.createElement("div");
+              el.className = "slot future";
+              el.style.flexGrow = String(sl.span / 1e3);
+              if (f.el && f.el.parentNode) {
+                f.el.parentNode.insertBefore(el, f.el);
+              }
+              sl.el = el;
+              mSlots.splice(mSlots.length - 1, 0, sl);
+              f.span -= sl.span;
+              f.ts += sl.span;
+              if (f.span <= 0) {
+                if (f.el) {
+                  f.el.remove();
+                }
+                mSlots.pop();
+              } else {
+                if (f.el) {
+                  f.el.style.flexGrow = String(f.span / 1e3);
+                }
+                ruleBeyond(s, f);
+              }
+              nextTs += prev.step;
+            }
+          }
+        }
+        const la = c.model.lastActive;
+        if (!la) {
+          continue;
+        }
+        let lastTs = s.P.from;
+        for (let i = c.model.slots.length - 1; i >= 0; i--) {
+          if (c.model.slots[i].frame) {
+            lastTs = c.model.slots[i].ts;
+            break;
+          }
+        }
+        const fresh = await s.backend.frames(k.site, k.id, lastTs + 1, Date.now(), la.step);
+        if (s.destroyed) {
+          return;
+        }
+        for (const f of fresh) {
+          const slot = c.model.slotAt(f.ts);
+          if (!slot || slot.paused || slot.beyond) {
+            continue;
+          }
+          if (slot.frame && f.ts <= slot.frame.ts) {
+            continue;
+          }
+          slot.frame = f;
+          slot.future = false;
+          slot.el.classList.remove("gap", "future");
+          let img = slot.el.querySelector("img");
+          if (!img) {
+            img = document.createElement("img");
+            slot.el.appendChild(img);
+          }
+          img.classList.remove("ghost");
+          img.src = f.url;
+          img.alt = k.id + " " + c.tt.time(f.ts) + c.tt.sfx(f.ts);
+        }
+        const overdue = Date.now();
+        for (const sl of c.model.slots) {
+          if (missedHeartbeat(sl, overdue)) {
+            sl.future = false;
+            if (sl.el) {
+              sl.el.classList.remove("future");
+              sl.el.classList.add("gap");
+            }
+          }
+        }
+        for (const sl of c.model.slots) {
+          dressGhost(c.model.slots, sl);
+        }
+      }
+    }, Math.min(minStep, 1e4));
+  }
+
   // src/vt/timeline/mount.ts
   function mountTimeline(root, cfg) {
     injectStyles();
@@ -1989,117 +2104,7 @@ var VTCore = (() => {
       await revealWrapper(root, wrap);
       dressAll(s, 20);
       if (LIVE) {
-        const steps = s.kiosks.map((k) => cards[k.id].model.lastActive && cards[k.id].model.lastActive.step).filter(Boolean);
-        const minStep = steps.length ? Math.min.apply(null, steps) : 6e4;
-        s.pollTimer = setInterval(async () => {
-          for (const k of s.kiosks) {
-            const c = cards[k.id];
-            const mSlots = c.model.slots;
-            const filler = mSlots.length && mSlots[mSlots.length - 1].beyond ? mSlots[mSlots.length - 1] : null;
-            if (filler) {
-              const nowP = Date.now();
-              const prev = mSlots.length > 1 ? mSlots[mSlots.length - 2] : null;
-              if (prev && prev.paused) {
-                const grow = Math.min(nowP, filler.ts + filler.span) - filler.ts;
-                if (grow > 0) {
-                  prev.span += grow;
-                  filler.ts += grow;
-                  filler.span -= grow;
-                  if (prev.el) {
-                    prev.el.style.flexGrow = String(prev.span / 1e3);
-                  }
-                  if (filler.span <= 0) {
-                    if (filler.el) {
-                      filler.el.remove();
-                    }
-                    mSlots.pop();
-                  } else {
-                    if (filler.el) {
-                      filler.el.style.flexGrow = String(filler.span / 1e3);
-                    }
-                    ruleBeyond(s, filler);
-                  }
-                }
-              } else if (prev && prev.step) {
-                let nextTs = prev.ts + prev.step;
-                while (mSlots[mSlots.length - 1] && mSlots[mSlots.length - 1].beyond && nextTs <= nowP) {
-                  const f = mSlots[mSlots.length - 1];
-                  const sl = { ts: nextTs, span: prev.step, frame: null, cadence: prev.cadence, step: prev.step, future: true };
-                  const el = document.createElement("div");
-                  el.className = "slot future";
-                  el.style.flexGrow = String(sl.span / 1e3);
-                  if (f.el && f.el.parentNode) {
-                    f.el.parentNode.insertBefore(el, f.el);
-                  }
-                  sl.el = el;
-                  mSlots.splice(mSlots.length - 1, 0, sl);
-                  f.span -= sl.span;
-                  f.ts += sl.span;
-                  if (f.span <= 0) {
-                    if (f.el) {
-                      f.el.remove();
-                    }
-                    mSlots.pop();
-                  } else {
-                    if (f.el) {
-                      f.el.style.flexGrow = String(f.span / 1e3);
-                    }
-                    ruleBeyond(s, f);
-                  }
-                  nextTs += prev.step;
-                }
-              }
-            }
-            const la = c.model.lastActive;
-            if (!la) {
-              continue;
-            }
-            let lastTs = P.from;
-            for (let i = c.model.slots.length - 1; i >= 0; i--) {
-              if (c.model.slots[i].frame) {
-                lastTs = c.model.slots[i].ts;
-                break;
-              }
-            }
-            const fresh = await backend.frames(k.site, k.id, lastTs + 1, Date.now(), la.step);
-            if (s.destroyed) {
-              return;
-            }
-            for (const f of fresh) {
-              const slot = c.model.slotAt(f.ts);
-              if (!slot || slot.paused || slot.beyond) {
-                continue;
-              }
-              if (slot.frame && f.ts <= slot.frame.ts) {
-                continue;
-              }
-              slot.frame = f;
-              slot.future = false;
-              slot.el.classList.remove("gap", "future");
-              let img = slot.el.querySelector("img");
-              if (!img) {
-                img = document.createElement("img");
-                slot.el.appendChild(img);
-              }
-              img.classList.remove("ghost");
-              img.src = f.url;
-              img.alt = k.id + " " + c.tt.time(f.ts) + c.tt.sfx(f.ts);
-            }
-            const overdue = Date.now();
-            for (const sl of c.model.slots) {
-              if (missedHeartbeat(sl, overdue)) {
-                sl.future = false;
-                if (sl.el) {
-                  sl.el.classList.remove("future");
-                  sl.el.classList.add("gap");
-                }
-              }
-            }
-            for (const sl of c.model.slots) {
-              dressGhost(c.model.slots, sl);
-            }
-          }
-        }, Math.min(minStep, 1e4));
+        startPoll(s);
       }
     })();
     return {
