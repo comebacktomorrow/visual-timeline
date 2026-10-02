@@ -24,6 +24,17 @@
   closures unchanged: `slotClass` (a slot's state class), `missedHeartbeat`
   (pending → offline in the live poll) and `axisTicks` (the tick list the
   axis draws). No behaviour changes.
+- The panel follows Grafana's light and dark themes (#61). Its palette
+  used to be hard-coded dark, so on a light dashboard it showed as a dark
+  block. Surfaces, text, borders and the live/offline/accent colours now
+  come from the active theme and update when the theme is switched. On a
+  light theme the offline hatching, pause bands and their reason colours,
+  the pending-slot pulse and the inline header's gradient are derived
+  from the light theme's own colours. The annotation tooltip and the
+  click-in preview follow the panel that opened them. On a dark theme the
+  panel looks as before. The standalone app and the embed keep their
+  dark palette. A page that hosts the core can restyle it by setting
+  the `--ktl-*` custom properties on the element it mounts into.
 
 ## 0.9.23 (2026-10-01)
 

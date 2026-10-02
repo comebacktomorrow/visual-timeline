@@ -1,6 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { PanelPlugin, PanelProps, DataHoverEvent, DataHoverClearEvent } from '@grafana/data';
+import { useTheme2 } from '@grafana/ui';
 import { mountTimeline, mountGrid } from './core';
+import { themeVars } from './theme';
 
 interface VisualTimelineOptions {
   apiUrl?: string;
@@ -68,6 +70,10 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const ref = useRef<HTMLDivElement>(null);
   const instRef = useRef<MountInstance | null>(null);
   const localHoverRef = useRef(false);
+  // the core's palette, from the active theme: set inline on the mount
+  // root, so a live theme switch re-renders the vars without a remount
+  const theme = useTheme2();
+  const palette = useMemo(() => themeVars(theme), [theme]);
 
   const from = props.timeRange.from.valueOf();
   const to = props.timeRange.to.valueOf();
@@ -161,7 +167,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
 
   return React.createElement('div', {
     ref,
-    style: { width: '100%', height: '100%', overflow: 'hidden' },
+    style: { width: '100%', height: '100%', overflow: 'hidden', ...palette } as React.CSSProperties,
   });
 };
 
