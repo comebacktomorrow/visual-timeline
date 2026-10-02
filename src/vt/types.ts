@@ -76,6 +76,18 @@ export interface RawAnnotation {
   color?: string;
   source?: string | null;
 }
+/* a normalized annotation (normAnnotations): timeEnd set only for a region;
+ * source / siteScope from a source:/kiosk: or site: tag (or `source`) */
+export interface Annotation {
+  ts: number;
+  timeEnd: number | null;
+  title: string;
+  text: string;
+  tags: string[];
+  color: string;
+  source: string | null;
+  siteScope: string | null;
+}
 
 /* the injected transport (Grafana: the data source proxy) and what it
  * resolves to: the parts of a fetch Response the API backend uses */

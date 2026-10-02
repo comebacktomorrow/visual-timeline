@@ -1198,7 +1198,7 @@ var VTCore = (() => {
     z.el.title = "Source time zone: " + z.texts.zone + (o ? " (" + o + " from panel time)" : " (same as panel time)");
   }
 
-  // src/core.ts
+  // src/vt/ui/annotations.ts
   function normAnnotations(raw, P) {
     const out = [];
     for (const a of raw || []) {
@@ -1330,6 +1330,8 @@ var VTCore = (() => {
       close
     };
   }
+
+  // src/core.ts
   var TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
   var TICK_LABEL_GAP = 14;
   var measureCtx;
