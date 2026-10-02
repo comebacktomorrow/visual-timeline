@@ -12,7 +12,8 @@
     "e2e": "playwright test",
     "server": "docker compose up --build",
     "sign": "sign-plugin",
-    "build:web": "esbuild src/core.ts --bundle --format=iife --global-name=VTCore --outfile=web/vt-core.js"
+    "build:web": "esbuild src/core.ts --bundle --format=iife --global-name=VTCore --outfile=web/vt-core.js",
+    "bench:scrub": "npm run build:web && node perf/scrub-bench.mjs"
   },
   "author": "Xzibit",
   "license": "Apache-2.0",
