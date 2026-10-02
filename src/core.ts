@@ -872,15 +872,18 @@ export function parseTagFilter(expr) {
   const out = {};
   for (const part of String(expr).split(',')) {
     const i = part.indexOf('=');
-    if (i > 0) {out[part.slice(0, i).trim().toLowerCase()] = part.slice(i + 1).trim().toLowerCase();}
+    const key = i >= 0 ? part.slice(0, i).trim().toLowerCase() : '';
+    // blank keys are dropped AFTER trimming: " =x" (as typed after ", ") too
+    if (key) {out[key] = part.slice(i + 1).trim().toLowerCase();}
   }
   return Object.keys(out).length ? out : null;
 }
 export function matchesTags(tags, filter) {
   if (!filter) {return true;}
-  if (!tags) {return false;}
+  // no tags object reads like an empty one: a missing tag is '' either way
+  const t = tags || {};
   for (const k in filter) {
-    if (String(tags[k] == null ? '' : tags[k]).toLowerCase() !== filter[k]) {return false;}
+    if (String(t[k] == null ? '' : t[k]).toLowerCase() !== filter[k]) {return false;}
   }
   return true;
 }

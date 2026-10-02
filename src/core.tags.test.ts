@@ -1,7 +1,7 @@
 import { matchesTags, parseTagFilter } from './core';
 
 /* Panel-side tag filtering ("env=prod, room=lobby" must ALL match).
- * Pins CURRENT behaviour (safety net for #64). */
+ * Pins current behaviour (safety net for #64), with the #65 fixes. */
 
 describe('parseTagFilter', () => {
   test('no filter', () => {
@@ -20,13 +20,13 @@ describe('parseTagFilter', () => {
     expect(parseTagFilter('lobby,=x, ,')).toBeNull();
   });
 
-  test('a blank key after whitespace becomes an empty-key pair that no source matches', () => {
-    // NOTE: current behaviour; looks wrong because the "no key" check runs
-    // before trimming: "=x" is ignored, but " =x" (as typed after ", ")
-    // yields the key "", and that pair then rejects every source.
+  test('a blank key is ignored after trimming too, as typed after ", " (#65 regression)', () => {
+    // used to yield the key "" (the no-key check ran before trimming), and
+    // that pair then rejected every source
     const filter = parseTagFilter('env=prod, =x');
-    expect(filter).toEqual({ env: 'prod', '': 'x' });
-    expect(matchesTags({ env: 'prod' }, filter)).toBe(false);
+    expect(filter).toEqual({ env: 'prod' });
+    expect(matchesTags({ env: 'prod' }, filter)).toBe(true);
+    expect(parseTagFilter(' =x,\t= y')).toBeNull();
   });
 
   test('the value is everything after the first "="', () => {
@@ -72,12 +72,13 @@ describe('matchesTags', () => {
     expect(matchesTags(undefined, parseTagFilter('env=prod'))).toBe(false);
   });
 
-  test('an empty-value filter matches a missing tag only when the source has a tags object', () => {
-    // NOTE: current behaviour; looks inconsistent because "env=" matches a
-    // source whose tags lack `env` ({}), but not a source with no tags at all.
+  test('an empty-value filter matches a missing tag, with or without a tags object', () => {
+    // #65: "env=" used to match a source whose tags lack `env` ({}), but not
+    // a source with no tags object at all; a missing tag is '' either way
     const filter = parseTagFilter('env=');
     expect(matchesTags({}, filter)).toBe(true);
     expect(matchesTags({ room: 'lobby' }, filter)).toBe(true);
-    expect(matchesTags(undefined, filter)).toBe(false);
+    expect(matchesTags(undefined, filter)).toBe(true);
+    expect(matchesTags({ env: 'prod' }, filter)).toBe(false);
   });
 });
