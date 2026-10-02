@@ -54,10 +54,14 @@ test('the config page saves the API URL and keeps the token secret', async ({ cr
   await expect(page.locator('input[value="typed-in-the-ui"]')).toHaveCount(0);
 });
 
-test('Save & test without an API URL explains what is missing', async ({ createDataSourceConfigPage, page }) => {
+test('Save & test without an API URL explains what is missing', async ({
+  createDataSourceConfigPage,
+  selectors,
+  page,
+}) => {
   const configPage = await createDataSourceConfigPage({ type: DS_TYPE });
   await expect(page.getByTestId('vt-datasource-config')).toBeVisible();
-  // no request is made, so wait for the save only
-  await configPage.saveAndTest({ path: `/api/datasources/uid/${configPage.datasource.uid}` });
+  // the check fails before any request, so there is no response to wait for
+  await configPage.getByGrafanaSelector(selectors.pages.DataSource.saveAndTest).click();
   await expect(configPage).toHaveAlert('error', { hasText: 'Set the API URL' });
 });
