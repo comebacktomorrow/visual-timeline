@@ -131,6 +131,22 @@ span as offline.
 The frame image. Served with `Cache-Control: public, max-age=31536000,
 immutable` + ETag. Missing frame → 404 (that's a gap, render it as one).
 
+Clients build **hi-variant URLs** themselves for the click-in preview, from
+the lo frame URL that `/frames` returned. They keep everything before
+`/frame/`, swap in `/frame/hi/{site}/{source}/{ts}.jpg` (site and source
+URL-encoded, `ts` snapped to the source's `hiCadence`) and keep the lo URL's
+query string. Only when a lo URL has no `/frame/` path do they fall back to
+the API's base URL (adding `?k=` for a viewer key). So a backend that wants
+hi previews, including behind the Grafana data source where clients have no
+base URL, must:
+
+- return image URLs whose path ends in `/frame/{variant}/{site}/{source}/{ts}.jpg`;
+- serve the hi variant under the same base;
+- accept the lo URL's query (its signature) for the hi variant too.
+
+A backend that returns arbitrary image URLs (presigned object-store URLs,
+say) still works; it just gets no hi-res preview.
+
 ## Write auth: adding a site (reference worker)
 
 `UPLOAD_TOKENS` is **one secret holding the whole map**, `{site: token}` —

@@ -35,23 +35,45 @@ default-private reads (viewer token + signed expiring image URLs — see
 R2/Workers free tier — but the panel binds to the API contract, not to
 this backend; implement `docs/API.md` with anything.
 
+## Standalone app and embed: URL parameters
+
+`web/app.html` keeps its whole state in the URL, so a view is a shareable
+link. `web/index.html` (the embed) takes the same parameters where they apply;
+it always shows the timeline.
+
+| Parameter                                        | App | Embed | Meaning                                                                                                              |
+| ------------------------------------------------ | --- | ----- | -------------------------------------------------------------------------------------------------------------------- |
+| `site` (or Grafana-style `var-site`, repeatable) | ✓   | ✓     | sites to show; comma-separated or repeated                                                                           |
+| `source` (alias `kiosk`, or `var-kiosk`)         |     | ✓     | sources to show                                                                                                      |
+| `from`, `to`                                     | ✓   | ✓     | the window: epoch ms or Grafana-style relative times (`now-6h`, `now`). Default: the last hour                       |
+| `mode`                                           | ✓   |       | `timeline`, `grid` or `both` (default)                                                                               |
+| `fit`                                            | ✓   | ✓     | `fit` (default, letterbox) or `fill` (crop)                                                                          |
+| `header`                                         | ✓   | ✓     | `bar` (default), `inline` or `inline-gradient`                                                                       |
+| `tags`                                           | ✓   | ✓     | tag filter, e.g. `env=prod,room=lobby`                                                                               |
+| `hideEmpty`                                      | ✓   | ✓     | `1` hides sources with no frames in the window                                                                       |
+| `annLanes`                                       | ✓   | ✓     | `shared` (default) or `per-source`                                                                                   |
+| `tz`                                             | ✓   | ✓     | show every time in this zone: an IANA name or `utc`. Default: the browser's zone                                     |
+| `thumbs`                                         | ✓   | ✓     | `source` shows a source's own times in its declared zone (see `X-Timezone` in `docs/API.md`)                         |
+| `k`                                              | ✓   | ✓     | viewer key, for an API with read auth. It ends up in browser history, so prefer signed image URLs and a scoped token |
+| `backend`                                        | ✓   | ✓     | `mock` uses the built-in demo data instead of an API                                                                 |
+
 ## Repository layout
 
-| Path                         | What                                                                            |
-| ---------------------------- | ------------------------------------------------------------------------------- |
-| `src/`                       | Grafana app plugin source (create-plugin scaffold; `npm run build` → `dist/`): `plugin.json` + `module.tsx` are the app |
-| `src/panel/`                 | the nested panel (`savvycocoa1919-visualtimeline-panel`, an id dashboards depend on: never change it) |
-| `src/datasource/`            | the nested data source (`savvycocoa1919-visualtimeline-datasource`): config page, health check, proxy route |
+| Path                                                    | What                                                                                                                                                                                                                                   |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/`                                                  | Grafana app plugin source (create-plugin scaffold; `npm run build` → `dist/`): `plugin.json` + `module.tsx` are the app                                                                                                                |
+| `src/panel/`                                            | the nested panel (`savvycocoa1919-visualtimeline-panel`, an id dashboards depend on: never change it)                                                                                                                                  |
+| `src/datasource/`                                       | the nested data source (`savvycocoa1919-visualtimeline-datasource`): config page, health check, proxy route                                                                                                                            |
 | `src/core.ts`, `src/vt/`, `src/theme.ts`, `src/shared/` | shared code: the framework-free timeline core (`src/vt/`, typed modules with no React or Grafana imports; `src/core.ts` is its entry point and only re-exports, also built into `web/vt-core.js`), the theme mapping, the proxy client |
-| `webpack.config.ts`          | extends the scaffold's webpack config (copies the nested plugins' logos)        |
-| `tests/`                     | Playwright e2e specs; `tests/mock-api/` is the stand-in frames API they run against |
-| `web/`                       | standalone app, embeddable viewer, fleet simulator                              |
-| `worker/`                    | Cloudflare Worker + R2 reference backend                                        |
-| `demo/`                      | zero-setup Grafana demo (`docker compose -f demo/docker-compose.yml up`)        |
-| `grafana/`                   | provisioning for the Grafana demo                                               |
-| `docs/API.md`                | the frames API contract + curl examples                                         |
-| `docs/UPSTREAM-UPDATES.md`   | runbook for Dependabot, scaffold and security updates                           |
-| `docs/TIME_AXIS_PROPOSAL.md` | design record for the Grafana-matching time axis                                |
+| `webpack.config.ts`                                     | extends the scaffold's webpack config (copies the nested plugins' logos)                                                                                                                                                               |
+| `tests/`                                                | Playwright e2e specs; `tests/mock-api/` is the stand-in frames API they run against                                                                                                                                                    |
+| `web/`                                                  | standalone app, embeddable viewer, fleet simulator                                                                                                                                                                                     |
+| `worker/`                                               | Cloudflare Worker + R2 reference backend                                                                                                                                                                                               |
+| `demo/`                                                 | zero-setup Grafana demo (`docker compose -f demo/docker-compose.yml up`)                                                                                                                                                               |
+| `grafana/`                                              | provisioning for the Grafana demo                                                                                                                                                                                                      |
+| `docs/API.md`                                           | the frames API contract + curl examples                                                                                                                                                                                                |
+| `docs/UPSTREAM-UPDATES.md`                              | runbook for Dependabot, scaffold and security updates                                                                                                                                                                                  |
+| `docs/TIME_AXIS_PROPOSAL.md`                            | design record for the Grafana-matching time axis                                                                                                                                                                                       |
 
 ## Core idea: cadence as a heartbeat
 
@@ -152,9 +174,19 @@ Taking in Dependabot, scaffold and security updates has its own runbook:
 
 ## Releasing
 
-Releases are cut from tags. Add a dated entry for the new version to
-[CHANGELOG.md](CHANGELOG.md), bump `version` in `package.json`, and push a tag
-named `v<version>` (for example `v0.9.23`). The `Release` workflow
-(`.github/workflows/release.yml`) builds the plugin with
-`grafana/plugin-actions/build-plugin` and packages it for the GitHub
-release.
+Releases are cut from tags.
+
+1. Turn `## Unreleased` in [CHANGELOG.md](CHANGELOG.md) into a dated entry for
+   the new version (`## 1.0.0 (2026-10-09)`). The release workflow takes the
+   release notes from the **first** `## ` section, so it must be the version.
+2. Bump `version` in `package.json`; `plugin.json`'s `%VERSION%` is filled in
+   from it at build time.
+3. Push a tag named `v<version>` (for example `v1.0.0`). The workflow fails if
+   the tag doesn't match `package.json`.
+
+The `Release` workflow (`.github/workflows/release.yml`) builds and packages
+the app with `grafana/plugin-actions/build-plugin` and creates a **draft**
+GitHub release with `savvycocoa1919-visualtimeline-app-<version>.zip` and its
+`.zip.sha1`. Publish the draft to make those links public; they are what the
+grafana.com submission form asks for. Signing isn't enabled yet: see
+[docs/SUBMISSION.md](docs/SUBMISSION.md).
