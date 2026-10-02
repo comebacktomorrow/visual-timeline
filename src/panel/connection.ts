@@ -40,3 +40,9 @@ export function resolveConnection(
   }
   return { apiUrl: (options.apiUrl || '').trim(), apiKey: (options.apiKey || '').trim() };
 }
+
+/** Choices for the panel's Data source option: the Visual Timeline API data
+ * sources, by name, stored by uid. */
+export function dataSourceOptions(list: Array<{ uid: string; name: string }>) {
+  return list.map((ds) => ({ label: ds.name, value: ds.uid }));
+}

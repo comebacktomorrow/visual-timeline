@@ -5,8 +5,8 @@ import { useTheme2 } from '@grafana/ui';
 import { mountTimeline, mountGrid } from '../core';
 import { themeVars } from '../theme';
 import { backendRequest } from '../shared/backendRequest';
-import { resolveConnection } from './connection';
-import { DataSourceOption } from './DataSourceOption';
+import { DATASOURCE_ID } from '../shared/proxy';
+import { dataSourceOptions, resolveConnection } from './connection';
 
 interface VisualTimelineOptions {
   datasourceUid?: string;
@@ -188,14 +188,18 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
   .setDataSupport({ annotations: true })
   .setPanelOptions((builder) => {
   builder
-    .addCustomEditor({
-      id: 'datasourceUid',
+    .addSelect({
       path: 'datasourceUid',
       name: 'Data source',
       description:
         'A Visual Timeline API data source: it holds the API URL and the viewer token in Grafana\'s server-side settings, and API calls go through Grafana, so the token is never in the dashboard JSON or the browser. Replaces the API URL and API key options below.',
-      editor: DataSourceOption,
-      defaultValue: undefined,
+      settings: {
+        options: [],
+        // all: Grafana's pickers otherwise skip data sources that serve no
+        // queries, and this one only proxies (plugin.json: metrics false)
+        getOptions: async () => dataSourceOptions(getDataSourceSrv().getList({ pluginId: DATASOURCE_ID, all: true })),
+        isClearable: true,
+      },
     })
     .addTextInput({
       path: 'apiUrl',

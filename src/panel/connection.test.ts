@@ -1,4 +1,4 @@
-import { resolveConnection } from './connection';
+import { dataSourceOptions, resolveConnection } from './connection';
 
 const request = jest.fn(async () => ({ status: 200, data: [] }));
 
@@ -34,5 +34,11 @@ describe('resolveConnection', () => {
     const c = resolveConnection({ datasourceUid: 'gone' }, () => undefined, request);
     expect(c.apiUrl).toBe('');
     expect(c.apiFetch).toBeInstanceOf(Function);
+  });
+});
+
+describe('dataSourceOptions', () => {
+  test('lists data sources by name and stores the uid', () => {
+    expect(dataSourceOptions([{ uid: 'vt-ds', name: 'Frames' }])).toEqual([{ label: 'Frames', value: 'vt-ds' }]);
   });
 });
