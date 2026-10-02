@@ -147,7 +147,7 @@ describe('mounted panels', () => {
     expect(fn()).toBeTruthy();
   }
   const text = (sel: string) => Array.from(root.querySelectorAll(sel)).map((e) => e.textContent);
-  function mount(kind: 'timeline' | 'grid', cfg: object) {
+  function mount(kind: 'timeline' | 'grid', cfg: { from: number; to: number; thumbTimes?: string }) {
     const m = (kind === 'grid' ? mountGrid : mountTimeline)(root, { apiUrl: API, width: 600, timeZone: 'UTC', ...cfg });
     mounts.push(m);
     return m as { setExternalCursor(t: number): void; destroy(): void };

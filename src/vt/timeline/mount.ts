@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { resolveTimeZone } from '../time/zones';
 import { buildSourceModel } from '../model/slots';
 import { matchesTags, parseTagFilter, parseVar } from '../model/filters';
@@ -8,17 +7,19 @@ import { injectStyles } from '../dom/styles';
 import { makeBackend } from '../backends/demo';
 import { annTip, normAnnotations } from '../ui/annotations';
 import { makePreview } from '../ui/preview';
-import { makeWrapper, retireWrapper, revealWrapper } from '../ui/wrapper';
+import { makeWrapper, q, retireWrapper, revealWrapper } from '../ui/wrapper';
+import type { Backend, MountConfig, MountInstance, MountWindow, SourceModel } from '../types';
 import type { TimelineState } from './state';
 import { restoreCursor, setCursor } from './cursor';
-import { buildAxis, ruleAllBeyond, ruleBeyond } from './axis';
+import { buildAxis, ruleAllBeyond } from './axis';
 import { buildCard, dressAll } from './card';
 import { renderAnnotations } from './annotations';
 import { startPoll } from './poll';
 
 /* ======================= timeline core ======================= */
 
-/* cfg: { site, from, to, width, timeZone, thumbTimes, onHover(t), onHoverClear() }
+/* cfg: MountConfig (src/vt/types.ts); the host callbacks are onHover(t),
+ * onHoverClear(), onCursor(t) and onZoom(from, to).
  * timeZone: an IANA name, 'utc', or undefined/'browser' (the viewer's own
  * zone, the default). It sets every time the mount shows as text — axis,
  * cursor, captions, tooltips, the demo frames' clock — and where the axis
@@ -29,16 +30,16 @@ import { startPoll } from './poll';
  * that zone, each marked with its offset from the panel's: 07:31:00 (+3h).
  * The axis, cursor label and annotation tooltips stay in the panel zone.
  * Either way a zoned source's header names its zone: "Sydney · +3h". */
-export function mountTimeline(root, cfg) {
+export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstance & { isHovering(): boolean } {
   injectStyles();
-  const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
+  const P: MountWindow = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
   const TZ = resolveTimeZone(cfg.timeZone);
   const SPAN = Math.max(1, P.to - P.from);
   const LIVE = P.to > Date.now() - 2 * 60 * 1000;
   const MIN_SLICE_PX = 7;
   const hostWidth = cfg.width || root.clientWidth || 800;   // plugin passes width; web mounts measure
   const pxBudget = Math.max(10, Math.floor((hostWidth - 20) / MIN_SLICE_PX));
-  const backend = cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ);
+  const backend: Backend = cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ);
 
   const wrap = makeWrapper(root);
   wrap.classList.toggle('fill', cfg.fit === 'fill');
@@ -46,7 +47,6 @@ export function mountTimeline(root, cfg) {
     '<div class="cards"></div>' +
     '<div class="ann-lane" style="display:none"></div>' +
     '<div class="axis"><div class="base"></div><div class="acur"></div></div>';
-  const q = sel => wrap.querySelector(sel);
 
   // the mount's shared state (the fields that change live only here)
   const s: TimelineState = {
@@ -57,14 +57,13 @@ export function mountTimeline(root, cfg) {
     pv: makePreview(root, TZ),
     PANEL_TT: zoneTexts(TZ, TZ, false),
   };
-  const { cards, pv, PANEL_TT } = s;
 
   (async function boot() {
     try {
       s.kiosks = (await backend.kiosks(P.site))
         .filter((k) => !P.source || P.source.includes(k.id))
         .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
-    } catch (e) {
+    } catch (e: any) {   // whatever was thrown, read loosely as before
       // registry unreachable (or hung past the fetch timeout): SAY so —
       // an eternally blank panel points the blame at the wrong layer
       console.warn('[visual-timeline] sources fetch failed:', e);
@@ -72,13 +71,13 @@ export function mountTimeline(root, cfg) {
       const err = document.createElement('div');
       err.className = 'boot-err';
       err.textContent = 'frames API unreachable — ' + (e && e.message ? e.message : e);
-      q('.cards').appendChild(err);
+      q(s.wrap, '.cards').appendChild(err);
       await revealWrapper(root, wrap);
       return;
     }
     for (const k of s.kiosks) {
       if (s.destroyed) {return;}
-      let model;
+      let model: SourceModel;
       try {
         model = await buildSourceModel(k, P, backend, pxBudget);
       } catch (e) {
@@ -91,9 +90,9 @@ export function mountTimeline(root, cfg) {
       // declared pause IS data — a source that is all SCREEN DARK for the
       // window must render its band, not vanish as if it never reported
       if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {continue;}
-      cards[k.id] = buildCard(s, k, model);
+      s.cards[k.id] = buildCard(s, k, model);
     }
-    s.kiosks = s.kiosks.filter((k) => cards[k.id]);
+    s.kiosks = s.kiosks.filter((k) => s.cards[k.id]);
     buildAxis(s);
     ruleAllBeyond(s);
     // host-provided annotations (Grafana: the dashboard's own annotation
@@ -104,8 +103,8 @@ export function mountTimeline(root, cfg) {
       : (backend.annotations ? backend.annotations() : []);
     if (cfg.showAnnotations !== false) {renderAnnotations(s, normAnnotations(rawAnns, P));}
     setCursor(s, s.cursorT, null, true);   // rest position; don't publish
-    await revealWrapper(root, wrap);  // swap in only once images decoded
-    dressAll(s, 20);                     // hatch alignment + labels once layout is real
+    await revealWrapper(root, wrap);       // swap in only once images decoded
+    dressAll(s, 20);                       // hatch alignment + labels once layout is real
 
     if (LIVE) {startPoll(s);}
   })();
@@ -116,7 +115,7 @@ export function mountTimeline(root, cfg) {
     destroy() {
       s.destroyed = true;
       if (s.pollTimer) {clearInterval(s.pollTimer);}
-      pv.retire();   // an open preview survives refresh remounts (adopted by the successor)
+      s.pv.retire();   // an open preview survives refresh remounts (adopted by the successor)
       annTip().close();   // a hovered or pinned tip at teardown would strand
       retireWrapper(wrap);
     },

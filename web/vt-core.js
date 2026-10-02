@@ -2035,7 +2035,6 @@ var VTCore = (() => {
     const wrap = makeWrapper(root);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="cards"></div><div class="ann-lane" style="display:none"></div><div class="axis"><div class="base"></div><div class="acur"></div></div>';
-    const q2 = (sel) => wrap.querySelector(sel);
     const s = {
       root,
       cfg,
@@ -2058,7 +2057,6 @@ var VTCore = (() => {
       pv: makePreview(root, TZ),
       PANEL_TT: zoneTexts(TZ, TZ, false)
     };
-    const { cards, pv, PANEL_TT } = s;
     (async function boot() {
       try {
         s.kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
@@ -2070,7 +2068,7 @@ var VTCore = (() => {
         const err = document.createElement("div");
         err.className = "boot-err";
         err.textContent = "frames API unreachable \u2014 " + (e && e.message ? e.message : e);
-        q2(".cards").appendChild(err);
+        q(s.wrap, ".cards").appendChild(err);
         await revealWrapper(root, wrap);
         return;
       }
@@ -2091,9 +2089,9 @@ var VTCore = (() => {
         if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {
           continue;
         }
-        cards[k.id] = buildCard(s, k, model);
+        s.cards[k.id] = buildCard(s, k, model);
       }
-      s.kiosks = s.kiosks.filter((k) => cards[k.id]);
+      s.kiosks = s.kiosks.filter((k) => s.cards[k.id]);
       buildAxis(s);
       ruleAllBeyond(s);
       const rawAnns = cfg.annotations && cfg.annotations.length ? cfg.annotations : backend.annotations ? backend.annotations() : [];
@@ -2121,7 +2119,7 @@ var VTCore = (() => {
         if (s.pollTimer) {
           clearInterval(s.pollTimer);
         }
-        pv.retire();
+        s.pv.retire();
         annTip().close();
         retireWrapper(wrap);
       }
