@@ -19,6 +19,7 @@ import { annTip, normAnnotations } from './vt/ui/annotations';
 import { measureTickWidth, TICK_LABEL_GAP } from './vt/time/measure';
 import { makePreview } from './vt/ui/preview';
 import { dressGhost } from './vt/ui/ghost';
+import { makeWrapper, retireWrapper, revealWrapper } from './vt/ui/wrapper';
 
 export { fmtShort, fmtTime, resolveTimeZone, zonedParts, zonedTime } from './vt/time/zones';
 export { alignedStart, axisTicks, nextTick, TICK_STEPS, tickFormat } from './vt/time/ticks';
@@ -31,41 +32,6 @@ export { esc, headTitle, tagChips } from './vt/dom/html';
 export { KTL_VAR_DEFAULTS } from './vt/dom/styles';
 
 /* ======================= timeline core ======================= */
-
-/* Double-buffered remounts. A dashboard refresh tears the panel down and
- * rebuilds it; wiping the root first paints a blank frame (visible flash
- * every refresh tick). Instead each mount builds into its own HIDDEN
- * wrapper and swaps it in once its images have decoded — the previous
- * wrapper stays painted until then. destroy() only marks its wrapper
- * stale; the successor removes it (timeout fallback for true unmounts). */
-function makeWrapper(root) {
-  const wrap = document.createElement('div');
-  wrap.className = 'ktl';
-  // absolute stacking + visibility (NOT display:none): the wrapper must
-  // have real layout while hidden — axis ticks, crosshair and magnifier
-  // positions are measured from clientWidth during build
-  root.style.position = 'relative';
-  root.classList.add('ktl-root');   // carries the palette defaults (CSS)
-  wrap.style.position = 'absolute';
-  wrap.style.inset = '0';
-  wrap.style.visibility = 'hidden';
-  root.appendChild(wrap);
-  return wrap;
-}
-async function revealWrapper(root, wrap) {
-  const imgs = [...wrap.querySelectorAll('img')];
-  await Promise.race([
-    Promise.allSettled(imgs.map(i => (i.decode ? i.decode().catch(() => {}) : Promise.resolve()))),
-    new Promise(res => setTimeout(res, 900)),
-  ]);
-  if (!wrap.isConnected) {return;}
-  for (const el of [...root.children]) {if (el !== wrap) {el.remove();}}
-  wrap.style.visibility = '';
-}
-function retireWrapper(wrap) {
-  wrap.dataset.stale = '1';
-  setTimeout(() => wrap.remove(), 1500);
-}
 
 /* cfg: { site, from, to, width, timeZone, thumbTimes, onHover(t), onHoverClear() }
  * timeZone: an IANA name, 'utc', or undefined/'browser' (the viewer's own

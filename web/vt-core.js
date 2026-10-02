@@ -1436,7 +1436,7 @@ var VTCore = (() => {
     }
   }
 
-  // src/core.ts
+  // src/vt/ui/wrapper.ts
   function makeWrapper(root) {
     const wrap = document.createElement("div");
     wrap.className = "ktl";
@@ -1469,6 +1469,8 @@ var VTCore = (() => {
     wrap.dataset.stale = "1";
     setTimeout(() => wrap.remove(), 1500);
   }
+
+  // src/core.ts
   function mountTimeline(root, cfg) {
     injectStyles();
     const P = { site: parseVar(cfg.site), source: parseVar(cfg.source), from: cfg.from, to: cfg.to };
