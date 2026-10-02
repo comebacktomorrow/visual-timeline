@@ -1412,7 +1412,7 @@ var VTCore = (() => {
     };
   }
 
-  // src/core.ts
+  // src/vt/ui/ghost.ts
   function dressGhost(slots, sl) {
     if (!sl.el) {
       return;
@@ -1435,6 +1435,8 @@ var VTCore = (() => {
       img.src = g.url;
     }
   }
+
+  // src/core.ts
   function makeWrapper(root) {
     const wrap = document.createElement("div");
     wrap.className = "ktl";

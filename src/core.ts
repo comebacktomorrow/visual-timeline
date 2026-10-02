@@ -18,6 +18,7 @@ import { attachZoneChip, dressZoneChip, zoneChip } from './vt/zones/chip';
 import { annTip, normAnnotations } from './vt/ui/annotations';
 import { measureTickWidth, TICK_LABEL_GAP } from './vt/time/measure';
 import { makePreview } from './vt/ui/preview';
+import { dressGhost } from './vt/ui/ghost';
 
 export { fmtShort, fmtTime, resolveTimeZone, zonedParts, zonedTime } from './vt/time/zones';
 export { alignedStart, axisTicks, nextTick, TICK_STEPS, tickFormat } from './vt/time/ticks';
@@ -30,17 +31,6 @@ export { esc, headTitle, tagChips } from './vt/dom/html';
 export { KTL_VAR_DEFAULTS } from './vt/dom/styles';
 
 /* ======================= timeline core ======================= */
-
-/* keep a strip slot's ghost <img> in step with its state: present only
- * while the slot is pending and has something to carry */
-function dressGhost(slots, sl) {
-  if (!sl.el) {return;}
-  const g = sl.future && !sl.frame ? ghostFor(slots, sl) : null;
-  let img = sl.el.querySelector('img.ghost');
-  if (!g) { if (img) {img.remove();} return; }
-  if (!img) { img = document.createElement('img'); img.className = 'ghost'; img.alt = ''; sl.el.appendChild(img); }
-  if (img.src !== g.url) {img.src = g.url;}
-}
 
 /* Double-buffered remounts. A dashboard refresh tears the panel down and
  * rebuilds it; wiping the root first paints a blank frame (visible flash
