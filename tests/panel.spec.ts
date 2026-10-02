@@ -26,3 +26,32 @@ test('multiview grid mode renders tiles from demo data', async ({
   await gotoPanelEditPage({ dashboard, id: '2' });
   await expect(page.locator('.ktl .tile').first()).toBeVisible({ timeout: 20000 });
 });
+
+// Demo source-3 declares Australia/Sydney and source-5 Asia/Kathmandu (#68):
+// their headers name the zone and its offset from the dashboard's, whatever
+// zone the test browser runs in ("Sydney · +10h", or "Sydney" alone).
+const ZONE_CHIP = (city: string) => new RegExp(`^${city}( · [+−](\\d+h)?(\\d+m)?)?$`);
+
+test('timeline headers show a demo source\'s declared time zone', async ({
+  gotoPanelEditPage,
+  readProvisionedDashboard,
+  page,
+}) => {
+  const dashboard = await readProvisionedDashboard({ fileName: 'dashboard.json' });
+  await gotoPanelEditPage({ dashboard, id: '1' });
+  const chip = page.locator('.ktl .card-head .tz', { hasText: 'Sydney' });
+  await expect(chip).toBeVisible({ timeout: 20000 });
+  await expect(chip).toHaveText(ZONE_CHIP('Sydney'));
+});
+
+test('grid tile headers show a demo source\'s declared time zone', async ({
+  gotoPanelEditPage,
+  readProvisionedDashboard,
+  page,
+}) => {
+  const dashboard = await readProvisionedDashboard({ fileName: 'dashboard.json' });
+  await gotoPanelEditPage({ dashboard, id: '2' });
+  const chip = page.locator('.ktl .t-head .tz', { hasText: 'Kathmandu' });
+  await expect(chip).toBeAttached({ timeout: 20000 });
+  await expect(chip).toHaveText(ZONE_CHIP('Kathmandu'));
+});
