@@ -466,7 +466,9 @@ async function handleFrames(url, env, ctx, viewer) {
   // on one they can't reach (a self-hosted backend behind Grafana's data
   // source proxy, say http://backend:8787): image URLs are built on it, and
   // still signed.
-  const base = env.IMG_BASE || (env.PUBLIC_URL ? env.PUBLIC_URL.replace(/\/+$/, '') : url.origin);
+  let publicUrl = env.PUBLIC_URL || '';
+  while (publicUrl.endsWith('/')) {publicUrl = publicUrl.slice(0, -1);}   // a loop, not /\/+$/: CodeQL flags that regex as polynomial
+  const base = env.IMG_BASE || publicUrl || url.origin;
   let auth = '';
   if (env.IMG_SIGN_KEY && !env.IMG_BASE) {
     // validity must comfortably outlive this JSON response's cache life
