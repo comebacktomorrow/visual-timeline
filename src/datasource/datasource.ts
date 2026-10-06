@@ -8,11 +8,10 @@ import {
 
 import { backendRequest } from '../shared/backendRequest';
 import { ApiFetch, makeProxyFetch, ProxyRequest } from '../shared/proxy';
+// the text Grafana's proxy answers instead of the API's own 401
+import { PROXY_AUTH_FAILED } from '../vt/backends/api';
 import type { VisualTimelineOptions, VisualTimelineQuery } from './types';
 
-// What Grafana's data source proxy answers instead of the API's own 401:
-// it turns 401 into 400, so the browser session isn't taken for expired
-const PROXY_AUTH_FAILED = 'Authentication to data source failed';
 
 /** Health-check wording for a failed GET /sources through the proxy. */
 export function describeFailure(status: number, apiUrl: string, body?: unknown): string {

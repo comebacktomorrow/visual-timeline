@@ -175,6 +175,7 @@ export interface MountConfig {
   apiUrl?: string;
   apiKey?: string;
   apiFetch?: ApiFetch;
+  authHint?: string;           // appended to a token error's message (the panel: how to connect)
   annotations?: RawAnnotation[];   // timeline: host annotations (else the demo seam's)
   showAnnotations?: boolean;       // timeline: false hides them
   annotationLanes?: string;        // timeline: 'shared' (default) | 'per-source'

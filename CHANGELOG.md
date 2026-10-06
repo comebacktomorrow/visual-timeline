@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Removed: the panel's API key option.** It stored the viewer token in
+  plain text in the dashboard JSON. An API that needs a token now connects
+  only through a Visual Timeline API data source; the API URL option stays
+  for APIs with open reads. A panel that still carries an old key never
+  sends it and says what to do instead. See "Upgrading" in the README, and
+  revoke any token that was saved in a dashboard.
+- Token errors in the panel say what went wrong (#81). A rejected data
+  source token (which Grafana's proxy reports as a 400) used to read as
+  "frames API unreachable — kiosks 400"; it now says the data source's token
+  was rejected and where to check it. A 401 or 403 from an API reached
+  directly, a proxy that can't reach the API, and other statuses each get
+  their own message. "frames API unreachable" is kept for network errors
+  and timeouts.
 - Internal: build-time dependency advisories. `source-map-js` is pinned to
   1.2.2 (CVE-2026-93749). `braces` 3.0.3 (CVE-2026-93687) has no fixed
   release and is reached only by the scaffold's build-time lint plugin, so

@@ -79,5 +79,7 @@ test('a data source whose token the API rejects shows the error in the panel', a
   const dashboard = await readProvisionedDashboard({ fileName: 'datasource-mode.json' });
   await gotoPanelEditPage({ dashboard, id: '2' });
   // the API's 401 arrives as Grafana's 400 ("Authentication to data source failed")
-  await expect(page.locator('.ktl .boot-err')).toContainText('kiosks 400', { timeout: 20000 });
+  await expect(page.locator('.ktl .boot-err')).toContainText("The data source's viewer token was rejected", {
+    timeout: 20000,
+  });
 });

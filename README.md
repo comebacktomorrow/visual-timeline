@@ -124,9 +124,8 @@ So:
 
 | Option                                  | What it does                                                                                                                                                                                               |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Data source**                         | A Visual Timeline API data source. API calls go through Grafana, which adds the viewer token. While one is set, the two options below are hidden and ignored.                                              |
-| **API URL**                             | Base URL of the frames API, for an API with open reads. With no data source and no URL, the panel shows the built-in demo data.                                                                            |
-| **API key**                             | Deprecated. A viewer token saved in plaintext in the dashboard JSON. Use a data source instead. See [the viewer token](#about-the-viewer-token).                                                           |
+| **Data source**                         | A Visual Timeline API data source. API calls go through Grafana, which adds the viewer token. While one is set, the API URL option below is hidden and ignored.                                              |
+| **API URL**                             | Base URL of the frames API, for an API with open reads. An API that needs a viewer token connects through a data source. With neither, the panel shows the built-in demo data.                                                                            |
 | **Sites**                               | Site filter: a dashboard variable (default `${site:csv}`) or a literal site id. Keep the variable here so the panel refreshes when it changes. A dashboard without the variable shows all sites.           |
 | **Display mode**                        | Timeline or Multiview grid.                                                                                                                                                                                |
 | **Follow shared crosshair**             | Grid mode only. Show the frame at the crosshair time from other panels; off shows the most recent frame in range.                                                                                          |
@@ -148,18 +147,8 @@ stored encrypted in Grafana and is sent only by Grafana's server, as an
 the data source's uid. Grafana's login is what controls who can view. For the
 images to load, the API must sign its image URLs (see above).
 
-The panel's older **API key** option still works, so existing dashboards keep
-working, but it is deprecated. It is saved in the dashboard JSON in plaintext,
-and every viewer's browser receives it. If you still use it:
-
-- Use a **dedicated, scoped, revocable viewer token** per consumer (a
-  dashboard, a wallboard), never your upload token. The reference worker
-  supports named viewer tokens that can be limited to specific sites, so a
-  leaked dashboard costs one revocable entry.
-- Enable signed image URLs on the backend so the long-lived token never
-  appears in image URLs. The panel sends the key only to the API's own origin,
-  never to signed or third-party image URLs.
-- Treat "can view this dashboard" as "holds this token".
+The panel itself never holds a token. Its **API URL** option is only for an
+API with open reads.
 
 The
 [API document](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md)
@@ -182,6 +171,18 @@ Earlier versions were a standalone panel plugin with the same panel id,
 id, so existing dashboards keep working without changes. Uninstall the old
 panel plugin when you install the app, so that only one copy of the panel id
 is installed.
+
+The panel's **API key** option has been removed: it saved the viewer token in
+plain text in the dashboard JSON. A panel that used it now shows "The frames
+API needs a valid viewer token (401)" with a pointer to the data source.
+To move it over:
+
+1. Add a **Visual Timeline API** data source with the API URL and the viewer
+   token (**Connections → Data sources**), and check it with **Save & test**.
+2. In each panel that used the key, pick that data source in the **Data
+   source** option and save the dashboard.
+3. Revoke the old token at the API: it has been readable by everyone who
+   could view or export those dashboards.
 
 ## Contributing
 

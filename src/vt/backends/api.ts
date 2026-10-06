@@ -1,4 +1,4 @@
-import type { ApiFetch, Backend, Frame, SourceDecl } from '../types';
+import type { ApiFetch, ApiResponse, Backend, Frame, SourceDecl } from '../types';
 
 /* <img> can't send headers, so a key-protected backend's image URLs carry
  * the viewer key as ?k= — but only bare URLs on the API's own origin. A URL
@@ -46,6 +46,65 @@ export function resolveFrameUrl(url: string, apiBase: string): string {
   }
 }
 
+/* What Grafana's data source proxy answers instead of the API's own 401: a
+ * 400 with this text, so a 401 never looks like the Grafana session expired. */
+export const PROXY_AUTH_FAILED = 'Authentication to data source failed';
+
+/* A non-2xx answer from the API (or from Grafana's proxy in front of it).
+ * The message is written for the person looking at the panel; `auth` marks
+ * the token problems, so a host can add its own hint. */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly call: 'sources' | 'frames', readonly auth: boolean) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+export async function apiError(call: 'sources' | 'frames', r: ApiResponse, viaProxy: boolean): Promise<ApiError> {
+  const st = r.status;
+  if (viaProxy) {
+    let proxyAuth = st === 401;
+    if (st === 400) {
+      try {
+        const body = await r.json();
+        proxyAuth = (typeof body === 'string' ? body : JSON.stringify(body ?? '')).includes(PROXY_AUTH_FAILED);
+      } catch {
+        // no readable body: an ordinary 400
+      }
+    }
+    if (proxyAuth) {
+      return new ApiError(
+        "The data source's viewer token was rejected. Check it in the data source's settings: Save & test shows what the API says.",
+        st, call, true);
+    }
+    if (st === 403) {
+      return new ApiError(
+        "The data source's viewer token isn't allowed to read these sources (403). It may be scoped to other sites.",
+        st, call, true);
+    }
+    if (st === 502 || st === 503 || st === 504) {
+      return new ApiError(
+        `Grafana couldn't reach the frames API (${st}). Check the data source's API URL.`, st, call, false);
+    }
+  } else if (st === 401) {
+    return new ApiError('The frames API needs a valid viewer token (401).', st, call, true);
+  } else if (st === 403) {
+    return new ApiError(
+      "The viewer token isn't allowed to read these sources (403). It may be scoped to other sites.", st, call, true);
+  }
+  return new ApiError(
+    st ? `The frames API answered ${st} to /${call}.` : `No answer from the frames API for /${call}.`, st, call, false);
+}
+
+/* What a mount shows when GET /sources fails. An ApiError's message is
+ * complete; on a token problem the host's hint follows it. Anything else
+ * (a network error, a timeout) means the API couldn't be reached at all. */
+export function bootErrorText(e: unknown, authHint?: string): string {
+  if (e instanceof ApiError) {return e.auth && authHint ? e.message + ' ' + authHint : e.message;}
+  const msg = e && (e as Error).message ? (e as Error).message : String(e);
+  return 'frames API unreachable — ' + msg;
+}
+
 /* API-backed data layer — same shapes as the mock. Two transports:
  *  - direct: fetch(apiUrl + path), the viewer key (if any) as a Bearer
  *    header. Used by the standalone app and the panel's API URL option
@@ -70,12 +129,12 @@ export function makeApiBackend(apiUrl?: string, apiKey?: string, apiFetch?: ApiF
   return {
     async kiosks(sites) {
       const r = await get(sourcesPath(sites));
-      if (!r.ok) {throw new Error('kiosks ' + r.status);}
+      if (!r.ok) {throw await apiError('sources', r, !!apiFetch);}
       return r.json() as Promise<SourceDecl[]>;   // the API's contract; not validated
     },
     async frames(site, kiosk, from, to, step) {
       const r = await get(framesPath(site, kiosk, from, to, step));
-      if (!r.ok) {throw new Error('frames ' + r.status);}
+      if (!r.ok) {throw await apiError('frames', r, !!apiFetch);}
       const frames = (await r.json()) as Frame[];   // the API's contract; not validated
       for (const f of frames) {
         f.url = apiFetch ? resolveFrameUrl(f.url, base) : imageUrlWithKey(f.url, base, key);

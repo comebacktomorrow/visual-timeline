@@ -12,7 +12,7 @@ import { dataSourceOptions, resolveConnection } from './connection';
 interface VisualTimelineOptions {
   datasourceUid?: string;
   apiUrl?: string;
-  apiKey?: string;
+  apiKey?: string;   // removed option; older dashboards may still carry it (see connection.ts)
   sites?: string;
   mode?: 'timeline' | 'grid';
   followCrosshair?: boolean;
@@ -98,10 +98,10 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const mode = options.mode || 'timeline';
   const follow = options.followCrosshair !== false;
   const fit = options.imageFit || 'fit';
-  // a Visual Timeline API data source (token server-side), else the legacy
-  // API URL / key options, else demo data — see connection.ts
+  // a Visual Timeline API data source (token server-side), else the API URL
+  // option for an open API, else demo data — see connection.ts
   const datasourceUid = (options.datasourceUid || '').trim();
-  const { apiUrl, apiKey, apiFetch } = useMemo(
+  const { apiUrl, apiFetch, authHint } = useMemo(
     () => resolveConnection(options, (uid) => getDataSourceSrv().getInstanceSettings(uid)?.jsonData, backendRequest),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [datasourceUid, options.apiUrl, options.apiKey]
@@ -120,7 +120,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       return;
     }
     const common = {
-      site, from, to, width: props.width, fit, apiUrl, apiKey, apiFetch, showDetails, hideEmpty, tagFilter,
+      site, from, to, width: props.width, fit, apiUrl, apiFetch, authHint, showDetails, hideEmpty, tagFilter,
       annotations, showAnnotations, annotationLanes: options.annotationLanes || 'shared',
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
@@ -149,7 +149,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, fit, apiUrl, apiKey, apiFetch, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone]);
+  }, [mode, fit, apiUrl, apiFetch, authHint, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone]);
 
   useEffect(() => {
     const subs = [
@@ -197,7 +197,7 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       path: 'datasourceUid',
       name: 'Data source',
       description:
-        'A Visual Timeline API data source: it holds the API URL and the viewer token in Grafana\'s server-side settings, and API calls go through Grafana, so the token is never in the dashboard JSON or the browser. Replaces the API URL and API key options below.',
+        'A Visual Timeline API data source: it holds the API URL and the viewer token in Grafana\'s server-side settings, and API calls go through Grafana, so the token is never in the dashboard JSON or the browser. Replaces the API URL option below.',
       settings: {
         options: [],
         // all: Grafana's pickers otherwise skip data sources that serve no
@@ -209,14 +209,7 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
     .addTextInput({
       path: 'apiUrl',
       name: 'API URL',
-      description: 'Frames API base URL (see docs/API.md in the repository), for an API with open reads. Empty = built-in demo data. Ignored when a data source is selected.',
-      defaultValue: '',
-      showIf: (o) => !o.datasourceUid,
-    })
-    .addTextInput({
-      path: 'apiKey',
-      name: 'API key',
-      description: 'Deprecated: this key is stored in plain text in the dashboard JSON. Use a Visual Timeline API data source instead (Data source option above), which keeps the viewer token server-side. Sent as a Bearer header on API calls, and as ?k= only on unsigned image URLs from the API\'s own origin: signed image URLs and other image hosts never receive it.',
+      description: 'Frames API base URL (see docs/API.md in the repository), for an API with open reads. An API that needs a viewer token connects through a data source instead. Empty = built-in demo data. Ignored when a data source is selected.',
       defaultValue: '',
       showIf: (o) => !o.datasourceUid,
     })
