@@ -36,20 +36,47 @@ A source is anything that can POST a JPEG on a schedule (a camera, a kiosk
 screen, a web page screenshot) to `/upload` with its site's upload token. The
 site is the key in `UPLOAD_TOKENS` (`home` in the example).
 
-**Cameras.** [`snapshot-uploader.sh`](snapshot-uploader.sh) fetches a camera's
-snapshot URL once a minute, shrinks it to 640 px wide and uploads it. Run one
-per camera, anywhere that can reach both the camera and the backend:
+**Cameras.** List them in `selfhost/cameras.json` and the stack's uploader
+service posts a snapshot from each one a minute, shrunk to 640 px wide:
 
 ```bash
-VT_URL=http://localhost:8787 VT_SITE=home VT_SOURCE=driveway \
-VT_TOKEN=<the home upload token> \
-SNAPSHOT_URL=http://camera.lan/cgi-bin/snapshot.cgi SNAPSHOT_AUTH=user:password \
-sh selfhost/snapshot-uploader.sh
+cp selfhost/cameras.example.json selfhost/cameras.json
+# edit selfhost/cameras.json: one entry per camera
+# then uncomment COMPOSE_PROFILES=cameras in selfhost/.env, and:
+docker compose -f selfhost/docker-compose.yml up -d
 ```
 
-The script lists the snapshot URLs of common cameras and of Frigate. It needs
-`curl` and `ffmpeg`. A failed snapshot or upload is dropped rather than
-retried: the gap on the timeline is how you see a camera was down.
+Each camera has a `site` (a key in `UPLOAD_TOKENS`, which is where its upload
+token comes from), an `id`, and its snapshot `url`. Optionally:
+
+- `auth`: `user:password` for the camera, sent as digest auth, or as basic
+  auth with `"auth_type": "basic"`;
+- `timezone`: an IANA name such as `Australia/Brisbane`, if the camera burns a
+  clock into the image;
+- `cadence` (seconds, default 60) and `width` (pixels, default 640).
+
+`auth_type`, `cadence` and `width` can also be set once at the top of the
+file for every camera. [`snapshot-uploader.sh`](snapshot-uploader.sh) lists
+the snapshot URLs of common cameras and of Frigate. `cameras.json` holds
+camera passwords, so it is gitignored. After editing it, run
+`docker compose -f selfhost/docker-compose.yml restart uploader`, and
+`docker compose -f selfhost/docker-compose.yml logs uploader` shows what
+each camera is doing.
+
+Each camera runs on its own schedule, so a slow or dead one never delays the
+others. A failed snapshot or upload is dropped rather than retried: the gap on
+the timeline is how you see a camera was down.
+
+The script also runs outside Docker (it needs `curl`, `ffmpeg` and `jq`),
+anywhere that can reach both the cameras and the backend:
+
+```bash
+UPLOAD_TOKENS='{"home": "<the home upload token>"}' \
+VT_URL=http://localhost:8787 sh selfhost/snapshot-uploader.sh selfhost/cameras.json
+```
+
+For a single camera it takes environment variables instead of a file; see
+the top of the script.
 
 **Anything else.** One frame with curl:
 

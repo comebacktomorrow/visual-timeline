@@ -48,3 +48,4 @@ yarn-error.log*
 
 # self-hosted stack: real tokens
 selfhost/.env
+selfhost/cameras.json

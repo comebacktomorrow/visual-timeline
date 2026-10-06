@@ -30,8 +30,11 @@
 - Self-hosted stack (`selfhost/`): Docker Compose for the reference backend
   (the same worker code, on workerd through wrangler's local mode, with frames
   on a volume) and Grafana 12 with the app, a provisioned data source and a
-  starter dashboard. `snapshot-uploader.sh` posts a camera's snapshot URL
-  once a minute, shrunk to 640 px, and drops failed frames.
+  starter dashboard. A camera uploader service reads `selfhost/cameras.json`
+  and posts each camera's snapshot URL once a minute, shrunk to 640 px, each
+  camera on its own schedule; failed frames are dropped. The same
+  `snapshot-uploader.sh` runs outside Docker, for a camera file or a single
+  camera.
 - Reference worker: new optional `PUBLIC_URL`, the address browsers use.
   Image URLs are built on it, still signed, for a worker that Grafana reaches
   on an address browsers can't (a Docker network, say). Unset, nothing
