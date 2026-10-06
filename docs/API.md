@@ -68,8 +68,10 @@ Idempotent (`{"ok":true,"note":"already paused"}` if already paused).
 
 Resume needs no declaration — the next upload is the resume. The server
 closes the paused era in the registry on that upload (best-effort); clients
-also infer resume directly from frames appearing inside a paused era, so a
-source that crashes *while paused* still renders correctly.
+also infer resume from frames appearing inside a paused era that no later
+history event has closed yet, so a source that crashes *while paused* still
+renders correctly. A pause that a later event closes is drawn whole: there
+the registry is the truth.
 
 ### `GET /sources?site=<csv>`
 
@@ -87,6 +89,20 @@ starts a new pace, a `paused:true` entry starts declared silence, and the
 next non-paused upload ends it. `timezone` is present only when the source
 declared one (`X-Timezone`); clients treat a missing or unknown zone as "not
 declared" and show the source's times in their own display zone, as before.
+
+Under retention (`RETENTION_DAYS`, below), each history starts with a pause
+whose `reason` is `"expired"`, from `since: 0` to the cutoff, followed by the
+event in force at the cutoff, restated at the cutoff:
+
+```json
+"history":[{"since":0,"variant":"lo","paused":true,"reason":"expired","intended":true},
+           {"since":1788696000000,"variant":"lo","cadence":60000}, ...]
+```
+
+Frames older than the cutoff have been (or are about to be) deleted, so
+clients draw that span as "no data" rather than as offline. The Visual
+Timeline panel labels it **NO DATA**; an older client that doesn't know the
+reason draws it as a neutral pause.
 
 The Visual Timeline panel shows a declared zone in the source's header as
 its city and its offset from the dashboard's zone (`Sydney · +3h`). Its
@@ -248,6 +264,22 @@ three env vars, composable per deployment:
 
 Default-private posture: set `VIEWER_TOKEN` + `IMG_SIGN_KEY`, leave
 `IMG_BASE` unset.
+
+## Retention (reference worker)
+
+- **`RETENTION_DAYS`** — keep that many days of frames; older ones are
+  deleted. Unset (or not a positive number) keeps everything.
+- **`RETENTION_DAYS_HI`** — overrides it for the hi variant, whose frames are
+  the large ones (e.g. 90 days of thumbnails, 7 of hi-res).
+
+Pruning runs after uploads, so it needs no scheduler and works the same on
+Cloudflare and self-hosted: at most once an hour per source, an upload sweeps
+its site's sources (including ones that have stopped uploading), deleting a
+few thousand of each source's oldest frames per sweep until only the window
+is left. Turning retention on for a large existing bucket therefore catches
+up over a few hours. `/sources` reports the cutoff in each source's history
+(above). On Cloudflare, an R2 lifecycle rule could delete the frames instead,
+but it can't tell viewers, so the gap would draw as offline.
 
 ### Where the viewer token lives
 
