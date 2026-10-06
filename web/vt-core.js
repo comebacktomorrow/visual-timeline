@@ -1022,6 +1022,7 @@ var VTCore = (() => {
   width:1px; background:rgba(0,0,0,.05); box-shadow:1px 0 0 rgba(255,255,255,.12);
   pointer-events:none; z-index:1; }
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
+.ktl .slot img:not([src]) { visibility:hidden; }   /* queued (ui/imageQueue.ts): no alt text or broken-image icon meanwhile */
 .ktl .slot.gap { background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px); }
 .ktl .slot.paused { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 7px,var(--ktl-pause-b) 7px,var(--ktl-pause-b) 14px); }
 /* pause REASONS: one color grammar with the dashboards \u2014 planned = distinct
@@ -1452,6 +1453,82 @@ var VTCore = (() => {
     };
   }
 
+  // src/vt/ui/imageQueue.ts
+  var IMAGE_CONCURRENCY = 4;
+  function makeImageQueue(concurrency = IMAGE_CONCURRENCY) {
+    let pending = [];
+    let sorted = true;
+    let active = 0;
+    let stopped = false;
+    let scheduled = false;
+    let idleWaiters = [];
+    function settleIdle() {
+      if (active === 0 && pending.length === 0) {
+        const w = idleWaiters;
+        idleWaiters = [];
+        w.forEach((r) => r());
+      }
+    }
+    function pump() {
+      scheduled = false;
+      if (stopped) {
+        return;
+      }
+      if (!sorted) {
+        pending.sort((a, b) => a.ts - b.ts);
+        sorted = true;
+      }
+      while (active < concurrency && pending.length) {
+        const job = pending.pop();
+        active++;
+        let finished = false;
+        const done = () => {
+          if (finished) {
+            return;
+          }
+          finished = true;
+          job.img.removeEventListener("load", done);
+          job.img.removeEventListener("error", done);
+          active--;
+          pump();
+        };
+        job.img.addEventListener("load", done);
+        job.img.addEventListener("error", done);
+        job.img.src = job.url;
+        if (job.img.complete && job.img.naturalWidth) {
+          done();
+        }
+      }
+      settleIdle();
+    }
+    return {
+      add(img, url, ts) {
+        if (stopped) {
+          return;
+        }
+        pending.push({ img, url, ts });
+        sorted = false;
+        if (!scheduled) {
+          scheduled = true;
+          queueMicrotask(pump);
+        }
+      },
+      idle() {
+        if (stopped || active === 0 && pending.length === 0 && !scheduled) {
+          return Promise.resolve();
+        }
+        return new Promise((resolve) => idleWaiters.push(resolve));
+      },
+      stop() {
+        stopped = true;
+        pending = [];
+        const w = idleWaiters;
+        idleWaiters = [];
+        w.forEach((r) => r());
+      }
+    };
+  }
+
   // src/vt/ui/preview.ts
   var popState = { el: null, keyH: null, retireTimer: null };
   function closePreview() {
@@ -1533,11 +1610,14 @@ var VTCore = (() => {
     root.appendChild(wrap);
     return wrap;
   }
-  async function revealWrapper(root, wrap) {
+  async function revealWrapper(root, wrap, loaded) {
     const imgs = [...wrap.querySelectorAll("img")];
     await Promise.race([
-      Promise.allSettled(imgs.map((i) => i.decode ? i.decode().catch(() => {
-      }) : Promise.resolve())),
+      Promise.allSettled([
+        ...imgs.map((i) => i.decode ? i.decode().catch(() => {
+        }) : Promise.resolve()),
+        loaded || Promise.resolve()
+      ]),
       new Promise((res) => setTimeout(res, 900))
     ]);
     if (!wrap.isConnected) {
@@ -1872,9 +1952,9 @@ var VTCore = (() => {
       el.style.flexGrow = String(sl.span / 1e3);
       if (sl.frame) {
         const img = document.createElement("img");
-        img.src = sl.frame.url;
         img.alt = kiosk + " " + tt.time(sl.ts) + tt.sfx(sl.ts);
         el.appendChild(img);
+        s.images.add(img, sl.frame.url, sl.ts);
       }
       strip.appendChild(el);
       sl.el = el;
@@ -2237,6 +2317,7 @@ var VTCore = (() => {
       axisLabels: [],
       suppressClick: false,
       pv: makePreview(root, TZ),
+      images: makeImageQueue(),
       PANEL_TT: zoneTexts(TZ, TZ, false)
     };
     (async function boot() {
@@ -2281,7 +2362,7 @@ var VTCore = (() => {
         renderAnnotations(s, normAnnotations(rawAnns, P));
       }
       setCursor(s, s.cursorT, null, true);
-      await revealWrapper(root, wrap);
+      await revealWrapper(root, wrap, s.images.idle());
       dressAll(s, 20);
       if (LIVE) {
         startPoll(s);
@@ -2298,6 +2379,7 @@ var VTCore = (() => {
       },
       destroy() {
         s.destroyed = true;
+        s.images.stop();
         if (s.pollTimer) {
           clearInterval(s.pollTimer);
         }

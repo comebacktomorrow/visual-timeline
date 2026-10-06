@@ -49,6 +49,20 @@ describe('rendered DOM (demo data)', () => {
       proto.getContext = getContext;
       proto.toDataURL = toDataURL;
     });
+    // jsdom never loads images, so no load event ever fires: fire one when
+    // a src is set, as a browser would once the image arrives. The strip
+    // images load through a newest-first queue that waits for those events
+    // (ui/imageQueue.ts), and the snapshots must show every one loaded.
+    const imgProto = window.HTMLImageElement.prototype;
+    const srcDesc = Object.getOwnPropertyDescriptor(imgProto, 'src')!;
+    Object.defineProperty(imgProto, 'src', {
+      ...srcDesc,
+      set(this: HTMLImageElement, v: string) {
+        srcDesc.set!.call(this, v);
+        setTimeout(() => this.dispatchEvent(new window.Event('load')), 0);
+      },
+    });
+    restore.push(() => Object.defineProperty(imgProto, 'src', srcDesc));
     root = document.createElement('div');
     document.body.appendChild(root);
   });

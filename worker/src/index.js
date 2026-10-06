@@ -27,6 +27,8 @@
  */
 
 const FRAME_CACHE = 'public, max-age=31536000, immutable';
+// signed image URLs change only when their expiry block does (handleFrames)
+const SIG_BLOCK_MS = 6 * 3600 * 1000;
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 const VARIANTS = new Set(['lo', 'hi']);
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
@@ -464,8 +466,13 @@ async function handleFrames(url, env, ctx, viewer) {
   let auth = '';
   if (env.IMG_SIGN_KEY && !env.IMG_BASE) {
     // validity must comfortably outlive this JSON response's cache life
-    // (≤1h) plus an open viewing session; a leak exposes one source for a day
-    const exp = Date.now() + 24 * 3600 * 1000;
+    // (≤1h) plus an open viewing session; a leak exposes one source for
+    // about a day. The expiry is rounded UP to a 6-hour boundary, so every
+    // response in that block mints the SAME URLs: the browser's cache keys
+    // on the full URL, and an expiry of "now + 24h" made every refresh
+    // re-download every thumbnail despite the immutable cache header.
+    // Valid for 24-30 h from minting.
+    const exp = Math.ceil(Date.now() / SIG_BLOCK_MS) * SIG_BLOCK_MS + 24 * 3600 * 1000;
     auth = `?e=${exp}&sig=${await signScope(env, site, source, exp)}`;
   }
   const frames = [...best.values()]

@@ -100,7 +100,15 @@ zone.
 
 At most one frame per `step`-sized bucket (the frame nearest each bucket
 tick), `from`/`to` epoch ms, `step` ms (a multiple of the source's cadence —
-clients derive it from their pixel budget, Prometheus-style).
+clients derive it from their pixel budget, Prometheus-style). The panel asks
+for about one bucket per 7 px of width per source, as
+`cadence × ceil(frames in range ÷ slots)`.
+
+Image URLs should stay the same for a given frame from one response to the
+next. Frames never change, so browsers can cache them for good, but only
+while the URL (query string included) doesn't change. A backend that signs
+its URLs should keep the signature stable over a block of hours, as the
+reference worker does (see `IMG_SIGN_KEY` below).
 
 ```json
 [{"source":"source-1","ts":1783488360000,"url":"https://…/frame/lo/site-a/source-1/1783488360000.jpg"}]
@@ -218,7 +226,10 @@ three env vars, composable per deployment:
   URL, and `/frame/*` accepts a valid signature as authorization on its
   own. The long-lived viewer token then never appears in image URLs
   (browser history, dashboard JSON, request logs); a leaked URL exposes
-  one source's frames for ≤24 h. One signature covers both variants of a
+  one source's frames for 24–30 h. The expiry is rounded up to a 6-hour
+  boundary, so every `/frames` response in that block returns the same
+  URLs and browsers keep serving the (immutable) frames from their cache
+  across refreshes. One signature covers both variants of a
   source, so clients reuse the lo URL's query string when constructing
   hi-variant URLs. The viewer token keeps working as a fallback.
 - **`IMG_BASE`** — the explicit *public* opt-out for content that

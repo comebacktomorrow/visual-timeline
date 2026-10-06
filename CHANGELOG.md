@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Strip images load newest first. A timeline holds one image per slot,
+  hundreds per source, and the browser used to fetch them all at once in
+  page order, oldest first, so on a slow connection the live edge arrived
+  last. They now load newest to oldest across every source, 4 at a time,
+  so each card fills in from the right. The magnifier, the click-in
+  preview and the live poll's new frames don't queue.
+- Reference worker: signed image URLs no longer change on every refresh.
+  The signature's expiry was "now + 24 h", so each `/frames` response
+  minted new URLs and browsers re-downloaded every thumbnail on each
+  dashboard refresh, despite the year-long immutable cache header. The
+  expiry is now rounded up to a 6-hour boundary (valid 24-30 h), so the
+  URLs stay the same within each 6-hour block.
 - The time axis matches Grafana's own time series panel at every range and
   width. It used to fall apart at some ranges: at 12 hours it showed
   "06/10, 05:00" on every hourly tick where Grafana shows "05:00" every half

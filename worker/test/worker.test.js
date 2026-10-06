@@ -103,6 +103,29 @@ test('signed image URLs authorize their own source and nothing else', async () =
   assert.equal((await call(otherSource + url.search, env)).status, 401, 'signature is scoped to its source');
 });
 
+test('signed image URLs stay the same across refreshes within a 6-hour block', async (t) => {
+  const env = { FRAMES: memR2(frameKeys(1)), VIEWER_TOKEN: 'v-all', IMG_SIGN_KEY: 'sign-key' };
+  const auth = { headers: { authorization: 'Bearer v-all' } };
+  const BLOCK = 6 * 3600e3;
+  const urlsAt = async (now) => {
+    t.mock.method(Date, 'now', () => now);
+    const res = await call(framesPath(NOW - 3600e3, NOW, MIN), env, auth);
+    t.mock.restoreAll();
+    return (await res.json()).map((f) => f.url);
+  };
+  const start = Math.ceil(NOW / BLOCK) * BLOCK - BLOCK + 1;   // just after a block boundary
+  const first = await urlsAt(start);
+  // a refresh minutes or hours later, same block: byte-identical URLs, so the
+  // browser's cache (keyed on the full URL) serves every thumbnail again
+  assert.deepEqual(await urlsAt(start + 3600e3), first);
+  assert.deepEqual(await urlsAt(start + BLOCK - 2), first);
+  // the next block mints a new expiry
+  assert.notDeepEqual(await urlsAt(start + BLOCK), first);
+  // and the expiry is always at least 24 h away
+  const e = Number(new URL(first[0]).searchParams.get('e'));
+  assert.ok(e - start >= 24 * 3600e3 && e - start <= 30 * 3600e3);
+});
+
 /* ---------------- X-Timezone (#68) ---------------- */
 
 /* an R2 that keeps what is put: index.json round-trips with etags, so an
