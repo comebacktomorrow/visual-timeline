@@ -24,6 +24,10 @@
   `visual-timeline-selfhost_frames`.
 - The demo and dev environments provision a "Visual Timeline (demo)" data
   source, and their dashboards use it.
+- Reference worker and self-hosted image: `sharp` (an image library wrangler's
+  Miniflare pins at 0.35.4) is overridden to 0.35.5 for GHSA-wq5f-xc86-pv6w,
+  a high-severity issue in its bundled SVG library. The deployed worker
+  doesn't use it; the self-hosted backend runs wrangler, so it ships it.
 
 ## 1.0.0 (2026-10-06)
 

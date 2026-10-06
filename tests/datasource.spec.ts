@@ -74,7 +74,10 @@ test('Demo data hides the API settings and passes Save & test without an API', a
   const configPage = await createDataSourceConfigPage({ type: DS_TYPE });
   const config = page.getByTestId('vt-datasource-config');
   await expect(config.getByRole('textbox', { name: /API URL/ })).toBeVisible();
-  await config.locator('#vt-demo').click({ force: true });
+  // a dispatched click, as React sees a user's: Grafana's Switch keeps its
+  // checkbox visually hidden, and on Grafana 10.4 and 11.2 it sits outside
+  // the viewport, so even a forced click is refused there
+  await config.locator('#vt-demo').dispatchEvent('click');
   await expect(config.getByRole('textbox', { name: /API URL/ })).toHaveCount(0);
   // demo data calls no API, so there is no response to wait for
   await configPage.getByGrafanaSelector(selectors.pages.DataSource.saveAndTest).click();
