@@ -33,8 +33,12 @@
     ],
     "screenshots": [
       {
-        "name": "Timeline and multiview on a dashboard",
+        "name": "Timeline and multiview on a dashboard (dark theme)",
         "path": "img/screenshot-dashboard.png"
+      },
+      {
+        "name": "Timeline and multiview on a dashboard (light theme)",
+        "path": "img/screenshot-dashboard-light.png"
       }
     ],
     "version": "%VERSION%",

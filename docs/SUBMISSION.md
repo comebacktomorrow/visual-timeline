@@ -53,16 +53,16 @@ can't run):
       #77 (small quirks) is optional for 1.0.
 - [ ] **Screenshots, taken in a real Grafana** (`npm run server`, which
       needs Docker, then http://localhost:3000). The catalog shows
-      `info.screenshots` from `src/plugin.json`; today there is one dark
-      dashboard shot.
-  - [ ] Add a light-theme dashboard shot. Reviewers check both themes.
+      `info.screenshots` from `src/plugin.json`; there is a dark and a light
+      dashboard shot (the light one taken 2026-10-06 from `a934719`).
+  - [x] Add a light-theme dashboard shot. Reviewers check both themes.
   - [ ] Optionally add the data source config page and the grid with source
         time zones.
-  - [ ] Save them as PNGs in `src/img/` and list them in
+  - [x] Save them as PNGs in `src/img/` and list them in
         `src/plugin.json` `info.screenshots`.
-  - [ ] Compress them. `screenshot-dashboard.png` is 824 KB and webpack
-        warns about it; a lossless squeeze (e.g. `oxipng` or `pngquant`)
-        should roughly halve it.
+  - [ ] Compress them. The light shot is done (`pngquant --quality=80-95`,
+        219 KB). `screenshot-dashboard.png` (dark) is still 824 KB and
+        webpack warns about it.
 - [ ] Optional: add a sponsor link (`info.links` entry named `sponsor`). The
       validator suggests one; it isn't required. Owner's call.
 - [ ] Branch protection: if it requires a check called `compatibilitycheck`,
