@@ -65,3 +65,18 @@ test('Save & test without an API URL explains what is missing', async ({
   await configPage.getByGrafanaSelector(selectors.pages.DataSource.saveAndTest).click();
   await expect(configPage).toHaveAlert('error', { hasText: 'Set the API URL' });
 });
+
+test('Demo data hides the API settings and passes Save & test without an API', async ({
+  createDataSourceConfigPage,
+  selectors,
+  page,
+}) => {
+  const configPage = await createDataSourceConfigPage({ type: DS_TYPE });
+  const config = page.getByTestId('vt-datasource-config');
+  await expect(config.getByRole('textbox', { name: /API URL/ })).toBeVisible();
+  await config.locator('#vt-demo').click({ force: true });
+  await expect(config.getByRole('textbox', { name: /API URL/ })).toHaveCount(0);
+  // demo data calls no API, so there is no response to wait for
+  await configPage.getByGrafanaSelector(selectors.pages.DataSource.saveAndTest).click();
+  await expect(configPage).toHaveAlert('success', { hasText: 'Demo data is on' });
+});

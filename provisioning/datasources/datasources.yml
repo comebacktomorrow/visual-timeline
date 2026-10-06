@@ -6,6 +6,16 @@ datasources:
     uid: trlxrdZVk
     isDefault: true
 
+  # Demo data: no API. Panels on it draw the built-in demo sources; the
+  # panel smoke tests and the default dashboard use it.
+  - name: Visual Timeline (demo)
+    type: savvycocoa1919-visualtimeline-datasource
+    uid: vt-demo
+    access: proxy
+    editable: true
+    jsonData:
+      demo: true
+
   # Visual Timeline API data sources against the mock frames API that
   # docker-compose.yaml starts (tests/mock-api). The viewer token comes from
   # the environment, as a real one would; the second one is deliberately

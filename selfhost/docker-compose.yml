@@ -14,7 +14,10 @@
 # The first run builds the backend image and the plugin, so it takes a few
 # minutes. Ports taken? Set VT_PORT and GRAFANA_PORT, and update PUBLIC_URL
 # in .env to match VT_PORT.
-name: visual-timeline
+# not "visual-timeline": that is the repository's own dev compose project
+# (docker-compose.yaml at the root), and sharing it would replace one
+# stack's Grafana with the other's
+name: visual-timeline-selfhost
 
 services:
   backend:

@@ -6,7 +6,7 @@ import type { VisualTimelineOptions } from './types';
 // keep Grafana's runtime out of the unit test: requests are injected
 jest.mock('../shared/backendRequest', () => ({ backendRequest: jest.fn() }));
 
-const settings = (apiUrl?: string) =>
+const settings = (apiUrl?: string, demo?: boolean) =>
   ({
     id: 1,
     uid: 'vt-ds',
@@ -14,7 +14,7 @@ const settings = (apiUrl?: string) =>
     name: 'Visual Timeline API',
     access: 'proxy',
     readOnly: false,
-    jsonData: { apiUrl },
+    jsonData: { apiUrl, demo },
     meta: { id: 'savvycocoa1919-visualtimeline-datasource' },
   }) as unknown as DataSourceInstanceSettings<VisualTimelineOptions>;
 
@@ -83,6 +83,16 @@ describe('testDatasource', () => {
     await expect(ds.testDatasource()).resolves.toMatchObject({
       status: 'error',
       message: expect.stringMatching(/API URL/),
+    });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  test('Demo data passes without an API URL and calls nothing', async () => {
+    const request = ok([]);
+    const ds = new VisualTimelineDataSource(settings(undefined, true), request);
+    await expect(ds.testDatasource()).resolves.toMatchObject({
+      status: 'success',
+      message: expect.stringMatching(/Demo data/),
     });
     expect(request).not.toHaveBeenCalled();
   });
