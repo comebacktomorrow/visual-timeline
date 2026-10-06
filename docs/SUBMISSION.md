@@ -60,9 +60,8 @@ can't run):
         time zones.
   - [x] Save them as PNGs in `src/img/` and list them in
         `src/plugin.json` `info.screenshots`.
-  - [ ] Compress them. The light shot is done (`pngquant --quality=80-95`,
-        219 KB). `screenshot-dashboard.png` (dark) is still 824 KB and
-        webpack warns about it.
+  - [x] Compress them (`pngquant --quality=80-95`): light 219 KB, dark
+        225 KB, both under webpack's 244 KB warning.
 - [ ] Optional: add a sponsor link (`info.links` entry named `sponsor`). The
       validator suggests one; it isn't required. Owner's call.
 - [ ] Branch protection: if it requires a check called `compatibilitycheck`,
