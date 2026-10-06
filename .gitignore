@@ -45,3 +45,6 @@ yarn-error.log*
 
 # tool caches written into the checkout (an npm cache got committed once)
 .cache/
+
+# self-hosted stack: real tokens
+selfhost/.env

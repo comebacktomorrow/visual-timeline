@@ -1,0 +1,15 @@
+apiVersion: 1
+# The self-hosted backend, reached on the compose network. The viewer token
+# comes from VIEWER_TOKEN in selfhost/.env, never the dashboard JSON. Image
+# URLs come back on PUBLIC_URL, which the browser can reach.
+datasources:
+  - name: Visual Timeline API
+    type: savvycocoa1919-visualtimeline-datasource
+    uid: vt-selfhost
+    access: proxy
+    isDefault: true
+    editable: true
+    jsonData:
+      apiUrl: http://backend:8787
+    secureJsonData:
+      viewerToken: ${VT_VIEWER_TOKEN}

@@ -103,6 +103,16 @@ test('signed image URLs authorize their own source and nothing else', async () =
   assert.equal((await call(otherSource + url.search, env)).status, 401, 'signature is scoped to its source');
 });
 
+test('PUBLIC_URL sets the origin of signed image URLs, whatever address the API was called on', async () => {
+  const env = { FRAMES: memR2(frameKeys(1)), VIEWER_TOKEN: 'v-all', IMG_SIGN_KEY: 'sign-key', PUBLIC_URL: 'http://nas.lan:8787/' };
+  const res = await call(framesPath(NOW - 3600e3, NOW, MIN), env, { headers: { authorization: 'Bearer v-all' } });
+  const url = new URL((await res.json()).at(-1).url);
+  assert.equal(url.origin, 'http://nas.lan:8787');
+  assert.ok(url.pathname.startsWith('/frame/lo/site-a/'), 'one slash between origin and path');
+  assert.ok(url.searchParams.get('sig'), 'still signed');
+  assert.equal((await call(url.pathname + url.search, env)).status, 200, 'and the signature still verifies');
+});
+
 test('signed image URLs stay the same across refreshes within a 6-hour block', async (t) => {
   const env = { FRAMES: memR2(frameKeys(1)), VIEWER_TOKEN: 'v-all', IMG_SIGN_KEY: 'sign-key' };
   const auth = { headers: { authorization: 'Bearer v-all' } };

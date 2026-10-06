@@ -140,7 +140,8 @@ Either way, the panel needs a server that implements the API:
   a single-file Cloudflare Worker over R2, with cadence-aligned storage,
   immutable frame caching, per-site upload tokens, and private-by-default reads
   (viewer token plus signed, expiring image URLs). Its README covers running it
-  locally with a simulated fleet, and deploying it.
+  locally with a simulated fleet, and deploying it to Cloudflare. To run it on
+  your own hardware instead, see [Self-hosting](#self-hosting).
 - Uploaders are simple: capture, POST a JPEG on the cadence grid, and on
   failure drop the frame and move on. See "Implementing your own uploader" in
   the API document.
@@ -193,6 +194,16 @@ API with open reads.
 The
 [API document](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md)
 has the details.
+
+## Self-hosting
+
+The whole stack also runs on your own hardware, from one Docker Compose file:
+the reference backend (the same worker code, on workerd, Cloudflare's
+open-source Workers runtime, with frames on a Docker volume) and a Grafana with
+the plugin and a ready data source. Frames stay on your network, with no cloud
+account. A small script uploads IP camera snapshots, so it suits a home lab
+watching its cameras, kiosks or dashboards. See
+[selfhost/README.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/selfhost/README.md).
 
 ## Without Grafana: the standalone viewer
 
