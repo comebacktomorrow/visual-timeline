@@ -87,6 +87,7 @@
   },
   "overrides": {
     "js-cookie": "^3.0.6",
-    "basic-ftp": "^6.2.1"
+    "basic-ftp": "^6.2.1",
+    "source-map-js": "^1.2.2"
   }
 }

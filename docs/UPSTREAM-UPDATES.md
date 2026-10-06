@@ -191,10 +191,24 @@ If a high sits in a dev-only chain that `audit fix` can't reach, pin it with
 audit fixes as their own commit (they can ride on a dependency PR, since
 separate PRs would conflict on the lockfile anyway).
 
+If no fixed release exists at all, and the package is build-time only and
+never sees untrusted input, accept it in `osv-scanner.toml` at the repo root:
+the advisory id and its aliases, an `ignoreUntil` about three months out, and
+the reason. The catalog validator's osv-scanner reads that file next to the
+lockfile, and the project checks' advisory gate
+(`.github/scripts/audit-gate.mjs`) reads the same list, so one entry covers
+both. When the date passes, both gates fail again and the advisory gets a
+fresh look. Remove the entry as soon as a fix ships.
+
+osv-scanner and `npm audit` use different databases, so an advisory can
+reach one first. Run the validator as well as `npm audit` before deciding a
+lockfile is clean.
+
 To check it the way the catalog will, push first, then run the validator
 against the GitHub source. The scaffold's `validate-plugin` skill omits the
 source argument, so it skips this check. A local `file://` source also hangs
-walking `node_modules`, so point it at GitHub instead:
+walking `node_modules` in some setups (it ran in about a minute on
+2026-10-06, but don't count on it), so point it at GitHub instead:
 
 ```bash
 npm run build
@@ -285,7 +299,7 @@ commit before calling the job done.
 
 Update this section whenever an ignore, pin or token changes.
 
-As of **2026-10-02**:
+As of **2026-10-06**:
 
 | What | State | When to revisit |
 |---|---|---|
@@ -295,16 +309,19 @@ As of **2026-10-02**:
 | Ignore: `@grafana/eslint-config` 10.x | its exports changed; only the scaffold migration updates `.config/eslint.config.mjs` | automatic once the 7.12 scaffold PR merges |
 | Pin: `overrides.js-cookie ^3.0.6` | floor under a dev-only high (GHSA-qjx8-664m-686j) reached through `@grafana/data` → `react-use` / `@react-hookz/web`, whose `^3.0.0` range still allows the vulnerable ≤3.0.5 | drop once they require ≥3.0.6 themselves |
 | Pin: `overrides.basic-ftp ^6.2.1` | floor under a dev-only high (GHSA-c475-qrg2-pj4r) reached through `@grafana/sign-plugin` → `proxy-agent` → `pac-proxy-agent` → `get-uri`, whose `^5.3.1` range has no fixed release; get-uri's FTP calls (`access`, `lastMod`, `list`, `downloadTo`, `close`) are unchanged in 6.x | drop once `get-uri` requires ≥6.2.1 itself |
+| Pin: `overrides.source-map-js ^1.2.2` | floor under a dev-only high (CVE-2026-93749, osv only; not yet in `npm audit`) reached through `postcss`, `sass` and `imports-loader`, whose ranges still allow 1.2.1 | drop once they require ≥1.2.2 themselves |
+| Accepted: `braces` ≤3.0.3 (CVE-2026-93687 / GHSA-vfj7-8cjw-p6xm) | no fixed release; reached only through `eslint-webpack-plugin` → `micromatch`, which the scaffold's webpack config uses at build time on repo-local globs; nothing ships | `ignoreUntil` 2027-01-06 in `osv-scanner.toml`, or sooner if braces publishes a fix |
 | React | 19 (dev only), since 2026-09-25 | — |
 | `GH_PAT_TOKEN` | expires **2026-10-25** | regenerate before then; `pat-expiry.yml` opens an issue 14 days ahead |
-| Open advisories | 4 moderate (react-router chain), none high | they need an `@grafana` major, so leave them |
+| Open advisories | 4 moderate (react-router chain); the one high is the accepted `braces` entry | the moderates need an `@grafana` major, so leave them |
 
 ## Checks that watch for this between passes
 
 `.github/workflows/project-checks.yml` runs on every PR, on pushes to main and weekly:
 
-- **Advisories:** `npm audit --audit-level=high` fails when a high or critical advisory appears, the same
-  threshold as the catalog validator. The weekly run catches advisories published against an unchanged
+- **Advisories:** `.github/scripts/audit-gate.mjs` runs `npm audit` and fails on any high or critical
+  advisory that `osv-scanner.toml` hasn't accepted (or whose acceptance has expired), the same threshold
+  and the same ignore list as the catalog validator. The weekly run catches advisories published against an unchanged
   lockfile. GitHub's Dependabot alerts and security updates are also on, so a fix PR often arrives on its own.
 - **vt-core.js drift:** fails if the committed `web/vt-core.js` isn't what `npm run build:web` produces.
 - **Worker tests:** `cd worker && npm test`, contract tests against an in-memory R2.

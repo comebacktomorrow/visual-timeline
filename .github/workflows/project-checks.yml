@@ -58,9 +58,10 @@ jobs:
           node-version: '22'
       - name: Use npm 11 (matches the npm Dependabot builds lockfiles with)
         run: npm install -g npm@11
-      # the catalog validator's osv-scanner fails a submission on any high
+      # the catalog validator's osv-scanner fails a submission on any high;
+      # advisories accepted in osv-scanner.toml (dated) pass both gates
       - name: Plugin lockfile
-        run: npm audit --audit-level=high
+        run: node .github/scripts/audit-gate.mjs osv-scanner.toml
       - name: Worker lockfile (wrangler's tree)
-        run: npm audit --audit-level=high
+        run: node ../.github/scripts/audit-gate.mjs ../osv-scanner.toml
         working-directory: worker
