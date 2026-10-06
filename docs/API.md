@@ -287,7 +287,7 @@ CORS-with-credentials, and it breaks the wildcard-CORS embed story.)
 ## Try it with curl
 
 ```bash
-BASE=http://localhost:8787          # wrangler dev (see CONTRIBUTING.md, "Demo in two minutes")
+BASE=http://localhost:8787          # wrangler dev (see worker/README.md)
 TOKEN=dev-token                     # from worker/.dev.vars
 
 # upload a frame (any JPEG)
