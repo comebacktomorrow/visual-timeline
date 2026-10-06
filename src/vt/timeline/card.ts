@@ -77,8 +77,9 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     el.style.flexGrow = String(sl.span / 1000);
     if (sl.frame) {
       const img = document.createElement('img');
-      img.src = sl.frame.url; img.alt = kiosk + ' ' + tt.time(sl.ts) + tt.sfx(sl.ts);
+      img.alt = kiosk + ' ' + tt.time(sl.ts) + tt.sfx(sl.ts);
       el.appendChild(img);
+      s.images.add(img, sl.frame.url, sl.ts);   // newest first, across all cards
     }
     strip.appendChild(el);
     sl.el = el;

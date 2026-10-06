@@ -218,7 +218,10 @@ three env vars, composable per deployment:
   URL, and `/frame/*` accepts a valid signature as authorization on its
   own. The long-lived viewer token then never appears in image URLs
   (browser history, dashboard JSON, request logs); a leaked URL exposes
-  one source's frames for ≤24 h. One signature covers both variants of a
+  one source's frames for 24–30 h. The expiry is rounded up to a 6-hour
+  boundary, so every `/frames` response in that block returns the same
+  URLs and browsers keep serving the (immutable) frames from their cache
+  across refreshes. One signature covers both variants of a
   source, so clients reuse the lo URL's query string when constructing
   hi-variant URLs. The viewer token keeps working as a fallback.
 - **`IMG_BASE`** — the explicit *public* opt-out for content that

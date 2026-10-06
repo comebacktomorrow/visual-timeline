@@ -6,6 +6,7 @@ import { bootErrorText, makeApiBackend } from '../backends/api';
 import { injectStyles } from '../dom/styles';
 import { makeBackend } from '../backends/demo';
 import { annTip, normAnnotations } from '../ui/annotations';
+import { makeImageQueue } from '../ui/imageQueue';
 import { makePreview } from '../ui/preview';
 import { makeWrapper, q, retireWrapper, revealWrapper } from '../ui/wrapper';
 import type { Backend, MountConfig, MountInstance, MountWindow, SourceModel } from '../types';
@@ -56,6 +57,7 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
     axisLabels: [],
     suppressClick: false,
     pv: makePreview(root, TZ),
+    images: makeImageQueue(),
     PANEL_TT: zoneTexts(TZ, TZ, false),
   };
 
@@ -104,7 +106,7 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
       : (backend.annotations ? backend.annotations() : []);
     if (cfg.showAnnotations !== false) {renderAnnotations(s, normAnnotations(rawAnns, P));}
     setCursor(s, s.cursorT, null, true);   // rest position; don't publish
-    await revealWrapper(root, wrap);       // swap in only once images decoded
+    await revealWrapper(root, wrap, s.images.idle());   // swap in once images load (or 0.9 s)
     dressAll(s, 20);                       // hatch alignment + labels once layout is real
 
     if (LIVE) {startPoll(s);}
@@ -115,6 +117,7 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
     isHovering() { return wrap.classList.contains('strip-hover'); },
     destroy() {
       s.destroyed = true;
+      s.images.stop();
       if (s.pollTimer) {clearInterval(s.pollTimer);}
       s.pv.retire();   // an open preview survives refresh remounts (adopted by the successor)
       annTip().close();   // a hovered or pinned tip at teardown would strand

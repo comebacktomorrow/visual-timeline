@@ -18,10 +18,15 @@ export function makeWrapper(root: HTMLElement): HTMLDivElement {
   root.appendChild(wrap);
   return wrap;
 }
-export async function revealWrapper(root: HTMLElement, wrap: HTMLElement): Promise<void> {
+/* `loaded` is the strip images' queue going idle: the images it hasn't set
+ * a src on yet would otherwise count as decoded at once. */
+export async function revealWrapper(root: HTMLElement, wrap: HTMLElement, loaded?: Promise<void>): Promise<void> {
   const imgs = [...wrap.querySelectorAll('img')];
   await Promise.race([
-    Promise.allSettled(imgs.map(i => (i.decode ? i.decode().catch(() => {}) : Promise.resolve()))),
+    Promise.allSettled([
+      ...imgs.map(i => (i.decode ? i.decode().catch(() => {}) : Promise.resolve())),
+      loaded || Promise.resolve(),
+    ]),
     new Promise(res => setTimeout(res, 900)),
   ]);
   if (!wrap.isConnected) {return;}

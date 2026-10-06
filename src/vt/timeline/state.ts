@@ -1,3 +1,4 @@
+import type { ImageQueue } from '../ui/imageQueue';
 import type { Preview } from '../ui/preview';
 import type { SourceZone, ZoneTexts } from '../zones/source';
 import type { Backend, MountConfig, MountWindow, SourceDecl, SourceModel } from '../types';
@@ -39,6 +40,7 @@ export interface TimelineState {
   backend: Backend;
   wrap: HTMLDivElement;
   pv: Preview;
+  images: ImageQueue;  // strip images, newest first (ui/imageQueue.ts)
   PANEL_TT: ZoneTexts;
   kiosks: SourceDecl[];         // the sources shown (after boot: those with a card)
   cards: Record<string, Card>;  // by source id
