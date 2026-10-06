@@ -1,6 +1,28 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 (2026-10-06)
+
+### Highlights
+
+- **An app with an API data source.** The plugin is now a Grafana app that
+  installs the panel and a Visual Timeline API data source. The data source
+  keeps the viewer token in Grafana's encrypted settings and adds it on the
+  server, so the token no longer has to sit in dashboard JSON. The panel's
+  API key option is removed; see "Upgrading" in the README.
+- **Light and dark themes.** The panel follows Grafana's theme, including a
+  live switch.
+- **Time zones.** The panel follows the dashboard's time zone, and a source
+  can declare its own, shown in its header and, optionally, on its
+  thumbnails.
+- **A time axis that matches Grafana's own** time series panel, at every
+  range and width.
+- **Faster on slow connections.** Thumbnails load newest first, and the
+  reference worker's image URLs stay the same between refreshes, so
+  browsers keep them cached.
+- **Security fix:** text from the API (source ids, sites, locations, tags)
+  is now escaped before display instead of being inserted as HTML (#59).
+
+### All changes
 
 - Strip images load newest first. A timeline holds one image per slot,
   hundreds per source, and the browser used to fetch them all at once in

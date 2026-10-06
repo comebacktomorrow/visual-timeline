@@ -48,10 +48,10 @@ can't run):
 
 ## 1. Before the release
 
-- [ ] Merge any open PRs that should be in 1.0 (check
+- [x] Merge any open PRs that should be in 1.0 (check
       [open PRs](https://github.com/comebacktomorrow/visual-timeline/pulls)).
       #77 (small quirks) is optional for 1.0.
-- [ ] **Screenshots, taken in a real Grafana** (`npm run server`, which
+- [x] **Screenshots, taken in a real Grafana** (`npm run server`, which
       needs Docker, then http://localhost:3000). The catalog shows
       `info.screenshots` from `src/plugin.json`; there is a dark and a light
       dashboard shot (the light one taken 2026-10-06 from `a934719`).
@@ -62,12 +62,15 @@ can't run):
         `src/plugin.json` `info.screenshots`.
   - [x] Compress them (`pngquant --quality=80-95`): light 219 KB, dark
         225 KB, both under webpack's 244 KB warning.
-- [ ] Optional: add a sponsor link (`info.links` entry named `sponsor`). The
-      validator suggests one; it isn't required. Owner's call.
-- [ ] Branch protection: if it requires a check called `compatibilitycheck`,
+- [x] Optional: a sponsor link (`info.links` entry named `sponsor`). The
+      validator suggests one; it isn't required. Decided against
+      (2026-10-06).
+- [x] Branch protection: if it requires a check called `compatibilitycheck`,
       switch it to the three per-plugin checks
       (`compatibilitycheck (./src/module.tsx)`,
       `(./src/panel/module.ts)`, `(./src/datasource/module.ts)`).
+      Checked 2026-10-06: `main` has no branch protection, only a no-delete
+      ruleset with no required checks, so there is nothing to change.
 
 ## 2. Cut 1.0.0
 
@@ -90,6 +93,11 @@ can't run):
   - [ ] Optional: run the latest validator too, from a machine that can
         reach grafana.com:
         `npx -y @grafana/plugin-validator@latest -sourceCodeUri https://github.com/comebacktomorrow/visual-timeline/tree/v1.0.0 savvycocoa1919-visualtimeline-app-1.0.0.zip`
+        A pre-flight run of 0.49.10 on `main` (b8e10fd) on 2026-10-06 found
+        no errors and only the "unsigned plugin" warning; osv-scanner,
+        broken links and React 19 compatibility all passed. (With
+        `--cache .cache/npm` the React 19 check fails to start; use npm's
+        default cache.)
 - [ ] Edit the draft release notes if needed, then **publish** it. The zip
       and sha1 links only work once it's published.
 
