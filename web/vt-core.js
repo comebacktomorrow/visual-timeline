@@ -21,11 +21,13 @@ var VTCore = (() => {
   // src/core.ts
   var core_exports = {};
   __export(core_exports, {
+    ApiError: () => ApiError,
     KTL_VAR_DEFAULTS: () => KTL_VAR_DEFAULTS,
     PAUSE_CLASSES: () => PAUSE_CLASSES,
     TICK_STEPS: () => TICK_STEPS,
     alignedStart: () => alignedStart,
     axisTicks: () => axisTicks,
+    bootErrorText: () => bootErrorText,
     buildSourceModel: () => buildSourceModel,
     clearPauseClasses: () => clearPauseClasses,
     erasFor: () => erasFor,
@@ -682,6 +684,75 @@ var VTCore = (() => {
       return url;
     }
   }
+  var PROXY_AUTH_FAILED = "Authentication to data source failed";
+  var ApiError = class extends Error {
+    constructor(message, status, call, auth) {
+      super(message);
+      this.status = status;
+      this.call = call;
+      this.auth = auth;
+      this.name = "ApiError";
+    }
+  };
+  async function apiError(call, r, viaProxy) {
+    const st = r.status;
+    if (viaProxy) {
+      let proxyAuth = st === 401;
+      if (st === 400) {
+        try {
+          const body = await r.json();
+          proxyAuth = (typeof body === "string" ? body : JSON.stringify(body ?? "")).includes(PROXY_AUTH_FAILED);
+        } catch {
+        }
+      }
+      if (proxyAuth) {
+        return new ApiError(
+          "The data source's viewer token was rejected. Check it in the data source's settings: Save & test shows what the API says.",
+          st,
+          call,
+          true
+        );
+      }
+      if (st === 403) {
+        return new ApiError(
+          "The data source's viewer token isn't allowed to read these sources (403). It may be scoped to other sites.",
+          st,
+          call,
+          true
+        );
+      }
+      if (st === 502 || st === 503 || st === 504) {
+        return new ApiError(
+          `Grafana couldn't reach the frames API (${st}). Check the data source's API URL.`,
+          st,
+          call,
+          false
+        );
+      }
+    } else if (st === 401) {
+      return new ApiError("The frames API needs a valid viewer token (401).", st, call, true);
+    } else if (st === 403) {
+      return new ApiError(
+        "The viewer token isn't allowed to read these sources (403). It may be scoped to other sites.",
+        st,
+        call,
+        true
+      );
+    }
+    return new ApiError(
+      st ? `The frames API answered ${st} to /${call}.` : `No answer from the frames API for /${call}.`,
+      st,
+      call,
+      false
+    );
+  }
+  function bootErrorText(e, authHint) {
+    if (e instanceof ApiError) {
+      return e.auth && authHint ? e.message + " " + authHint : e.message;
+    }
+    const msg = e && e.message ? e.message : String(e);
+    return "frames API unreachable \u2014 " + msg;
+  }
   function makeApiBackend(apiUrl, apiKey, apiFetch) {
     const base = (apiUrl || "").replace(/\/+$/, "");
     const key = apiFetch ? "" : apiKey;
@@ -694,14 +765,14 @@ var VTCore = (() => {
       async kiosks(sites) {
         const r = await get(sourcesPath(sites));
         if (!r.ok) {
-          throw new Error("kiosks " + r.status);
+          throw await apiError("sources", r, !!apiFetch);
         }
         return r.json();
       },
       async frames(site, kiosk, from, to, step) {
         const r = await get(framesPath(site, kiosk, from, to, step));
         if (!r.ok) {
-          throw new Error("frames " + r.status);
+          throw await apiError("frames", r, !!apiFetch);
         }
         const frames = await r.json();
         for (const f of frames) {
@@ -2102,7 +2173,7 @@ var VTCore = (() => {
         }
         const err = document.createElement("div");
         err.className = "boot-err";
-        err.textContent = "frames API unreachable \u2014 " + (e && e.message ? e.message : e);
+        err.textContent = bootErrorText(e, cfg.authHint);
         q(s.wrap, ".cards").appendChild(err);
         await revealWrapper(root, wrap);
         return;
@@ -2343,7 +2414,7 @@ var VTCore = (() => {
         }
         const err = document.createElement("div");
         err.className = "boot-err";
-        err.textContent = "frames API unreachable \u2014 " + (e && e.message ? e.message : e);
+        err.textContent = bootErrorText(e, cfg.authHint);
         q(s.wrap, ".grid").appendChild(err);
         await revealWrapper(root, wrap);
         return;

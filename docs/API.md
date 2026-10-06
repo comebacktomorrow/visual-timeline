@@ -260,16 +260,14 @@ API data source**, and the data source is where the viewer token belongs:
   server, so that URL must also be one viewers' browsers can reach.
 - Grafana's proxy reports an API `401` to the browser as `400`
   ("Authentication to data source failed"), so a rejected token never logs
-  the viewer out of Grafana. The data source's **Save & test** reports it as
-  a rejected token.
+  the viewer out of Grafana. The data source's **Save & test** and the panel
+  both report it as a rejected token.
 
-The panel's older **API key** option still works for existing dashboards,
-but it is deprecated. It is a per-panel option saved in the dashboard JSON in
-plaintext, and every viewer's browser receives it, because the panel then
-fetches directly. If you keep using it, use a dedicated, revocable viewer
-token per consumer (a dashboard, a wallboard), and treat "can view the
-dashboard" as "holds that token". The **API URL** option on its own remains
-the way to reach an API with open reads.
+The panel no longer has an **API key** option: it kept the token in the
+dashboard JSON in plaintext. The **API URL** option on its own remains the
+way to reach an API with open reads. The standalone app (`web/app.html`)
+still takes a viewer key, because it has no server side to hide one in;
+give it a dedicated, revocable viewer token per consumer.
 
 (The other conceivable flow, browser SSO à la Cloudflare Access in front of
 the worker, is a poor fit for panels: it needs cross-origin cookies and

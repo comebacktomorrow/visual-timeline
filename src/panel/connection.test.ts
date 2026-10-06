@@ -1,16 +1,22 @@
-import { dataSourceOptions, resolveConnection } from './connection';
+import { AUTH_HINT, dataSourceOptions, LEGACY_KEY_HINT, resolveConnection } from './connection';
 
 const request = jest.fn(async () => ({ status: 200, data: [] }));
 
 describe('resolveConnection', () => {
   test('no data source, no API URL: demo data (core gets nothing to fetch)', () => {
     const c = resolveConnection({}, () => undefined, request);
-    expect(c).toEqual({ apiUrl: '', apiKey: '' });
+    expect(c).toEqual({ apiUrl: '' });
   });
 
-  test("legacy options: direct mode with the panel's URL and key", () => {
-    const c = resolveConnection({ apiUrl: ' https://frames.example.com ', apiKey: ' k ' }, () => undefined, request);
-    expect(c).toEqual({ apiUrl: 'https://frames.example.com', apiKey: 'k' });
+  test('API URL option: direct mode, and a token error says how to connect one', () => {
+    const c = resolveConnection({ apiUrl: ' https://frames.example.com ' }, () => undefined, request);
+    expect(c).toEqual({ apiUrl: 'https://frames.example.com', authHint: AUTH_HINT });
+  });
+
+  test('a removed API key left in an older dashboard is never sent, only noticed', () => {
+    const c = resolveConnection({ apiUrl: 'https://frames.example.com', apiKey: ' k ' }, () => undefined, request);
+    expect(c).toEqual({ apiUrl: 'https://frames.example.com', authHint: LEGACY_KEY_HINT });
+    expect(JSON.stringify(c)).not.toContain('"k"');
   });
 
   test('a data source wins over the legacy options, and drops the panel key', async () => {
@@ -22,7 +28,8 @@ describe('resolveConnection', () => {
     );
     expect(lookup).toHaveBeenCalledWith('vt-ds');
     expect(c.apiUrl).toBe('https://private.example.com');
-    expect(c.apiKey).toBe('');
+    expect(c).not.toHaveProperty('apiKey');
+    expect(c.authHint).toBeUndefined();
     expect(c.apiFetch).toBeInstanceOf(Function);
     await c.apiFetch!('/sources');
     expect(request).toHaveBeenCalledWith(

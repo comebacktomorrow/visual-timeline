@@ -2,11 +2,13 @@
 
 exports[`public surface core.ts exports 1`] = `
 [
+  "ApiError",
   "KTL_VAR_DEFAULTS",
   "PAUSE_CLASSES",
   "TICK_STEPS",
   "alignedStart",
   "axisTicks",
+  "bootErrorText",
   "buildSourceModel",
   "clearPauseClasses",
   "erasFor",
@@ -44,11 +46,13 @@ exports[`public surface core.ts exports 1`] = `
 
 exports[`public surface the VTCore global built into web/vt-core.js 1`] = `
 [
+  "ApiError",
   "KTL_VAR_DEFAULTS",
   "PAUSE_CLASSES",
   "TICK_STEPS",
   "alignedStart",
   "axisTicks",
+  "bootErrorText",
   "buildSourceModel",
   "clearPauseClasses",
   "erasFor",

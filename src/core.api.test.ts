@@ -1,4 +1,4 @@
-import { framesPath, hiUrlFor as untypedHiUrlFor, makeApiBackend as untypedMakeApiBackend, resolveFrameUrl, sourcesPath } from './core';
+import { ApiError, bootErrorText, framesPath, hiUrlFor as untypedHiUrlFor, makeApiBackend as untypedMakeApiBackend, resolveFrameUrl, sourcesPath } from './core';
 
 // the tests pass loose shapes (partial frames and decls): give them the signatures they use
 type ApiFetch = (path: string) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
@@ -82,10 +82,22 @@ describe('makeApiBackend with an injected fetch (data source proxy mode)', () =>
     ]);
   });
 
-  test('a failed request becomes the same error the direct mode throws', async () => {
-    const apiFetch = async () => response({ message: 'unauthorized' }, 401);
-    await expect(makeApiBackend(API, '', apiFetch).kiosks(null)).rejects.toThrow('kiosks 401');
-    await expect(makeApiBackend(API, '', apiFetch).frames('a', 'b', 0, 1, 1)).rejects.toThrow('frames 401');
+  test("Grafana's 400 for an upstream 401 reads as a rejected data source token", async () => {
+    const apiFetch = async () => response('Authentication to data source failed', 400);
+    const err = await makeApiBackend(API, '', apiFetch).kiosks(null).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 400, call: 'sources', auth: true });
+    expect((err as Error).message).toMatch(/data source's viewer token was rejected/);
+    await expect(makeApiBackend(API, '', apiFetch).frames('a', 'b', 0, 1, 1)).rejects.toMatchObject({ call: 'frames', auth: true });
+  });
+
+  test('an ordinary 400, a 403 and a proxy 502 each say what they are', async () => {
+    const fail = (status: number, body: unknown = { error: 'x' }) =>
+      makeApiBackend(API, '', async () => response(body, status)).kiosks(null).catch((e: unknown) => e);
+    expect(await fail(400)).toMatchObject({ auth: false, message: 'The frames API answered 400 to /sources.' });
+    expect(await fail(403)).toMatchObject({ auth: true, message: expect.stringMatching(/isn't allowed.*\(403\)/) });
+    expect(await fail(502)).toMatchObject({ auth: false, message: expect.stringMatching(/couldn't reach the frames API \(502\)/) });
+    expect(await fail(0)).toMatchObject({ auth: false, message: 'No answer from the frames API for /sources.' });
   });
 
   test('works without a known API URL (absolute image URLs pass through)', async () => {
@@ -104,6 +116,36 @@ describe('makeApiBackend direct mode (unchanged)', () => {
     expect(url).toBe(`${API}/frames?site=site-a&source=source-1&from=0&to=1&step=1&variant=lo`);
     expect(init.headers).toEqual({ authorization: 'Bearer viewer-tok' });
     expect(frames[0].url).toBe(`${FRAME}?k=viewer-tok`);
+  });
+});
+
+describe('direct-mode errors', () => {
+  test('a 401 asks for a valid viewer token, without reading the body', async () => {
+    const json = jest.fn(async () => { throw new Error('not JSON'); });
+    (global as any).fetch = jest.fn(async () => ({ ok: false, status: 401, json }));
+    const err = await makeApiBackend(API, '').kiosks(null).catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 401, auth: true, message: 'The frames API needs a valid viewer token (401).' });
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  test('a 400 is an ordinary refusal (only the proxy turns 401 into 400)', async () => {
+    (global as any).fetch = jest.fn(async () => response('Authentication to data source failed', 400));
+    expect(await makeApiBackend(API, '').kiosks(null).catch((e: unknown) => e)).toMatchObject({ auth: false });
+  });
+});
+
+describe('bootErrorText', () => {
+  test("a token error carries the host's hint; other API errors don't", () => {
+    expect(bootErrorText(new ApiError('Token rejected.', 401, 'sources', true), 'Use a data source.')).toBe(
+      'Token rejected. Use a data source.'
+    );
+    expect(bootErrorText(new ApiError('The frames API answered 500 to /sources.', 500, 'sources', false), 'Use a data source.')).toBe(
+      'The frames API answered 500 to /sources.'
+    );
+  });
+
+  test('a network error or timeout means the API was unreachable', () => {
+    expect(bootErrorText(new TypeError('Failed to fetch'))).toBe('frames API unreachable — Failed to fetch');
   });
 });
 

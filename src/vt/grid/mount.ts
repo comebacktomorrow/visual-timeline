@@ -2,7 +2,7 @@ import { resolveTimeZone } from '../time/zones';
 import { buildSourceModel } from '../model/slots';
 import { matchesTags, parseTagFilter, parseVar } from '../model/filters';
 import { zoneTexts } from '../zones/source';
-import { makeApiBackend } from '../backends/api';
+import { bootErrorText, makeApiBackend } from '../backends/api';
 import { injectStyles } from '../dom/styles';
 import { makeBackend } from '../backends/demo';
 import { makePreview } from '../ui/preview';
@@ -48,7 +48,7 @@ export function mountGrid(root: HTMLElement, cfg: MountConfig): MountInstance & 
       if (s.destroyed) {return;}
       const err = document.createElement('div');
       err.className = 'boot-err';
-      err.textContent = 'frames API unreachable — ' + (e && e.message ? e.message : e);
+      err.textContent = bootErrorText(e, cfg.authHint);
       q(s.wrap, '.grid').appendChild(err);
       await revealWrapper(root, wrap);
       return;
