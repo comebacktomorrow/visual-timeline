@@ -21,6 +21,10 @@ What it does:
   embeddable viewer and fleet simulator) from the same origin; see
   [docs/VIEWER.md](../docs/VIEWER.md).
 
+To run it on your own hardware for good rather than on Cloudflare, use the
+Docker Compose stack in [selfhost/](../selfhost/README.md), which runs this
+same code.
+
 ## Run it locally (no Cloudflare account)
 
 ```bash
@@ -75,7 +79,7 @@ in-memory bucket. They don't need a Cloudflare account.
    replaces the whole map, so keep your own record of what is deployed.
    Without `VIEWER_TOKEN`, anyone who knows the URL can read the frames.
    "Write auth" and "Read auth" in [docs/API.md](../docs/API.md) cover all
-   three, plus the optional `IMG_BASE`.
+   three, plus the optional `IMG_BASE` and `PUBLIC_URL`.
 
 3. Deploy:
 

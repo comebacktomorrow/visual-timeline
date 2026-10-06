@@ -1,0 +1,86 @@
+# Visual Timeline, self-hosted (experimental: see selfhost/README.md): the
+# frames backend and a Grafana with the plugin and a ready data source.
+#
+#   cp selfhost/.env.example selfhost/.env     # then fill in every value
+#   docker compose -f selfhost/docker-compose.yml up -d
+#
+# Backend:  http://localhost:8787  (API, plus the standalone viewer at /app.html)
+# Grafana:  http://localhost:3000  (admin / admin on first login)
+#
+# Cameras: write selfhost/cameras.json (see cameras.example.json) and set
+# COMPOSE_PROFILES=cameras in .env; the uploader service then posts their
+# snapshots.
+#
+# The first run builds the backend image and the plugin, so it takes a few
+# minutes. Ports taken? Set VT_PORT and GRAFANA_PORT, and update PUBLIC_URL
+# in .env to match VT_PORT.
+name: visual-timeline
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: selfhost/Dockerfile
+    restart: unless-stopped
+    ports:
+      - '${VT_PORT:-8787}:8787'
+    volumes:
+      - frames:/data
+      - ./.env:/config/vt.env:ro
+
+  # Posts the cameras in cameras.json to the backend. Off until
+  # COMPOSE_PROFILES=cameras is set in .env, so the stack starts without a
+  # cameras.json (a missing file would be mounted as an empty folder).
+  uploader:
+    profiles: [cameras]
+    build:
+      context: .
+      dockerfile: uploader.Dockerfile
+    restart: unless-stopped
+    init: true
+    depends_on:
+      - backend
+    environment:
+      VT_URL: http://backend:8787
+      # the backend's own map: each camera's site picks its token
+      UPLOAD_TOKENS: '${UPLOAD_TOKENS}'
+    volumes:
+      - ./cameras.json:/config/cameras.json:ro
+
+  # Builds the plugin into dist/ for Grafana, then exits. Once the plugin is
+  # installed from the Grafana catalog instead, drop this service and the
+  # dist mount, and install it with GF_PLUGINS_PREINSTALL.
+  plugin:
+    # node 24 bundles npm 11 — npm 10 rejects this repo's lockfile
+    image: node:24
+    working_dir: /app
+    volumes:
+      - ..:/app
+      # keep the container's linux node_modules out of the host checkout
+      - /app/node_modules
+    command: sh -c "npm ci --no-audit --no-fund && npm run build"
+
+  grafana:
+    image: grafana/grafana:12.4.12
+    restart: unless-stopped
+    depends_on:
+      plugin:
+        condition: service_completed_successfully
+      backend:
+        condition: service_started
+    ports:
+      - '${GRAFANA_PORT:-3000}:3000'
+    environment:
+      # the app and its two nested plugins are each checked under their own id
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: 'savvycocoa1919-visualtimeline-app,savvycocoa1919-visualtimeline-panel,savvycocoa1919-visualtimeline-datasource'
+      # read by the provisioned data source (grafana/provisioning/datasources)
+      VT_VIEWER_TOKEN: '${VIEWER_TOKEN:?set VIEWER_TOKEN in selfhost/.env}'
+    volumes:
+      - grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - ../dist:/var/lib/grafana/plugins/savvycocoa1919-visualtimeline-app
+
+volumes:
+  frames:
+  grafana:

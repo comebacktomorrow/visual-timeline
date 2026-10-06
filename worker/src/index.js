@@ -462,7 +462,13 @@ async function handleFrames(url, env, ctx, viewer) {
   // carry a source-scoped expiring signature instead of needing the viewer
   // token appended. IMG_BASE (public bucket domain) is the explicit public
   // opt-out — R2 can't verify signatures, so those URLs stay bare.
-  const base = env.IMG_BASE || url.origin;
+  // PUBLIC_URL is the address browsers use, for a worker that is also called
+  // on one they can't reach (a self-hosted backend behind Grafana's data
+  // source proxy, say http://backend:8787): image URLs are built on it, and
+  // still signed.
+  let publicUrl = env.PUBLIC_URL || '';
+  while (publicUrl.endsWith('/')) {publicUrl = publicUrl.slice(0, -1);}   // a loop, not /\/+$/: CodeQL flags that regex as polynomial
+  const base = env.IMG_BASE || publicUrl || url.origin;
   let auth = '';
   if (env.IMG_SIGN_KEY && !env.IMG_BASE) {
     // validity must comfortably outlive this JSON response's cache life

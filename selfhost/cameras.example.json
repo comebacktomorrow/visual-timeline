@@ -1,0 +1,19 @@
+{
+  "cadence": 60,
+  "width": 640,
+  "cameras": [
+    {
+      "site": "home",
+      "id": "driveway",
+      "url": "http://192.168.1.50/cgi-bin/snapshot.cgi",
+      "auth": "viewer:camera-password",
+      "timezone": "Australia/Brisbane"
+    },
+    {
+      "site": "home",
+      "id": "backyard",
+      "url": "http://192.168.1.10:5000/api/backyard/latest.jpg",
+      "cadence": 30
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "uid": "visual-timeline",
+  "title": "Visual Timeline",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": [
+    "visual-timeline"
+  ],
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Timeline — hover to scrub, drag to zoom",
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "datasourceUid": "vt-selfhost",
+        "sites": "",
+        "mode": "timeline"
+      }
+    },
+    {
+      "id": 2,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Multiview — follows the crosshair",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "options": {
+        "datasourceUid": "vt-selfhost",
+        "sites": "",
+        "mode": "grid",
+        "followCrosshair": true
+      }
+    }
+  ]
+}

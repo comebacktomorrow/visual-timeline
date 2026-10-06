@@ -21,8 +21,24 @@
   browsers keep them cached.
 - **Security fix:** text from the API (source ids, sites, locations, tags)
   is now escaped before display instead of being inserted as HTML (#59).
+- **Self-hosting (experimental).** The backend and a ready Grafana run on
+  your own hardware from one Docker Compose file, with an uploader for IP
+  camera snapshots. See `selfhost/README.md`.
 
 ### All changes
+
+- Self-hosted stack (`selfhost/`, experimental): Docker Compose for the reference backend
+  (the same worker code, on workerd through wrangler's local mode, with frames
+  on a volume) and Grafana 12 with the app, a provisioned data source and a
+  starter dashboard. A camera uploader service reads `selfhost/cameras.json`
+  and posts each camera's snapshot URL once a minute, shrunk to 640 px, each
+  camera on its own schedule; failed frames are dropped. The same
+  `snapshot-uploader.sh` runs outside Docker, for a camera file or a single
+  camera.
+- Reference worker: new optional `PUBLIC_URL`, the address browsers use.
+  Image URLs are built on it, still signed, for a worker that Grafana reaches
+  on an address browsers can't (a Docker network, say). Unset, nothing
+  changes.
 
 - Strip images load newest first. A timeline holds one image per slot,
   hundreds per source, and the browser used to fetch them all at once in

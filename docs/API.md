@@ -238,6 +238,14 @@ three env vars, composable per deployment:
   signatures or tokens, and frame keys are predictable — **only** use
   this when the frames may be world-readable.
 
+- **`PUBLIC_URL`** — the address browsers use to reach the worker, for a
+  worker that is also called on one they can't reach. Image URLs are built on
+  it instead of the address the request came in on, and are still signed.
+  The self-hosted stack needs it: Grafana's data source calls the backend at
+  `http://backend:8787` on the Docker network, but browsers load the images
+  from, say, `http://nas.lan:8787`. Unset, image URLs use the request's own
+  origin.
+
 Default-private posture: set `VIEWER_TOKEN` + `IMG_SIGN_KEY`, leave
 `IMG_BASE` unset.
 

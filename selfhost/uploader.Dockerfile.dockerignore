@@ -1,0 +1,4 @@
+# Build context for uploader.Dockerfile only (the selfhost folder, which also
+# holds .env and cameras.json): send just the script.
+*
+!snapshot-uploader.sh

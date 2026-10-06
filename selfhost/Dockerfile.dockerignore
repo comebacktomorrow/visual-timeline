@@ -1,0 +1,7 @@
+# Build context for selfhost/Dockerfile only: send just what it copies.
+*
+!worker/package.json
+!worker/package-lock.json
+!worker/src/
+!worker/wrangler.jsonc
+!web/
