@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Internal: build-time dependency advisories. `source-map-js` is pinned to
+  1.2.2 (CVE-2026-93749). `braces` 3.0.3 (CVE-2026-93687) has no fixed
+  release and is reached only by the scaffold's build-time lint plugin, so
+  it is accepted until 2027-01-06 in `osv-scanner.toml`, which the catalog
+  validator and the project checks' advisory gate both read.
 - The magnifier caption of a portrait source, e.g. `16:35:00 (+5h45m)`, no
   longer wraps and clips in its narrow magnifier: it overflows it on one
   line, centred, and stays inside the strip at either end. Landscape

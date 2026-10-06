@@ -9,6 +9,23 @@ completes them, and delete this file once the plugin is published and signed.
 with the panel (`savvycocoa1919-visualtimeline-panel`, unchanged) and the
 Visual Timeline API data source nested inside. CI is green on `main`.
 
+**Checked on a local machine, 2026-10-06** (the parts a cloud container
+can't run):
+
+- **Plugin validator (latest), with network:** clean apart from the expected
+  "unsigned plugin" warning, once the two osv-scanner highs were handled
+  (#80).
+- **`docker compose up` (the reviewers' provisioned environment)** on
+  Grafana 13.0.2: the app and both nested plugins load; the data source
+  dashboard reads through the proxy; Save & test reports "Connected: the API
+  lists 1 source"; the token shows only as "configured" and is absent from
+  the dashboard JSON; the panel follows the light theme.
+- **`docker compose -f demo/docker-compose.yml up`:** builds from a clean
+  tree and renders the demo dashboard.
+- **Found:** the wrong-token panel's message is unhelpful (#81). Worth
+  fixing before submission, since the testing guidance points reviewers at
+  that panel.
+
 ## Facts to keep straight
 
 - **Plugin ids are permanent** once published. The app id is the catalog
@@ -23,6 +40,11 @@ Visual Timeline API data source nested inside. CI is green on `main`.
 - **Accepted:** 4 moderate advisories in the react-router chain under
   `@grafana/ui` (fixing them needs an `@grafana` major). CI's advisory gate is
   high/critical only, matching the catalog validator.
+- **Accepted until 2027-01-06:** the `braces` high (no fixed release,
+  build-time only), in `osv-scanner.toml`, which both the validator and CI's
+  advisory gate read. New advisories land in osv before `npm audit`, so
+  re-run the validator right before submitting (see
+  `docs/UPSTREAM-UPDATES.md`, "Security gate").
 
 ## 1. Before the release
 
@@ -135,5 +157,5 @@ work before that: `npm run sign` fails with "Field is required: rootUrls".
 - The scaffold-managed `.config/docker-compose-base.yaml` still names the dev
   container and mount after the panel id. It switches to the app id on the
   next create-plugin update (`docs/UPSTREAM-UPDATES.md`).
-- Open issues: #77 (small quirks), #26 (a reason for paced eras), #44
-  (worker key-list caching).
+- Open issues: #81 (wrong-token message; see above) and #44 (worker
+  key-list caching). #77 and #26 are closed.

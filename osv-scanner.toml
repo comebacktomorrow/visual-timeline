@@ -1,0 +1,20 @@
+# Advisories accepted for this repository's lockfile. The Grafana plugin
+# validator runs osv-scanner on package-lock.json and reads this file from the
+# same directory. Keep every entry dated: when ignoreUntil passes, the advisory
+# fails the validator again and has to be looked at afresh.
+
+# braces <= 3.0.3: stack overflow on deeply nested brace patterns.
+# No fixed release exists. braces is only reached through
+# eslint-webpack-plugin -> micromatch, which the scaffold's webpack config
+# (.config/, not ours to edit) uses at build time to match this repo's own
+# source globs. Nothing from it ships in the plugin, and it never sees
+# untrusted input. Drop this entry once braces publishes a fix.
+[[IgnoredVulns]]
+id = "CVE-2026-93687"
+ignoreUntil = 2027-01-06
+reason = "Build-time only (eslint-webpack-plugin via the scaffold webpack config), matches repo-local globs, not shipped; no fixed release of braces yet."
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2027-01-06
+reason = "Alias of CVE-2026-93687; same justification."
