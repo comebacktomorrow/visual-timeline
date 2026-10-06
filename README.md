@@ -99,6 +99,19 @@ declared pause, two sources in other time zones and some annotations. Add the
 panel to a dashboard and it works immediately, with no infrastructure and no
 account.
 
+To see it on a ready-made dashboard instead, clone the
+[repository](https://github.com/comebacktomorrow/visual-timeline) and run:
+
+```bash
+docker compose -f demo/docker-compose.yml up
+# → http://localhost:3300/d/visual-timeline-demo  (anonymous admin)
+```
+
+The first run builds the plugin, so it takes a few minutes. The dashboard has
+a timeline, two multiview grids and a time series panel to show the shared
+crosshair, all on the built-in demo data. Port 3300 taken? Prefix the command
+with `DEMO_PORT=3301`.
+
 ## Connect it to your own images
 
 The panel talks to a small HTTP API (sources registry, frames by time window,
@@ -116,6 +129,8 @@ connect it:
 - **Directly, for an API with open reads.** Set the panel's **API URL**
   option to the API's base URL. The browser then calls the API itself.
 
+Either way, the panel needs a server that implements the API:
+
 - The API contract, with curl examples, is in
   [docs/API.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md).
   Anything that speaks it works: kiosk screens, security cameras, website
@@ -124,8 +139,8 @@ connect it:
   [`worker/`](https://github.com/comebacktomorrow/visual-timeline/tree/main/worker):
   a single-file Cloudflare Worker over R2, with cadence-aligned storage,
   immutable frame caching, per-site upload tokens, and private-by-default reads
-  (viewer token plus signed, expiring image URLs). The API document also covers
-  how to configure its read and write auth.
+  (viewer token plus signed, expiring image URLs). Its README covers running it
+  locally with a simulated fleet, and deploying it.
 - Uploaders are simple: capture, POST a JPEG on the cadence grid, and on
   failure drop the frame and move on. See "Implementing your own uploader" in
   the API document.
@@ -178,6 +193,17 @@ API with open reads.
 The
 [API document](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md)
 has the details.
+
+## Without Grafana: the standalone viewer
+
+The reference worker also serves the timeline as two plain web pages: a
+standalone app (`app.html`) with its own site filter, time-range picker and
+timeline/grid modes, and an embeddable timeline (`index.html`) for an iframe.
+Their state lives in the URL, and they accept Grafana's dashboard-link
+parameters, so a dashboard link can open the viewer on the same sites and time
+range. That's useful where the plugin can't be installed. The URL parameters
+are in
+[docs/VIEWER.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/VIEWER.md).
 
 ## Requirements
 
