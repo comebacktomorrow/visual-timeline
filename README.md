@@ -195,14 +195,15 @@ The
 [API document](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md)
 has the details.
 
-## Self-hosting
+## Self-hosting (experimental)
 
 The whole stack also runs on your own hardware, from one Docker Compose file:
 the reference backend (the same worker code, on workerd, Cloudflare's
 open-source Workers runtime, with frames on a Docker volume) and a Grafana with
 the plugin and a ready data source. Frames stay on your network, with no cloud
 account. A small script uploads IP camera snapshots, so it suits a home lab
-watching its cameras, kiosks or dashboards. See
+watching its cameras, kiosks or dashboards. It is experimental: it works,
+but it may change between releases. See
 [selfhost/README.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/selfhost/README.md).
 
 ## Without Grafana: the standalone viewer

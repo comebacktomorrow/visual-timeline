@@ -1,8 +1,20 @@
-# Self-hosting Visual Timeline
+# Self-hosting Visual Timeline (experimental)
 
 Everything on your own hardware, in one Docker Compose file: the frames
 backend and a Grafana with the plugin and a ready data source. Frames never
 leave your network, and there are no request quotas or cloud accounts.
+
+> **Experimental.** It works, and it runs the same backend code as the
+> Cloudflare deployment, but it makes no promises yet:
+>
+> - the backend runs on wrangler's local mode, which is built as a
+>   development server, not a hardened production host;
+> - frames are kept until you delete them (no automatic pruning yet);
+> - the file layout, settings and storage may change between releases, and
+>   an update could mean starting the frames volume afresh.
+>
+> Good for a home lab or a small site. For anything you depend on, deploy the
+> backend to Cloudflare instead ([worker/README.md](../worker/README.md)).
 
 - **Backend** (`http://localhost:8787`): the reference worker from
   [`worker/`](../worker), unchanged, running on workerd (Cloudflare's

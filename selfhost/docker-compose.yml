@@ -1,5 +1,5 @@
-# Visual Timeline, self-hosted: the frames backend and a Grafana with the
-# plugin and a ready data source.
+# Visual Timeline, self-hosted (experimental: see selfhost/README.md): the
+# frames backend and a Grafana with the plugin and a ready data source.
 #
 #   cp selfhost/.env.example selfhost/.env     # then fill in every value
 #   docker compose -f selfhost/docker-compose.yml up -d

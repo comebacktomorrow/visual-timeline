@@ -21,13 +21,13 @@
   browsers keep them cached.
 - **Security fix:** text from the API (source ids, sites, locations, tags)
   is now escaped before display instead of being inserted as HTML (#59).
-- **Self-hosting.** The backend and a ready Grafana run on your own hardware
-  from one Docker Compose file, with a script that uploads IP camera
-  snapshots. See `selfhost/README.md`.
+- **Self-hosting (experimental).** The backend and a ready Grafana run on
+  your own hardware from one Docker Compose file, with an uploader for IP
+  camera snapshots. See `selfhost/README.md`.
 
 ### All changes
 
-- Self-hosted stack (`selfhost/`): Docker Compose for the reference backend
+- Self-hosted stack (`selfhost/`, experimental): Docker Compose for the reference backend
   (the same worker code, on workerd through wrangler's local mode, with frames
   on a volume) and Grafana 12 with the app, a provisioned data source and a
   starter dashboard. A camera uploader service reads `selfhost/cameras.json`
