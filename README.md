@@ -60,6 +60,31 @@ source's strip; the rest share a lane above the axis.
 The panel follows Grafana's light and dark themes, including a live switch,
 and scrubbing stays smooth with many sources.
 
+### How a time range is drawn
+
+The timeline doesn't fetch every frame in the range. Each source gets about
+one slot per 7 pixels of panel width (about 190 on a full-width panel), and
+the API returns one frame per slot.
+
+- **The step is a whole number of uploads.** A source that uploads every
+  minute shows one frame per minute at short ranges, and one in every N
+  minutes at longer ones: 2 minutes over 6 hours, about 54 minutes over 7
+  days. Turn on **Show cadence details** to see it, for example `⏱ 1m ·
+  1/2m ↓`. Each era of a source gets its own step.
+- **Each slot shows the frame nearest its time.** A slot with no frame is
+  drawn as offline. When frames are thinned out, an outage shorter than one
+  step can be hidden by a frame on either side of it, so zoom in to see
+  short outages.
+- **A slot shows a slice.** Each slot shows a vertical slice from the middle
+  of its frame. Hover for the whole frame in the magnifier; click for the
+  high-resolution frame, when the source uploads one.
+- **Images load newest first.** Across all the sources in a panel, the
+  thumbnails load from the live edge backwards, a few at a time, so on a
+  slow connection the most recent frames appear first. Browsers keep the
+  frames cached, so a dashboard refresh doesn't download them again.
+- **The time axis matches Grafana's own time series panel:** the same tick
+  spacing, steps and label formats.
+
 Times follow the dashboard's time zone. A source can also say where it is,
 with the `X-Timezone` upload header (an IANA name such as
 `Australia/Sydney`). Its header then shows its city and how far its clock is
