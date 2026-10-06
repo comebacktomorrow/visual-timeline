@@ -1,5 +1,5 @@
-import { axisTicks, TICK_STEPS, tickFormat } from '../time/ticks';
-import { measureTickWidth, TICK_LABEL_GAP } from '../time/measure';
+import { axisTicks, pickTickStep, tickFormat } from '../time/ticks';
+import { measureTickWidth } from '../time/measure';
 import { q } from '../ui/wrapper';
 import type { Slot } from '../types';
 import type { TimelineState } from './state';
@@ -7,31 +7,40 @@ import type { TimelineState } from './state';
 /* The time axis under the cards, and the hairlines that continue its ticks
  * across each strip's beyond-now spacer. */
 
+/* Ticks and labels follow Grafana's own time series axis: the same steps,
+ * spacing rule and label tiers (pickTickStep / tickFormat), and the host's
+ * formatter when it passes one (the panel passes Grafana's). The axis has
+ * no gutter, so a label that would be cut off at either end keeps its tick
+ * mark but hides its text. */
 export function buildAxis(s: TimelineState): void {
   const axis = q(s.wrap, '.axis');
   const w = axis.clientWidth;
-
-  // pass 1: rough step from a flat guess, just to pick a representative
-  // label to measure (mirrors Grafana's calculateSpace bootstrap)
-  const roughMaxTicks = Math.max(3, Math.floor(w / 90));
-  const roughStep = TICK_STEPS.find(st => s.SPAN / st <= roughMaxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-  const sampleWidth = measureTickWidth(tickFormat(roughStep, s.TZ)(s.P.to));
-
-  // pass 2: real step, sized to the label width that will actually render
-  const maxTicks = Math.max(3, Math.floor(w / (sampleWidth + TICK_LABEL_GAP)));
-  const tickStep = TICK_STEPS.find(st => s.SPAN / st <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-  const fmt = tickFormat(tickStep, s.TZ);
+  const { from, to } = s.P;
+  const host = s.cfg.axisFormat;
+  const tickStep = pickTickStep(from, to, w, (text) => measureTickWidth(axis, text), s.TZ, host);
+  const fmt = tickFormat(tickStep, to - from, s.TZ, host);
 
   axis.querySelectorAll('.tick').forEach(t => t.remove());
   s.axisTickList.length = 0;
-  for (const ts of axisTicks(s.P.from, s.P.to, tickStep, s.TZ)) {
+  s.axisLabels.length = 0;
+  const placed: Array<{ el: HTMLElement; x: number }> = [];
+  for (const ts of axisTicks(from, to, tickStep, s.TZ)) {
     s.axisTickList.push(ts);
     const el = document.createElement('div');
     el.className = 'tick';
-    el.style.left = ((ts - s.P.from) / s.SPAN * w) + 'px';
+    const x = ((ts - from) / s.SPAN) * w;
+    el.style.left = x + 'px';
     el.textContent = fmt(ts);
     axis.appendChild(el);
+    placed.push({ el, x });
   }
+  // one read pass after all the writes (a single layout), then the classes
+  const widths = placed.map(p => p.el.getBoundingClientRect().width);
+  placed.forEach((p, i) => {
+    const half = widths[i] / 2;
+    if (p.x - half < 0 || p.x + half > w) {p.el.classList.add('edge');}
+    else {s.axisLabels.push({ el: p.el, x: p.x, half });}
+  });
 }
 
 /* The beyond-now spacer looks EMPTY, not black — the card's own surface,

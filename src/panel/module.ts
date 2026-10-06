@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { PanelPlugin, PanelProps, DataHoverEvent, DataHoverClearEvent } from '@grafana/data';
+import { dateTimeFormat, PanelPlugin, PanelProps, DataHoverEvent, DataHoverClearEvent, systemDateFormats } from '@grafana/data';
 import { getDataSourceSrv } from '@grafana/runtime';
 import { useTheme2 } from '@grafana/ui';
 import { mountTimeline, mountGrid } from '../core';
+import type { AxisFormatter } from '../vt/time/ticks';
 import { themeVars } from '../theme';
 import { coreTimeZone } from '../timezone';
 import { backendRequest } from '../shared/backendRequest';
@@ -114,6 +115,12 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   // remount only when annotation CONTENT changes, not on every data-object identity flip
   const annKey = JSON.stringify(annotations);
   const timeZone = coreTimeZone(props.timeZone);
+  // axis labels in Grafana's own formats (systemDateFormats.interval, which
+  // an instance can configure), as its time series panel draws them
+  const axisFormat = useMemo<AxisFormatter>(
+    () => (ts, kind) => dateTimeFormat(ts, { format: systemDateFormats.interval[kind], timeZone: props.timeZone }),
+    [props.timeZone]
+  );
 
   useEffect(() => {
     if (!ref.current) {
@@ -125,6 +132,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
       timeZone,
+      axisFormat,
     };
     const inst: MountInstance =
       mode === 'grid'
@@ -149,7 +157,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, fit, apiUrl, apiFetch, authHint, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone]);
+  }, [mode, fit, apiUrl, apiFetch, authHint, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat]);
 
   useEffect(() => {
     const subs = [

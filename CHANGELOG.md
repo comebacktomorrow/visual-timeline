@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- The time axis matches Grafana's own time series panel at every range and
+  width. It used to fall apart at some ranges: at 12 hours it showed
+  "06/10, 05:00" on every hourly tick where Grafana shows "05:00" every half
+  hour, and on narrow panels the labels overlapped.
+  - **Same rules as Grafana:** tick spacing is the measured label width plus
+    18 px (Grafana's `calculateSpace`), and the step list adds uPlot's 4 h,
+    8 h and 2/4/6-month steps. Dates appear only once the range is longer
+    than a day, and 1-minute steps show seconds (Grafana's `formatTime`).
+  - **Grafana's formats:** inside Grafana the labels use Grafana's own date
+    formats (`systemDateFormats`), so an instance's configured formats
+    apply. The standalone pages keep their locale's date order.
+  - **Overlap fixed:** labels were measured at 10 px but drawn at 12 px.
+    They are now measured as rendered.
+  - **No half-hidden labels:** a label that would be cut off at either end
+    of the axis, or that sits under the cursor tag, now hides its text and
+    keeps its tick mark. Scrubbing still costs one layout per move.
 - **Removed: the panel's API key option.** It stored the viewer token in
   plain text in the dashboard JSON. An API that needs a token now connects
   only through a Visual Timeline API data source; the API URL option stays

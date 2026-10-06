@@ -5,13 +5,17 @@ import {
   axisTicks,
   fmtShort,
   fmtTime,
+  kindFormat,
   nextTick,
+  pickTickStep,
   resolveTimeZone,
   tickFormat,
+  tickKind,
   TICK_STEPS,
   zonedParts,
   zonedTime,
 } from './core';
+import type { TickKind } from './vt/time/ticks';
 
 /* Time-axis ticks: calendar alignment (alignedStart), stepping (nextTick),
  * the tick list buildAxis renders (axisTicks) and per-tier labels
@@ -44,7 +48,14 @@ const HOUR = 3600e3;
 const DAY = 86400e3;
 const iso = (ts: number) => new Date(ts).toISOString();
 const isoList = (list: number[]) => list.map(iso);
-const labels = (list: number[], step: number, tz?: string) => list.map(tickFormat(step, tz));
+/* Each label style's text in a zone. These blocks name the style by the
+ * step that used to select it: HH:mm under an hour, a dated HH:mm under a
+ * day, a date under a year, then the year. Which style an axis actually
+ * uses depends on its range too (Grafana's rule): see 'label tiers'. */
+const styleFor = (step: number): TickKind =>
+  step < HOUR ? 'minute' : step < DAY ? 'hour' : step < 365 * DAY ? 'day' : 'year';
+const tierFormat = (step: number, tz?: string) => kindFormat(styleFor(step), tz);
+const labels = (list: number[], step: number, tz?: string) => list.map(tierFormat(step, tz));
 
 /* every instant in [from, to] (minute resolution) whose wall clock in `tz`
  * is on the step's grid: the brute-force definition axisTicks must match */
@@ -146,19 +157,19 @@ describe('browser default, process zone UTC (the jest default)', () => {
 
   test('tickFormat picks one label format per zoom tier', () => {
     const ts = at('2026-07-05T09:07:00Z');
-    expect(tickFormat(60e3)(ts)).toBe('09:07');
-    expect(tickFormat(30 * 60e3)(ts)).toBe('09:07');
-    expect(tickFormat(HOUR)(ts)).toBe('05/07, 09:07');
-    expect(tickFormat(12 * HOUR)(ts)).toBe('05/07, 09:07');
-    expect(tickFormat(DAY)(ts)).toBe('05/07');
-    expect(tickFormat(90 * DAY)(ts)).toBe('05/07');
-    expect(tickFormat(365 * DAY)(ts)).toBe('2026');
+    expect(tierFormat(60e3)(ts)).toBe('09:07');
+    expect(tierFormat(30 * 60e3)(ts)).toBe('09:07');
+    expect(tierFormat(HOUR)(ts)).toBe('05/07, 09:07');
+    expect(tierFormat(12 * HOUR)(ts)).toBe('05/07, 09:07');
+    expect(tierFormat(DAY)(ts)).toBe('05/07');
+    expect(tierFormat(90 * DAY)(ts)).toBe('05/07');
+    expect(tierFormat(365 * DAY)(ts)).toBe('2026');
   });
 
   test('midnight reads 00:00, never 24:00', () => {
     const midnight = at('2026-07-05T00:00:00Z');
-    expect(tickFormat(60e3)(midnight)).toBe('00:00');
-    expect(tickFormat(HOUR)(midnight)).toBe('05/07, 00:00');
+    expect(tierFormat(60e3)(midnight)).toBe('00:00');
+    expect(tierFormat(HOUR)(midnight)).toBe('05/07, 00:00');
     expect(fmtTime(midnight)).toBe('00:00:00');
   });
 });
@@ -207,11 +218,11 @@ describe('browser default, process zone America/New_York', () => {
       const d = new Date(ts);
       expect(fmtTime(ts)).toBe(d.toLocaleTimeString('en-AU', { hour12: false }));
       expect(fmtShort(ts)).toBe(d.toLocaleTimeString('en-AU', { hour12: false, hour: '2-digit', minute: '2-digit' }));
-      expect(tickFormat(HOUR)(ts)).toBe(
+      expect(tierFormat(HOUR)(ts)).toBe(
         d.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
       );
-      expect(tickFormat(DAY)(ts)).toBe(d.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit' }));
-      expect(tickFormat(365 * DAY)(ts)).toBe(String(d.getFullYear()));
+      expect(tierFormat(DAY)(ts)).toBe(d.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit' }));
+      expect(tierFormat(365 * DAY)(ts)).toBe(String(d.getFullYear()));
     }
   });
 });
@@ -360,7 +371,7 @@ describe.each(['UTC', 'Asia/Tokyo'])('explicit zones (process zone %s)', (proces
       expect(years).toEqual([at('2027-01-01T00:00:00-05:00'), at('2028-01-01T00:00:00-05:00')]);
       // 05:00 UTC on 1 January: still "2027" in New York, whatever the process zone says
       expect(labels(years, 365 * DAY, NY)).toEqual(['2027', '2028']);
-      expect(tickFormat(365 * DAY, NY)(at('2027-01-01T03:00:00Z'))).toBe('2026');
+      expect(tierFormat(365 * DAY, NY)(at('2027-01-01T03:00:00Z'))).toBe('2026');
     });
 
     test('alignedStart inside the spring-forward gap is the last real grid instant before it', () => {
@@ -397,11 +408,11 @@ describe.each(['UTC', 'Asia/Tokyo'])('explicit zones (process zone %s)', (proces
       const ts = at('2026-07-05T01:07:09Z'); // 4 July, 21:07:09 EDT
       expect(fmtTime(ts, NY)).toBe('21:07:09');
       expect(fmtShort(ts, NY)).toBe('21:07');
-      expect(tickFormat(MIN, NY)(ts)).toBe('21:07');
-      expect(tickFormat(HOUR, NY)(ts)).toBe('04/07, 21:07');
-      expect(tickFormat(DAY, NY)(ts)).toBe('04/07');
-      expect(tickFormat(30 * DAY, NY)(ts)).toBe('04/07');
-      expect(tickFormat(365 * DAY, NY)(ts)).toBe('2026');
+      expect(tierFormat(MIN, NY)(ts)).toBe('21:07');
+      expect(tierFormat(HOUR, NY)(ts)).toBe('04/07, 21:07');
+      expect(tierFormat(DAY, NY)(ts)).toBe('04/07');
+      expect(tierFormat(30 * DAY, NY)(ts)).toBe('04/07');
+      expect(tierFormat(365 * DAY, NY)(ts)).toBe('2026');
     });
   });
 
@@ -457,10 +468,10 @@ describe.each(['UTC', 'Asia/Tokyo'])('explicit zones (process zone %s)', (proces
       const ts = at('2026-12-31T20:15:42Z'); // 1 January 2027, 01:45:42 IST
       expect(fmtTime(ts, IN)).toBe('01:45:42');
       expect(fmtShort(ts, IN)).toBe('01:45');
-      expect(tickFormat(5 * MIN, IN)(ts)).toBe('01:45');
-      expect(tickFormat(3 * HOUR, IN)(ts)).toBe('01/01, 01:45');
-      expect(tickFormat(7 * DAY, IN)(ts)).toBe('01/01');
-      expect(tickFormat(365 * DAY, IN)(ts)).toBe('2027');
+      expect(tierFormat(5 * MIN, IN)(ts)).toBe('01:45');
+      expect(tierFormat(3 * HOUR, IN)(ts)).toBe('01/01, 01:45');
+      expect(tierFormat(7 * DAY, IN)(ts)).toBe('01/01');
+      expect(tierFormat(365 * DAY, IN)(ts)).toBe('2027');
     });
   });
 
@@ -586,7 +597,7 @@ describe('formatter caching', () => {
         fmtTime(ts, tz);
         fmtShort(ts, tz);
         for (const step of [MIN, HOUR, DAY, 365 * DAY]) {
-          tickFormat(step, tz)(ts);
+          tierFormat(step, tz)(ts);
           axisTicks(ts - 6 * HOUR, ts + 6 * HOUR, step, tz);
         }
       }
@@ -601,5 +612,61 @@ describe('formatter caching', () => {
     expect(fmtTime(ts, 'Pacific/Chatham')).toBe('19:15:00');
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+describe("label tiers and spacing follow Grafana's time series axis", () => {
+  test('tickKind: the label depends on the step and the visible range (formatTime)', () => {
+    expect(tickKind(MIN, 30 * MIN)).toBe('second');
+    expect(tickKind(5 * MIN, HOUR)).toBe('minute');
+    // a day or less on screen: HH:mm even with hourly ticks (the 12 h case)
+    expect(tickKind(HOUR, 12 * HOUR)).toBe('minute');
+    expect(tickKind(2 * HOUR, DAY)).toBe('minute');
+    // more than a day: dates appear
+    expect(tickKind(6 * HOUR, 2 * DAY)).toBe('hour');
+    expect(tickKind(DAY, 7 * DAY)).toBe('hour');
+    expect(tickKind(2 * DAY, 30 * DAY)).toBe('day');
+    expect(tickKind(30 * DAY, 400 * DAY)).toBe('month');
+    expect(tickKind(365 * DAY, 5 * 365 * DAY)).toBe('year');
+  });
+
+  test('tickFormat hands the tier to a host formatter (the panel passes Grafana\'s)', () => {
+    const host = (ts: number, kind: TickKind) => `${kind}@${ts}`;
+    expect(tickFormat(HOUR, 12 * HOUR, undefined, host)(5)).toBe('minute@5');
+    expect(tickFormat(HOUR, 3 * DAY, undefined, host)(5)).toBe('hour@5');
+  });
+
+  test('built-in labels per tier', () => {
+    const ts = at('2026-07-05T09:07:30Z');
+    expect(tickFormat(MIN, 15 * MIN, 'UTC')(ts)).toBe('09:07:30');
+    expect(tickFormat(HOUR, 12 * HOUR, 'UTC')(ts)).toBe('09:07');
+    expect(tickFormat(6 * HOUR, 3 * DAY, 'UTC')(ts)).toBe('05/07, 09:07');
+    expect(tickFormat(2 * DAY, 30 * DAY, 'UTC')(ts)).toBe('05/07');
+    expect(tickFormat(30 * DAY, 400 * DAY, 'UTC')(ts)).toBe('2026-07');
+    expect(tickFormat(365 * DAY, 5 * 365 * DAY, 'UTC')(ts)).toBe('2026');
+  });
+
+  // a fixed-width font: 7 px per character, so 'HH:mm' is 35 px
+  const measure = (text: string) => text.length * 7;
+  const now = at('2026-10-06T00:42:00Z');
+
+  test('pickTickStep: smallest step that leaves label width + 18 px (calculateSpace)', () => {
+    // these are the steps Grafana's own panel picked side by side at 1350 px
+    expect(pickTickStep(now - 6 * HOUR, now, 1350, measure, 'UTC')).toBe(15 * MIN);
+    expect(pickTickStep(now - 12 * HOUR, now, 1350, measure, 'UTC')).toBe(30 * MIN);
+    // and at about 430 px
+    expect(pickTickStep(now - 6 * HOUR, now, 430, measure, 'UTC')).toBe(HOUR);
+    expect(pickTickStep(now - 12 * HOUR, now, 430, measure, 'UTC')).toBe(2 * HOUR);
+  });
+
+  test('pickTickStep never leaves less than a label and its gap between ticks', () => {
+    for (const span of [5 * MIN, HOUR, 6 * HOUR, 12 * HOUR, DAY, 2 * DAY, 7 * DAY, 30 * DAY, 90 * DAY, 400 * DAY]) {
+      for (const w of [240, 430, 800, 1350, 2400]) {
+        const step = pickTickStep(now - span, now, w, measure, 'UTC');
+        if (step === TICK_STEPS[TICK_STEPS.length - 1]) {continue;}
+        const label = tickFormat(step, span, 'UTC')(now);
+        expect((step / span) * w).toBeGreaterThanOrEqual(measure(label) + 18 - 1e-9);
+      }
+    }
   });
 });

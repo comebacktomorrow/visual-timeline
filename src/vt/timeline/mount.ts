@@ -53,6 +53,7 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
     root, cfg, P, TZ, SPAN, LIVE, hostWidth, pxBudget, backend, wrap,
     kiosks: [], cards: {}, cursorT: restoreCursor(root, P), destroyed: false, pollTimer: null,
     axisTickList: [],   // filled by buildAxis; consumed by ruleBeyond
+    axisLabels: [],
     suppressClick: false,
     pv: makePreview(root, TZ),
     PANEL_TT: zoneTexts(TZ, TZ, false),

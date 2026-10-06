@@ -251,6 +251,7 @@ const CSS = `
              font-family:'Inter','Helvetica','Arial',sans-serif;
              font-variant-numeric:tabular-nums; padding-top:5px; white-space:nowrap; }
 .ktl .tick::before { content:""; position:absolute; top:0; left:50%; width:1px; height:4px; background:var(--ktl-axis-grid); }
+.ktl .tick.edge, .ktl .tick.under-cursor { color:transparent; }   /* cut off at an end, or under the cursor tag: keep the mark, drop the text */
 .ktl .acur { position:absolute; top:0; transform:translateX(-50%); color:#111; background:var(--ktl-accent);
              font-size:10px; font-weight:700; font-variant-numeric:tabular-nums; padding:0 5px;
              border-radius:2px; margin-top:5px; white-space:nowrap; z-index:2; }

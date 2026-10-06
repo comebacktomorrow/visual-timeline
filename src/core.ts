@@ -9,7 +9,7 @@
  * names from the modules under src/vt/. */
 
 export { fmtShort, fmtTime, resolveTimeZone, zonedParts, zonedTime } from './vt/time/zones';
-export { alignedStart, axisTicks, nextTick, TICK_STEPS, tickFormat } from './vt/time/ticks';
+export { alignedStart, axisTicks, kindFormat, nextTick, pickTickStep, TICK_STEPS, tickFormat, tickKind } from './vt/time/ticks';
 export { clearPauseClasses, erasFor, PAUSE_CLASSES, pauseInfo } from './vt/model/eras';
 export { buildSourceModel, ghostFor, missedHeartbeat, slotClass } from './vt/model/slots';
 export { matchesTags, parseTagFilter } from './vt/model/filters';
