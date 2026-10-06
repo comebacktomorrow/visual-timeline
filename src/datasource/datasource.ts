@@ -45,6 +45,7 @@ export function describeFailure(status: number, apiUrl: string, body?: unknown):
  * (plugin.json), and Grafana's server adds the token on the way out. */
 export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery, VisualTimelineOptions> {
   readonly apiUrl: string;
+  readonly demo: boolean;
   private readonly api: ApiFetch;
 
   constructor(
@@ -53,6 +54,7 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
   ) {
     super(instanceSettings);
     this.apiUrl = (instanceSettings.jsonData?.apiUrl || '').trim().replace(/\/+$/, '');
+    this.demo = instanceSettings.jsonData?.demo === true;
     this.api = makeProxyFetch(instanceSettings.uid, request);
   }
 
@@ -64,6 +66,12 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
   }
 
   async testDatasource(): Promise<TestDataSourceResponse> {
+    if (this.demo) {
+      return {
+        status: 'success',
+        message: 'Demo data is on: panels using this data source show built-in demo sources. No API is called.',
+      };
+    }
     if (!this.apiUrl) {
       return { status: 'error', message: 'Set the API URL: the base URL of the frames API.' };
     }

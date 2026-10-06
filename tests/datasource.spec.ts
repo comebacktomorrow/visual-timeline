@@ -65,3 +65,21 @@ test('Save & test without an API URL explains what is missing', async ({
   await configPage.getByGrafanaSelector(selectors.pages.DataSource.saveAndTest).click();
   await expect(configPage).toHaveAlert('error', { hasText: 'Set the API URL' });
 });
+
+test('Demo data hides the API settings and passes Save & test without an API', async ({
+  createDataSourceConfigPage,
+  selectors,
+  page,
+}) => {
+  const configPage = await createDataSourceConfigPage({ type: DS_TYPE });
+  const config = page.getByTestId('vt-datasource-config');
+  await expect(config.getByRole('textbox', { name: /API URL/ })).toBeVisible();
+  // a dispatched click, as React sees a user's: Grafana's Switch keeps its
+  // checkbox visually hidden, and on Grafana 10.4 and 11.2 it sits outside
+  // the viewport, so even a forced click is refused there
+  await config.locator('#vt-demo').dispatchEvent('click');
+  await expect(config.getByRole('textbox', { name: /API URL/ })).toHaveCount(0);
+  // demo data calls no API, so there is no response to wait for
+  await configPage.getByGrafanaSelector(selectors.pages.DataSource.saveAndTest).click();
+  await expect(configPage).toHaveAlert('success', { hasText: 'Demo data is on' });
+});

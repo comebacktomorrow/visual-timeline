@@ -93,11 +93,17 @@ option can show its frame times in its own local time.
 
 ## Try it with no backend
 
-With **API URL** left empty, the panel renders built-in demo data: five
-simulated sources across two sites, including an outage, a cadence change, a
-declared pause, two sources in other time zones and some annotations. Add the
-panel to a dashboard and it works immediately, with no infrastructure and no
-account.
+Add a **Visual Timeline API** data source (**Connections → Data sources →
+Add new data source**) and turn on its **Demo data** switch. Panels using it
+render built-in demo data: five simulated sources across two sites, including
+an outage, a cadence change, a declared pause, two sources in other time zones
+and some annotations. No infrastructure and no account. Turn the switch off
+and set the API URL when you're ready for your own frames.
+
+A new panel picks up your Visual Timeline data source by itself when there is
+only one (or when it is Grafana's default among several); otherwise choose it
+in the panel's **Data source** option. A panel never shows demo data on its
+own: with no data source it says how to add or select one.
 
 To see it on a ready-made dashboard instead, clone the
 [repository](https://github.com/comebacktomorrow/visual-timeline) and run:
@@ -165,8 +171,8 @@ So:
 
 | Option                                  | What it does                                                                                                                                                                                               |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Data source**                         | A Visual Timeline API data source. API calls go through Grafana, which adds the viewer token. While one is set, the API URL option below is hidden and ignored.                                              |
-| **API URL**                             | Base URL of the frames API, for an API with open reads. An API that needs a viewer token connects through a data source. With neither, the panel shows the built-in demo data.                                                                            |
+| **Data source**                         | A Visual Timeline API data source. API calls go through Grafana, which adds the viewer token. A data source with **Demo data** on shows the built-in demo data. While one is set, the API URL option below is hidden and ignored.                                              |
+| **API URL**                             | Base URL of the frames API, for an API with open reads. An API that needs a viewer token connects through a data source. With neither, the panel asks for a data source.                                                                            |
 | **Sites**                               | Site filter: a dashboard variable (default `${site:csv}`) or a literal site id. Keep the variable here so the panel refreshes when it changes. A dashboard without the variable shows all sites.           |
 | **Display mode**                        | Timeline or Multiview grid.                                                                                                                                                                                |
 | **Follow shared crosshair**             | Grid mode only. Show the frame at the crosshair time from other panels; off shows the most recent frame in range.                                                                                          |

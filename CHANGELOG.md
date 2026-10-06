@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.0.1 (2026-10-07)
+
+- **Demo data is a data source setting.** The Visual Timeline API data source
+  has a **Demo data** switch: panels using a data source with it on draw the
+  built-in demo sources, and no API is called (Save & test says so). A panel
+  no longer shows demo data on its own.
+- **A new panel finds its data source.** While a panel is being created or
+  edited with no data source selected, it takes the only Visual Timeline data
+  source, or Grafana's default among several, and the choice is saved with the
+  panel. A saved panel is never re-pointed when data sources change.
+- **A panel that can't show frames says why.** With no Visual Timeline data
+  source at all it offers to add one (Grafana admins) or to ask an admin
+  (everyone else); with one or more, it asks you to select one; with a
+  deleted data source, it says it no longer exists, instead of a proxy
+  error.
+- **Upgrading from 1.0.0:** a panel with neither a data source nor an API URL
+  showed demo data and now asks for a data source. Add a data source with
+  Demo data on to get the demo back.
+- Self-hosted stack: its Compose project is now `visual-timeline-selfhost`
+  (was `visual-timeline`, the repository's own dev stack, so running both
+  replaced one Grafana with the other). Its frames volume is
+  `visual-timeline-selfhost_frames`.
+- The demo and dev environments provision a "Visual Timeline (demo)" data
+  source, and their dashboards use it.
+- Reference worker and self-hosted image: `sharp` (an image library wrangler's
+  Miniflare pins at 0.35.4) is overridden to 0.35.5 for GHSA-wq5f-xc86-pv6w,
+  a high-severity issue in its bundled SVG library. The deployed worker
+  doesn't use it; the self-hosted backend runs wrangler, so it ships it.
+
 ## 1.0.0 (2026-10-06)
 
 ### Highlights

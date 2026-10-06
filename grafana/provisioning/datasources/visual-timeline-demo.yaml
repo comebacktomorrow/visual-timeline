@@ -1,0 +1,10 @@
+apiVersion: 1
+# Demo data: no API. The demo dashboard's panels use it.
+datasources:
+  - name: Visual Timeline (demo)
+    type: savvycocoa1919-visualtimeline-datasource
+    uid: vt-demo
+    access: proxy
+    editable: true
+    jsonData:
+      demo: true

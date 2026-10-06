@@ -46,7 +46,7 @@
     {
       "id": 1,
       "type": "savvycocoa1919-visualtimeline-panel",
-      "title": "Visual timeline \u2014 hover to scrub, drag to zoom",
+      "title": "Visual timeline — hover to scrub, drag to zoom",
       "gridPos": {
         "h": 14,
         "w": 24,
@@ -54,13 +54,14 @@
         "y": 0
       },
       "options": {
+        "datasourceUid": "vt-demo",
         "sites": "${site:csv}"
       }
     },
     {
       "id": 2,
       "type": "savvycocoa1919-visualtimeline-panel",
-      "title": "Multiview \u2014 follows crosshair",
+      "title": "Multiview — follows crosshair",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -68,6 +69,7 @@
         "y": 14
       },
       "options": {
+        "datasourceUid": "vt-demo",
         "sites": "${site:csv}",
         "mode": "grid",
         "followCrosshair": true
@@ -76,7 +78,7 @@
     {
       "id": 3,
       "type": "savvycocoa1919-visualtimeline-panel",
-      "title": "Multiview \u2014 latest only",
+      "title": "Multiview — latest only",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -84,6 +86,7 @@
         "y": 14
       },
       "options": {
+        "datasourceUid": "vt-demo",
         "sites": "${site:csv}",
         "mode": "grid",
         "followCrosshair": false,
