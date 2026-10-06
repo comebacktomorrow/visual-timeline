@@ -157,7 +157,12 @@ function storeR2() {
       objs.set(key, { body: typeof body === 'string' ? body : '<jpeg>', etag: 'e' + ++n });
       return {};
     },
-    async list() { return { objects: [], truncated: false }; },
+    // R2's list order (lexicographic) and paging, and its batch delete
+    async list({ prefix = '', limit = 1000 } = {}) {
+      const keys = [...objs.keys()].filter((k) => k.startsWith(prefix)).sort();
+      return { objects: keys.slice(0, limit).map((key) => ({ key })), truncated: keys.length > limit };
+    },
+    async delete(keys) { for (const k of [].concat(keys)) {objs.delete(k);} },
   };
 }
 const tzEnv = () => ({ FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'site-a': 'tok-a' }) });
@@ -227,4 +232,111 @@ test('without X-Timezone a source has no timezone field, and a later upload with
 test('X-Timezone is an allowed CORS request header', async () => {
   const res = await call('/upload', tzEnv(), { method: 'OPTIONS' });
   assert.match(res.headers.get('access-control-allow-headers'), /x-timezone/);
+});
+
+/* ---------------- retention ---------------- */
+
+const DAY = 864e5;
+/* fetch with a ctx that keeps waitUntil work, so a test can await the prune
+ * that an upload schedules */
+async function callAndSettle(path, env, init) {
+  const pending = [];
+  const res = await worker.fetch(new Request('https://w.example' + path, init),
+    { ASSETS: { fetch: () => new Response('') }, ...env }, { waitUntil: (p) => pending.push(p) });
+  await Promise.all(pending);
+  return res;
+}
+const putFrames = (env, variant, site, source, times) => {
+  for (const t of times) {env.FRAMES.objs.set(`${variant}/${site}/${source}/${t}.jpg`, { body: '<jpeg>', etag: 'f' });}
+};
+const framesOf = (env, variant, site, source) =>
+  [...env.FRAMES.objs.keys()].filter((k) => k.startsWith(`${variant}/${site}/${source}/`)).length;
+const uploadTo = (env, site, source) => callAndSettle('/upload', env, {
+  method: 'POST',
+  headers: { authorization: 'Bearer tok', 'x-site': site, 'x-source': source, 'x-cadence': '60',
+    'content-type': 'image/jpeg', 'content-length': '4' },
+  body: 'jpeg',
+});
+
+test('retention: an upload prunes frames older than RETENTION_DAYS, and RETENTION_DAYS_HI for hi', async () => {
+  const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'ret-a': 'tok' }), RETENTION_DAYS: '30', RETENTION_DAYS_HI: '7' };
+  const now = Date.now();
+  putFrames(env, 'lo', 'ret-a', 'cam', [now - 40 * DAY, now - 31 * DAY, now - 29 * DAY, now - DAY]);
+  putFrames(env, 'hi', 'ret-a', 'cam', [now - 29 * DAY, now - 8 * DAY, now - 6 * DAY]);
+  assert.equal((await uploadTo(env, 'ret-a', 'cam')).status, 200);
+  assert.equal(framesOf(env, 'lo', 'ret-a', 'cam'), 3, 'two lo frames past 30 days gone; two kept plus the upload');
+  assert.equal(framesOf(env, 'hi', 'ret-a', 'cam'), 1, 'hi keeps only its 7 days');
+});
+
+test('retention: an upload also prunes the silent sources of its site, at most once an hour', async () => {
+  const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'ret-b': 'tok' }), RETENTION_DAYS: '1' };
+  const now = Date.now();
+  assert.equal((await uploadTo(env, 'ret-b', 'live')).status, 200);   // registers ret-b/live
+  env.FRAMES.objs.set('index.json', { body: JSON.stringify({ sites: { 'ret-b': {
+    live: { cadence: 60000, history: [] }, silent: { cadence: 60000, history: [] } } } }), etag: 'x' });
+  putFrames(env, 'lo', 'ret-b', 'silent', [now - 3 * DAY, now - 2 * DAY]);
+  // the first upload already swept ret-b this hour, so this one does not
+  await uploadTo(env, 'ret-b', 'live');
+  assert.equal(framesOf(env, 'lo', 'ret-b', 'silent'), 2, 'no second sweep within the hour');
+  // a source not yet swept this hour triggers the sweep, which reaches the silent one
+  await uploadTo(env, 'ret-b', 'other');
+  assert.equal(framesOf(env, 'lo', 'ret-b', 'silent'), 0, 'the silent source aged out');
+});
+
+test('retention: /sources leads each history with a "no data" pause up to the cutoff', async (t) => {
+  const NOWX = 1_800_000_000_000;
+  t.mock.method(Date, 'now', () => NOWX);
+  const index = { sites: { 'ret-c': { cam: { cadence: 60000, history: [
+    { since: NOWX - 60 * DAY, variant: 'lo', cadence: 60000 },
+    { since: NOWX - 40 * DAY, variant: 'lo', cadence: 300000 },          // in force at the cutoff
+    { since: NOWX - 35 * DAY, variant: 'hi', cadence: 600000 },
+    { since: NOWX - 2 * DAY, variant: 'lo', paused: true, reason: 'quiet' },
+  ] } } } };
+  const env = { FRAMES: storeR2() };
+  env.FRAMES.objs.set('index.json', { body: JSON.stringify(index), etag: 'i' });
+  const read = async (e) => (await (await call('/sources?site=ret-c', e)).json())[0].history;
+
+  assert.deepEqual(await read(env), index.sites['ret-c'].cam.history, 'without retention: unchanged');
+
+  const cutoff = NOWX - 30 * DAY;
+  assert.deepEqual(await read({ ...env, RETENTION_DAYS: '30' }), [
+    { since: 0, variant: 'lo', paused: true, reason: 'expired', intended: true },
+    { since: cutoff, variant: 'lo', cadence: 300000 },
+    { since: cutoff, variant: 'hi', cadence: 600000 },
+    { since: NOWX - 2 * DAY, variant: 'lo', paused: true, reason: 'quiet' },
+  ]);
+  t.mock.restoreAll();
+});
+
+test('retention: the "no data" pause is closed at the cutoff even when no event is in force there', async (t) => {
+  const NOWX = 1_800_000_000_000;
+  t.mock.method(Date, 'now', () => NOWX);
+  const cutoff = NOWX - 30 * DAY;
+  const env = { FRAMES: storeR2(), RETENTION_DAYS: '30' };
+  const read = async (meta) => {
+    env.FRAMES.objs.set('index.json', { body: JSON.stringify({ sites: { 'ret-e': { cam: meta } } }), etag: 'i' });
+    return (await (await call('/sources?site=ret-e', env)).json())[0].history;
+  };
+  const NODATA = { since: 0, variant: 'lo', paused: true, reason: 'expired', intended: true };
+  // registered before history was recorded: the registered pace resumes at the cutoff
+  assert.deepEqual(await read({ cadence: 300000, history: [] }),
+    [NODATA, { since: cutoff, variant: 'lo', cadence: 300000 }]);
+  // first event after the cutoff (registered late, or backfilled): its pace, as viewers assume before it
+  const late = { since: NOWX - DAY, variant: 'lo', cadence: 120000 };
+  assert.deepEqual(await read({ cadence: 60000, history: [late] }),
+    [NODATA, { since: cutoff, variant: 'lo', cadence: 120000 }, late]);
+  // only hi events: the lo pace still closes the pause
+  const hi = { since: NOWX - DAY, variant: 'hi', cadence: 600000 };
+  assert.deepEqual(await read({ cadence: 60000, history: [hi] }),
+    [NODATA, { since: cutoff, variant: 'lo', cadence: 60000 }, hi]);
+  t.mock.restoreAll();
+});
+
+test('retention: unset or invalid RETENTION_DAYS keeps everything', async () => {
+  for (const RETENTION_DAYS of [undefined, '', '0', '-5', 'thirty']) {
+    const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'ret-d': 'tok' }), RETENTION_DAYS };
+    putFrames(env, 'lo', 'ret-d', 'cam', [Date.now() - 400 * DAY]);
+    await uploadTo(env, 'ret-d', 'cam');
+    assert.equal(framesOf(env, 'lo', 'ret-d', 'cam'), 2, `RETENTION_DAYS=${RETENTION_DAYS}`);
+  }
 });

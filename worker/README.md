@@ -81,6 +81,11 @@ in-memory bucket. They don't need a Cloudflare account.
    "Write auth" and "Read auth" in [docs/API.md](../docs/API.md) cover all
    three, plus the optional `IMG_BASE` and `PUBLIC_URL`.
 
+   To delete old frames, also set `RETENTION_DAYS` (for example 90), as a
+   plain variable in `wrangler.jsonc` (`"vars": { "RETENTION_DAYS": "90" }`)
+   or in the Cloudflare dashboard. See "Retention" in
+   [docs/API.md](../docs/API.md).
+
 3. Deploy:
 
    ```bash

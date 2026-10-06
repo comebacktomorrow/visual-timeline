@@ -9,7 +9,6 @@ leave your network, and there are no request quotas or cloud accounts.
 >
 > - the backend runs on wrangler's local mode, which is built as a
 >   development server, not a hardened production host;
-> - frames are kept until you delete them (no automatic pruning yet);
 > - the file layout, settings and storage may change between releases, and
 >   an update could mean starting the frames volume afresh.
 >
@@ -138,9 +137,14 @@ Then, in your Grafana:
 
 ## Storage
 
-Frames are kept until you delete them: there is no automatic pruning yet. A
-640 px camera frame is typically 30–80 KB, so one camera at one frame a minute
-uses roughly 40–120 MB a day. Plan the disk accordingly.
+`RETENTION_DAYS` in `.env` (30 in the example) sets how many days of frames
+are kept; older ones are deleted, about once an hour, and dashboards show
+that time as **No data**. `RETENTION_DAYS_HI` can keep hi-res frames for a
+shorter time. Remove `RETENTION_DAYS` to keep everything.
+
+A 640 px camera frame is typically 30–80 KB, so one camera at one frame a
+minute uses roughly 40–120 MB a day: about 1–3.5 GB per camera at 30 days.
+Plan the disk accordingly.
 
 - Frames live in the `visual-timeline_frames` Docker volume, in workerd's
   local storage format (not a folder of JPEGs). Back up the volume to back up

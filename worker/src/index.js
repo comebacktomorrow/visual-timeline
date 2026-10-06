@@ -20,6 +20,10 @@
  *                                     sets IMG_BASE so /frames URLs point there).
  *   everything else                   static viewer assets (../web).
  *
+ * Retention (optional): RETENTION_DAYS (and RETENTION_DAYS_HI for the hi
+ * variant) deletes older frames, pruned after uploads; /sources then starts
+ * each source's history with a "no data" pause ending at the cutoff.
+ *
  * R2 layout: {variant}/{site}/{source}/{epoch-ms}.jpg  (epoch cadence-aligned),
  *            index.json — source registry {sites: {site: {source: {cadence,
  *            hiCadence, location, timezone, history: [{since, variant, cadence}]}}}},
@@ -68,7 +72,7 @@ export default {
     const url = new URL(request.url);
     try {
       if (request.method === 'OPTIONS') {return new Response(null, { status: 204, headers: CORS });}
-      if (url.pathname === '/upload' && request.method === 'POST') {return await handleUpload(request, env);}
+      if (url.pathname === '/upload' && request.method === 'POST') {return await handleUpload(request, env, ctx);}
       if (url.pathname === '/declare' && request.method === 'POST') {return await handleDeclare(request, env);}
       const isData = url.pathname === '/sources' || url.pathname === '/kiosks' ||
                      url.pathname === '/frames' || url.pathname.startsWith('/frame/');
@@ -184,7 +188,7 @@ async function timingSafeEqual(a, b) {
 
 /* ---------------- upload ---------------- */
 
-async function handleUpload(request, env) {
+async function handleUpload(request, env, ctx) {
   const site = (request.headers.get('x-site') || '').toLowerCase();
   const source = (request.headers.get('x-source') || request.headers.get('x-kiosk') || '').toLowerCase();
   const cadenceS = Number(request.headers.get('x-cadence'));
@@ -221,7 +225,93 @@ async function handleUpload(request, env) {
     httpMetadata: { contentType: 'image/jpeg', cacheControl: FRAME_CACHE },
   });
   await ensureRegistered(env, site, source, variant, cadence, ts, location, tags, timezone);
+  if (retentionMs(env, 'lo') || retentionMs(env, 'hi')) {ctx.waitUntil(pruneSite(env, site, source));}
   return json({ ok: true, key, ts });
+}
+
+/* ---------------- retention ---------------- */
+
+/* RETENTION_DAYS keeps that many days of frames; RETENTION_DAYS_HI, if set,
+ * overrides it for the hi variant (hi-res frames are the big ones). Unset or
+ * not a positive number = keep everything. */
+function retentionMs(env, variant) {
+  const raw = variant === 'hi' && env.RETENTION_DAYS_HI !== undefined ? env.RETENTION_DAYS_HI : env.RETENTION_DAYS;
+  const days = Number(raw);
+  return Number.isFinite(days) && days > 0 ? days * 864e5 : 0;
+}
+
+/* Pruning runs after uploads (ctx.waitUntil), so it needs no scheduler and
+ * works the same on Cloudflare and self-hosted. Each source is pruned at most
+ * once an hour per isolate; the uploading source triggers a sweep of its
+ * whole site, so a source that stopped uploading still ages out. Keys end in
+ * a fixed-width epoch, so a prefix listing is oldest first: delete from the
+ * front and stop at the first frame inside the window. A long backlog (the
+ * first prune after enabling retention) is worked off a few thousand frames
+ * per source per run. */
+const PRUNE_EVERY = 3600 * 1000;
+const PRUNE_PAGES = 5;
+const PRUNE_SOURCES = 20;
+const pruned = new Map();
+
+async function pruneSite(env, site, uploader) {
+  try {
+    const now = Date.now();
+    if (now - (pruned.get(`${site}/${uploader}`) || 0) < PRUNE_EVERY) {return;}
+    const cur = await env.FRAMES.get(INDEX_KEY);
+    const sources = cur ? Object.keys((await cur.json()).sites?.[site] || {}) : [];
+    if (!sources.includes(uploader)) {sources.push(uploader);}
+    const due = sources.filter((src) => now - (pruned.get(`${site}/${src}`) || 0) >= PRUNE_EVERY)
+      .slice(0, PRUNE_SOURCES);
+    for (const src of due) {
+      pruned.set(`${site}/${src}`, now);
+      for (const variant of VARIANTS) {await pruneSource(env, variant, site, src, now);}
+    }
+  } catch (err) {
+    console.warn(JSON.stringify({ msg: 'retention prune failed', site, error: String(err) }));
+  }
+}
+
+async function pruneSource(env, variant, site, source, now) {
+  const keep = retentionMs(env, variant);
+  if (!keep) {return 0;}
+  const cutoff = now - keep;
+  const prefix = `${variant}/${site}/${source}/`;
+  let deleted = 0;
+  for (let page = 0; page < PRUNE_PAGES; page++) {
+    const listed = await env.FRAMES.list({ prefix, limit: 1000 });
+    const old = listed.objects.map((o) => o.key)
+      .filter((k) => Number(k.slice(prefix.length, -'.jpg'.length)) < cutoff);
+    if (old.length) {await env.FRAMES.delete(old); deleted += old.length;}
+    if (old.length < listed.objects.length || !listed.truncated) {break;}
+  }
+  if (deleted) {console.log(JSON.stringify({ msg: 'retention pruned', variant, site, source, deleted }));}
+  return deleted;
+}
+
+/* What /sources reports under retention: the source's history from the
+ * cutoff on, led by a pause with reason "expired" that ends at the cutoff,
+ * so viewers draw the deleted past as "no data" rather than as offline. The
+ * event in force at the cutoff is restated at the cutoff; older ones go.
+ * The pause must ALWAYS be closed by a lo event at the cutoff: viewers draw
+ * a closed pause whole, but an open (last) one only until the first frame,
+ * so a history that is empty or starts after the cutoff would otherwise
+ * blank real frames. With no lo event in force there, the source's leading
+ * pace is restated (the first lo event's cadence, else the registered one,
+ * as the viewers' own era logic does). */
+function retainedHistory(history, cutoff, cadence) {
+  const out = [{ since: 0, variant: 'lo', paused: true, reason: 'expired', intended: true }];
+  const inForce = new Map();
+  const later = [];
+  const sorted = [...(history || [])].sort((a, b) => a.since - b.since);
+  for (const h of sorted) {
+    if (h.since <= cutoff) {inForce.set(h.variant || 'lo', h);} else {later.push(h);}
+  }
+  if (!inForce.has('lo')) {
+    const firstLo = sorted.find((h) => (h.variant || 'lo') === 'lo');
+    inForce.set('lo', { variant: 'lo', cadence: (firstLo && firstLo.cadence) || cadence || 60000 });
+  }
+  for (const h of inForce.values()) {out.push({ ...h, since: cutoff });}
+  return out.concat(later);
 }
 
 /* X-Timezone: where the source is, so viewers can label its clock. An IANA
@@ -381,6 +471,8 @@ async function handleSources(url, env, ctx, viewer) {
   }
   const index = await res.json();
   const filter = parseCsv(url.searchParams.get('site'));
+  const keep = retentionMs(env, 'lo');
+  const cutoff = keep ? Date.now() - keep : 0;
   const out = [];
   for (const [site, sources] of Object.entries(index.sites || {})) {
     // the shared cached index is post-filtered per request: a site-scoped
@@ -388,7 +480,8 @@ async function handleSources(url, env, ctx, viewer) {
     if (viewer.sites && !viewer.sites.includes(site)) {continue;}
     if (filter && !filter.includes(site)) {continue;}
     for (const [id, meta] of Object.entries(sources)) {
-      out.push({ id, site, location: meta.location, timezone: meta.timezone, tags: meta.tags, cadence: meta.cadence, hiCadence: meta.hiCadence, history: meta.history });
+      const history = keep ? retainedHistory(meta.history, cutoff, meta.cadence) : meta.history;
+      out.push({ id, site, location: meta.location, timezone: meta.timezone, tags: meta.tags, cadence: meta.cadence, hiCadence: meta.hiCadence, history });
     }
   }
   out.sort((a, b) => a.site.localeCompare(b.site) || a.id.localeCompare(b.id));
