@@ -66,7 +66,13 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
   }
 
   ac.textContent = fmtTime(s.cursorT, s.TZ);
-  ac.style.left = Math.max(acW / 2, Math.min(axisW - acW / 2, frac * axisW)) + 'px';
+  const acX = Math.max(acW / 2, Math.min(axisW - acW / 2, frac * axisW));
+  ac.style.left = acX + 'px';
+  // the cursor tag sits over the axis labels: hide the one it covers rather
+  // than leave a half-hidden label (positions are from buildAxis, no reads)
+  for (const l of s.axisLabels) {
+    l.el.classList.toggle('under-cursor', Math.abs(l.x - acX) < l.half + acW / 2 + 2);
+  }
 
   for (const k of s.kiosks) {
     const c = s.cards[k.id];

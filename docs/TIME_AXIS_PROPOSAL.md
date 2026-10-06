@@ -13,6 +13,15 @@
 > calendar quarters and 1 January. The `alignedStart`/`nextTick` sketch
 > below is superseded by the zone-aware versions in `src/vt/time/ticks.ts`
 > (the core moved out of `src/core.ts` into `src/vt/` in #64).
+>
+> **Follow-up (Unreleased): matched to Grafana's panel.** Spacing and
+> labels now copy Grafana 13's `UPlotAxisBuilder.ts`: `calculateSpace`
+> (measured label width plus 18 px, from a sample formatted for 40 px
+> ticks) and `formatTime` (the label style depends on the step and the
+> visible range). The panel formats with Grafana's `systemDateFormats`.
+> See `pickTickStep` and `tickKind` in `src/vt/time/ticks.ts`. The canvas
+> measurement described below is gone: labels are measured in the DOM, at
+> the size they render.
 
 ## Current state (`buildAxis()`, `src/core.ts:978`)
 

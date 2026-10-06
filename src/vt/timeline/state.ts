@@ -20,6 +20,13 @@ export interface Card {
 /* Everything one mountTimeline call shares between its parts: what were
  * the closure variables of mountTimeline, as one object. root through
  * PANEL_TT are fixed when the mount starts; the rest change as it runs. */
+/* a visible axis label: its element, centre and half-width in px */
+export interface AxisLabel {
+  el: HTMLElement;
+  x: number;
+  half: number;
+}
+
 export interface TimelineState {
   root: HTMLElement;
   cfg: MountConfig;
@@ -39,5 +46,6 @@ export interface TimelineState {
   destroyed: boolean;
   pollTimer: ReturnType<typeof setInterval> | null;
   axisTickList: number[];       // filled by buildAxis; consumed by ruleBeyond
+  axisLabels: AxisLabel[];      // filled by buildAxis; setCursor hides the one under the cursor tag
   suppressClick: boolean;       // a drag-zoom just ended: swallow its click
 }

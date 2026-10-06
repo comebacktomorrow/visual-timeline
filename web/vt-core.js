@@ -40,6 +40,7 @@ var VTCore = (() => {
     headTitle: () => headTitle,
     hiUrlFor: () => hiUrlFor,
     imageUrlWithKey: () => imageUrlWithKey,
+    kindFormat: () => kindFormat,
     makeApiBackend: () => makeApiBackend,
     matchesTags: () => matchesTags,
     missedHeartbeat: () => missedHeartbeat,
@@ -48,6 +49,7 @@ var VTCore = (() => {
     nextTick: () => nextTick,
     parseTagFilter: () => parseTagFilter,
     pauseInfo: () => pauseInfo,
+    pickTickStep: () => pickTickStep,
     resolveFrameUrl: () => resolveFrameUrl,
     resolveTimeZone: () => resolveTimeZone,
     slotClass: () => slotClass,
@@ -55,6 +57,7 @@ var VTCore = (() => {
     sourcesPath: () => sourcesPath,
     tagChips: () => tagChips,
     tickFormat: () => tickFormat,
+    tickKind: () => tickKind,
     zoneHeadText: () => zoneHeadText,
     zoneLabel: () => zoneLabel,
     zoneOffsetText: () => zoneOffsetText,
@@ -203,7 +206,9 @@ var VTCore = (() => {
     36e5,
     2 * 36e5,
     3 * 36e5,
+    4 * 36e5,
     6 * 36e5,
+    8 * 36e5,
     12 * 36e5,
     24 * 36e5,
     2 * 864e5,
@@ -217,7 +222,10 @@ var VTCore = (() => {
     10 * 864e5,
     15 * 864e5,
     30 * 864e5,
+    60 * 864e5,
     90 * 864e5,
+    120 * 864e5,
+    180 * 864e5,
     365 * 864e5
   ];
   var DAY_MS = 864e5;
@@ -312,21 +320,72 @@ var VTCore = (() => {
     }
     return out;
   }
-  function tickFormat(stepMs, tz) {
+  var YEAR_MS = 365 * DAY_MS;
+  function tickKind(stepMs, rangeMs) {
+    if (stepMs <= 6e4) {
+      return "second";
+    }
+    if (rangeMs <= DAY_MS) {
+      return "minute";
+    }
+    if (stepMs <= DAY_MS) {
+      return "hour";
+    }
+    if (rangeMs < YEAR_MS) {
+      return "day";
+    }
+    if (Math.round(stepMs / DAY_MS) === 365) {
+      return "year";
+    }
+    return stepMs <= YEAR_MS ? "month" : "year";
+  }
+  var F_SECOND = { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" };
+  var pad2 = (n) => String(n).padStart(2, "0");
+  function kindFormat(kind, tz) {
     const z = zoneOf(tz);
-    if (stepMs < 36e5) {
-      const f = z.fmt("short", F_SHORT);
-      return (ts) => f.format(ts);
+    switch (kind) {
+      case "second": {
+        const f = z.fmt("second", F_SECOND);
+        return (ts) => f.format(ts);
+      }
+      case "minute": {
+        const f = z.fmt("short", F_SHORT);
+        return (ts) => f.format(ts);
+      }
+      case "hour": {
+        const f = z.fmt("dayhm", F_DAY_HM);
+        return (ts) => f.format(ts);
+      }
+      case "day": {
+        const f = z.fmt("day", F_DAY);
+        return (ts) => f.format(ts);
+      }
+      case "month":
+        return (ts) => {
+          const d = new Date(wallOf(ts, z));
+          return d.getUTCFullYear() + "-" + pad2(d.getUTCMonth() + 1);
+        };
+      default:
+        return (ts) => String(new Date(wallOf(ts, z)).getUTCFullYear());
     }
-    if (stepMs < 24 * 36e5) {
-      const f = z.fmt("dayhm", F_DAY_HM);
-      return (ts) => f.format(ts);
+  }
+  function tickFormat(stepMs, rangeMs, tz, host) {
+    const kind = tickKind(stepMs, rangeMs);
+    if (host) {
+      return (ts) => host(ts, kind);
     }
-    if (stepMs < 365 * 864e5) {
-      const f = z.fmt("day", F_DAY);
-      return (ts) => f.format(ts);
+    return kindFormat(kind, tz);
+  }
+  var X_TICK_SPACING = 40;
+  var X_TICK_VALUE_GAP = 18;
+  function pickTickStep(from, to, widthPx, measure, tz, host) {
+    const range = to - from;
+    if (!(range > 0) || !(widthPx > 0)) {
+      return TICK_STEPS[TICK_STEPS.length - 1];
     }
-    return (ts) => String(new Date(wallOf(ts, z)).getUTCFullYear());
+    const roughStep = range / (widthPx / X_TICK_SPACING);
+    const space = measure(tickFormat(roughStep, range, tz, host)(to)) + X_TICK_VALUE_GAP;
+    return TICK_STEPS.find((st) => st / range * widthPx >= space) || TICK_STEPS[TICK_STEPS.length - 1];
   }
 
   // src/vt/model/eras.ts
@@ -1094,6 +1153,7 @@ var VTCore = (() => {
              font-family:'Inter','Helvetica','Arial',sans-serif;
              font-variant-numeric:tabular-nums; padding-top:5px; white-space:nowrap; }
 .ktl .tick::before { content:""; position:absolute; top:0; left:50%; width:1px; height:4px; background:var(--ktl-axis-grid); }
+.ktl .tick.edge, .ktl .tick.under-cursor { color:transparent; }   /* cut off at an end, or under the cursor tag: keep the mark, drop the text */
 .ktl .acur { position:absolute; top:0; transform:translateX(-50%); color:#111; background:var(--ktl-accent);
              font-size:10px; font-weight:700; font-variant-numeric:tabular-nums; padding:0 5px;
              border-radius:2px; margin-top:5px; white-space:nowrap; z-index:2; }
@@ -1573,7 +1633,11 @@ var VTCore = (() => {
       }
     }
     ac.textContent = fmtTime(s.cursorT, s.TZ);
-    ac.style.left = Math.max(acW / 2, Math.min(axisW - acW / 2, frac * axisW)) + "px";
+    const acX = Math.max(acW / 2, Math.min(axisW - acW / 2, frac * axisW));
+    ac.style.left = acX + "px";
+    for (const l of s.axisLabels) {
+      l.el.classList.toggle("under-cursor", Math.abs(l.x - acX) < l.half + acW / 2 + 2);
+    }
     for (const k of s.kiosks) {
       const c = s.cards[k.id];
       if (!c) {
@@ -1661,37 +1725,48 @@ var VTCore = (() => {
   }
 
   // src/vt/time/measure.ts
-  var TICK_FONT = '10px -apple-system, "Segoe UI", Roboto, sans-serif';
-  var TICK_LABEL_GAP = 14;
-  var measureCtx;
-  function measureTickWidth(text) {
-    if (!measureCtx) {
-      measureCtx = document.createElement("canvas").getContext("2d");
-    }
-    measureCtx.font = TICK_FONT;
-    return measureCtx.measureText(text).width;
+  function measureTickWidth(axis, text) {
+    const probe = document.createElement("div");
+    probe.className = "tick";
+    probe.style.visibility = "hidden";
+    probe.textContent = text;
+    axis.appendChild(probe);
+    const w = probe.getBoundingClientRect().width;
+    probe.remove();
+    return w;
   }
 
   // src/vt/timeline/axis.ts
   function buildAxis(s) {
     const axis = q(s.wrap, ".axis");
     const w = axis.clientWidth;
-    const roughMaxTicks = Math.max(3, Math.floor(w / 90));
-    const roughStep = TICK_STEPS.find((st) => s.SPAN / st <= roughMaxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-    const sampleWidth = measureTickWidth(tickFormat(roughStep, s.TZ)(s.P.to));
-    const maxTicks = Math.max(3, Math.floor(w / (sampleWidth + TICK_LABEL_GAP)));
-    const tickStep = TICK_STEPS.find((st) => s.SPAN / st <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
-    const fmt = tickFormat(tickStep, s.TZ);
+    const { from, to } = s.P;
+    const host = s.cfg.axisFormat;
+    const tickStep = pickTickStep(from, to, w, (text) => measureTickWidth(axis, text), s.TZ, host);
+    const fmt = tickFormat(tickStep, to - from, s.TZ, host);
     axis.querySelectorAll(".tick").forEach((t) => t.remove());
     s.axisTickList.length = 0;
-    for (const ts of axisTicks(s.P.from, s.P.to, tickStep, s.TZ)) {
+    s.axisLabels.length = 0;
+    const placed = [];
+    for (const ts of axisTicks(from, to, tickStep, s.TZ)) {
       s.axisTickList.push(ts);
       const el = document.createElement("div");
       el.className = "tick";
-      el.style.left = (ts - s.P.from) / s.SPAN * w + "px";
+      const x = (ts - from) / s.SPAN * w;
+      el.style.left = x + "px";
       el.textContent = fmt(ts);
       axis.appendChild(el);
+      placed.push({ el, x });
     }
+    const widths = placed.map((p) => p.el.getBoundingClientRect().width);
+    placed.forEach((p, i) => {
+      const half = widths[i] / 2;
+      if (p.x - half < 0 || p.x + half > w) {
+        p.el.classList.add("edge");
+      } else {
+        s.axisLabels.push({ el: p.el, x: p.x, half });
+      }
+    });
   }
   function ruleBeyond(s, sl) {
     if (!sl || !sl.beyond || !sl.el) {
@@ -2159,6 +2234,7 @@ var VTCore = (() => {
       pollTimer: null,
       axisTickList: [],
       // filled by buildAxis; consumed by ruleBeyond
+      axisLabels: [],
       suppressClick: false,
       pv: makePreview(root, TZ),
       PANEL_TT: zoneTexts(TZ, TZ, false)

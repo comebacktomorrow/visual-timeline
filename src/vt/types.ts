@@ -1,3 +1,4 @@
+import type { AxisFormatter } from './time/ticks';
 /* Shared shapes of the Visual Timeline core: what the frames API (and the
  * built-in demo backend) hands over, and the per-source model the timeline
  * and grid render from. Types only: no runtime code. Field sets follow what
@@ -176,6 +177,7 @@ export interface MountConfig {
   apiKey?: string;
   apiFetch?: ApiFetch;
   authHint?: string;           // appended to a token error's message (the panel: how to connect)
+  axisFormat?: AxisFormatter;  // timeline: the host's axis label formatter (the panel: Grafana's)
   annotations?: RawAnnotation[];   // timeline: host annotations (else the demo seam's)
   showAnnotations?: boolean;       // timeline: false hides them
   annotationLanes?: string;        // timeline: 'shared' (default) | 'per-source'

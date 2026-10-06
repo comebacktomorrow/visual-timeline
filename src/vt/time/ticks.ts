@@ -1,11 +1,16 @@
 import { F_DAY, F_DAY_HM, F_SHORT, fromWall, type TimeZoneName, wallOf, type Zone, zoneOf } from './zones';
 
+/* The steps Grafana's time series axis can pick (uPlot's default time
+ * increments, from a minute up): every sub-day step divides a day, and the
+ * month steps (30d = 1, 60d = 2, ... 365d = 12 months) divide a year. */
 export const TICK_STEPS = [60e3, 5 * 60e3, 10 * 60e3, 15 * 60e3, 30 * 60e3,
-                    3600e3, 2 * 3600e3, 3 * 3600e3, 6 * 3600e3, 12 * 3600e3,
+                    3600e3, 2 * 3600e3, 3 * 3600e3, 4 * 3600e3, 6 * 3600e3,
+                    8 * 3600e3, 12 * 3600e3,
                     24 * 3600e3, 2 * 86400e3, 3 * 86400e3, 4 * 86400e3,
                     5 * 86400e3, 6 * 86400e3, 7 * 86400e3, 8 * 86400e3,
                     9 * 86400e3, 10 * 86400e3, 15 * 86400e3,
-                    30 * 86400e3, 90 * 86400e3, 365 * 86400e3];
+                    30 * 86400e3, 60 * 86400e3, 90 * 86400e3, 120 * 86400e3,
+                    180 * 86400e3, 365 * 86400e3];
 
 /* Calendar alignment in a zone. Three tiers, by step:
  * - under a day: ticks are the instants whose WALL CLOCK sits on the step's
@@ -111,21 +116,64 @@ export function axisTicks(from: number, to: number, stepMs: number, tz?: TimeZon
   return out;
 }
 
-/* one format per zoom tier (not a whole-axis binary switch), matching
- * Grafana's per-increment axis labels, in the zone */
-export function tickFormat(stepMs: number, tz?: TimeZoneName): (ts: number) => string {
+/* Which label a tick gets, by Grafana's rule (formatTime in its
+ * UPlotAxisBuilder.ts): it depends on the step AND the visible range, so a
+ * 12 h window with hourly ticks still reads HH:mm, and dates appear only
+ * once the window spans more than a day. The names are Grafana's
+ * systemDateFormats.interval keys. */
+export type TickKind = 'second' | 'minute' | 'hour' | 'day' | 'month' | 'year';
+const YEAR_MS = 365 * DAY_MS;
+export function tickKind(stepMs: number, rangeMs: number): TickKind {
+  if (stepMs <= 60e3) {return 'second';}
+  if (rangeMs <= DAY_MS) {return 'minute';}
+  if (stepMs <= DAY_MS) {return 'hour';}
+  if (rangeMs < YEAR_MS) {return 'day';}
+  if (Math.round(stepMs / DAY_MS) === 365) {return 'year';}
+  return stepMs <= YEAR_MS ? 'month' : 'year';
+}
+
+/* A host's own label formatter (the Grafana panel passes Grafana's, so the
+ * axis honours the instance's configured date formats). */
+export type AxisFormatter = (ts: number, kind: TickKind) => string;
+
+const F_SECOND: Intl.DateTimeFormatOptions = { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' };
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/* The built-in labels (the standalone pages, which have no Grafana): the
+ * same tiers as Grafana, with dates in the browser's locale order. */
+export function kindFormat(kind: TickKind, tz?: TimeZoneName): (ts: number) => string {
   const z = zoneOf(tz);
-  if (stepMs < 3600e3) {
-    const f = z.fmt('short', F_SHORT);
-    return ts => f.format(ts);
+  switch (kind) {
+    case 'second': { const f = z.fmt('second', F_SECOND); return ts => f.format(ts); }
+    case 'minute': { const f = z.fmt('short', F_SHORT); return ts => f.format(ts); }
+    case 'hour': { const f = z.fmt('dayhm', F_DAY_HM); return ts => f.format(ts); }
+    case 'day': { const f = z.fmt('day', F_DAY); return ts => f.format(ts); }
+    case 'month': return ts => { const d = new Date(wallOf(ts, z)); return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1); };
+    default: return ts => String(new Date(wallOf(ts, z)).getUTCFullYear());
   }
-  if (stepMs < 24 * 3600e3) {
-    const f = z.fmt('dayhm', F_DAY_HM);
-    return ts => f.format(ts);
-  }
-  if (stepMs < 365 * 86400e3) {
-    const f = z.fmt('day', F_DAY);
-    return ts => f.format(ts);
-  }
-  return ts => String(new Date(wallOf(ts, z)).getUTCFullYear());
+}
+
+/* The label function for an axis with this step over this visible range,
+ * in the zone: the host's formatter when given, else the built-in one. */
+export function tickFormat(stepMs: number, rangeMs: number, tz?: TimeZoneName, host?: AxisFormatter): (ts: number) => string {
+  const kind = tickKind(stepMs, rangeMs);
+  if (host) {return ts => host(ts, kind);}
+  return kindFormat(kind, tz);
+}
+
+/* Grafana's x-axis spacing (calculateSpace in UPlotAxisBuilder.ts, then
+ * uPlot's increment choice): format a sample label as if ticks were 40 px
+ * apart, require its width plus an 18 px gap between ticks, and take the
+ * smallest step that leaves that much room. `measure` returns a label's
+ * rendered width in px. */
+export const X_TICK_SPACING = 40;
+export const X_TICK_VALUE_GAP = 18;
+export function pickTickStep(
+  from: number, to: number, widthPx: number, measure: (text: string) => number, tz?: TimeZoneName, host?: AxisFormatter
+): number {
+  const range = to - from;
+  if (!(range > 0) || !(widthPx > 0)) {return TICK_STEPS[TICK_STEPS.length - 1];}
+  const roughStep = range / (widthPx / X_TICK_SPACING);
+  const space = measure(tickFormat(roughStep, range, tz, host)(to)) + X_TICK_VALUE_GAP;
+  return TICK_STEPS.find(st => (st / range) * widthPx >= space) || TICK_STEPS[TICK_STEPS.length - 1];
 }
