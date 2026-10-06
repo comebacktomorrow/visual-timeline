@@ -24,6 +24,8 @@
 - **Self-hosting (experimental).** The backend and a ready Grafana run on
   your own hardware from one Docker Compose file, with an uploader for IP
   camera snapshots. See `selfhost/README.md`.
+- **Retention.** The reference worker can delete frames past a number of
+  days, and the panel shows that time as **No data**.
 
 ### All changes
 
@@ -35,6 +37,13 @@
   camera on its own schedule; failed frames are dropped. The same
   `snapshot-uploader.sh` runs outside Docker, for a camera file or a single
   camera.
+- Retention. The reference worker deletes frames older than
+  `RETENTION_DAYS` (and, optionally, hi-res frames older than
+  `RETENTION_DAYS_HI`), pruning after uploads, so it needs no scheduler and
+  works the same on Cloudflare and self-hosted. `/sources` then starts each
+  history with a pause (reason `expired`) ending at the cutoff, and the panel
+  draws that span as **No data**, flat rather than hatched, instead of as
+  offline. The self-hosted stack keeps 30 days by default.
 - Reference worker: new optional `PUBLIC_URL`, the address browsers use.
   Image URLs are built on it, still signed, for a worker that Grafana reaches
   on an address browsers can't (a Docker network, say). Unset, nothing

@@ -155,6 +155,22 @@ describe('erasFor', () => {
   });
 });
 
+describe('retention (an API that deletes old frames)', () => {
+  test('the "expired" pause the API leads with becomes a NO DATA era up to the cutoff', () => {
+    const cutoff = 1_000_000;
+    const history = [
+      { since: 0, variant: 'lo', paused: true, reason: 'expired', intended: true },
+      { since: cutoff, variant: 'lo', cadence: 60e3 },
+    ];
+    const eras = erasFor({ cadence: 60e3, history }, { from: cutoff - 600e3, to: cutoff + 600e3 });
+    expect(eras.map((e) => [e.from, e.to, e.paused, e.reason])).toEqual([
+      [cutoff - 600e3, cutoff, true, 'expired'],
+      [cutoff, cutoff + 600e3, false, undefined],
+    ]);
+    expect(pauseInfo(eras[0]).label).toBe('NO DATA');
+  });
+});
+
 describe('pauseInfo', () => {
   test.each([
     [undefined, true, 'PAUSED', ['paused']],
@@ -165,6 +181,7 @@ describe('pauseInfo', () => {
     ['app-stopped', true, 'APP STOPPED', ['paused', 'r-app-stopped']],
     ['app-stopped', false, 'APP STOPPED', ['paused', 'r-app-stopped', 'unintended']],
     [undefined, false, 'PAUSED', ['paused', 'unintended']],
+    ['expired', true, 'NO DATA', ['paused', 'r-expired']],
   ])('reason %p, intended %p → %p', (reason, intended, label, classes) => {
     expect(pauseInfo({ paused: true, reason, intended })).toEqual({ label, classes });
   });
@@ -180,7 +197,7 @@ describe('pauseInfo', () => {
   });
 
   test('every class for a known reason is one the cursor knows how to clear', () => {
-    for (const reason of [undefined, 'quiet', 'screen-sleep', 'system-down', 'app-stopped']) {
+    for (const reason of [undefined, 'quiet', 'screen-sleep', 'system-down', 'app-stopped', 'expired']) {
       for (const intended of [true, false]) {
         for (const c of pauseInfo({ reason, intended }).classes) {
           expect(PAUSE_CLASSES).toContain(c);

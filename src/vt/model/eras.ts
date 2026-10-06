@@ -41,7 +41,7 @@ export function erasFor(decl: Partial<Pick<SourceDecl, 'cadence' | 'history'>>, 
  * carries the meaning ("screen asleep" is a world-state; "paused" is what the
  * uploader did about it). intended === false is the triage color: explained
  * but nobody asked for it (power-policy blank, display handoff failure). */
-export const PAUSE_CLASSES = ['paused', 'unintended', 'r-quiet', 'r-screen-sleep', 'r-app-stopped', 'r-system-down'];
+export const PAUSE_CLASSES = ['paused', 'unintended', 'r-quiet', 'r-screen-sleep', 'r-app-stopped', 'r-system-down', 'r-expired'];
 /* clear every pause class off an element: PAUSE_CLASSES plus ANY r-<reason>.
  * pauseInfo passes unknown reasons through as classes, so no fixed list can
  * cover them, and a leftover one would outlive the band it came from. */
@@ -59,7 +59,9 @@ export function pauseInfo(x: PauseSubject | null | undefined): { label: string; 
     r === 'screen-sleep' ? (unintended ? 'SCREEN DARK (UNEXPECTED)' : 'SCREEN ASLEEP') :
     r === 'system-down'  ? 'SYSTEM DOWN (PLANNED)' :
     r === 'app-stopped'  ? 'APP STOPPED' :
-    r === 'quiet'        ? 'QUIET HOURS' : 'PAUSED';
+    r === 'quiet'        ? 'QUIET HOURS' :
+    // the API's retention cutoff: frames this old have been deleted
+    r === 'expired'      ? 'NO DATA' : 'PAUSED';
   const classes = ['paused'];
   if (r) {classes.push('r-' + String(r).replace(/[^\w-]/g, ''));}
   if (unintended) {classes.push('unintended');}
