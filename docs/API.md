@@ -10,6 +10,10 @@ query param, and `/kiosks` endpoint remain as deprecated aliases.)
 
 ## Core ideas
 
+- **Sources are hosts in Grafana.** The API calls each camera, screen or
+  kiosk that uploads frames a *source* (`X-Source`, `/frames?source=`). In
+  Grafana it's a *host*: the Host variable, the `host` filter key, and the
+  `host:<id>` annotation tag all take a source's id.
 - **Cadence is a heartbeat contract.** Every upload declares how often this
   source promises a frame (`X-Cadence`, seconds). Timestamps snap to that
   grid, keys become deterministic, and a *missing* frame means *offline* —

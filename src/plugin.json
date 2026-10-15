@@ -13,7 +13,7 @@
       "multiview",
       "visual monitoring"
     ],
-    "description": "Scrub-able visual timeline and multiview for image feeds — kiosk screens, security cameras, website thumbnails — with shared-crosshair sync, offline-gap semantics and a data source that keeps the API's viewer token server-side",
+    "description": "Scrubbable visual timeline and multiview for image feeds (kiosk screens, security cameras, website thumbnails), with crosshair sync, honest offline gaps, and site, host and tag filters",
     "author": {
       "name": "Xzibit"
     },
@@ -22,6 +22,10 @@
       "large": "img/logo.svg"
     },
     "links": [
+      {
+        "name": "Documentation",
+        "url": "https://github.com/comebacktomorrow/visual-timeline#readme"
+      },
       {
         "name": "Repository",
         "url": "https://github.com/comebacktomorrow/visual-timeline"

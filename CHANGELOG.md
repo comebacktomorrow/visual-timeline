@@ -6,14 +6,19 @@
 
 - **The data source owns the data.** A panel chooses its Visual Timeline API
   data source in its **Query** tab, like any Grafana panel, and the data source
-  answers with the sources to draw. The query has **Sites**, **Hosts** and
+  answers with the hosts to draw. The query has **Sites**, **Hosts** and
   **Tags** fields.
 - **Filter by site, host and tag,** the way Grafana filters Prometheus or Loki
   data by label: Site and Host dashboard variables (Host can follow Site), an
   ad hoc filter bar keyed by `site`, `host` and every tag, and a click on a
-  host, site or tag in a source's header adds it to the filter.
-- **A starter dashboard** on the data source's Dashboards tab, with the Site
-  and Host dropdowns and the filter bar ready.
+  host, site or tag in a header adds it to the filter (or Enter or Space on
+  one, from the keyboard).
+- **A starter dashboard** on the data source's Dashboards tab, with Data
+  source, Site and Host dropdowns and the filter bar ready.
+- **"Host" throughout.** Grafana calls each camera, screen or kiosk a host,
+  and so do the panel, the editors and the docs. (The API still calls it a
+  source; docs/API.md says so.) An annotation tagged `host:<id>` pins to that
+  host's strip; `source:<id>` still works.
 - **Demo data is a data source switch.** Panels never fall back to demo data
   on their own.
 - **Requires Grafana 12.0 or later.**
@@ -29,7 +34,11 @@
   are thrown in plain words, so Grafana's panel error indicator shows them.
 - Data source: a **Demo data** switch. With it on, the API settings hide,
   Save & test passes without calling anything, and panels draw the built-in
-  demo sources.
+  demo hosts. The settings page follows Grafana's layout for data sources
+  (Connection and Authentication sections, a link to the docs).
+- Data source: one GET /sources answer serves every caller for 5 seconds, so
+  a dashboard load asks once instead of once per panel query, variable and
+  filter-bar dropdown.
 - Panel: the **Data source**, **API URL**, **Sites** and **Tag filter**
   options are gone; which sources to show is the query's job. A panel with no
   Visual Timeline data source in its query says so and points at the Query
@@ -52,12 +61,35 @@
 - Fix: a source paused for a long time (days, at a 60 s cadence) vanished from
   timelines longer than about 13 hours. Checking for its resume asked the API
   for more buckets than it allows; the check is now coarse first, then exact.
+- Panels with many hosts load faster: hosts' frames are fetched six at a
+  time instead of one after another.
+- Fix: a big panel rebuilt with its images in the browser cache (about 4,000
+  of them, e.g. 25 hosts at 1200 px) stopped loading images partway.
+- Fix: a panel removed while it was still loading kept polling the API, and
+  one host's failed live poll skipped the hosts after it.
+- Fix: in the multiview, clicking a header chip also opened the preview; in
+  Inline headers, chips couldn't be clicked at all. Tags now read `env=prod`,
+  as the Tags field writes them.
+- Fix: the Sites and Hosts placeholders suggested typing "all", which
+  filtered to a site named "all". Leave the field empty for all.
+- Fix: the standalone viewer added its viewer key to hi-res image links even
+  when the images came from another host than the API.
 - Fix: a panel rebuilt twice within about a second (a resize while loading,
   opening the panel editor) could end up blank. The first build's delayed
   swap-in removed the second's view.
 - Reference worker and self-hosted image: `sharp` (an image library wrangler's
   Miniflare pins at 0.35.4) is overridden to 0.35.5 for GHSA-wq5f-xc86-pv6w,
   a high-severity issue in its bundled SVG library.
+- Reference worker: upload tokens and registry entries are looked up only by
+  keys the configuration actually defines. A crafted site name could pass
+  the upload check without a real token.
+- Self-hosted stack: it refuses to start while `.env` still holds the
+  example's placeholder secrets, the Grafana admin password comes from
+  `.env`, and the provisioned data source can't be edited in the UI. The
+  snapshot uploader keeps tokens and camera passwords out of the process
+  list, uses private temporary files, accepts only http(s) camera URLs and
+  checks every id.
+- CI: the plugin-signing token is only in the signing step's environment.
 - Self-hosted stack: its Compose project is `visual-timeline-selfhost` (it
   shared the repository's dev stack's name, so running both replaced one
   Grafana with the other), and its dashboard has the Site and Host variables

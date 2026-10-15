@@ -12,7 +12,7 @@
       "multiview",
       "visual monitoring"
     ],
-    "description": "Scrub-able visual timeline and multiview for image feeds — kiosk screens, security cameras, website thumbnails — with shared-crosshair sync and offline-gap semantics",
+    "description": "Scrubbable visual timeline and multiview for image feeds (kiosk screens, security cameras, website thumbnails), with crosshair sync and honest offline gaps",
     "author": {
       "name": "Xzibit"
     },
