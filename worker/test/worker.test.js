@@ -79,6 +79,21 @@ test('a bodyless /upload probe separates live tokens from rejected ones', async 
   assert.equal((await probe('-bad', 'tok-a')).status, 400, 'malformed id is a 400, not a 401');
 });
 
+test('inherited object keys are not tokens or sources', async () => {
+  const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'site-a': 'tok-a' }) };
+  const post = (site, token, source = 'cam') => call('/upload', env, {
+    method: 'POST', body: 'jpeg',
+    headers: { authorization: 'Bearer ' + token, 'x-site': site, 'x-source': source, 'x-cadence': '60', 'content-type': 'image/jpeg', 'content-length': '4' },
+  });
+  // tokens.constructor is the Object function; its string form is public
+  assert.equal((await post('constructor', String(Object))).status, 401);
+  assert.equal((await post('constructor', 'function Object() { [native code] }')).status, 401);
+  assert.equal(Object.hasOwn(Object, 'cam'), false, 'nothing written onto Object');
+  // a real site may still have a source named like an inherited key
+  assert.equal((await post('site-a', 'tok-a', 'constructor')).status, 200);
+  assert.ok((await (await call('/sources', env)).json()).some((s) => s.id === 'constructor'));
+});
+
 test('with VIEWER_TOKEN set, reads need it and scoped consumers stay in scope', async () => {
   const env = {
     FRAMES: memR2(frameKeys(1)),

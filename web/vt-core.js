@@ -863,23 +863,27 @@ var VTCore = (() => {
     if (base === null) {
       return null;
     }
-    const q2 = qAt >= 0 ? url.slice(qAt) : apiKey ? "?k=" + encodeURIComponent(apiKey) : "";
     const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
-    return base + "/frame/hi/" + encodeURIComponent(decl.site) + "/" + encodeURIComponent(decl.id) + "/" + hiTs + ".jpg" + q2;
+    const hi = base + "/frame/hi/" + encodeURIComponent(decl.site) + "/" + encodeURIComponent(decl.id) + "/" + hiTs + ".jpg";
+    if (qAt >= 0) {
+      return hi + url.slice(qAt);
+    }
+    return apiUrl ? imageUrlWithKey(hi, apiUrl, apiKey) : hi;
   }
 
   // src/vt/dom/html.ts
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
   }
-  function filterAttrs(key, value) {
-    return ' data-fk="' + esc(key) + '" data-fv="' + esc(value) + '"';
+  function filterAttrs(key, value, filterable = false) {
+    const a = ' data-fk="' + esc(key) + '" data-fv="' + esc(value) + '"';
+    return filterable ? a + ' role="button" tabindex="0" title="' + esc("Filter by " + key + " = " + value) + '"' : a;
   }
-  function tagChips(decl) {
+  function tagChips(decl, filterable = false) {
     if (!decl.tags) {
       return "";
     }
-    const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st"' + filterAttrs(k, v) + ">" + esc(k) + ":" + esc(v) + "</span>").join("");
+    const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st"' + filterAttrs(k, v, filterable) + ">" + esc(k) + "=" + esc(v) + "</span>").join("");
     return '<span class="tags">' + chips + "</span>";
   }
   function headTitle(decl) {
@@ -889,7 +893,7 @@ var VTCore = (() => {
     }
     if (decl.tags) {
       for (const [k, v] of Object.entries(decl.tags)) {
-        parts.push(k + ":" + v);
+        parts.push(k + "=" + v);
       }
     }
     return parts.join(" \xB7 ");
@@ -899,7 +903,7 @@ var VTCore = (() => {
       return;
     }
     wrap.classList.add("filterable");
-    wrap.addEventListener("click", (e) => {
+    const filter = (e) => {
       const el = e.target?.closest("[data-fk]");
       if (!el || !wrap.contains(el)) {
         return;
@@ -907,6 +911,12 @@ var VTCore = (() => {
       e.preventDefault();
       e.stopPropagation();
       onFilter(el.dataset.fk || "", el.dataset.fv || "");
+    };
+    wrap.addEventListener("click", filter, true);
+    wrap.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        filter(e);
+      }
     });
   }
 
@@ -1063,6 +1073,9 @@ var VTCore = (() => {
 /* past the API's retention: nothing to show, and no state to hatch */
 .ktl.filterable [data-fk] { cursor:pointer; }
 .ktl.filterable [data-fk]:hover { text-decoration:underline; text-underline-offset:2px; }
+.ktl.filterable [data-fk]:focus-visible { outline:2px solid var(--ktl-accent); outline-offset:1px; }
+/* an inline header lets hover through to the image, but not its filters */
+.ktl.filterable .inline-head [data-fk] { pointer-events:auto; }
 .ktl .slot.paused.r-expired { background:var(--ktl-bg2); }
 .ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,var(--ktl-unint-a),var(--ktl-unint-a) 7px,var(--ktl-unint-b) 7px,var(--ktl-unint-b) 14px); }
 /* hatch continuity: each slot is its own element, so a per-element gradient
@@ -1233,6 +1246,28 @@ var VTCore = (() => {
     document.head.appendChild(s);
   }
 
+  // src/vt/model/pool.ts
+  var MODEL_CONCURRENCY = 6;
+  function limited(items, limit, fn) {
+    let running = 0;
+    const waiting = [];
+    const next = () => {
+      running--;
+      waiting.shift()?.();
+    };
+    return items.map((item) => new Promise((resolve, reject) => {
+      const run = () => {
+        running++;
+        Promise.resolve().then(() => fn(item)).then(resolve, reject).finally(next);
+      };
+      if (running < limit) {
+        run();
+      } else {
+        waiting.push(run);
+      }
+    }));
+  }
+
   // src/vt/backends/demo.ts
   var SITES = {
     "site-a": [
@@ -1371,7 +1406,7 @@ var VTCore = (() => {
       let source = a.source || null;
       let siteScope = null;
       for (const t of tags) {
-        const m = /^(?:source|kiosk):(.+)$/.exec(t);
+        const m = /^(?:host|source|kiosk):(.+)$/.exec(t);
         if (m) {
           source = m[1];
         }
@@ -1493,6 +1528,7 @@ var VTCore = (() => {
     let active = 0;
     let stopped = false;
     let scheduled = false;
+    let pumping = false;
     let idleWaiters = [];
     function settleIdle() {
       if (active === 0 && pending.length === 0) {
@@ -1503,9 +1539,10 @@ var VTCore = (() => {
     }
     function pump() {
       scheduled = false;
-      if (stopped) {
+      if (stopped || pumping) {
         return;
       }
+      pumping = true;
       if (!sorted) {
         pending.sort((a, b) => a.ts - b.ts);
         sorted = true;
@@ -1531,6 +1568,7 @@ var VTCore = (() => {
           done();
         }
       }
+      pumping = false;
       settleIdle();
     }
     return {
@@ -2002,7 +2040,7 @@ var VTCore = (() => {
     card.className = "card" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
     const la = model.lastActive;
     const cad = s.cfg.showDetails && la ? '<span class="cad">\u23F1 ' + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + "</span>" : "";
-    card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", kiosk) + ">" + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st"' + filterAttrs("site", decl.site) + ">" + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
+    card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", kiosk, !!s.cfg.onFilter) + ">" + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st"' + filterAttrs("site", decl.site, !!s.cfg.onFilter) + ">" + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl, !!s.cfg.onFilter) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
     const strip = card.querySelector(".strip");
     if (s.hostWidth / model.slots.length >= 12) {
       strip.classList.add("sep");
@@ -2230,121 +2268,139 @@ var VTCore = (() => {
   function startPoll(s) {
     const steps = s.kiosks.map((k) => s.cards[k.id].model.lastActive && s.cards[k.id].model.lastActive.step).filter(Boolean);
     const minStep = steps.length ? Math.min.apply(null, steps) : 6e4;
+    let busy = false;
     s.pollTimer = setInterval(async () => {
-      for (const k of s.kiosks) {
-        const c = s.cards[k.id];
-        const mSlots = c.model.slots;
-        let reshaped = false;
-        const filler = mSlots.length && mSlots[mSlots.length - 1].beyond ? mSlots[mSlots.length - 1] : null;
-        if (filler) {
-          const nowP = Date.now();
-          const prev = mSlots.length > 1 ? mSlots[mSlots.length - 2] : null;
-          if (prev && prev.paused) {
-            const grow = Math.min(nowP, filler.ts + filler.span) - filler.ts;
-            if (grow > 0) {
-              reshaped = true;
-              prev.span += grow;
-              filler.ts += grow;
-              filler.span -= grow;
-              if (prev.el) {
-                prev.el.style.flexGrow = String(prev.span / 1e3);
-              }
-              if (filler.span <= 0) {
-                if (filler.el) {
-                  filler.el.remove();
-                }
-                mSlots.pop();
-              } else {
-                if (filler.el) {
-                  filler.el.style.flexGrow = String(filler.span / 1e3);
-                }
-                ruleBeyond(s, filler);
-              }
-            }
-          } else if (prev && prev.step) {
-            let nextTs = prev.ts + prev.step;
-            while (mSlots[mSlots.length - 1] && mSlots[mSlots.length - 1].beyond && nextTs <= nowP) {
-              const f = mSlots[mSlots.length - 1];
-              const sl = { ts: nextTs, span: prev.step, frame: null, cadence: prev.cadence, step: prev.step, future: true };
-              const el = document.createElement("div");
-              el.className = "slot future";
-              el.style.flexGrow = String(sl.span / 1e3);
-              if (f.el && f.el.parentNode) {
-                f.el.parentNode.insertBefore(el, f.el);
-              }
-              sl.el = el;
-              mSlots.splice(mSlots.length - 1, 0, sl);
-              reshaped = true;
-              f.span -= sl.span;
-              f.ts += sl.span;
-              if (f.span <= 0) {
-                if (f.el) {
-                  f.el.remove();
-                }
-                mSlots.pop();
-              } else {
-                if (f.el) {
-                  f.el.style.flexGrow = String(f.span / 1e3);
-                }
-                ruleBeyond(s, f);
-              }
-              nextTs += prev.step;
-            }
-          }
-        }
-        if (reshaped && c.strip.clientWidth > 0) {
-          dressStrip(c.model);
-        }
-        const la = c.model.lastActive;
-        if (!la) {
-          continue;
-        }
-        let lastTs = s.P.from;
-        for (let i = c.model.slots.length - 1; i >= 0; i--) {
-          if (c.model.slots[i].frame) {
-            lastTs = c.model.slots[i].ts;
-            break;
-          }
-        }
-        const fresh = await s.backend.frames(k.site, k.id, lastTs + 1, Date.now(), la.step);
-        if (s.destroyed) {
-          return;
-        }
-        for (const f of fresh) {
-          const slot = c.model.slotAt(f.ts);
-          if (!slot || slot.paused || slot.beyond) {
-            continue;
-          }
-          if (slot.frame && f.ts <= slot.frame.ts) {
-            continue;
-          }
-          slot.frame = f;
-          slot.future = false;
-          slot.el.classList.remove("gap", "future");
-          let img = slot.el.querySelector("img");
-          if (!img) {
-            img = document.createElement("img");
-            slot.el.appendChild(img);
-          }
-          img.classList.remove("ghost");
-          img.src = f.url;
-          img.alt = k.id + " " + c.tt.time(f.ts) + c.tt.sfx(f.ts);
-        }
-        const overdue = Date.now();
-        for (const sl of c.model.slots) {
-          if (missedHeartbeat(sl, overdue)) {
-            sl.future = false;
-            if (sl.el) {
-              sl.el.classList.remove("future");
-              sl.el.classList.add("gap");
-            }
-          }
-        }
-        for (const sl of c.model.slots) {
-          dressGhost(c.model.slots, sl);
-        }
+      if (busy) {
+        return;
+      }
+      busy = true;
+      try {
+        await pollOnce(s);
+      } finally {
+        busy = false;
       }
     }, Math.min(minStep, 1e4));
+  }
+  async function pollOnce(s) {
+    for (const k of s.kiosks) {
+      const c = s.cards[k.id];
+      const mSlots = c.model.slots;
+      let reshaped = false;
+      const filler = mSlots.length && mSlots[mSlots.length - 1].beyond ? mSlots[mSlots.length - 1] : null;
+      if (filler) {
+        const nowP = Date.now();
+        const prev = mSlots.length > 1 ? mSlots[mSlots.length - 2] : null;
+        if (prev && prev.paused) {
+          const grow = Math.min(nowP, filler.ts + filler.span) - filler.ts;
+          if (grow > 0) {
+            reshaped = true;
+            prev.span += grow;
+            filler.ts += grow;
+            filler.span -= grow;
+            if (prev.el) {
+              prev.el.style.flexGrow = String(prev.span / 1e3);
+            }
+            if (filler.span <= 0) {
+              if (filler.el) {
+                filler.el.remove();
+              }
+              mSlots.pop();
+            } else {
+              if (filler.el) {
+                filler.el.style.flexGrow = String(filler.span / 1e3);
+              }
+              ruleBeyond(s, filler);
+            }
+          }
+        } else if (prev && prev.step) {
+          let nextTs = prev.ts + prev.step;
+          while (mSlots[mSlots.length - 1] && mSlots[mSlots.length - 1].beyond && nextTs <= nowP) {
+            const f = mSlots[mSlots.length - 1];
+            const sl = { ts: nextTs, span: prev.step, frame: null, cadence: prev.cadence, step: prev.step, future: true };
+            const el = document.createElement("div");
+            el.className = "slot future";
+            el.style.flexGrow = String(sl.span / 1e3);
+            if (f.el && f.el.parentNode) {
+              f.el.parentNode.insertBefore(el, f.el);
+            }
+            sl.el = el;
+            mSlots.splice(mSlots.length - 1, 0, sl);
+            reshaped = true;
+            f.span -= sl.span;
+            f.ts += sl.span;
+            if (f.span <= 0) {
+              if (f.el) {
+                f.el.remove();
+              }
+              mSlots.pop();
+            } else {
+              if (f.el) {
+                f.el.style.flexGrow = String(f.span / 1e3);
+              }
+              ruleBeyond(s, f);
+            }
+            nextTs += prev.step;
+          }
+        }
+      }
+      if (reshaped && c.strip.clientWidth > 0) {
+        dressStrip(c.model);
+      }
+      const la = c.model.lastActive;
+      if (!la) {
+        continue;
+      }
+      let lastTs = s.P.from;
+      for (let i = c.model.slots.length - 1; i >= 0; i--) {
+        if (c.model.slots[i].frame) {
+          lastTs = c.model.slots[i].ts;
+          break;
+        }
+      }
+      let fresh;
+      try {
+        fresh = await s.backend.frames(k.site, k.id, lastTs + 1, Date.now(), la.step);
+      } catch (e) {
+        console.warn("[visual-timeline] live poll failed for " + k.id + ":", e);
+        continue;
+      }
+      if (s.destroyed) {
+        return;
+      }
+      for (const f of fresh) {
+        const slot = c.model.slotAt(f.ts);
+        if (!slot || slot.paused || slot.beyond) {
+          continue;
+        }
+        if (slot.frame && f.ts <= slot.frame.ts) {
+          continue;
+        }
+        slot.frame = f;
+        slot.future = false;
+        slot.el.classList.remove("gap", "future");
+        let img = slot.el.querySelector("img");
+        if (!img) {
+          img = document.createElement("img");
+          slot.el.appendChild(img);
+        }
+        img.classList.remove("ghost");
+        img.src = f.url;
+        img.alt = k.id + " " + c.tt.time(f.ts) + c.tt.sfx(f.ts);
+      }
+      const overdue = Date.now();
+      for (const sl of c.model.slots) {
+        if (missedHeartbeat(sl, overdue)) {
+          sl.future = false;
+          if (sl.el) {
+            sl.el.classList.remove("future");
+            sl.el.classList.add("gap");
+          }
+        }
+      }
+      for (const sl of c.model.slots) {
+        dressGhost(c.model.slots, sl);
+      }
+    }
   }
 
   // src/vt/timeline/mount.ts
@@ -2401,19 +2457,17 @@ var VTCore = (() => {
         await revealWrapper(root, wrap);
         return;
       }
-      for (const k of s.kiosks) {
+      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget).catch((e) => {
+        console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
+        return null;
+      }));
+      for (const [i, k] of s.kiosks.entries()) {
+        const model = await models[i];
         if (s.destroyed) {
           return;
         }
-        let model;
-        try {
-          model = await buildSourceModel(k, P, backend, pxBudget);
-        } catch (e) {
-          console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
+        if (!model) {
           continue;
-        }
-        if (s.destroyed) {
-          return;
         }
         if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {
           continue;
@@ -2429,6 +2483,9 @@ var VTCore = (() => {
       }
       setCursor(s, s.cursorT, null, true);
       await revealWrapper(root, wrap, s.images.idle());
+      if (s.destroyed) {
+        return;
+      }
       dressAll(s, 20);
       if (LIVE) {
         startPoll(s);
@@ -2462,7 +2519,7 @@ var VTCore = (() => {
     const zone = zoneFor(decl, s.TZ, s.cfg.thumbTimes, s.PANEL_TT);
     const inline = s.cfg.headerMode === "inline" || s.cfg.headerMode === "inline-gradient";
     el.className = "tile" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
-    el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", decl.id) + ">" + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st"' + filterAttrs("site", decl.site) + ">" + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
+    el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", decl.id, !!s.cfg.onFilter) + ">" + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st"' + filterAttrs("site", decl.site, !!s.cfg.onFilter) + ">" + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl, !!s.cfg.onFilter) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
     attachZoneChip(zone, el);
     const rec = {
       decl,
@@ -2571,32 +2628,50 @@ var VTCore = (() => {
 
   // src/vt/grid/poll.ts
   function startPoll2(s) {
+    let busy = false;
     s.pollTimer = setInterval(async () => {
-      for (const k of s.kiosks) {
-        const rec = s.tiles[k.id];
-        const la = rec.model.lastActive;
-        if (!la) {
-          continue;
-        }
-        const last = lastFrame(rec);
-        const fresh = await s.backend.frames(k.site, k.id, (last ? last.ts : s.P.from) + 1, Date.now(), la.step);
-        if (s.destroyed) {
-          return;
-        }
-        for (const f of fresh) {
-          const slot = rec.model.slotAt(f.ts);
-          if (!slot || slot.paused || slot.beyond) {
-            continue;
-          }
-          if (!slot.frame || f.ts > slot.frame.ts) {
-            slot.frame = f;
-          }
-        }
+      if (busy) {
+        return;
       }
-      if (s.shownT == null) {
-        setShown(s, null);
+      busy = true;
+      try {
+        await pollOnce2(s);
+      } finally {
+        busy = false;
       }
     }, 1e4);
+  }
+  async function pollOnce2(s) {
+    for (const k of s.kiosks) {
+      const rec = s.tiles[k.id];
+      const la = rec.model.lastActive;
+      if (!la) {
+        continue;
+      }
+      const last = lastFrame(rec);
+      let fresh;
+      try {
+        fresh = await s.backend.frames(k.site, k.id, (last ? last.ts : s.P.from) + 1, Date.now(), la.step);
+      } catch (e) {
+        console.warn("[visual-timeline] live poll failed for " + k.id + ":", e);
+        continue;
+      }
+      if (s.destroyed) {
+        return;
+      }
+      for (const f of fresh) {
+        const slot = rec.model.slotAt(f.ts);
+        if (!slot || slot.paused || slot.beyond) {
+          continue;
+        }
+        if (!slot.frame || f.ts > slot.frame.ts) {
+          slot.frame = f;
+        }
+      }
+    }
+    if (s.shownT == null) {
+      setShown(s, null);
+    }
   }
 
   // src/vt/grid/mount.ts
@@ -2644,19 +2719,17 @@ var VTCore = (() => {
         await revealWrapper(root, wrap);
         return;
       }
-      for (const k of s.kiosks) {
+      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget).catch((e) => {
+        console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
+        return null;
+      }));
+      for (const [i, k] of s.kiosks.entries()) {
+        const model = await models[i];
         if (s.destroyed) {
           return;
         }
-        let model;
-        try {
-          model = await buildSourceModel(k, P, backend, budget);
-        } catch (e) {
-          console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
+        if (!model) {
           continue;
-        }
-        if (s.destroyed) {
-          return;
         }
         if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {
           continue;
@@ -2666,6 +2739,9 @@ var VTCore = (() => {
       s.kiosks = s.kiosks.filter((k) => s.tiles[k.id]);
       setShown(s, null);
       await revealWrapper(root, wrap);
+      if (s.destroyed) {
+        return;
+      }
       if (LIVE) {
         startPoll2(s);
       }

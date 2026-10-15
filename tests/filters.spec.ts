@@ -22,7 +22,7 @@ test('the Site and Host variables narrow the panels', async ({ gotoDashboardPage
 
 test('an ad hoc filter narrows the panels', async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
   const dashboard = await readProvisionedDashboard({ fileName: 'filters.json' });
-  await gotoDashboardPage({ ...dashboard, queryParams: new URLSearchParams({ 'var-Filters': 'host|!=|source-1' }) });
+  await gotoDashboardPage({ ...dashboard, queryParams: new URLSearchParams({ 'var-filters': 'host|!=|source-1' }) });
   await expect(cardNames(page)).toHaveText(['source-2', 'source-3', 'source-4', 'source-5'], { timeout: 20000 });
 });
 
@@ -32,5 +32,5 @@ test('clicking a header chip adds it to the ad hoc filter', async ({ gotoDashboa
   await expect(cardNames(page)).toHaveCount(5, { timeout: 20000 });
   await page.locator('.ktl .card-head [data-fk="site"]', { hasText: 'site-b' }).first().click();
   await expect(cardNames(page)).toHaveText(['source-4', 'source-5'], { timeout: 20000 });
-  await expect.poll(() => new URL(page.url()).searchParams.getAll('var-Filters')).toContain('site|=|site-b');
+  await expect.poll(() => new URL(page.url()).searchParams.getAll('var-filters')).toContain('site|=|site-b');
 });

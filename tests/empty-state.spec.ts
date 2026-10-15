@@ -11,7 +11,7 @@ test('a panel whose query has no Visual Timeline data source asks for one', asyn
   // no data source in the panel JSON: Grafana runs its default (TestData)
   const dashboard = await readProvisionedDashboard({ fileName: 'empty-states.json' });
   await gotoDashboardPage(dashboard);
-  const empty = page.getByTestId('vt-empty-state').filter({ hasText: 'No Visual Timeline data source in this panel' });
+  const empty = page.getByTestId('vt-empty-state').filter({ hasText: 'This panel has no Visual Timeline API data source' });
   await expect(empty).toBeVisible({ timeout: 20000 });
   await expect(empty).toContainText('Query tab');
 });

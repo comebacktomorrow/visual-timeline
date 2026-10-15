@@ -6,7 +6,7 @@
 
 Scrub-able visual timeline and multiview for image feeds — kiosk screens,
 security cameras, website thumbnails, anything that can post a JPEG on a
-heartbeat. Hover to set a global time cursor across every source; gaps show
+heartbeat. Hover to set a global time cursor across every host; gaps show
 offline periods at their true temporal width; drag to zoom.
 
 The plugin is a Grafana app that installs two plugins:
@@ -15,7 +15,7 @@ The plugin is a Grafana app that installs two plugins:
   grid;
 - the **Visual Timeline API data source**, which connects to your frames API.
   It keeps the API's URL and viewer token in Grafana's server-side settings,
-  answers each panel's query with the list of sources, and supplies the
+  answers each panel's query with the list of hosts, and supplies the
   Site and Host dashboard variables and the ad hoc filter bar. Its **Demo
   data** switch runs everything on built-in demo data instead.
 
@@ -25,19 +25,19 @@ The app is enabled on install and has no pages of its own.
 
 ## What it shows
 
-Every image source declares how often it promises a frame (its _cadence_).
+Every host declares how often it promises a frame (its _cadence_).
 The panel treats that promise as a heartbeat, so the _absence_ of a frame
 carries meaning:
 
 - **Offline gaps at their true width.** A missing frame is drawn as a hatched
   gap on the timeline, as wide as the outage really was, and as an offline
-  tile in the multiview. Sources drop failed frames rather than queueing them:
+  tile in the multiview. Hosts drop failed frames rather than queueing them:
   the gap **is** the signal.
-- **Eras.** When a source changes its cadence (slowing down for quiet hours,
+- **Eras.** When a host changes its cadence (slowing down for quiet hours,
   say), the timeline renders each era on its own grid, so a slow stretch isn't
   a wall of false gaps.
-- **Declared pauses.** A source that goes quiet on purpose says so before it
-  stops, and the pause shows as neutral silence. A source that crashes without
+- **Declared pauses.** A host that goes quiet on purpose says so before it
+  stops, and the pause shows as neutral silence. A host that crashes without
   saying anything still renders as offline.
 - **The pending slot.** When a frame's expected time has passed but it hasn't
   arrived yet, the slot shows the last known frame as a pulsing ghost rather
@@ -45,9 +45,9 @@ carries meaning:
 
 Two display modes:
 
-- **Timeline** — one strip per source along a shared time axis. Hover to scrub;
+- **Timeline** — one strip per host along a shared time axis. Hover to scrub;
   drag to zoom, which sets the dashboard's time range.
-- **Multiview grid** — one tile per source, showing the frame at the shared
+- **Multiview grid** — one tile per host, showing the frame at the shared
   crosshair time (or just the latest frame in range).
 
 The crosshair is shared both ways with the other panels on the dashboard:
@@ -56,38 +56,38 @@ graphs follow.
 
 The panel also draws the dashboard's own annotations on the timeline, from any
 annotation query on any data source. Point annotations are diamond markers and
-regions shade their span. An annotation tagged `source:<id>` pins to that
-source's strip; the rest share a lane above the axis.
+regions shade their span. An annotation tagged `host:<id>` pins to that
+host's strip; the rest share a lane above the axis.
 
 The panel follows Grafana's light and dark themes, including a live switch,
-and scrubbing stays smooth with many sources.
+and scrubbing stays smooth with many hosts.
 
 ### How a time range is drawn
 
-The timeline doesn't fetch every frame in the range. Each source gets about
+The timeline doesn't fetch every frame in the range. Each host gets about
 one slot per 7 pixels of panel width (about 190 on a full-width panel), and
 the API returns one frame per slot.
 
-- **The step is a whole number of uploads.** A source that uploads every
+- **The step is a whole number of uploads.** A host that uploads every
   minute shows one frame per minute at short ranges, and one in every N
   minutes at longer ones: 2 minutes over 6 hours, about 54 minutes over 7
   days. Turn on **Show cadence details** to see it, for example `⏱ 1m ·
-1/2m ↓`. Each era of a source gets its own step.
+1/2m ↓`. Each era of a host gets its own step.
 - **Each slot shows the frame nearest its time.** A slot with no frame is
   drawn as offline. When frames are thinned out, an outage shorter than one
   step can be hidden by a frame on either side of it, so zoom in to see
   short outages.
 - **A slot shows a slice.** Each slot shows a vertical slice from the middle
   of its frame. Hover for the whole frame in the magnifier; click for the
-  high-resolution frame, when the source uploads one.
-- **Images load newest first.** Across all the sources in a panel, the
+  high-resolution frame, when the host uploads one.
+- **Images load newest first.** Across all the hosts in a panel, the
   thumbnails load from the live edge backwards, a few at a time, so on a
   slow connection the most recent frames appear first. Browsers keep the
   frames cached, so a dashboard refresh doesn't download them again.
 - **The time axis matches Grafana's own time series panel:** the same tick
   spacing, steps and label formats.
 
-Times follow the dashboard's time zone. A source can also say where it is,
+Times follow the dashboard's time zone. A host can also say where it is,
 with the `X-Timezone` upload header (an IANA name such as
 `Australia/Sydney`). Its header then shows its city and how far its clock is
 from the dashboard's, for example `Sydney · +3h`, and the **Thumbnail times**
@@ -102,8 +102,8 @@ option can show its frame times in its own local time.
    dashboard: a timeline and two multiview grids, with Site and Host
    dropdowns and a filter bar.
 
-The demo has five simulated sources across two sites, including an outage, a
-cadence change, a declared pause, two sources in other time zones and some
+The demo has five simulated hosts across two sites, including an outage, a
+cadence change, a declared pause, two hosts in other time zones and some
 annotations. No infrastructure and no account. To build your own dashboard
 instead, add a **Visual Timeline** panel and choose the data source in its
 **Query** tab. Turn **Demo data** off and set the API URL when you're ready for
@@ -124,7 +124,7 @@ with `DEMO_PORT=3301`.
 
 ## Filter by site, host and tag
 
-Every source has a site, a host (its id) and optional `key=value` tags, and
+Every host has an id, a site and optional `key=value` tags, and
 panels can be filtered by any of them, the way Grafana filters Prometheus or
 Loki data by label:
 
@@ -140,7 +140,7 @@ Loki data by label:
   values, and the operators are `=`, `!=`, `=~` and `!~` (regular expressions
   match the whole value). Grafana also offers `<` and `>`, which this data
   source ignores.
-- **By clicking:** click a host, site or tag in a source's header to add it to
+- **By clicking:** click a host, site or tag in a host's header to add it to
   the dashboard's filter bar.
 
 The **Visual Timeline** dashboard on the data source's Dashboards tab has the
@@ -148,7 +148,7 @@ Site and Host variables and the filter bar ready.
 
 ## Connect it to your own images
 
-The panel reads a small HTTP API (sources registry, frames by time window,
+The panel reads a small HTTP API (the source registry, frames by time window,
 and the frame images) through a Visual Timeline API data source. It isn't tied
 to any one backend. In Grafana, go to **Connections → Data sources → Add new
 data source**, pick **Visual Timeline API**, enter the API URL and, if the API
@@ -185,21 +185,21 @@ the data source an API URL that browsers can reach as well.
 
 ## Panel options
 
-Which sources a panel shows is set in its Query tab (see
+Which hosts a panel shows is set in its Query tab (see
 [Filter by site, host and tag](#filter-by-site-host-and-tag)). These options
 set how it draws them.
 
-| Option                                  | What it does                                                                                                                                                                                               |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Display mode**                        | Timeline or Multiview grid.                                                                                                                                                                                |
-| **Follow shared crosshair**             | Grid mode only. Show the frame at the crosshair time from other panels; off shows the most recent frame in range.                                                                                          |
-| **Show annotations**                    | Timeline mode only. Draw the dashboard's annotations on the timeline (on by default).                                                                                                                      |
-| **Annotation lanes**                    | Timeline mode, with annotations on. A single shared lane above the axis, or one lane per source carrying its own events plus the global ones.                                                              |
-| **Hide sources with no data in window** | Omit sources with no frames in the current time range instead of showing them as offline.                                                                                                                  |
-| **Show cadence details**                | Show each source's capture cadence and display resolution (for tuning).                                                                                                                                    |
-| **Header**                              | Bar (a header row per source), Inline (hostname and details float over the image), or Inline with a gradient behind them for busy frames.                                                                  |
-| **Thumbnail times**                     | Dashboard time, or Source local time: a source that declares a time zone shows its frame times in that zone, marked with the offset, e.g. `07:31:00 (+3h)`. The axis and crosshair stay in dashboard time. |
-| **Image fit**                           | Fit letterboxes the whole frame; Fill crops to cover. Never stretches.                                                                                                                                     |
+| Option                      | What it does                                                                                                                                                                                           |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Display mode**            | Timeline or Multiview grid.                                                                                                                                                                            |
+| **Follow shared crosshair** | Grid mode only. Show the frame at the crosshair time from other panels; off shows the most recent frame in range.                                                                                      |
+| **Show annotations**        | Timeline mode only. Draw the dashboard's annotations on the timeline (on by default).                                                                                                                  |
+| **Annotation lanes**        | Timeline mode, with annotations on. A single shared lane above the axis, or one lane per host carrying its own events plus the global ones.                                                            |
+| **Hide hosts with no data** | Omit hosts with no frames in the current time range instead of showing them as offline.                                                                                                                |
+| **Show cadence details**    | Show each host's capture cadence and display resolution (for tuning).                                                                                                                                  |
+| **Header**                  | Bar (a header row per host), Inline (the header floats over the image), or Inline with a gradient behind them for busy frames.                                                                         |
+| **Thumbnail times**         | Dashboard time, or Host local time: a host that declares a time zone shows its frame times in that zone, marked with the offset, e.g. `07:31:00 (+3h)`. The axis and crosshair stay in dashboard time. |
+| **Image fit**               | Fit letterboxes the whole frame; Fill crops to cover. Never stretches.                                                                                                                                 |
 
 ## About the viewer token
 

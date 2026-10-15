@@ -164,12 +164,19 @@ async function signScope(env, site, source, exp) {
   return hex;
 }
 
+/* A key's value only if the object itself has it. Parsed JSON inherits from
+ * Object.prototype, and ID_RE admits "constructor": tokens["constructor"] is
+ * the Object function, whose string form is public. */
+function own(obj, key) {
+  return obj && typeof obj === 'object' && Object.hasOwn(obj, key) ? obj[key] : undefined;
+}
+
 async function authorize(request, env, site) {
   let tokens;
   try { tokens = JSON.parse(env.UPLOAD_TOKENS || '{}'); } catch { tokens = {}; }
-  const expected = tokens[site];
+  const expected = own(tokens, site);
   const got = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
-  if (!expected || !got) {return false;}
+  if (typeof expected !== 'string' || !expected || !got) {return false;}
   return timingSafeEqual(expected, got);
 }
 
@@ -258,7 +265,7 @@ async function pruneSite(env, site, uploader) {
     const now = Date.now();
     if (now - (pruned.get(`${site}/${uploader}`) || 0) < PRUNE_EVERY) {return;}
     const cur = await env.FRAMES.get(INDEX_KEY);
-    const sources = cur ? Object.keys((await cur.json()).sites?.[site] || {}) : [];
+    const sources = cur ? Object.keys(own((await cur.json()).sites, site) || {}) : [];
     if (!sources.includes(uploader)) {sources.push(uploader);}
     const due = sources.filter((src) => now - (pruned.get(`${site}/${src}`) || 0) >= PRUNE_EVERY)
       .slice(0, PRUNE_SOURCES);
@@ -366,8 +373,8 @@ async function ensureRegistered(env, site, source, variant, cadence, ts, locatio
   for (let attempt = 0; attempt < 4; attempt++) {
     const cur = await env.FRAMES.get(INDEX_KEY);
     const index = cur ? await cur.json() : { sites: {} };
-    const sources = (index.sites[site] ||= {});
-    const entry = (sources[source] ||= { history: [] });
+    const sources = own(index.sites, site) || (index.sites[site] = {});
+    const entry = own(sources, source) || (sources[source] = { history: [] });
     const lastEvt = entry.history[entry.history.length - 1];
     const wasPaused = !!(lastEvt && lastEvt.paused);
     const cadChanged = entry[field] !== cadence;
@@ -389,7 +396,7 @@ async function ensureRegistered(env, site, source, variant, cadence, ts, locatio
 
     // creation race has no etag guard: verify our entry actually survived
     const check = await env.FRAMES.get(INDEX_KEY);
-    const seen = check && (await check.json()).sites?.[site]?.[source];
+    const seen = check && own(own((await check.json()).sites, site), source);
     if (seen && seen[field] === cadence && (!location || seen.location === location) &&
         (!timezone || seen.timezone === timezone) &&
         (!tags || JSON.stringify(seen.tags || null) === JSON.stringify(tags))) {
@@ -426,7 +433,7 @@ async function handleDeclare(request, env) {
   for (let attempt = 0; attempt < 4; attempt++) {
     const cur = await env.FRAMES.get(INDEX_KEY);
     const index = cur ? await cur.json() : { sites: {} };
-    const entry = index.sites?.[site]?.[source];
+    const entry = own(own(index.sites, site), source);
     if (!entry) {return json({ error: 'unknown source' }, 404);}
     const last = entry.history[entry.history.length - 1];
     // same pause re-declared = no-op; a DIFFERENT reason/intent while paused

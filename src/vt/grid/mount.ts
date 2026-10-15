@@ -1,6 +1,7 @@
 import { resolveTimeZone } from '../time/zones';
 import { wireFilters } from '../dom/html';
 import { buildSourceModel } from '../model/slots';
+import { limited, MODEL_CONCURRENCY } from '../model/pool';
 import { matchesTags, parseTagFilter, parseVar } from '../model/filters';
 import { zoneTexts } from '../zones/source';
 import { bootErrorText, makeApiBackend } from '../backends/api';
@@ -8,7 +9,7 @@ import { injectStyles } from '../dom/styles';
 import { makeBackend } from '../backends/demo';
 import { makePreview } from '../ui/preview';
 import { makeWrapper, q, retireWrapper, revealWrapper } from '../ui/wrapper';
-import type { Backend, MountConfig, MountInstance, MountWindow, SourceModel } from '../types';
+import type { Backend, MountConfig, MountInstance, MountWindow } from '../types';
 import type { GridState } from './state';
 import { buildTile, setShown } from './tile';
 import { startPoll } from './poll';
@@ -56,16 +57,16 @@ export function mountGrid(root: HTMLElement, cfg: MountConfig): MountInstance & 
       await revealWrapper(root, wrap);
       return;
     }
-    for (const k of s.kiosks) {
-      if (s.destroyed) {return;}
-      let model: SourceModel;
-      try {
-        model = await buildSourceModel(k, P, backend, budget);
-      } catch (e) {
+    // a few at a time; tiles still go in declared order
+    const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) =>
+      s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget).catch((e) => {
         console.warn('[visual-timeline] model build failed for ' + k.id + ':', e);
-        continue;
-      }
+        return null;
+      }));
+    for (const [i, k] of s.kiosks.entries()) {
+      const model = await models[i];
       if (s.destroyed) {return;}
+      if (!model) {continue;}
       // declared pause IS data — a source that is all SCREEN DARK for the
       // window must render its band, not vanish as if it never reported
       if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {continue;}
@@ -74,6 +75,7 @@ export function mountGrid(root: HTMLElement, cfg: MountConfig): MountInstance & 
     s.kiosks = s.kiosks.filter((k) => s.tiles[k.id]);
     setShown(s, null);
     await revealWrapper(root, wrap);
+    if (s.destroyed) {return;}   // torn down during the reveal: no poll to leak
 
     if (LIVE) {startPoll(s);}
   })();

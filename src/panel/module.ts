@@ -102,17 +102,17 @@ function panelBackend(sources: SourceDecl[], meta: SourcesFrameMeta, from: numbe
  * aren't repeated here: Grafana shows them in the panel's error indicator. */
 function emptyStateText(hasSources: boolean, dataSourceCount: number, canCreate: boolean) {
   if (hasSources) {
-    return { lines: ['No sources match.', "Check this panel's query (Sites, Hosts, Tags) and the dashboard's filters."] };
+    return { lines: ['No hosts match.', "Check this panel's query (Sites, Hosts, Tags) and the dashboard's filters."] };
   }
   if (dataSourceCount > 0) {
-    return { lines: ['No Visual Timeline data source in this panel.', 'Choose one in the Query tab.'] };
+    return { lines: ['This panel has no Visual Timeline API data source.', 'Edit the panel and choose one in the Query tab.'] };
   }
   return canCreate
     ? {
-        lines: ['No Visual Timeline data source yet.'],
+        lines: ['No Visual Timeline API data source yet.'],
         link: { text: 'Add one', after: ' (turn on its Demo data to try the panel without an API).' },
       }
-    : { lines: ['No Visual Timeline data source yet.', 'Ask a Grafana admin to add one.'] };
+    : { lines: ['No Visual Timeline API data source yet.', 'Ask a Grafana admin to add one.'] };
 }
 
 interface MountInstance {
@@ -348,7 +348,7 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       path: 'showAnnotations',
       name: 'Show annotations',
       description:
-        'Render the dashboard\'s annotations on the timeline: source:<id>-tagged ones as diamonds on that source\'s strip, others on a shared lane; regions shade their span. Data comes from the dashboard\'s annotation queries (any data source).',
+        'Draw the dashboard\'s annotations (from any data source) on the timeline. Tag one host:<id> to pin it to that host\'s strip; the rest go on a shared lane.',
       defaultValue: true,
       showIf: (o) => o.mode !== 'grid',
     })
@@ -356,33 +356,33 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       path: 'annotationLanes',
       name: 'Annotation lanes',
       description:
-        'Shared: untagged annotations collapse onto one lane above the axis. Per source: every source gets its own lane under its strip, carrying its events plus the globals — easier to read with many stacked timelines.',
+        'Shared: untagged annotations go on one lane above the axis. Per host: each host gets its own lane under its strip, with its own events and the shared ones.',
       defaultValue: 'shared',
       settings: {
         options: [
           { value: 'shared', label: 'Shared lane' },
-          { value: 'per-source', label: 'Per source' },
+          { value: 'per-source', label: 'Per host' },
         ],
       },
       showIf: (o) => o.mode !== 'grid' && o.showAnnotations !== false,
     })
     .addBooleanSwitch({
       path: 'hideEmpty',
-      name: 'Hide sources with no data in window',
-      description: 'Sources with zero frames in the current time range are omitted instead of shown as offline',
+      name: 'Hide hosts with no data',
+      description: 'Leave out hosts with no frames in the time range, instead of showing them offline',
       defaultValue: false,
     })
     .addBooleanSwitch({
       path: 'showDetails',
       name: 'Show cadence details',
-      description: 'Per-source capture cadence and display resolution (debug/tuning info)',
+      description: 'Each host\'s capture cadence and display resolution, for tuning',
       defaultValue: false,
     })
     .addRadio({
       path: 'headerMode',
       name: 'Header',
       description:
-        'Bar: each source gets a header row above its strip/tile. Inline: hostname and details float over the image\'s top-left as chip bubbles on two lines — buys back vertical space. Gradient adds a left-to-right fade behind them for busy frames.',
+        'Bar: a header row above each host. Inline: the header floats over the image, saving space; Gradient adds a fade behind it for busy frames.',
       defaultValue: 'bar',
       settings: {
         options: [
@@ -396,12 +396,12 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       path: 'thumbTimes',
       name: 'Thumbnail times',
       description:
-        'Which clock a source\'s own times use: thumbnail timestamps, magnifier and preview captions, and last-seen/expected messages. Source local time uses the zone the source declares (X-Timezone) and marks each time with its offset from the dashboard, e.g. 07:31:00 (+3h); sources without a declared zone keep dashboard time. The time axis and crosshair always use the dashboard time zone.',
+        'The clock for each host\'s thumbnail times, captions and last-seen messages. Host local time uses the zone the host declares and shows its offset, e.g. 07:31:00 (+3h); hosts without one use dashboard time. The axis and crosshair always use dashboard time.',
       defaultValue: 'panel',
       settings: {
         options: [
           { value: 'panel', label: 'Dashboard time' },
-          { value: 'source', label: 'Source local time' },
+          { value: 'source', label: 'Host local time' },
         ],
       },
     })

@@ -70,7 +70,7 @@
         "options": []
       },
       {
-        "name": "Filters",
+        "name": "filters",
         "label": "Filters",
         "type": "adhoc",
         "datasource": {
@@ -82,13 +82,26 @@
     ]
   },
   "annotations": {
-    "list": []
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
   },
   "panels": [
     {
       "id": 1,
       "type": "savvycocoa1919-visualtimeline-panel",
-      "title": "Timeline — hover to scrub, drag to zoom",
+      "title": "Timeline",
       "gridPos": {
         "h": 14,
         "w": 24,
@@ -112,7 +125,8 @@
           "sites": "${site:csv}",
           "hosts": "${host:csv}"
         }
-      ]
+      ],
+      "description": "Hover to scrub through the frames; drag across a strip to zoom in."
     },
     {
       "id": 2,

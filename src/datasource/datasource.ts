@@ -27,6 +27,11 @@ import type { Backend, Frame, SourceDecl } from '../vt/types';
 import type { VisualTimelineOptions, VisualTimelineQuery, VisualTimelineVariableQuery } from './types';
 import { VisualTimelineVariableSupport } from './variables';
 
+/** How long one GET /sources answer serves every caller. A dashboard load
+ * asks for the list once per panel query, per Site or Host variable and per
+ * filter-bar dropdown, all within a second or two. */
+export const SOURCES_TTL_MS = 5000;
+
 
 /** Health-check wording for a failed GET /sources through the proxy. */
 export function describeFailure(status: number, apiUrl: string, body?: unknown): string {
@@ -71,6 +76,7 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
   readonly demo: boolean;
   private readonly api: ApiFetch;
   private readonly backend: Backend;
+  private cached: { at: number; list: Promise<SourceDecl[]> } | null = null;
 
   constructor(
     instanceSettings: DataSourceInstanceSettings<VisualTimelineOptions>,
@@ -94,7 +100,21 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
       const from = window?.from ?? to - 3600e3;
       return makeDemoBackend({ from, to }, Math.max(1, to - from), 'UTC').kiosks(sites ?? null) as SourceDecl[];
     }
-    return this.backend.kiosks(sites ?? null);
+    const all = await this.allSources();
+    return sites ? all.filter((s) => sites.includes(s.site)) : all;
+  }
+
+  /** Every source the API lists, shared by callers within SOURCES_TTL_MS
+   * (including one still in flight). A failure isn't kept. */
+  private allSources(): Promise<SourceDecl[]> {
+    const now = Date.now();
+    if (this.cached && now - this.cached.at < SOURCES_TTL_MS) {return this.cached.list;}
+    const entry = { at: now, list: Promise.resolve(this.backend.kiosks(null)) };
+    this.cached = entry;
+    entry.list.catch(() => {
+      if (this.cached === entry) {this.cached = null;}
+    });
+    return entry.list;
   }
 
   /** One source's frames in a window, at most one per step. The panel calls

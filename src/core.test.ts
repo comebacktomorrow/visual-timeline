@@ -93,7 +93,7 @@ describe('registry fields render as text, never markup', () => {
     host.innerHTML = tagChips(decl);
     expectNoInjection(host);
     expect(host.querySelectorAll('.st')).toHaveLength(2);
-    expect(host.querySelector('.st')!.textContent).toBe(`${IMG}:${BREAK}`);
+    expect(host.querySelector('.st')!.textContent).toBe(`${IMG}=${BREAK}`);
     const h = document.createElement('div');
     h.innerHTML = `<span title="${esc(headTitle(decl))}"></span>`;
     expect(h.querySelector('span')!.getAttribute('title')).toBe(headTitle(decl));
@@ -108,7 +108,7 @@ describe('registry fields render as text, never markup', () => {
     expect(head.querySelector('.st')!.textContent).toBe(`${decl.site} · ${decl.location}`);
     expect(head.getAttribute('title')).toBe(headTitle(decl));
     expect(head.querySelectorAll('.tags .st')).toHaveLength(2);
-    expect(head.querySelector('.tags .st')!.textContent).toBe(`${IMG}:${BREAK}`);
+    expect(head.querySelector('.tags .st')!.textContent).toBe(`${IMG}=${BREAK}`);
   });
 
   test('grid tile', async () => {
@@ -120,5 +120,36 @@ describe('registry fields render as text, never markup', () => {
     expect(head.getAttribute('title')).toBe(headTitle(decl));
     expect(root.querySelector('.t-img img')!.getAttribute('alt')).toBe(decl.id);
     expect(head.querySelectorAll('.tags .st')).toHaveLength(2);
+  });
+
+  test('filter chips: escaped, focusable, and a click filters without opening the preview', async () => {
+    // one frame, so the tile has a preview to open
+    globalThis.fetch = jest.fn(async (u) => ({
+      ok: true,
+      json: async () => (String(u).includes('/sources') ? [decl] : [{ ts: TO - 60e3, url: 'https://frames.example.com/f.jpg' }]),
+    })) as unknown as typeof fetch;
+    const calls: string[][] = [];
+    mountGrid(root, { ...cfgFor(), onFilter: (k: string, v: string) => calls.push([k, v]) });
+    const head = await until('.t-head');
+    await until('.t-img img[src]');
+    head.parentElement!.querySelector<HTMLElement>('.t-img')!.click();
+    expect(document.querySelector('.ktl-pop')).not.toBeNull();   // the tile itself does open it
+    document.querySelector('.ktl-pop')!.remove();
+    expectNoInjection(root);
+    const chip = head.querySelector<HTMLElement>('.tags .st')!;
+    expect(chip.getAttribute('role')).toBe('button');
+    expect(chip.getAttribute('tabindex')).toBe('0');
+    expect(chip.getAttribute('title')).toBe(`Filter by ${IMG} = ${BREAK}`);
+    chip.click();
+    expect(calls).toEqual([[IMG, BREAK]]);
+    expect(document.querySelector('.ktl-pop')).toBeNull();
+    chip.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(calls).toHaveLength(2);
+  });
+
+  test('without onFilter the chips are plain text', async () => {
+    mountGrid(root, cfgFor());
+    const head = await until('.t-head');
+    expect(head.querySelector('[role], [tabindex]')).toBeNull();
   });
 });

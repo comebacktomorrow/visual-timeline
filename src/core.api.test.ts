@@ -172,8 +172,13 @@ describe('hiUrlFor', () => {
     expect(hiUrlFor({ ts: TS, url: lo }, decl)).toBe(`${API}/vt/frame/hi/site-a/source-1/${TS}.jpg`);
   });
 
-  test('an unsigned frame in direct mode carries the viewer key', () => {
-    expect(hiUrlFor({ ts: TS, url: FRAME }, decl, API, 'viewer tok')).toBe(`${HI}?k=viewer%20tok`);
+  test('an unsigned frame in direct mode carries the viewer key, as strip images do', () => {
+    expect(hiUrlFor({ ts: TS, url: FRAME }, decl, API, 'viewer tok')).toBe(`${HI}?k=viewer+tok`);
+  });
+
+  test('an image host that is not the API is never handed the key', () => {
+    const bucket = `https://img.example.net/frame/lo/site-a/source-1/${TS}.jpg`;
+    expect(hiUrlFor({ ts: TS, url: bucket }, decl, API, 'viewer tok')).toBe(`https://img.example.net/frame/hi/site-a/source-1/${TS}.jpg`);
   });
 
   test('falls back to apiUrl when the frame URL has no /frame/ path', () => {

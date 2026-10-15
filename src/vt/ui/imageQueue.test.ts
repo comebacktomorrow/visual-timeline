@@ -46,6 +46,29 @@ describe('makeImageQueue', () => {
     expect(all.filter((i) => i.getAttribute('src')).length).toBe(IMAGE_CONCURRENCY + 1);
   });
 
+  test('thousands of cached images that complete synchronously load without recursing', async () => {
+    // a rebuild: every URL is in the browser's cache, so complete is true as src is set
+    const proto = HTMLImageElement.prototype;
+    const complete = jest.spyOn(proto, 'complete', 'get').mockImplementation(function (this: HTMLImageElement) {
+      return !!this.getAttribute('src');
+    });
+    const width = jest.spyOn(proto, 'naturalWidth', 'get').mockReturnValue(320);
+    try {
+      const q = makeImageQueue();
+      const all = Array.from({ length: 20000 }, (_, n) => {
+        const i = img();
+        q.add(i, `https://x/${n}.jpg`, n);
+        return i;
+      });
+      await flush();
+      expect(all.every((i) => i.getAttribute('src'))).toBe(true);
+      await expect(q.idle()).resolves.toBeUndefined();
+    } finally {
+      complete.mockRestore();
+      width.mockRestore();
+    }
+  });
+
   test('stop() drops what is still waiting and releases idle()', async () => {
     const q = makeImageQueue();
     const all = Array.from({ length: 10 }, (_, n) => {

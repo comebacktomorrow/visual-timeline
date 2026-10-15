@@ -133,6 +133,9 @@ const CSS = `
 /* past the API's retention: nothing to show, and no state to hatch */
 .ktl.filterable [data-fk] { cursor:pointer; }
 .ktl.filterable [data-fk]:hover { text-decoration:underline; text-underline-offset:2px; }
+.ktl.filterable [data-fk]:focus-visible { outline:2px solid var(--ktl-accent); outline-offset:1px; }
+/* an inline header lets hover through to the image, but not its filters */
+.ktl.filterable .inline-head [data-fk] { pointer-events:auto; }
 .ktl .slot.paused.r-expired { background:var(--ktl-bg2); }
 .ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,var(--ktl-unint-a),var(--ktl-unint-a) 7px,var(--ktl-unint-b) 7px,var(--ktl-unint-b) 14px); }
 /* hatch continuity: each slot is its own element, so a per-element gradient
