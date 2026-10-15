@@ -156,9 +156,10 @@ export function sourcesToFrame(
       { name: 'cadence', type: FieldType.number, values: sources.map((s) => s.cadence), config: { unit: 'ms' } },
       { name: 'hiCadence', type: FieldType.number, values: sources.map((s) => s.hiCadence ?? null), config: { unit: 'ms' } },
       { name: 'tags', type: FieldType.other, values: sources.map((s) => s.tags ?? {}) },
-      // the panel's input, not something to read in a table (a Table hides
-      // a field on hideFrom.viz)
-      { name: 'history', type: FieldType.other, values: sources.map((s) => s.history ?? []), config: { custom: { hideFrom: { viz: true, legend: true, tooltip: true } } } },
+      // the panel's input, not something to read in a table. Grafana 12.0
+      // and 12.1's Table hide a field on custom.hidden; later ones on
+      // hideFrom.viz, ignoring hidden
+      { name: 'history', type: FieldType.other, values: sources.map((s) => s.history ?? []), config: { custom: { hidden: true, hideFrom: { viz: true, legend: true, tooltip: true } } } },
     ],
   });
 }

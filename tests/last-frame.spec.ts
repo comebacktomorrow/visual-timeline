@@ -15,5 +15,6 @@ test('a Table shows each host\'s last frame as an image', async ({ gotoDashboard
   await expect(headers.filter({ hasText: /^history$/ })).toHaveCount(0);
   // five demo hosts, each with a drawn frame
   await expect(panel.locator.locator('img[src^="data:image/"]')).toHaveCount(5);
-  await expect(panel.locator.getByRole('gridcell', { name: 'live' }).first()).toBeVisible();
+  // (cell roles differ between Grafana 12.0's table and later ones)
+  await expect(panel.locator.getByText('live', { exact: true }).first()).toBeVisible();
 });
