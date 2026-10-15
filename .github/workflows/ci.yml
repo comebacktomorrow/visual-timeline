@@ -22,8 +22,6 @@ jobs:
       plugin-version: ${{ steps.metadata.outputs.plugin-version }}
       has-e2e: ${{ steps.check-for-e2e.outputs.has-e2e }}
       has-backend: ${{ steps.check-for-backend.outputs.has-backend }}
-    env:
-      GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -97,9 +95,18 @@ jobs:
             echo "has-e2e=true" >> $GITHUB_OUTPUT
           fi
 
+      # The token is this step's alone, not the job's: it stays out of the
+      # environment of `npm ci` and every other step. `if:` can't test a secret
+      # directly, so the skip (forks and Dependabot get no secrets) is in shell.
       - name: Sign plugin
-        run: npm run sign
-        if: ${{ env.GRAFANA_ACCESS_POLICY_TOKEN != '' }}
+        env:
+          GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
+        run: |
+          if [ -z "$GRAFANA_ACCESS_POLICY_TOKEN" ]; then
+            echo "No GRAFANA_ACCESS_POLICY_TOKEN: plugin left unsigned"
+            exit 0
+          fi
+          npm run sign
 
       - name: Get plugin metadata
         id: metadata

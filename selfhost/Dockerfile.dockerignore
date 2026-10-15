@@ -5,3 +5,4 @@
 !worker/src/
 !worker/wrangler.jsonc
 !web/
+!selfhost/check-env.sh

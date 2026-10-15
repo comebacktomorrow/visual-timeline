@@ -33,10 +33,17 @@ cp selfhost/.env.example selfhost/.env
 docker compose -f selfhost/docker-compose.yml up -d
 ```
 
+The backend and Grafana refuse to start while a token, key or password in
+`.env` is still the example's `replace-with-...` placeholder;
+`docker compose -f selfhost/docker-compose.yml logs` names which one.
+
 The first run builds the backend image and the plugin, so it takes a few
-minutes. Then open Grafana (`admin` / `admin` on first login, and it asks you
-to change the password) and the **Visual Timeline** dashboard. It's empty until
-something uploads frames.
+minutes. Then open Grafana (user `admin`, password `GF_SECURITY_ADMIN_PASSWORD`
+from `.env`; Grafana sets it only when it first creates the account, so change
+it in Grafana after that) and the **Visual Timeline** dashboard. It's empty
+until something uploads frames. The data source is provisioned from `.env` and
+read-only in Grafana: to change its token, edit `VIEWER_TOKEN`, then
+`down` and `up -d` the stack (without `-v`, frames and dashboards are kept).
 
 Ports taken? Set `VT_PORT` and `GRAFANA_PORT` when you run compose, and keep
 `PUBLIC_URL` in `.env` on the same port as `VT_PORT`.
@@ -58,7 +65,8 @@ docker compose -f selfhost/docker-compose.yml up -d
 ```
 
 Each camera has a `site` (a key in `UPLOAD_TOKENS`, which is where its upload
-token comes from), an `id`, and its snapshot `url`. Optionally:
+token comes from), an `id`, and its snapshot `url` (`http://` or `https://`).
+Optionally:
 
 - `auth`: `user:password` for the camera, sent as digest auth, or as basic
   auth with `"auth_type": "basic"`;
