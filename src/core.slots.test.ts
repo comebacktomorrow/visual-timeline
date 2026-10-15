@@ -539,3 +539,31 @@ describe('buildSourceModel', () => {
     expect(m.slotAt(T0 + DAY)).toBe(m.slots[m.slots.length - 1]);
   });
 });
+
+describe('a long pause that is still open', () => {
+  // a source paused for days at a 60 s cadence: probing for its resume at the
+  // cadence asked an API for thousands of buckets (the reference worker caps
+  // a /frames request at 800, answers 400, and the source went missing)
+  test('the resume probe stays within the API\'s bucket cap', async () => {
+    now = T0 + 2 * DAY;
+    const P = { from: T0 - 5 * DAY, to: T0 + 2 * DAY };
+    const d = decl({ history: [{ since: T0 - 10 * DAY }, { since: T0, paused: true }] });
+    const backend = backendWith([]);
+    const m = await build(d, P, backend, 200);
+    for (const c of backend.calls) {
+      expect((c.to - c.from) / c.step).toBeLessThanOrEqual(800);
+    }
+    expect(m.slots.some((sl: any) => sl.paused)).toBe(true);
+  });
+
+  test('a resume is still found exactly, not to the coarse step', async () => {
+    now = T0 + 2 * DAY;
+    const P = { from: T0, to: T0 + 2 * DAY };
+    const resumeAt = T0 + DAY + 7 * MIN;
+    const d = decl({ history: [{ since: T0 - DAY }, { since: T0, paused: true }] });
+    const m = await build(d, P, backendWith(every(MIN, resumeAt, T0 + 2 * DAY)), BUDGET);
+    const pause = m.slots.find((sl: any) => sl.paused);
+    expect(pause.ts + pause.span).toBe(resumeAt);
+  });
+});
+

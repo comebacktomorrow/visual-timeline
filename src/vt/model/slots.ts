@@ -8,6 +8,9 @@ type ActiveSpan = { from: number; to: number; cadence: number };
 /* One flat slot list across all eras. Each slot knows its time span (for
  * proportional width — x↔time stays linear across era boundaries), its
  * era's cadence/step (gap + staleness thresholds), or paused:true. */
+/* The most buckets one resume probe asks for (see the tail paused era). */
+const PROBE_BUCKETS = 400;
+
 export async function buildSourceModel(
   decl: SourceDecl, P: TimeWindow, backend: Pick<Backend, 'frames'>, budgetSlots: number
 ): Promise<SourceModel> {
@@ -127,9 +130,20 @@ export async function buildSourceModel(
     // and costs at most one cadence of detection lag. The band is clamped
     // to NOW — the future portion of the window is unknown, not paused.
     if (eTo <= eFrom) {continue;}
-    const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, era.cadence);
+    // At the era's own cadence a long pause (days at 60 s) asks for more
+    // buckets than an API allows (the reference worker's MAX_BUCKETS is 800:
+    // a 400, and the whole source went missing). So probe coarsely, at most
+    // PROBE_BUCKETS buckets, then find the exact resume at the cadence within
+    // the one coarse step that holds it.
+    const probeStep = era.cadence * Math.max(1, Math.ceil((eTo - eFrom) / era.cadence / PROBE_BUCKETS));
+    const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, probeStep);
     const tailIdx = slots.length;
-    const resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
+    let resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
+    if (resume && probeStep > era.cadence) {
+      const near = resume;
+      const fine = await backend.frames(decl.site, decl.id, Math.max(eFrom, near.ts - probeStep), near.ts, era.cadence);
+      resume = fine.find((f) => f.ts >= eFrom + era.cadence && f.ts <= near.ts) || near;
+    }
     if (resume) {
       const resumeTs = resume.ts;
       slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended });

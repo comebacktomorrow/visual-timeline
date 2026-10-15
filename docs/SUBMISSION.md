@@ -72,31 +72,31 @@ can't run):
       Checked 2026-10-06: `main` has no branch protection, only a no-delete
       ruleset with no required checks, so there is nothing to change.
 
-## 2. Cut 1.0.0
+## 2. Cut the release
 
-> 1.0.0 was tagged and built (2026-10-06) but never published or submitted;
-> 1.0.1 replaced the panel's built-in demo fallback with a Demo data switch
-> on the data source. Submit 1.0.1 (or later), following the same steps.
+> 1.0.0 was tagged and built (2026-10-06) but never published or submitted,
+> and 1.0.1 was never released. 1.1.0 (the data source owns the data; filter
+> by site, host and tag; Grafana 12+) is the first release meant for the
+> catalog. The steps below use it; for a later version substitute its number.
 
-- [ ] In `CHANGELOG.md`, rename `## Unreleased` to `## 1.0.0 (<date>)`. The
+- [ ] In `CHANGELOG.md`, rename `## Unreleased` to `## 1.1.0 (<date>)`. The
       release workflow uses the **first** `## ` section as the release notes,
-      and the catalog shows the changelog. Consider adding a short
-      "Highlights" paragraph at the top of the 1.0.0 section: app plugin and
-      data source, themes, time zones, escaping fix.
-- [ ] `npm version 1.0.0 --no-git-tag-version` (updates `package.json` and
+      and the catalog shows the changelog. Keep its short "Highlights" list at
+      the top.
+- [ ] `npm version 1.1.0 --no-git-tag-version` (updates `package.json` and
       `package-lock.json`; `plugin.json`'s `%VERSION%` is filled in at build).
 - [ ] Open a PR with both, wait for green CI, merge.
 - [ ] Tag the merge commit on `main`:
-      `git tag v1.0.0 && git push origin v1.0.0`. The tag must match `package.json` or the workflow fails.
+      `git tag v1.1.0 && git push origin v1.1.0`. The tag must match `package.json` or the workflow fails.
 - [ ] Watch the **Release** workflow (`.github/workflows/release.yml`). It
       builds, runs `@grafana/plugin-validator` (0.49.5, pinned by the action)
-      on `savvycocoa1919-visualtimeline-app-1.0.0.zip`, and creates a
+      on `savvycocoa1919-visualtimeline-app-1.1.0.zip`, and creates a
       **draft** GitHub release with the zip and `.zip.sha1`.
   - [ ] Read the validator step's output. Expect no errors. The only
         expected warning is "unsigned plugin".
   - [ ] Optional: run the latest validator too, from a machine that can
         reach grafana.com:
-        `npx -y @grafana/plugin-validator@latest -sourceCodeUri https://github.com/comebacktomorrow/visual-timeline/tree/v1.0.0 savvycocoa1919-visualtimeline-app-1.0.0.zip`
+        `npx -y @grafana/plugin-validator@latest -sourceCodeUri https://github.com/comebacktomorrow/visual-timeline/tree/v1.1.0 savvycocoa1919-visualtimeline-app-1.1.0.zip`
         A pre-flight run of 0.49.10 on `main` (b8e10fd) on 2026-10-06 found
         no errors and only the "unsigned plugin" warning; osv-scanner,
         broken links and React 19 compatibility all passed. (With
@@ -106,7 +106,7 @@ can't run):
       action writes its own boilerplate (submission instructions, a stray
       `false`, GitHub's list of every PR), not the changelog: paste the
       version's CHANGELOG section instead, e.g.
-      `git show v1.0.1:CHANGELOG.md | awk '/^## / {s++} s == 1' | sed 1d`.
+      `git show v1.1.0:CHANGELOG.md | awk '/^## / {s++} s == 1' | sed 1d`.
       The zip and sha1 links only work once it's published.
 
 ## 3. Submit on grafana.com
@@ -117,7 +117,7 @@ Sign in as an admin of the `savvycocoa1919` org, open **My Plugins**, then
 - **OS & Architecture:** Single. The plugin is frontend-only, with no
   backend binaries.
 - **URL:** the published release's `.zip` asset link.
-- **Source code URL:** `https://github.com/comebacktomorrow/visual-timeline/tree/v1.0.0`
+- **Source code URL:** `https://github.com/comebacktomorrow/visual-timeline/tree/v1.1.0`
 - **SHA1:** the contents of the `.zip.sha1` asset.
 - **Provisioning provided for test environment:** yes (see below).
 - **Signature level questions:** a community plugin (free, open source,
@@ -165,15 +165,12 @@ work before that: `npm run sign` fails with "Field is required: rootUrls".
 - [ ] In `.github/workflows/release.yml`, enable signing by uncommenting the
       `with:` block and setting
       `policy_token: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}`.
-- [ ] Cut 1.0.1 (or the next version) the same way, so the published zip is
+- [ ] Cut the next version the same way, so the published zip is
       signed, and submit it as an update under **My Plugins**.
 - [ ] Delete this file.
 
 ## Later, not blocking
 
-- Users of the old standalone panel plugin must uninstall it before
-  installing the app, because both ship the panel id. The README covers this
-  under "Upgrading"; consider mentioning it in the 1.0.0 release notes.
 - The scaffold-managed `.config/docker-compose-base.yaml` still names the dev
   container and mount after the panel id. It switches to the app id on the
   next create-plugin update (`docs/UPSTREAM-UPDATES.md`).

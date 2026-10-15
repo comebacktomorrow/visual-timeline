@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 (2026-10-15)
 
 ### Highlights
 
@@ -49,6 +49,9 @@
   four to five times the cost of a move over frames, and longer than a frame
   on a slow machine. Unchanged text and images are no longer rewritten
   (perf/README.md has the numbers).
+- Fix: a source paused for a long time (days, at a 60 s cadence) vanished from
+  timelines longer than about 13 hours. Checking for its resume asked the API
+  for more buckets than it allows; the check is now coarse first, then exact.
 - Fix: a panel rebuilt twice within about a second (a resize while loading,
   opening the panel editor) could end up blank. The first build's delayed
   swap-in removed the second's view.
