@@ -20,10 +20,10 @@ export function buildTile(s: GridState, decl: SourceDecl, model: SourceModel): T
   el.className = 'tile' + (inline ? ' inline-head' : '') +
     (s.cfg.headerMode === 'inline-gradient' ? ' inline-grad' : '');
   el.innerHTML =
-    '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs('host', decl.id) + '>' + esc(decl.id) + '</span>' +
+    '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs('host', decl.id, !!s.cfg.onFilter) + '>' + esc(decl.id) + '</span>' +
     '<span class="inline-brk"></span>' + zoneChip(zone.srcTZ) +
-    '<span class="st"' + filterAttrs('site', decl.site) + '>' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' +
-    tagChips(decl) + '</div>' +
+    '<span class="st"' + filterAttrs('site', decl.site, !!s.cfg.onFilter) + '>' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' +
+    tagChips(decl, !!s.cfg.onFilter) + '</div>' +
     '<div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
   attachZoneChip(zone, el);
   // img, .t-ts and .t-off are in the template just set

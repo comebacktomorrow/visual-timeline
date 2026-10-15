@@ -57,10 +57,10 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     ? '<span class="cad">⏱ ' + fmtDur(la.cadence) + ' · 1/' + fmtDur(la.step) + (la.step > la.cadence ? ' ↓' : '') + '</span>'
     : '';
   card.innerHTML =
-    '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs('host', kiosk) + '>' + esc(kiosk) + '</span>' +
+    '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs('host', kiosk, !!s.cfg.onFilter) + '>' + esc(kiosk) + '</span>' +
     '<span class="inline-brk"></span>' + zoneChip(zone.srcTZ) +
-    '<span class="st"' + filterAttrs('site', decl.site) + '>' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' +
-    tagChips(decl) + '<span class="ft"></span>' +
+    '<span class="st"' + filterAttrs('site', decl.site, !!s.cfg.onFilter) + '>' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' +
+    tagChips(decl, !!s.cfg.onFilter) + '<span class="ft"></span>' +
     cad + '</div>' +
     '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>' +
     '<div class="card-lane"></div>';
