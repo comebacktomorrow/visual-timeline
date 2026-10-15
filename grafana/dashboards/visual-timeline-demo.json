@@ -67,7 +67,7 @@
         "options": []
       },
       {
-        "name": "Filters",
+        "name": "filters",
         "label": "Filters",
         "type": "adhoc",
         "datasource": {
@@ -82,7 +82,7 @@
     {
       "id": 1,
       "type": "savvycocoa1919-visualtimeline-panel",
-      "title": "Visual timeline — hover to scrub, drag to zoom",
+      "title": "Visual timeline",
       "gridPos": {
         "h": 14,
         "w": 24,
@@ -104,7 +104,8 @@
           "sites": "${site:csv}",
           "hosts": "${host:csv}"
         }
-      ]
+      ],
+      "description": "Hover to scrub through the frames; drag across a strip to zoom in."
     },
     {
       "id": 2,

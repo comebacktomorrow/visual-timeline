@@ -1,28 +1,4 @@
 {
-  "__inputs": [
-    {
-      "name": "DS_VISUAL_TIMELINE",
-      "label": "Visual Timeline API",
-      "description": "",
-      "type": "datasource",
-      "pluginId": "savvycocoa1919-visualtimeline-datasource",
-      "pluginName": "Visual Timeline API"
-    }
-  ],
-  "__requires": [
-    {
-      "type": "datasource",
-      "id": "savvycocoa1919-visualtimeline-datasource",
-      "name": "Visual Timeline API",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "savvycocoa1919-visualtimeline-panel",
-      "name": "Visual Timeline",
-      "version": ""
-    }
-  ],
   "uid": "visual-timeline-starter",
   "title": "Visual Timeline",
   "timezone": "browser",
@@ -36,12 +12,22 @@
   "templating": {
     "list": [
       {
+        "name": "ds",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "savvycocoa1919-visualtimeline-datasource",
+        "current": {},
+        "refresh": 1,
+        "regex": "",
+        "options": []
+      },
+      {
         "name": "site",
         "label": "Site",
         "type": "query",
         "datasource": {
           "type": "savvycocoa1919-visualtimeline-datasource",
-          "uid": "${DS_VISUAL_TIMELINE}"
+          "uid": "${ds}"
         },
         "query": {
           "refId": "site",
@@ -68,7 +54,7 @@
         "type": "query",
         "datasource": {
           "type": "savvycocoa1919-visualtimeline-datasource",
-          "uid": "${DS_VISUAL_TIMELINE}"
+          "uid": "${ds}"
         },
         "query": {
           "refId": "host",
@@ -91,12 +77,12 @@
         "options": []
       },
       {
-        "name": "Filters",
+        "name": "filters",
         "label": "Filters",
         "type": "adhoc",
         "datasource": {
           "type": "savvycocoa1919-visualtimeline-datasource",
-          "uid": "${DS_VISUAL_TIMELINE}"
+          "uid": "${ds}"
         },
         "filters": []
       }
@@ -106,7 +92,7 @@
     {
       "id": 1,
       "type": "savvycocoa1919-visualtimeline-panel",
-      "title": "Visual timeline — hover to scrub, drag to zoom",
+      "title": "Visual timeline",
       "gridPos": {
         "h": 14,
         "w": 24,
@@ -116,19 +102,20 @@
       "options": {},
       "datasource": {
         "type": "savvycocoa1919-visualtimeline-datasource",
-        "uid": "${DS_VISUAL_TIMELINE}"
+        "uid": "${ds}"
       },
       "targets": [
         {
           "refId": "A",
           "datasource": {
             "type": "savvycocoa1919-visualtimeline-datasource",
-            "uid": "${DS_VISUAL_TIMELINE}"
+            "uid": "${ds}"
           },
           "sites": "${site:csv}",
           "hosts": "${host:csv}"
         }
-      ]
+      ],
+      "description": "Hover to scrub through the frames; drag across a strip to zoom in."
     },
     {
       "id": 2,
@@ -146,14 +133,14 @@
       },
       "datasource": {
         "type": "savvycocoa1919-visualtimeline-datasource",
-        "uid": "${DS_VISUAL_TIMELINE}"
+        "uid": "${ds}"
       },
       "targets": [
         {
           "refId": "A",
           "datasource": {
             "type": "savvycocoa1919-visualtimeline-datasource",
-            "uid": "${DS_VISUAL_TIMELINE}"
+            "uid": "${ds}"
           },
           "sites": "${site:csv}",
           "hosts": "${host:csv}"
@@ -177,14 +164,14 @@
       },
       "datasource": {
         "type": "savvycocoa1919-visualtimeline-datasource",
-        "uid": "${DS_VISUAL_TIMELINE}"
+        "uid": "${ds}"
       },
       "targets": [
         {
           "refId": "A",
           "datasource": {
             "type": "savvycocoa1919-visualtimeline-datasource",
-            "uid": "${DS_VISUAL_TIMELINE}"
+            "uid": "${ds}"
           },
           "sites": "${site:csv}",
           "hosts": "${host:csv}"
@@ -193,7 +180,20 @@
     }
   ],
   "annotations": {
-    "list": []
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
   },
   "description": "Timeline and multiview grids for every source, with Site and Host dropdowns and a filter bar. Click a host, site or tag in a header to filter by it.",
   "tags": [
