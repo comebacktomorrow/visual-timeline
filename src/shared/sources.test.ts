@@ -3,6 +3,7 @@ import {
   applySourceFilter,
   FRAME_MARKER,
   interpolatedList,
+  lastFramesByHost,
   matchesAdhoc,
   sourcesFromFrames,
   sourcesToFrame,
@@ -76,6 +77,40 @@ describe('tagKeys and tagValues', () => {
     expect(tagValues(SOURCES, 'env')).toEqual(['prod', 'test']);
     expect(tagValues(SOURCES, 'site')).toEqual(['home', 'office']);
     expect(tagValues(SOURCES, 'host')).toEqual(['cam-1', 'cam-2', 'kiosk-a']);
+  });
+});
+
+describe('the last frames, per host', () => {
+  const last = [
+    { frame: { ts: 100, url: 'https://img/1.jpg' }, status: 'live' as const },
+    { frame: { ts: 50, url: 'https://img/2.jpg' }, status: 'paused' as const, reason: 'quiet' },
+    null, // its lookup failed
+  ];
+  const byName = (frame: any) => Object.fromEntries(frame.fields.map((f: any) => [f.name, f]));
+
+  test('one row, with fields named by host for a Canvas element to bind to', () => {
+    const frame = lastFramesByHost(SOURCES, last, 'A');
+    expect(frame.length).toBe(1);
+    const f = byName(frame);
+    expect(f['cam-1'].values).toEqual(['https://img/1.jpg']);
+    expect(f['cam-1'].config.custom.cellOptions).toEqual({ type: 'image' });
+    expect(f['cam-1 status'].values).toEqual(['live']);
+    expect(f['cam-1 time'].values).toEqual([100]);
+    expect(f['cam-2 pause reason'].values).toEqual(['quiet']);
+    expect(f['kiosk-a'].values).toEqual([null]);
+    // status colours come with the data
+    expect(f['cam-2 status'].config.mappings[0].options.paused.color).toBe('blue');
+  });
+
+  test('not a source list: Visual Timeline panels ignore it', () => {
+    expect(sourcesFromFrames([lastFramesByHost(SOURCES, last, 'A')])).toBeNull();
+  });
+
+  test('a host id two sites share is named site/id', () => {
+    const twins: SourceDecl[] = [SOURCES[0], { ...SOURCES[0], site: 'office' }];
+    const names = lastFramesByHost(twins, [null, null], 'A').fields.map((f) => f.name);
+    expect(names).toContain('home/cam-1');
+    expect(names).toContain('office/cam-1 status');
   });
 });
 

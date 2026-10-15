@@ -3,10 +3,11 @@
  * values offered to Grafana's ad hoc filter bar, and the data frame that
  * carries the list from the data source to the panel. Pure: no Grafana
  * runtime, so it is unit-tested directly. */
-import { AdHocVariableFilter, createDataFrame, DataFrame, FieldType } from '@grafana/data';
+import { AdHocVariableFilter, createDataFrame, DataFrame, FieldConfig, FieldType, MappingType } from '@grafana/data';
 
 import { matchesTags, parseTagFilter, parseVar } from '../vt/model/filters';
 import type { HistoryEvent, SourceDecl } from '../vt/types';
+import type { LastFrame } from './lastFrame';
 
 /** Marks the frames a Visual Timeline data source returns: meta.custom[FRAME_MARKER]. */
 export const FRAME_MARKER = 'visualTimeline';
@@ -115,22 +116,90 @@ export function tagValues(sources: SourceDecl[], key: string): string[] {
   return [...values].sort();
 }
 
-/** The sources as one data frame, one row per source. */
-export function sourcesToFrame(sources: SourceDecl[], refId: string, meta: SourcesFrameMeta): DataFrame {
+/* A host's status, coloured wherever it's shown (a Table's coloured text, a
+ * Canvas element's colour, a Stat panel): live green, offline red, paused
+ * blue, as the timeline draws them. */
+const STATUS_CONFIG: FieldConfig = {
+  mappings: [{
+    type: MappingType.ValueToText,
+    options: {
+      live: { color: 'green', index: 0 },
+      offline: { color: 'red', index: 1 },
+      paused: { color: 'blue', index: 2 },
+    },
+  }],
+};
+const IMAGE_CELL = { cellOptions: { type: 'image' } };
+
+/** The sources as one data frame, one row per source. With `last` (one
+ * entry per source, the query asked for the last frame) it also carries each
+ * host's last frame in the range: its image, already set to show as one in
+ * a Table, its time, and the host's status at the range's end. */
+export function sourcesToFrame(
+  sources: SourceDecl[], refId: string, meta: SourcesFrameMeta, last?: Array<LastFrame | null>
+): DataFrame {
+  const lastFields = last
+    ? [
+        {
+          name: 'image', type: FieldType.string, values: last.map((l) => l?.frame?.url ?? null),
+          config: { displayName: 'Last frame', custom: IMAGE_CELL },
+        },
+        {
+          name: 'status', type: FieldType.string, values: last.map((l) => l?.status ?? null),
+          config: { ...STATUS_CONFIG, displayName: 'Status' },
+        },
+        {
+          name: 'frameTime', type: FieldType.time, values: last.map((l) => l?.frame?.ts ?? null),
+          config: { displayName: 'Frame time' },
+        },
+        {
+          name: 'pauseReason', type: FieldType.string, values: last.map((l) => l?.reason ?? null),
+          config: { displayName: 'Pause reason' },
+        },
+      ]
+    : [];
   return createDataFrame({
     refId,
     meta: { custom: { [FRAME_MARKER]: meta } },
     fields: [
       { name: 'host', type: FieldType.string, values: sources.map((s) => s.id) },
+      // with the last frame, a table reads host, image, status, time first
+      ...lastFields,
       { name: 'site', type: FieldType.string, values: sources.map((s) => s.site) },
       { name: 'location', type: FieldType.string, values: sources.map((s) => s.location ?? '') },
       { name: 'timezone', type: FieldType.string, values: sources.map((s) => s.timezone ?? '') },
       { name: 'cadence', type: FieldType.number, values: sources.map((s) => s.cadence), config: { unit: 'ms' } },
       { name: 'hiCadence', type: FieldType.number, values: sources.map((s) => s.hiCadence ?? null), config: { unit: 'ms' } },
       { name: 'tags', type: FieldType.other, values: sources.map((s) => s.tags ?? {}) },
-      { name: 'history', type: FieldType.other, values: sources.map((s) => s.history ?? []) },
+      // the panel's input, not something to read in a table. Grafana 12.0
+      // and 12.1's Table hide a field on custom.hidden; later ones on
+      // hideFrom.viz, ignoring hidden
+      { name: 'history', type: FieldType.other, values: sources.map((s) => s.history ?? []), config: { custom: { hidden: true, hideFrom: { viz: true, legend: true, tooltip: true } } } },
     ],
   });
+}
+
+/** Each host's last frame as one row with fields named by host: `<id>` (the
+ * image), `<id> status`, `<id> time` and `<id> pause reason`. A Canvas
+ * element binds to a field by name and shows its value, so each element can
+ * take its host's image, status (with colour) and time with no
+ * transformation. A host id that more than one site uses is named
+ * `<site>/<id>`. Not marked as a source list: Visual Timeline panels don't
+ * read it. */
+export function lastFramesByHost(sources: SourceDecl[], last: Array<LastFrame | null>, refId: string): DataFrame {
+  const count = new Map<string, number>();
+  for (const s of sources) {count.set(s.id, (count.get(s.id) || 0) + 1);}
+  const fields = sources.flatMap((s, i) => {
+    const name = (count.get(s.id) || 0) > 1 ? s.site + '/' + s.id : s.id;
+    const l = last[i];
+    return [
+      { name, type: FieldType.string, values: [l?.frame?.url ?? null], config: { custom: IMAGE_CELL } },
+      { name: name + ' status', type: FieldType.string, values: [l?.status ?? null], config: STATUS_CONFIG },
+      { name: name + ' time', type: FieldType.time, values: [l?.frame?.ts ?? null] },
+      { name: name + ' pause reason', type: FieldType.string, values: [l?.reason ?? null] },
+    ];
+  });
+  return createDataFrame({ refId, fields });
 }
 
 /** The sources and their data source, from a panel's query result: every

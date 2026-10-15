@@ -160,6 +160,74 @@ describe('query', () => {
   });
 });
 
+describe('the last frame in the range', () => {
+  const NOW = Date.UTC(2026, 9, 1, 12);
+  const win = { from: { valueOf: () => NOW - 3600e3 }, to: { valueOf: () => NOW } };
+  // /sources answers the list; /frames answers one frame a minute up to now
+  const api = jest.fn(async ({ url }: { url: string }) => {
+    const u = new URL(url, 'https://grafana.example');
+    if (u.pathname.endsWith('/sources')) {return { status: 200, data: SOURCES };}
+    const from = Number(u.searchParams.get('from'));
+    const to = Math.min(Number(u.searchParams.get('to')), NOW);
+    const step = Number(u.searchParams.get('step'));
+    const data = [];
+    for (let ts = Math.ceil(from / step) * step; ts <= to; ts += step) {
+      data.push({ ts, url: `https://img.example/${u.searchParams.get('source')}/${ts}.jpg?sig=x` });
+    }
+    return { status: 200, data };
+  });
+  let now: jest.SpyInstance;
+  beforeEach(() => (now = jest.spyOn(Date, 'now').mockReturnValue(NOW)));
+  afterEach(() => now.mockRestore());
+  const field = (frame: any, name: string) => frame.fields.find((f: any) => f.name === name);
+
+  test('off: no image columns and no /frames calls', async () => {
+    api.mockClear();
+    const ds = new VisualTimelineDataSource(settings('https://frames.example.com'), api, interpolate);
+    const res = await ds.query({ targets: [{ refId: 'A' }], range: win, scopedVars: {} } as any);
+    expect(field(res.data[0], 'image')).toBeUndefined();
+    expect(api.mock.calls.every(([r]) => r.url.endsWith('/sources'))).toBe(true);
+  });
+
+  test('on: each host\'s last frame, shown as an image in a table, with its time and status', async () => {
+    const ds = new VisualTimelineDataSource(settings('https://frames.example.com'), api, interpolate);
+    const res = await ds.query({ targets: [{ refId: 'A', lastFrame: true }], range: win, scopedVars: {} } as any);
+    const image = field(res.data[0], 'image');
+    expect(image.config.custom.cellOptions).toEqual({ type: 'image' });
+    expect(image.values[0]).toBe(`https://img.example/cam-1/${NOW}.jpg?sig=x`);
+    expect(field(res.data[0], 'frameTime').values[0]).toBe(NOW);
+    expect(field(res.data[0], 'status').values).toEqual(['live', 'live', 'live']);
+    // the panel still reads its hosts from the same frame
+    expect(hostsOf(res.data[0])).toEqual(['cam-1', 'cam-2', 'kiosk-a']);
+  });
+
+  test('per host: one row, fields named by host', async () => {
+    const ds = new VisualTimelineDataSource(settings('https://frames.example.com'), api, interpolate);
+    const res = await ds.query({
+      targets: [{ refId: 'A', lastFrame: true, lastFrameFormat: 'host' }], range: win, scopedVars: {},
+    } as any);
+    expect(res.data[0].length).toBe(1);
+    expect(field(res.data[0], 'kiosk-a').values).toEqual([`https://img.example/kiosk-a/${NOW}.jpg?sig=x`]);
+    expect(field(res.data[0], 'kiosk-a status').values).toEqual(['live']);
+  });
+
+  test('Demo data: demo frames, drawn in the browser', async () => {
+    const getContext = HTMLCanvasElement.prototype.getContext;
+    const toDataURL = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.getContext = (() => new Proxy({}, { get: () => () => ({ width: 10 }), set: () => true })) as never;
+    HTMLCanvasElement.prototype.toDataURL = () => 'data:image/jpeg;base64,xyz';
+    try {
+      const ds = new VisualTimelineDataSource(settings(undefined, true), ok([]), interpolate);
+      const res = await ds.query({ targets: [{ refId: 'A', lastFrame: true }], range: win, scopedVars: {} } as any);
+      expect(field(res.data[0], 'image').values.filter(Boolean).length).toBeGreaterThan(0);
+      expect(field(res.data[0], 'image').values.find(Boolean)).toMatch(/^data:image\//);
+    } finally {
+      HTMLCanvasElement.prototype.getContext = getContext;
+      HTMLCanvasElement.prototype.toDataURL = toDataURL;
+    }
+  });
+});
+
 describe('variables and ad hoc filters', () => {
   const ds = () => new VisualTimelineDataSource(settings('https://frames.example.com'), ok(SOURCES), interpolate);
 

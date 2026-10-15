@@ -4,7 +4,7 @@
 [![Version](https://img.shields.io/github/package-json/v/comebacktomorrow/visual-timeline)](https://github.com/comebacktomorrow/visual-timeline/blob/main/CHANGELOG.md)
 [![License](https://img.shields.io/github/license/comebacktomorrow/visual-timeline)](https://github.com/comebacktomorrow/visual-timeline/blob/main/LICENSE)
 
-Scrub-able visual timeline and multiview for image feeds — kiosk screens,
+Scrubbable visual timeline and multiview for image feeds — kiosk screens,
 security cameras, website thumbnails, anything that can post a JPEG on a
 heartbeat. Hover to set a global time cursor across every host; gaps show
 offline periods at their true temporal width; drag to zoom.
@@ -16,8 +16,10 @@ The plugin is a Grafana app that installs two plugins:
 - the **Visual Timeline API data source**, which connects to your frames API.
   It keeps the API's URL and viewer token in Grafana's server-side settings,
   answers each panel's query with the list of hosts, and supplies the
-  Site and Host dashboard variables and the ad hoc filter bar. Its **Demo
-  data** switch runs everything on built-in demo data instead.
+  Site and Host dashboard variables and the ad hoc filter bar. It can also
+  answer with each host's last frame and status, for a stock Table, Canvas
+  or Stat panel. Its **Demo data** switch runs everything on built-in demo
+  data instead.
 
 The app is enabled on install and has no pages of its own.
 
@@ -99,8 +101,8 @@ option can show its frame times in its own local time.
    Add new data source**), turn on its **Demo data** switch and click **Save &
    test**.
 2. On the data source's **Dashboards** tab, import the **Visual Timeline**
-   dashboard: a timeline and two multiview grids, with Site and Host
-   dropdowns and a filter bar.
+   dashboard: a timeline, two multiview grids and a table of each host's
+   last frame, with Site and Host dropdowns and a filter bar.
 
 The demo has five simulated hosts across two sites, including an outage, a
 cadence change, a declared pause, two hosts in other time zones and some
@@ -145,6 +147,62 @@ Loki data by label:
 
 The **Visual Timeline** dashboard on the data source's Dashboards tab has the
 Site and Host variables and the filter bar ready.
+
+## Show the last frame in a table
+
+Turn on **Last frame** in a query and the data source also answers with each
+host's last frame in the dashboard's time range, for a stock **Table** panel
+(or, in the **Per host** format below, a Canvas or Stat panel):
+
+| Column           | What it holds                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------ |
+| **Last frame**   | The frame's image, set to show as one in a Table. Give the table a taller **Cell height** to see more. |
+| **Status**       | `live`, `offline` or `paused`: the host's state at the end of the time range.                          |
+| **Frame time**   | When the frame was taken.                                                                              |
+| **Pause reason** | Why a paused host said it was pausing (`screen-sleep`, `quiet`, …).                                    |
+
+It is the last frame _in the time range_, as a Stat panel's "Last" is the
+last value: while the range ends now, it's the live frame, and auto-refresh
+keeps it current; for a past range, or after zooming in on a timeline, it's
+each host's frame at the end of that range. A host offline at that moment
+shows the last frame it took before, and one with no frame in the range has
+an empty cell. Status follows the timeline's rules: offline once a tick is a
+full cadence overdue, paused from a declared pause until a frame a tick or
+more into it.
+
+It costs one or two `/frames` calls per host on every refresh, so leave it off
+in the queries of Visual Timeline panels, which fetch their own frames. The
+images load straight from the API's image URLs, as the panel's do, so an API
+that requires a viewer token must sign them. The starter dashboard has a
+**Last frame per host** table.
+
+### On a Canvas: frames on a floor plan
+
+A **Canvas** panel can put each host's last frame where the host is, on a
+floor plan or site map, with its status and time. Set the query's **Format**
+to **Per host**. The answer is then one row with fields named by host:
+
+| Field                | Holds                                           |
+| -------------------- | ----------------------------------------------- |
+| `cam-1`              | The last frame's image                          |
+| `cam-1 status`       | `live`, `offline` or `paused`, already coloured |
+| `cam-1 time`         | When the frame was taken                        |
+| `cam-1 pause reason` | A paused host's reason                          |
+
+For each element (a rectangle, say), bind what you want to its host's fields:
+
+- **Background → Image:** Field, `cam-1`; size **Contain**.
+- **Border color** or **Background color:** Field, `cam-1 status`. Green for
+  live, red for offline, blue for paused.
+- **Text:** Field, `cam-1 time` (give the panel the **From Now** unit to read
+  "3 minutes ago"), or `cam-1 status`.
+
+A host id two sites share is named `site/id`. The same fields work in a Stat
+panel. Auto-refresh and the time range work as they do for a table.
+
+Demo data's frames don't show on a Canvas: they are `data:` URLs, which
+Canvas takes for paths on the Grafana server. The status and time do, and
+frames from an API, which are `https://` URLs, do too.
 
 ## Connect it to your own images
 

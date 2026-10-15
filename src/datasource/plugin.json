@@ -6,7 +6,7 @@
   "metrics": true,
   "info": {
     "keywords": ["timeline", "screenshot", "camera", "kiosk", "frames"],
-    "description": "Connects Visual Timeline panels to a frames API, with site and host variables and ad hoc filters; the viewer token stays on Grafana's server",
+    "description": "Connects Visual Timeline panels to a frames API, with site and host variables, ad hoc filters, and each host's last frame for Table and Canvas panels; the viewer token stays on Grafana's server",
     "author": {
       "name": "Xzibit"
     },

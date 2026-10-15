@@ -1,12 +1,21 @@
 import React, { ChangeEvent, useState } from 'react';
 import { QueryEditorProps } from '@grafana/data';
-import { InlineField, InlineFieldRow, Input } from '@grafana/ui';
+import { InlineField, InlineFieldRow, InlineSwitch, Input, RadioButtonGroup } from '@grafana/ui';
 
 import type { VisualTimelineDataSource } from './datasource';
 import type { VisualTimelineOptions, VisualTimelineQuery } from './types';
 
 type Props = QueryEditorProps<VisualTimelineDataSource, VisualTimelineQuery, VisualTimelineOptions>;
 type Field = 'sites' | 'hosts' | 'tags';
+
+const FORMATS = [
+  { label: 'Table', value: 'table' as const, description: 'A row per host, for a Table panel' },
+  {
+    label: 'Per host',
+    value: 'host' as const,
+    description: 'One row, fields named by host (cam-1, cam-1 status, cam-1 time), for Canvas elements or a Stat panel',
+  },
+];
 
 const FIELDS: Array<{ key: Field; label: string; placeholder: string; tooltip: string }> = [
   {
@@ -58,6 +67,33 @@ export function QueryEditor({ query, onChange, onRunQuery }: Props) {
             />
           </InlineField>
         ))}
+        <InlineField
+          label="Last frame"
+          labelWidth={12}
+          tooltip="Also return each host's last frame in the time range: its image, its time and the host's status (live, offline or paused) at the range's end. For a Table or Canvas panel; the timeline panels don't need it."
+        >
+          <InlineSwitch
+            id="vt-query-lastFrame"
+            value={query.lastFrame === true}
+            onChange={(e: React.SyntheticEvent<HTMLInputElement>) => {
+              onChange({ ...query, lastFrame: e.currentTarget.checked });
+              onRunQuery();
+            }}
+          />
+        </InlineField>
+        {query.lastFrame && (
+          <InlineField label="Format" labelWidth={8}>
+            <RadioButtonGroup
+              size="sm"
+              options={FORMATS}
+              value={query.lastFrameFormat === 'host' ? 'host' : 'table'}
+              onChange={(v) => {
+                onChange({ ...query, lastFrameFormat: v === 'host' ? 'host' : 'table' });
+                onRunQuery();
+              }}
+            />
+          </InlineField>
+        )}
       </InlineFieldRow>
     </div>
   );

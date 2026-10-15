@@ -177,6 +177,57 @@
           "hosts": "${host:csv}"
         }
       ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Last frame per host",
+      "description": "Each host's last frame in the time range, with its status at the range's end. The query's Last frame switch adds these columns; any table or Canvas panel can use them.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "${ds}"
+          },
+          "sites": "${site:csv}",
+          "hosts": "${host:csv}",
+          "lastFrame": true
+        }
+      ],
+      "options": {
+        "cellHeight": "lg",
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      }
     }
   ],
   "annotations": {
@@ -195,7 +246,7 @@
       }
     ]
   },
-  "description": "Timeline and multiview grids for every source, with Site and Host dropdowns and a filter bar. Click a host, site or tag in a header to filter by it.",
+  "description": "A timeline, multiview grids and each host's last frame in a table, with Site and Host dropdowns and a filter bar. Click a host, site or tag in a header to filter by it.",
   "tags": [
     "visual-timeline"
   ],
