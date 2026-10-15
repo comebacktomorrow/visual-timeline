@@ -450,6 +450,7 @@ var VTCore = (() => {
   }
 
   // src/vt/model/slots.ts
+  var PROBE_BUCKETS = 400;
   async function buildSourceModel(decl, P, backend, budgetSlots) {
     const eras = erasFor(decl, P);
     const slots = [];
@@ -538,9 +539,15 @@ var VTCore = (() => {
       if (eTo <= eFrom) {
         continue;
       }
-      const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, era.cadence);
+      const probeStep = era.cadence * Math.max(1, Math.ceil((eTo - eFrom) / era.cadence / PROBE_BUCKETS));
+      const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, probeStep);
       const tailIdx = slots.length;
-      const resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
+      let resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
+      if (resume && probeStep > era.cadence) {
+        const near = resume;
+        const fine = await backend.frames(decl.site, decl.id, Math.max(eFrom, near.ts - probeStep), near.ts, era.cadence);
+        resume = fine.find((f) => f.ts >= eFrom + era.cadence && f.ts <= near.ts) || near;
+      }
       if (resume) {
         const resumeTs = resume.ts;
         slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended });
