@@ -173,6 +173,24 @@ images load straight from the API's image URLs, as the panel's do, so an API
 that requires a viewer token must sign them. The starter dashboard has a
 **Last frame per host** table.
 
+### On a Canvas: frames on a floor plan
+
+A **Canvas** panel can put each host's last frame where the host is, on a
+floor plan or site map. Canvas binds an element to a field by name, so first
+turn the hosts' rows into one field per host:
+
+1. In the query, turn on **Last frame**.
+2. Add a **Rows to fields** transformation. Use **host** as the field name and
+   **Last frame** as the field value. That gives one field per host, named by
+   its id.
+3. For each element (a rectangle, say), set **Background → Image** to
+   **Field**, choose the host's id, and set the size to **Contain**.
+
+Auto-refresh and the time range work as they do for a table. Demo data's
+frames don't show on a Canvas: they are `data:` URLs, which Canvas takes for
+paths on the Grafana server. Frames from an API, which are `https://` URLs,
+do.
+
 ## Connect it to your own images
 
 The panel reads a small HTTP API (the source registry, frames by time window,

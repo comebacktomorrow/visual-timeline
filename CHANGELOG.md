@@ -8,7 +8,8 @@
   end (`live`, `offline` or `paused`) and a pause's reason. A stock Table or
   Canvas panel can show it; the starter dashboard has a **Last frame per
   host** table. While the range ends now it's the live frame; for a past
-  range, the frame at that range's end.
+  range, the frame at that range's end. The README shows how to put the
+  frames on a Canvas (a floor plan) with a Rows to fields transformation.
 - The data source's `history` field is hidden in tables: it's the panel's
   input, not something to read.
 
