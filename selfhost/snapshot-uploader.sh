@@ -30,15 +30,24 @@
 # up.
 
 set -u
+# the files below hold snapshots and the upload token: this user's only
+umask 077
 
 log() { echo "$(date '+%F %T') $*" >&2; }
 
 # camera BACKEND SITE SOURCE TOKEN URL AUTH AUTH_TYPE TIMEZONE CADENCE WIDTH
-# Runs one camera's loop, forever.
+# Runs one camera's loop, forever. Its files live in $tmp, the private folder
+# made below.
 camera() {
   backend=$1 site=$2 source=$3 token=$4 url=$5 auth=$6 auth_type=$7 tz=$8 cadence=$9 width=${10}
-  raw="${TMPDIR:-/tmp}/vt-$site-$source.raw"
-  frame="${TMPDIR:-/tmp}/vt-$site-$source.jpg"
+  raw="$tmp/$site-$source.raw"
+  frame="$tmp/$site-$source.jpg"
+  # the upload token and the camera's login reach curl through files, so
+  # neither shows in ps; the login is a curl config line, " and \ escaped
+  header="$tmp/$site-$source.header" login="$tmp/$site-$source.login"
+  printf 'Authorization: Bearer %s\n' "$token" > "$header" &&
+  printf 'user = "%s"\n' "$(printf '%s' "$auth" | sed 's/[\\"]/\\&/g')" > "$login" ||
+    { log "$site/$source: can't write to $tmp; camera stopped"; return 1; }
   # the optional X-Timezone header, kept in "$@" so it survives any shell
   if [ -n "$tz" ]; then set -- -H "X-Timezone: $tz"; else set --; fi
   log "$site/$source: a frame every ${cadence}s"
@@ -46,14 +55,17 @@ camera() {
     # one frame per cadence slot, sent at the start of the slot
     sleep $(( cadence - $(date +%s) % cadence ))
     if [ -z "$auth" ]; then
-      curl -sf --max-time 10 -o "$raw" "$url"
+      curl -sf --max-time 10 --proto =http,https -o "$raw" "$url"
     else
-      curl -sf --max-time 10 "--$auth_type" -u "$auth" -o "$raw" "$url"
+      curl -sf --max-time 10 --proto =http,https "--$auth_type" -K "$login" -o "$raw" "$url"
     fi &&
-    ffmpeg -loglevel error -y -i "$raw" -vf "scale=$width:-2" -q:v 5 -f mjpeg "$frame" || {
+    # the camera's bytes are read as an image and nothing else: no probing
+    # them as a playlist or container that would make ffmpeg open more URLs
+    ffmpeg -loglevel error -y -protocol_whitelist file -f image2pipe -i "$raw" \
+      -vf "scale=$width:-2" -q:v 5 -f mjpeg "$frame" || {
       log "$site/$source: no snapshot, frame dropped"; continue; }
     curl -sf --max-time 20 -o /dev/null -X POST "$backend/upload" \
-      -H "Authorization: Bearer $token" \
+      -H "@$header" \
       -H "X-Site: $site" -H "X-Source: $source" -H "X-Cadence: $cadence" \
       "$@" -H "Content-Type: image/jpeg" --data-binary "@$frame" ||
       log "$site/$source: upload failed, frame dropped"
@@ -65,12 +77,40 @@ valid_id() {
   case $1 in ''|-*|*[!a-z0-9_-]*) return 1 ;; esac
 }
 
+# problem SITE ID URL AUTH_TYPE CADENCE WIDTH: why this camera can't run, or
+# nothing if it can
+problem() {
+  valid_id "$1" && valid_id "$2" ||
+    { echo "site and id must be lowercase letters, digits, - or _"; return; }
+  # curl would also take file://, ftp:// and the rest
+  case $3 in http://?*|https://?*) ;; *)
+    echo "url must start with http:// or https://"; return ;; esac
+  # it becomes curl's --digest or --basic
+  case $4 in digest|basic) ;; *) echo "auth_type must be digest or basic"; return ;; esac
+  for n in "$5" "$6"; do case $n in ''|*[!0-9]*)
+    echo "cadence and width must be whole numbers"; return ;; esac; done
+  [ "$5" -ge 5 ] && [ "$5" -le 3600 ] || echo "cadence must be 5 to 3600 seconds"
+}
+
+# one private folder for every camera's files, removed on the way out
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/vt-uploader.XXXXXX") ||
+  { log "can't make a temporary folder"; exit 1; }
+pids=''
+stop() { [ -z "$pids" ] || kill $pids 2>/dev/null; exit 0; }
+trap 'rm -rf "$tmp"' EXIT
+trap stop INT TERM
+
 if [ $# -eq 0 ]; then
   # one camera, from the environment
   : "${VT_URL:?}" "${VT_SITE:?}" "${VT_SOURCE:?}" "${VT_TOKEN:?}" "${SNAPSHOT_URL:?}"
+  why=$(problem "$VT_SITE" "$VT_SOURCE" "$SNAPSHOT_URL" \
+    "${SNAPSHOT_AUTH_TYPE:-digest}" "${CADENCE:-60}" "${WIDTH:-640}")
+  [ -z "$why" ] || { log "$why"; exit 1; }
   camera "$VT_URL" "$VT_SITE" "$VT_SOURCE" "$VT_TOKEN" "$SNAPSHOT_URL" \
     "${SNAPSHOT_AUTH:-}" "${SNAPSHOT_AUTH_TYPE:-digest}" "${VT_TIMEZONE:-}" \
-    "${CADENCE:-60}" "${WIDTH:-640}"
+    "${CADENCE:-60}" "${WIDTH:-640}" &
+  pids=$!
+  wait
   exit
 fi
 
@@ -92,10 +132,6 @@ field() {
     '.cameras[$i][$k] // .[$k] // $d | tostring' "$config"
 }
 
-pids=''
-stop() { [ -z "$pids" ] || kill $pids 2>/dev/null; exit 0; }
-trap stop INT TERM
-
 n=$(jq '.cameras | length' "$config")
 i=0
 while [ "$i" -lt "$n" ]; do
@@ -104,22 +140,16 @@ while [ "$i" -lt "$n" ]; do
   url=$(jq -r --argjson i "$i" '.cameras[$i].url // ""' "$config")
   auth=$(jq -r --argjson i "$i" '.cameras[$i].auth // ""' "$config")
   tz=$(jq -r --argjson i "$i" '.cameras[$i].timezone // ""' "$config")
+  auth_type=$(field "$i" auth_type digest)
+  cadence=$(field "$i" cadence 60) width=$(field "$i" width 640)
   where="$config: camera ${source:-#$((i + 1))}"
   i=$((i + 1))
-  if ! valid_id "$site" || ! valid_id "$source"; then
-    log "$where: site and id must be lowercase letters, digits, - or _; skipped"; continue
-  fi
-  [ -n "$url" ] || { log "$where: no url; skipped"; continue; }
+  why=$(problem "$site" "$source" "$url" "$auth_type" "$cadence" "$width")
+  [ -z "$why" ] || { log "$where: $why; skipped"; continue; }
   token=$(printf '%s' "$UPLOAD_TOKENS" | jq -r --arg s "$site" '.[$s] // ""')
   [ -n "$token" ] || { log "$where: no upload token for site $site in UPLOAD_TOKENS; skipped"; continue; }
-  cadence=$(field $((i - 1)) cadence 60) width=$(field $((i - 1)) width 640)
-  case $cadence$width in *[!0-9]*)
-    log "$where: cadence and width must be whole numbers; skipped"; continue ;; esac
-  if [ "$cadence" -lt 5 ] || [ "$cadence" -gt 3600 ]; then
-    log "$where: cadence must be 5 to 3600 seconds; skipped"; continue
-  fi
   camera "$backend" "$site" "$source" "$token" "$url" "$auth" \
-    "$(field $((i - 1)) auth_type digest)" "$tz" "$cadence" "$width" &
+    "$auth_type" "$tz" "$cadence" "$width" &
   pids="$pids $!"
 done
 

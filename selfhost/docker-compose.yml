@@ -5,7 +5,7 @@
 #   docker compose -f selfhost/docker-compose.yml up -d
 #
 # Backend:  http://localhost:8787  (API, plus the standalone viewer at /app.html)
-# Grafana:  http://localhost:3000  (admin / admin on first login)
+# Grafana:  http://localhost:3000  (admin / GF_SECURITY_ADMIN_PASSWORD from .env)
 #
 # Cameras: write selfhost/cameras.json (see cameras.example.json) and set
 # COMPOSE_PROFILES=cameras in .env; the uploader service then posts their
@@ -73,13 +73,20 @@ services:
         condition: service_started
     ports:
       - '${GRAFANA_PORT:-3000}:3000'
+    # refuse to start with no admin password, or .env.example's placeholder
+    entrypoint: [sh, /check-env.sh, '-', GF_SECURITY_ADMIN_PASSWORD, '--', /run.sh]
     environment:
+      # the admin account's password, applied when Grafana first creates it.
+      # Required by the check above, not by ${...:?}, which would also stop
+      # `up backend` for anyone running their own Grafana.
+      GF_SECURITY_ADMIN_PASSWORD: '${GF_SECURITY_ADMIN_PASSWORD:-}'
       # the app and its two nested plugins are each checked under their own id
       GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: 'savvycocoa1919-visualtimeline-app,savvycocoa1919-visualtimeline-panel,savvycocoa1919-visualtimeline-datasource'
       # read by the provisioned data source (grafana/provisioning/datasources)
       VT_VIEWER_TOKEN: '${VIEWER_TOKEN:?set VIEWER_TOKEN in selfhost/.env}'
     volumes:
       - grafana:/var/lib/grafana
+      - ./check-env.sh:/check-env.sh:ro
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards
       - ../dist:/var/lib/grafana/plugins/savvycocoa1919-visualtimeline-app

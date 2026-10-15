@@ -16,9 +16,13 @@ RUN npm ci --no-audit --no-fund
 COPY worker/src ./src
 COPY worker/wrangler.jsonc ./
 COPY web /app/web
+COPY selfhost/check-env.sh /usr/local/bin/check-env.sh
 
 ENV WRANGLER_SEND_METRICS=false
 EXPOSE 8787
+# refuse to serve with .env.example's placeholder secrets still in place
+ENTRYPOINT ["sh", "/usr/local/bin/check-env.sh", "/config/vt.env", \
+            "UPLOAD_TOKENS", "VIEWER_TOKEN", "IMG_SIGN_KEY", "--"]
 CMD ["npx", "wrangler", "dev", \
      "--ip", "0.0.0.0", "--port", "8787", \
      "--persist-to", "/data", \
