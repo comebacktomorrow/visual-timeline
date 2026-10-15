@@ -10,7 +10,8 @@ node perf/scrub-bench.mjs --sources 40 --mode grid --cpu 1,4,6 --runs 5 --json o
 
 Options: `--sources` (default 20), `--mode timeline|grid`, `--cpu` (comma list
 of CPU throttling rates, default `1,4`), `--moves` (default 240), `--runs`
-(median of N, default 3), `--json <file>`. Set `BENCH_CHROMIUM` to use a
+(median of N, default 3), `--gaps` (every source has three outages, so a
+sweep crosses many frame/gap boundaries), `--json <file>`. Set `BENCH_CHROMIUM` to use a
 Chromium other than Playwright's own.
 
 `harness.html` loads the built `web/vt-core.js` and mounts the panel on a
@@ -67,3 +68,33 @@ and magnifier) before writing any style, so a move costs one layout however
 many sources there are. The remaining layout time is the one real layout of
 the panel after the writes. The sync path's figures include the forced
 layout flush the benchmark adds after each call.
+
+## After the 1.1 performance pass (2026-10-15)
+
+Moving over a gap used to cost four to five times the layout of moving over
+frames: every move rewrote each card's header with "offline — last seen …",
+and writing text, even the same text, replaces the text node and relays out
+every card. `setCursor` now keeps what each card shows (`shownKey`) and skips
+the content writes when a move stays in the same state, and every remaining
+text and image write is skipped when unchanged.
+
+Before and after on one machine (headless Chromium 149 on macOS); compare
+these rows with each other, not with the tables above.
+
+20 sources, timeline:
+
+| CPU | Path  | Mean ms (before → after) | p95 ms    | Layout ms/move | Long tasks/run |
+| --- | ----- | ------------------------ | --------- | -------------- | -------------- |
+| 1x  | hover | 0.22 → 0.173             | 0.3 → 0.3 | 0.474 → 0.359  | 1 → 1          |
+| 1x  | sync  | 0.615 → 0.442            | 1.2 → 0.7 | 0.397 → 0.284  | 1 → 1          |
+| 4x  | hover | 1.12 → 0.793             | 1.7 → 1.2 | 2.038 → 1.671  | 2 → 2          |
+| 4x  | sync  | 2.444 → 1.848            | 4.7 → 3   | 1.577 → 1.158  | 2 → 2          |
+
+20 sources, timeline, `--gaps`:
+
+| CPU | Path  | Mean ms (before → after) | p95 ms     | Layout ms/move | Long tasks/run |
+| --- | ----- | ------------------------ | ---------- | -------------- | -------------- |
+| 1x  | hover | 0.223 → 0.168            | 0.3 → 0.3  | 2.275 → 0.575  | 1 → 1          |
+| 1x  | sync  | 2.199 → 0.617            | 5.1 → 1.5  | 1.998 → 0.472  | 1 → 1          |
+| 4x  | hover | 1.039 → 0.826            | 1.6 → 1.3  | 9.393 → 2.677  | 18 → 2         |
+| 4x  | sync  | 9.824 → 2.898            | 22.4 → 6.9 | 8.781 → 2.189  | 18 → 2         |

@@ -37,6 +37,18 @@
   a query that matches no sources says that.
 - Panel: the view is rebuilt only when the sources or the time window change,
   not on every query run.
+- Resizing is cheap. The view used to be rebuilt, refetching every source's
+  frames, on every width Grafana reported while a panel was being resized
+  (dozens per drag). Now the view scales with the panel (the time axis is laid
+  out in percentages, like the strips) and is rebuilt once, a quarter second
+  after the width settles, and only when it changed by more than 5%: a
+  scrollbar appearing no longer rebuilds anything. A height change never
+  rebuilds.
+- Scrubbing over gaps is as fast as over frames. Each move used to rewrite
+  every card's "offline — last seen" header, relaying out the whole panel:
+  four to five times the cost of a move over frames, and longer than a frame
+  on a slow machine. Unchanged text and images are no longer rewritten
+  (perf/README.md has the numbers).
 - Fix: a panel rebuilt twice within about a second (a resize while loading,
   opening the panel editor) could end up blank. The first build's delayed
   swap-in removed the second's view.

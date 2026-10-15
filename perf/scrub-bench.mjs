@@ -27,7 +27,8 @@ const MOVES = Number(args.moves || 240);
 const RUNS = Number(args.runs || 3);
 
 const here = dirname(fileURLToPath(import.meta.url));
-const url = pathToFileURL(join(here, 'harness.html')).href + `?sources=${SOURCES}&mode=${MODE}`;
+const GAPS = 'gaps' in args;
+const url = pathToFileURL(join(here, 'harness.html')).href + `?sources=${SOURCES}&mode=${MODE}${GAPS ? '&gaps=1' : ''}`;
 
 const pct = (xs, p) => {
   const s = [...xs].sort((a, b) => a - b);

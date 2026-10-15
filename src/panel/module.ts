@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   dateTimeFormat,
   DataHoverClearEvent,
@@ -18,6 +18,7 @@ import { themeVars } from '../theme';
 import { coreTimeZone } from '../timezone';
 import { DATASOURCE_ID } from '../shared/proxy';
 import { SourcesFrameMeta, sourcesFromFrames } from '../shared/sources';
+import { needsRebuild } from './resize';
 
 interface VisualTimelineOptions {
   mode?: 'timeline' | 'grid';
@@ -71,6 +72,8 @@ function extractAnnotations(frames: any[] | undefined): PanelAnnotation[] {
   return out;
 }
 
+/** How long a resized panel's width must hold before the core rebuilds. */
+const RESIZE_SETTLE_MS = 250;
 /** The data source method the panel calls for each source's frames. */
 interface FramesSource {
   frames(site: string, id: string, from: number, to: number, step: number): Promise<Frame[]>;
@@ -180,6 +183,20 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
         : undefined,
     [canFilter]
   );
+  /* The width the core builds for. Slot counts and axis ticks depend on it,
+   * so a new width needs a rebuild, and a rebuild refetches every source's
+   * frames. While a panel is being resized Grafana reports a new width many
+   * times a second: build once it has been steady for RESIZE_SETTLE_MS, and
+   * leave the current view up (it stretches with the panel) until then.
+   * Height needs no rebuild: the layout follows it. */
+  const [buildWidth, setBuildWidth] = useState(props.width);
+  useEffect(() => {
+    if (!needsRebuild(buildWidth, props.width)) {
+      return;
+    }
+    const t = setTimeout(() => setBuildWidth(props.width), RESIZE_SETTLE_MS);
+    return () => clearTimeout(t);
+  }, [props.width, buildWidth]);
   const loading = props.data?.state === LoadingState.Loading;
   const failed = props.data?.state === LoadingState.Error;
   const showFrames = !!backend && result!.sources.length > 0;
@@ -189,7 +206,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       return;
     }
     const common = {
-      from, to, width: props.width, fit, backend, showDetails, hideEmpty, onFilter,
+      from, to, width: buildWidth, fit, backend, showDetails, hideEmpty, onFilter,
       annotations, showAnnotations, annotationLanes: options.annotationLanes || 'shared',
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
@@ -219,7 +236,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, props.width, props.height, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat]);
+  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat]);
 
   useEffect(() => {
     const subs = [

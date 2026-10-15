@@ -1741,7 +1741,7 @@ var VTCore = (() => {
     const acX = Math.max(acW / 2, Math.min(axisW - acW / 2, frac * axisW));
     ac.style.left = acX + "px";
     for (const l of s.axisLabels) {
-      l.el.classList.toggle("under-cursor", Math.abs(l.x - acX) < l.half + acW / 2 + 2);
+      l.el.classList.toggle("under-cursor", Math.abs(l.frac * axisW - acX) < l.half + acW / 2 + 2);
     }
     for (const k of s.kiosks) {
       const c = s.cards[k.id];
@@ -1749,7 +1749,7 @@ var VTCore = (() => {
         continue;
       }
       const { w, magW } = widths.get(k.id);
-      if (!external) {
+      if (!external && c.card.classList.contains("hovered") !== (hoveredCard === c.card)) {
         c.card.classList.toggle("hovered", hoveredCard === c.card);
       }
       const x = frac * w;
@@ -1765,13 +1765,18 @@ var VTCore = (() => {
         c.mag.style.setProperty("--cap-lo", -(magL + magW / 2) + "px");
         c.mag.style.setProperty("--cap-hi", w - magL - magW / 2 + "px");
       }
+      const key = shownKey(slot);
+      if (key !== null && key === c.shown) {
+        continue;
+      }
+      c.shown = key;
       c.mag.classList.remove("ghost");
       if (slot && slot.frame) {
         c.mag.classList.remove("gap", "future", "off");
         clearPauseClasses(c.mag);
-        c.mag.querySelector("img").src = slot.frame.url;
-        c.mag.querySelector(".cap").textContent = tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts);
-        c.head.textContent = "";
+        setSrc(c.mag.querySelector("img"), slot.frame.url);
+        setText(c.mag.querySelector(".cap"), tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts));
+        setText(c.head, "");
         c.head.classList.remove("stale");
         clearPauseClasses(c.head);
       } else if (slot && slot.paused) {
@@ -1779,8 +1784,8 @@ var VTCore = (() => {
         c.mag.classList.remove("gap", "future", "off");
         clearPauseClasses(c.mag);
         c.mag.classList.add(...pi.classes);
-        c.mag.querySelector(".cap").textContent = pi.label.toLowerCase();
-        c.head.textContent = pi.label.toLowerCase();
+        setText(c.mag.querySelector(".cap"), pi.label.toLowerCase());
+        setText(c.head, pi.label.toLowerCase());
         c.head.classList.remove("stale");
         clearPauseClasses(c.head);
         c.head.classList.add(...pi.classes);
@@ -1788,7 +1793,7 @@ var VTCore = (() => {
         c.mag.classList.remove("gap", "future");
         clearPauseClasses(c.mag);
         c.mag.classList.add("off");
-        c.head.textContent = "";
+        setText(c.head, "");
         c.head.classList.remove("stale");
         clearPauseClasses(c.head);
       } else if (slot && slot.future) {
@@ -1799,10 +1804,10 @@ var VTCore = (() => {
         c.mag.classList.add("future");
         if (g) {
           c.mag.classList.add("ghost");
-          c.mag.querySelector("img").src = g.url;
+          setSrc(c.mag.querySelector("img"), g.url);
         }
-        c.mag.querySelector(".cap").textContent = (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + tt.short(slot.ts) + (g ? " \xB7 last frame " + tt.time(g.ts) : "") + tt.sfx(slot.ts);
-        c.head.textContent = inFlight ? "expected" : "upcoming";
+        setText(c.mag.querySelector(".cap"), (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + tt.short(slot.ts) + (g ? " \xB7 last frame " + tt.time(g.ts) : "") + tt.sfx(slot.ts));
+        setText(c.head, inFlight ? "expected" : "upcoming");
         c.head.classList.remove("stale");
         clearPauseClasses(c.head);
       } else {
@@ -1818,14 +1823,42 @@ var VTCore = (() => {
           }
         }
         const msg = last ? "offline \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : "no data in window";
-        c.mag.querySelector(".cap").textContent = msg;
-        c.head.textContent = msg;
+        setText(c.mag.querySelector(".cap"), msg);
+        setText(c.head, msg);
         c.head.classList.add("stale");
         clearPauseClasses(c.head);
       }
     }
     if (!external && s.cfg.onHover) {
       s.cfg.onHover(s.cursorT);
+    }
+  }
+  function shownKey(slot) {
+    if (!slot) {
+      return "g:none";
+    }
+    if (slot.frame) {
+      return "f:" + slot.frame.ts + ":" + slot.frame.url;
+    }
+    if (slot.paused) {
+      return "p:" + slot.ts + ":" + (slot.reason ?? "") + ":" + String(slot.intended);
+    }
+    if (slot.beyond) {
+      return "b";
+    }
+    if (slot.future) {
+      return null;
+    }
+    return "g:" + slot.ts;
+  }
+  function setText(el, text) {
+    if (el.textContent !== text) {
+      el.textContent = text;
+    }
+  }
+  function setSrc(img, url) {
+    if (img.getAttribute("src") !== url) {
+      img.src = url;
     }
   }
 
@@ -1858,7 +1891,7 @@ var VTCore = (() => {
       const el = document.createElement("div");
       el.className = "tick";
       const x = (ts - from) / s.SPAN * w;
-      el.style.left = x + "px";
+      el.style.left = (x / w * 100).toFixed(3) + "%";
       el.textContent = fmt(ts);
       axis.appendChild(el);
       placed.push({ el, x });
@@ -1869,7 +1902,7 @@ var VTCore = (() => {
       if (p.x - half < 0 || p.x + half > w) {
         p.el.classList.add("edge");
       } else {
-        s.axisLabels.push({ el: p.el, x: p.x, half });
+        s.axisLabels.push({ el: p.el, frac: p.x / w, half });
       }
     });
   }

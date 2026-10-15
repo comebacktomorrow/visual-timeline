@@ -29,7 +29,9 @@ export function buildAxis(s: TimelineState): void {
     const el = document.createElement('div');
     el.className = 'tick';
     const x = ((ts - from) / s.SPAN) * w;
-    el.style.left = x + 'px';
+    // a percentage, so the axis stretches with the panel like the strips
+    // (flex slots) and annotations do: a small resize needs no rebuild
+    el.style.left = ((x / w) * 100).toFixed(3) + '%';
     el.textContent = fmt(ts);
     axis.appendChild(el);
     placed.push({ el, x });
@@ -39,7 +41,7 @@ export function buildAxis(s: TimelineState): void {
   placed.forEach((p, i) => {
     const half = widths[i] / 2;
     if (p.x - half < 0 || p.x + half > w) {p.el.classList.add('edge');}
-    else {s.axisLabels.push({ el: p.el, x: p.x, half });}
+    else {s.axisLabels.push({ el: p.el, frac: p.x / w, half });}
   });
 }
 
