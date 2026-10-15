@@ -4,7 +4,7 @@
 [![Version](https://img.shields.io/github/package-json/v/comebacktomorrow/visual-timeline)](https://github.com/comebacktomorrow/visual-timeline/blob/main/CHANGELOG.md)
 [![License](https://img.shields.io/github/license/comebacktomorrow/visual-timeline)](https://github.com/comebacktomorrow/visual-timeline/blob/main/LICENSE)
 
-Scrub-able visual timeline and multiview for image feeds — kiosk screens,
+Scrubbable visual timeline and multiview for image feeds — kiosk screens,
 security cameras, website thumbnails, anything that can post a JPEG on a
 heartbeat. Hover to set a global time cursor across every host; gaps show
 offline periods at their true temporal width; drag to zoom.
@@ -16,8 +16,10 @@ The plugin is a Grafana app that installs two plugins:
 - the **Visual Timeline API data source**, which connects to your frames API.
   It keeps the API's URL and viewer token in Grafana's server-side settings,
   answers each panel's query with the list of hosts, and supplies the
-  Site and Host dashboard variables and the ad hoc filter bar. Its **Demo
-  data** switch runs everything on built-in demo data instead.
+  Site and Host dashboard variables and the ad hoc filter bar. It can also
+  answer with each host's last frame and status, for a stock Table, Canvas
+  or Stat panel. Its **Demo data** switch runs everything on built-in demo
+  data instead.
 
 The app is enabled on install and has no pages of its own.
 
@@ -99,8 +101,8 @@ option can show its frame times in its own local time.
    Add new data source**), turn on its **Demo data** switch and click **Save &
    test**.
 2. On the data source's **Dashboards** tab, import the **Visual Timeline**
-   dashboard: a timeline and two multiview grids, with Site and Host
-   dropdowns and a filter bar.
+   dashboard: a timeline, two multiview grids and a table of each host's
+   last frame, with Site and Host dropdowns and a filter bar.
 
 The demo has five simulated hosts across two sites, including an outage, a
 cadence change, a declared pause, two hosts in other time zones and some

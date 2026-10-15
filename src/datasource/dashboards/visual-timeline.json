@@ -246,7 +246,7 @@
       }
     ]
   },
-  "description": "Timeline and multiview grids for every source, with Site and Host dropdowns and a filter bar. Click a host, site or tag in a header to filter by it.",
+  "description": "A timeline, multiview grids and each host's last frame in a table, with Site and Host dropdowns and a filter bar. Click a host, site or tag in a header to filter by it.",
   "tags": [
     "visual-timeline"
   ],
