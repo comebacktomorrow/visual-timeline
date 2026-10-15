@@ -31,7 +31,7 @@ export function VariableQueryEditor({ query, onChange }: EditorProps) {
     <div data-testid="vt-variable-editor">
       <InlineFieldRow>
         <InlineField label="Values" labelWidth={14}>
-          <RadioButtonGroup options={TYPES} value={type} onChange={(v) => save({ type: v })} />
+          <RadioButtonGroup options={TYPES} value={type} onChange={(v) => save({ type: v === 'hosts' ? 'hosts' : 'sites' })} />
         </InlineField>
       </InlineFieldRow>
       {type === 'hosts' && (
