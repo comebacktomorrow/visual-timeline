@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **Last frame in a table.** A query's new **Last frame** switch adds each
+  host's last frame in the time range to the data source's answer: its image
+  (set to show as one in a Table), its time, the host's status at the range's
+  end (`live`, `offline` or `paused`) and a pause's reason. A stock Table or
+  Canvas panel can show it; the starter dashboard has a **Last frame per
+  host** table. While the range ends now it's the live frame; for a past
+  range, the frame at that range's end.
+- The data source's `history` field is hidden in tables: it's the panel's
+  input, not something to read.
+
 ## 1.1.0 (2026-10-15)
 
 ### Highlights

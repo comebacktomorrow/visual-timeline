@@ -28,6 +28,10 @@ export interface VisualTimelineQuery extends DataQuery {
   hosts?: string;
   /** Tag pairs that must all match: "env=prod, room=lobby". */
   tags?: string;
+  /** Also answer with each host's last frame in the time range (its image,
+   * time and status), for a Table or Canvas panel. Costs a /frames call or
+   * two per host, so the timeline panels leave it off. */
+  lastFrame?: boolean;
 }
 
 /** A dashboard variable query: the sites, or the hosts (optionally only

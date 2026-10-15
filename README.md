@@ -146,6 +146,33 @@ Loki data by label:
 The **Visual Timeline** dashboard on the data source's Dashboards tab has the
 Site and Host variables and the filter bar ready.
 
+## Show the last frame in a table
+
+Turn on **Last frame** in a query and the data source also answers with each
+host's last frame in the dashboard's time range, for a stock **Table** panel
+(or a Canvas panel's image elements):
+
+| Column           | What it holds                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------ |
+| **Last frame**   | The frame's image, set to show as one in a Table. Give the table a taller **Cell height** to see more. |
+| **Status**       | `live`, `offline` or `paused`: the host's state at the end of the time range.                          |
+| **Frame time**   | When the frame was taken.                                                                              |
+| **Pause reason** | Why a paused host said it was pausing (`screen-sleep`, `quiet`, …).                                    |
+
+It is the last frame _in the time range_, as a Stat panel's "Last" is the
+last value: while the range ends now, it's the live frame, and auto-refresh
+keeps it current; for a past range, or after zooming in on a timeline, it's
+each host's frame at the end of that range. A host offline at that moment
+shows the last frame it took before, and one with no frame in the range has
+an empty cell. Status follows the timeline's rules: offline once a tick is a
+full cadence overdue, paused from a declared pause until the next frame.
+
+It costs one or two `/frames` calls per host on every refresh, so leave it off
+in the queries of Visual Timeline panels, which fetch their own frames. The
+images load straight from the API's image URLs, as the panel's do, so an API
+that requires a viewer token must sign them. The starter dashboard has a
+**Last frame per host** table.
+
 ## Connect it to your own images
 
 The panel reads a small HTTP API (the source registry, frames by time window,

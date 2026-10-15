@@ -1,6 +1,6 @@
 import React, { ChangeEvent, useState } from 'react';
 import { QueryEditorProps } from '@grafana/data';
-import { InlineField, InlineFieldRow, Input } from '@grafana/ui';
+import { InlineField, InlineFieldRow, InlineSwitch, Input } from '@grafana/ui';
 
 import type { VisualTimelineDataSource } from './datasource';
 import type { VisualTimelineOptions, VisualTimelineQuery } from './types';
@@ -58,6 +58,20 @@ export function QueryEditor({ query, onChange, onRunQuery }: Props) {
             />
           </InlineField>
         ))}
+        <InlineField
+          label="Last frame"
+          labelWidth={12}
+          tooltip="Also return each host's last frame in the time range: its image, its time and the host's status (live, offline or paused) at the range's end. For a Table or Canvas panel; the timeline panels don't need it."
+        >
+          <InlineSwitch
+            id="vt-query-lastFrame"
+            value={query.lastFrame === true}
+            onChange={(e: React.SyntheticEvent<HTMLInputElement>) => {
+              onChange({ ...query, lastFrame: e.currentTarget.checked });
+              onRunQuery();
+            }}
+          />
+        </InlineField>
       </InlineFieldRow>
     </div>
   );

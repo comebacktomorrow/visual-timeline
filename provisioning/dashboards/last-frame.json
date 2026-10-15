@@ -1,0 +1,51 @@
+{
+  "uid": "vt-last-frame",
+  "title": "Visual Timeline — last frame table",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "utc",
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Last frame per host",
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "vt-demo"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "vt-demo"
+          },
+          "lastFrame": true
+        }
+      ],
+      "options": {
+        "cellHeight": "lg",
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    }
+  ]
+}

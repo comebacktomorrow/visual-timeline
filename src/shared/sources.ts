@@ -7,6 +7,7 @@ import { AdHocVariableFilter, createDataFrame, DataFrame, FieldType } from '@gra
 
 import { matchesTags, parseTagFilter, parseVar } from '../vt/model/filters';
 import type { HistoryEvent, SourceDecl } from '../vt/types';
+import type { LastFrame } from './lastFrame';
 
 /** Marks the frames a Visual Timeline data source returns: meta.custom[FRAME_MARKER]. */
 export const FRAME_MARKER = 'visualTimeline';
@@ -115,20 +116,49 @@ export function tagValues(sources: SourceDecl[], key: string): string[] {
   return [...values].sort();
 }
 
-/** The sources as one data frame, one row per source. */
-export function sourcesToFrame(sources: SourceDecl[], refId: string, meta: SourcesFrameMeta): DataFrame {
+/** The sources as one data frame, one row per source. With `last` (one
+ * entry per source, the query asked for the last frame) it also carries each
+ * host's last frame in the range: its image, already set to show as one in
+ * a Table, its time, and the host's status at the range's end. */
+export function sourcesToFrame(
+  sources: SourceDecl[], refId: string, meta: SourcesFrameMeta, last?: Array<LastFrame | null>
+): DataFrame {
+  const lastFields = last
+    ? [
+        {
+          name: 'image', type: FieldType.string, values: last.map((l) => l?.frame?.url ?? null),
+          config: { displayName: 'Last frame', custom: { cellOptions: { type: 'image' } } },
+        },
+        {
+          name: 'status', type: FieldType.string, values: last.map((l) => l?.status ?? null),
+          config: { displayName: 'Status' },
+        },
+        {
+          name: 'frameTime', type: FieldType.time, values: last.map((l) => l?.frame?.ts ?? null),
+          config: { displayName: 'Frame time' },
+        },
+        {
+          name: 'pauseReason', type: FieldType.string, values: last.map((l) => l?.reason ?? null),
+          config: { displayName: 'Pause reason' },
+        },
+      ]
+    : [];
   return createDataFrame({
     refId,
     meta: { custom: { [FRAME_MARKER]: meta } },
     fields: [
       { name: 'host', type: FieldType.string, values: sources.map((s) => s.id) },
+      // with the last frame, a table reads host, image, status, time first
+      ...lastFields,
       { name: 'site', type: FieldType.string, values: sources.map((s) => s.site) },
       { name: 'location', type: FieldType.string, values: sources.map((s) => s.location ?? '') },
       { name: 'timezone', type: FieldType.string, values: sources.map((s) => s.timezone ?? '') },
       { name: 'cadence', type: FieldType.number, values: sources.map((s) => s.cadence), config: { unit: 'ms' } },
       { name: 'hiCadence', type: FieldType.number, values: sources.map((s) => s.hiCadence ?? null), config: { unit: 'ms' } },
       { name: 'tags', type: FieldType.other, values: sources.map((s) => s.tags ?? {}) },
-      { name: 'history', type: FieldType.other, values: sources.map((s) => s.history ?? []) },
+      // the panel's input, not something to read in a table (a Table hides
+      // a field on hideFrom.viz)
+      { name: 'history', type: FieldType.other, values: sources.map((s) => s.history ?? []), config: { custom: { hideFrom: { viz: true, legend: true, tooltip: true } } } },
     ],
   });
 }

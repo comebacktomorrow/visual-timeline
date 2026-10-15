@@ -12,6 +12,7 @@ import {
 import { getTemplateSrv } from '@grafana/runtime';
 
 import { backendRequest } from '../shared/backendRequest';
+import { lastFrameIn } from '../shared/lastFrame';
 import { ApiFetch, makeProxyFetch, ProxyRequest } from '../shared/proxy';
 import {
   applySourceFilter,
@@ -23,6 +24,7 @@ import {
 // the text Grafana's proxy answers instead of the API's own 401
 import { makeApiBackend, PROXY_AUTH_FAILED } from '../vt/backends/api';
 import { makeBackend as makeDemoBackend } from '../vt/backends/demo';
+import { limited, MODEL_CONCURRENCY } from '../vt/model/pool';
 import type { Backend, Frame, SourceDecl } from '../vt/types';
 import type { VisualTimelineOptions, VisualTimelineQuery, VisualTimelineVariableQuery } from './types';
 import { VisualTimelineVariableSupport } from './variables';
@@ -96,9 +98,7 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
    * when there is one; the panel draws demo frames for the same window. */
   async sources(sites?: string[] | null, window?: { from: number; to: number }): Promise<SourceDecl[]> {
     if (this.demo) {
-      const to = window?.to ?? Date.now();
-      const from = window?.from ?? to - 3600e3;
-      return makeDemoBackend({ from, to }, Math.max(1, to - from), 'UTC').kiosks(sites ?? null) as SourceDecl[];
+      return this.demoBackend(window).kiosks(sites ?? null) as SourceDecl[];
     }
     const all = await this.allSources();
     return sites ? all.filter((s) => sites.includes(s.site)) : all;
@@ -115,6 +115,14 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
       if (this.cached === entry) {this.cached = null;}
     });
     return entry.list;
+  }
+
+  /** The built-in demo hosts and frames for a time window (an hour to now
+   * without one). */
+  private demoBackend(window?: { from: number; to: number }): Backend {
+    const to = window?.to ?? Date.now();
+    const from = window?.from ?? to - 3600e3;
+    return makeDemoBackend({ from, to }, Math.max(1, to - from), 'UTC');
   }
 
   /** One source's frames in a window, at most one per step. The panel calls
@@ -143,7 +151,18 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
             tags: /\$[{a-zA-Z_]/.test(tags) ? '' : tags,
             adhoc: request.filters,
           });
-          return sourcesToFrame(sources, t.refId, { uid: this.uid, demo: this.demo });
+          const meta = { uid: this.uid, demo: this.demo };
+          if (!t.lastFrame) {return sourcesToFrame(sources, t.refId, meta);}
+          // the last frame at the range's end, or now if the range runs past it
+          const end = Math.min(window.to, Date.now());
+          const backend = this.demo ? this.demoBackend(window) : this.backend;
+          const last = await Promise.all(limited(sources, MODEL_CONCURRENCY, (s) =>
+            lastFrameIn(s, window.from, end, backend).catch((e) => {
+              // one host's failure leaves its cells empty, not the whole table
+              console.warn('[visual-timeline] last frame failed for ' + s.id + ':', e);
+              return null;
+            })));
+          return sourcesToFrame(sources, t.refId, meta, last);
         })
     );
     return { data };

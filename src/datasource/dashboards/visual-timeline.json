@@ -177,6 +177,79 @@
           "hosts": "${host:csv}"
         }
       ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Last frame per host",
+      "description": "Each host's last frame in the time range, with its status at the range's end. The query's Last frame switch adds these columns; any table or Canvas panel can use them.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "${ds}"
+          },
+          "sites": "${site:csv}",
+          "hosts": "${host:csv}",
+          "lastFrame": true
+        }
+      ],
+      "options": {
+        "cellHeight": "lg",
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "live": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "offline": {
+                        "color": "red",
+                        "index": 1
+                      },
+                      "paused": {
+                        "color": "blue",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      }
     }
   ],
   "annotations": {
