@@ -27,6 +27,7 @@ export function makeImageQueue(concurrency = IMAGE_CONCURRENCY): ImageQueue {
   let active = 0;
   let stopped = false;
   let scheduled = false;
+  let pumping = false;
   let idleWaiters: Array<() => void> = [];
 
   function settleIdle() {
@@ -37,9 +38,14 @@ export function makeImageQueue(concurrency = IMAGE_CONCURRENCY): ImageQueue {
     }
   }
 
+  /* An image already in the browser's cache can complete synchronously, and
+   * its done() calls pump() again. Re-entering would recurse once per cached
+   * image (a rebuild of a big panel overflowed the stack), so a nested call
+   * returns and the running loop takes the freed slot instead. */
   function pump() {
     scheduled = false;
-    if (stopped) {return;}
+    if (stopped || pumping) {return;}
+    pumping = true;
     if (!sorted) {
       pending.sort((a, b) => a.ts - b.ts);
       sorted = true;
@@ -62,6 +68,7 @@ export function makeImageQueue(concurrency = IMAGE_CONCURRENCY): ImageQueue {
       // already in the browser's cache: some engines complete synchronously
       if (job.img.complete && job.img.naturalWidth) {done();}
     }
+    pumping = false;
     settleIdle();
   }
 
