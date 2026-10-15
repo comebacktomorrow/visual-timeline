@@ -74,6 +74,10 @@ can't run):
 
 ## 2. Cut 1.0.0
 
+> 1.0.0 was tagged and built (2026-10-06) but never published or submitted;
+> 1.0.1 replaced the panel's built-in demo fallback with a Demo data switch
+> on the data source. Submit 1.0.1 (or later), following the same steps.
+
 - [ ] In `CHANGELOG.md`, rename `## Unreleased` to `## 1.0.0 (<date>)`. The
       release workflow uses the **first** `## ` section as the release notes,
       and the catalog shows the changelog. Consider adding a short
@@ -98,8 +102,12 @@ can't run):
         broken links and React 19 compatibility all passed. (With
         `--cache .cache/npm` the React 19 check fails to start; use npm's
         default cache.)
-- [ ] Edit the draft release notes if needed, then **publish** it. The zip
-      and sha1 links only work once it's published.
+- [ ] **Replace the draft's release notes**, then **publish** it. The build
+      action writes its own boilerplate (submission instructions, a stray
+      `false`, GitHub's list of every PR), not the changelog: paste the
+      version's CHANGELOG section instead, e.g.
+      `git show v1.0.1:CHANGELOG.md | awk '/^## / {s++} s == 1' | sed 1d`.
+      The zip and sha1 links only work once it's published.
 
 ## 3. Submit on grafana.com
 
@@ -119,17 +127,18 @@ Sign in as an admin of the `savvycocoa1919` org, open **My Plugins**, then
   > Visual Timeline is an app plugin bundling a panel and a data source.
   > The app is auto-enabled.
   >
-  > **No backend needed:** add a Visual Timeline panel and leave API URL and
-  > Data source empty. It renders built-in demo data: five sources across
-  > two sites, with an outage, a cadence change, a declared pause, two
+  > **No backend needed:** add a Visual Timeline API data source and turn
+  > on its **Demo data** switch, then add a Visual Timeline panel (it picks
+  > up the data source by itself). It renders built-in demo data: five
+  > sources across two sites, with an outage, a cadence change, a declared pause, two
   > sources in other time zones and some annotations. Hover to scrub, drag
   > to zoom, and switch Display mode between Timeline and Multiview grid.
   >
   > **Provisioned environment:** `docker compose up` in the repository
   > starts Grafana with the plugin, a mock frames API (`vt-mock-api`) and:
   >
-  > - the dashboard "Provisioned Visual Timeline dashboard" (demo data,
-  >   timeline and grid);
+  > - the dashboard "Provisioned Visual Timeline dashboard" (timeline and
+  >   grid, on the demo data source "Visual Timeline (demo)");
   > - the dashboard "Visual Timeline — data source mode": one panel reads
   >   through the data source "Visual Timeline API (mock)", whose viewer
   >   token is stored in secureJsonData and injected by the plugin.json

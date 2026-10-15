@@ -146,7 +146,7 @@ A 640 px camera frame is typically 30–80 KB, so one camera at one frame a
 minute uses roughly 40–120 MB a day: about 1–3.5 GB per camera at 30 days.
 Plan the disk accordingly.
 
-- Frames live in the `visual-timeline_frames` Docker volume, in workerd's
+- Frames live in the `visual-timeline-selfhost_frames` Docker volume, in workerd's
   local storage format (not a folder of JPEGs). Back up the volume to back up
   the frames.
 - `docker compose -f selfhost/docker-compose.yml down -v` deletes **all**

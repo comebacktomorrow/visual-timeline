@@ -1,0 +1,44 @@
+{
+  "uid": "vt-empty-states",
+  "title": "Visual Timeline — empty states",
+  "editable": true,
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "No data source selected",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "options": {}
+    },
+    {
+      "id": 2,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Deleted data source",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "options": {
+        "datasourceUid": "vt-was-deleted"
+      }
+    }
+  ]
+}

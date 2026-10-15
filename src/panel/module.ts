@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { dateTimeFormat, PanelPlugin, PanelProps, DataHoverEvent, DataHoverClearEvent, systemDateFormats } from '@grafana/data';
-import { getDataSourceSrv } from '@grafana/runtime';
+import { config, getDataSourceSrv, locationService } from '@grafana/runtime';
 import { useTheme2 } from '@grafana/ui';
 import { mountTimeline, mountGrid } from '../core';
 import type { AxisFormatter } from '../vt/time/ticks';
@@ -8,7 +8,7 @@ import { themeVars } from '../theme';
 import { coreTimeZone } from '../timezone';
 import { backendRequest } from '../shared/backendRequest';
 import { DATASOURCE_ID } from '../shared/proxy';
-import { dataSourceOptions, resolveConnection } from './connection';
+import { ConnectionState, dataSourceOptions, pickDataSource, resolveConnection } from './connection';
 
 interface VisualTimelineOptions {
   datasourceUid?: string;
@@ -67,6 +67,22 @@ function extractAnnotations(frames: any[] | undefined): PanelAnnotation[] {
   return out;
 }
 
+/* What a panel that can't show frames says instead, and where it points. */
+function emptyStateText(state: ConnectionState, dataSourceCount: number, canCreate: boolean) {
+  if (state === 'missing') {
+    return { lines: ["This panel's data source no longer exists.", "Select another in the panel's Data source option."] };
+  }
+  if (dataSourceCount > 0) {
+    return { lines: ['No data source selected.', "Select a Visual Timeline data source in the panel's Data source option."] };
+  }
+  return canCreate
+    ? {
+        lines: ['No Visual Timeline data source yet.'],
+        link: { text: 'Add one', after: ' (turn on its Demo data to try the panel without an API).' },
+      }
+    : { lines: ['No Visual Timeline data source yet.', 'Ask a Grafana admin to add one.'] };
+}
+
 interface MountInstance {
   setExternalCursor: (t: number) => void;
   clearExternal?: () => void;
@@ -99,10 +115,11 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const mode = options.mode || 'timeline';
   const follow = options.followCrosshair !== false;
   const fit = options.imageFit || 'fit';
-  // a Visual Timeline API data source (token server-side), else the API URL
-  // option for an open API, else demo data — see connection.ts
+  // a Visual Timeline API data source (token server-side; or demo data, if
+  // it has Demo data on), else the API URL option for an open API, else
+  // nothing yet — see connection.ts
   const datasourceUid = (options.datasourceUid || '').trim();
-  const { apiUrl, apiFetch, authHint } = useMemo(
+  const { state, apiUrl, apiFetch, authHint } = useMemo(
     () => resolveConnection(options, (uid) => getDataSourceSrv().getInstanceSettings(uid)?.jsonData, backendRequest),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [datasourceUid, options.apiUrl, options.apiKey]
@@ -122,8 +139,24 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     [props.timeZone]
   );
 
+  const visualTimelineSources = getDataSourceSrv().getList({ pluginId: DATASOURCE_ID, all: true });
+  /* A panel with nothing selected takes the obvious data source while it is
+   * being created or edited (the only one, or Grafana's default among
+   * several), the way Grafana fills in a new panel's data source. The choice
+   * is saved with the panel; a saved panel is never re-pointed on load, so a
+   * second data source added later can't change what existing panels show. */
+  const editing = locationService.getSearchObject().editPanel !== undefined;
+  const autoPick = state === 'none' && editing ? pickDataSource(visualTimelineSources) : undefined;
   useEffect(() => {
-    if (!ref.current) {
+    if (autoPick) {
+      props.onOptionsChange({ ...options, datasourceUid: autoPick });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPick]);
+  const showFrames = state === 'api' || state === 'demo';
+
+  useEffect(() => {
+    if (!ref.current || !showFrames) {
       return;
     }
     const common = {
@@ -157,7 +190,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, fit, apiUrl, apiFetch, authHint, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat]);
+  }, [showFrames, mode, fit, apiUrl, apiFetch, authHint, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat]);
 
   useEffect(() => {
     const subs = [
@@ -189,6 +222,46 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
      
   }, [props.eventBus, mode, follow]);
 
+  if (!showFrames) {
+    const user = config.bootData?.user;
+    const canCreate = !!user && (user.orgRole === 'Admin' || user.isGrafanaAdmin === true);
+    const text = emptyStateText(state, visualTimelineSources.length, canCreate);
+    const link = text.link
+      ? React.createElement(
+          'div',
+          null,
+          React.createElement(
+            'a',
+            { href: `${config.appSubUrl || ''}/connections/datasources/new`, style: { color: theme.colors.text.link } },
+            text.link.text
+          ),
+          text.link.after
+        )
+      : null;
+    return React.createElement(
+      'div',
+      {
+        'data-testid': 'vt-empty-state',
+        style: {
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: theme.spacing(0.5),
+          padding: theme.spacing(2),
+          textAlign: 'center',
+          color: theme.colors.text.secondary,
+        } as React.CSSProperties,
+      },
+      ...text.lines.map((line, i) =>
+        React.createElement('div', { key: i, style: i === 0 ? { color: theme.colors.text.primary } : undefined }, line)
+      ),
+      link
+    );
+  }
+
   return React.createElement('div', {
     ref,
     style: { width: '100%', height: '100%', overflow: 'hidden', ...palette } as React.CSSProperties,
@@ -205,7 +278,7 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       path: 'datasourceUid',
       name: 'Data source',
       description:
-        'A Visual Timeline API data source: it holds the API URL and the viewer token in Grafana\'s server-side settings, and API calls go through Grafana, so the token is never in the dashboard JSON or the browser. Replaces the API URL option below.',
+        'A Visual Timeline API data source: it holds the API URL and the viewer token in Grafana\'s server-side settings, and API calls go through Grafana, so the token is never in the dashboard JSON or the browser. A data source with Demo data on shows built-in demo sources. Replaces the API URL option below.',
       settings: {
         options: [],
         // all: Grafana's pickers otherwise skip data sources that serve no
@@ -217,7 +290,7 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
     .addTextInput({
       path: 'apiUrl',
       name: 'API URL',
-      description: 'Frames API base URL (see docs/API.md in the repository), for an API with open reads. An API that needs a viewer token connects through a data source instead. Empty = built-in demo data. Ignored when a data source is selected.',
+      description: 'Frames API base URL (see docs/API.md in the repository), for an API with open reads. An API that needs a viewer token connects through a data source instead. Ignored when a data source is selected.',
       defaultValue: '',
       showIf: (o) => !o.datasourceUid,
     })

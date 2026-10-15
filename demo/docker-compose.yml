@@ -5,10 +5,11 @@
 # before Grafana starts (first run installs npm deps — allow a few minutes).
 # Port taken? DEMO_PORT=3301 docker compose -f demo/docker-compose.yml up
 #
-# Pair it with the local backend for live data:
+# The dashboard's panels use the provisioned "Visual Timeline (demo)" data
+# source, which has Demo data on. For live data, run the local backend:
 #   cd worker && npx wrangler dev --port 8787
-# then seed frames at http://localhost:8787/sim.html. The plugin panels also
-# work standalone on their built-in demo data (clear the panel's API URL).
+# seed frames at http://localhost:8787/sim.html, then clear a panel's Data
+# source and set its API URL to http://localhost:8787 (local reads are open).
 services:
   build:
     # node 24 bundles npm 11 — npm 10 rejects this repo's lockfile
