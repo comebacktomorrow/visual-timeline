@@ -865,11 +865,14 @@ var VTCore = (() => {
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
   }
+  function filterAttrs(key, value) {
+    return ' data-fk="' + esc(key) + '" data-fv="' + esc(value) + '"';
+  }
   function tagChips(decl) {
     if (!decl.tags) {
       return "";
     }
-    const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st">' + esc(k) + ":" + esc(v) + "</span>").join("");
+    const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st"' + filterAttrs(k, v) + ">" + esc(k) + ":" + esc(v) + "</span>").join("");
     return '<span class="tags">' + chips + "</span>";
   }
   function headTitle(decl) {
@@ -883,6 +886,21 @@ var VTCore = (() => {
       }
     }
     return parts.join(" \xB7 ");
+  }
+  function wireFilters(wrap, onFilter) {
+    if (!onFilter) {
+      return;
+    }
+    wrap.classList.add("filterable");
+    wrap.addEventListener("click", (e) => {
+      const el = e.target?.closest("[data-fk]");
+      if (!el || !wrap.contains(el)) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      onFilter(el.dataset.fk || "", el.dataset.fv || "");
+    });
   }
 
   // src/vt/dom/styles.ts
@@ -1036,6 +1054,8 @@ var VTCore = (() => {
 .ktl .slot.paused.r-system-down { background:repeating-linear-gradient(45deg,var(--ktl-down-a),var(--ktl-down-a) 7px,var(--ktl-down-b) 7px,var(--ktl-down-b) 14px); }
 .ktl .slot.paused.r-app-stopped { background:repeating-linear-gradient(45deg,var(--ktl-stopped-a),var(--ktl-stopped-a) 7px,var(--ktl-stopped-b) 7px,var(--ktl-stopped-b) 14px); }
 /* past the API's retention: nothing to show, and no state to hatch */
+.ktl.filterable [data-fk] { cursor:pointer; }
+.ktl.filterable [data-fk]:hover { text-decoration:underline; text-underline-offset:2px; }
 .ktl .slot.paused.r-expired { background:var(--ktl-bg2); }
 .ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,var(--ktl-unint-a),var(--ktl-unint-a) 7px,var(--ktl-unint-b) 7px,var(--ktl-unint-b) 14px); }
 /* hatch continuity: each slot is its own element, so a per-element gradient
@@ -1625,7 +1645,7 @@ var VTCore = (() => {
       ]),
       new Promise((res) => setTimeout(res, 900))
     ]);
-    if (!wrap.isConnected) {
+    if (!wrap.isConnected || wrap.dataset.stale) {
       return;
     }
     for (const el of [...root.children]) {
@@ -1721,7 +1741,7 @@ var VTCore = (() => {
     const acX = Math.max(acW / 2, Math.min(axisW - acW / 2, frac * axisW));
     ac.style.left = acX + "px";
     for (const l of s.axisLabels) {
-      l.el.classList.toggle("under-cursor", Math.abs(l.x - acX) < l.half + acW / 2 + 2);
+      l.el.classList.toggle("under-cursor", Math.abs(l.frac * axisW - acX) < l.half + acW / 2 + 2);
     }
     for (const k of s.kiosks) {
       const c = s.cards[k.id];
@@ -1729,7 +1749,7 @@ var VTCore = (() => {
         continue;
       }
       const { w, magW } = widths.get(k.id);
-      if (!external) {
+      if (!external && c.card.classList.contains("hovered") !== (hoveredCard === c.card)) {
         c.card.classList.toggle("hovered", hoveredCard === c.card);
       }
       const x = frac * w;
@@ -1745,13 +1765,18 @@ var VTCore = (() => {
         c.mag.style.setProperty("--cap-lo", -(magL + magW / 2) + "px");
         c.mag.style.setProperty("--cap-hi", w - magL - magW / 2 + "px");
       }
+      const key = shownKey(slot);
+      if (key !== null && key === c.shown) {
+        continue;
+      }
+      c.shown = key;
       c.mag.classList.remove("ghost");
       if (slot && slot.frame) {
         c.mag.classList.remove("gap", "future", "off");
         clearPauseClasses(c.mag);
-        c.mag.querySelector("img").src = slot.frame.url;
-        c.mag.querySelector(".cap").textContent = tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts);
-        c.head.textContent = "";
+        setSrc(c.mag.querySelector("img"), slot.frame.url);
+        setText(c.mag.querySelector(".cap"), tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts));
+        setText(c.head, "");
         c.head.classList.remove("stale");
         clearPauseClasses(c.head);
       } else if (slot && slot.paused) {
@@ -1759,8 +1784,8 @@ var VTCore = (() => {
         c.mag.classList.remove("gap", "future", "off");
         clearPauseClasses(c.mag);
         c.mag.classList.add(...pi.classes);
-        c.mag.querySelector(".cap").textContent = pi.label.toLowerCase();
-        c.head.textContent = pi.label.toLowerCase();
+        setText(c.mag.querySelector(".cap"), pi.label.toLowerCase());
+        setText(c.head, pi.label.toLowerCase());
         c.head.classList.remove("stale");
         clearPauseClasses(c.head);
         c.head.classList.add(...pi.classes);
@@ -1768,7 +1793,7 @@ var VTCore = (() => {
         c.mag.classList.remove("gap", "future");
         clearPauseClasses(c.mag);
         c.mag.classList.add("off");
-        c.head.textContent = "";
+        setText(c.head, "");
         c.head.classList.remove("stale");
         clearPauseClasses(c.head);
       } else if (slot && slot.future) {
@@ -1779,10 +1804,10 @@ var VTCore = (() => {
         c.mag.classList.add("future");
         if (g) {
           c.mag.classList.add("ghost");
-          c.mag.querySelector("img").src = g.url;
+          setSrc(c.mag.querySelector("img"), g.url);
         }
-        c.mag.querySelector(".cap").textContent = (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + tt.short(slot.ts) + (g ? " \xB7 last frame " + tt.time(g.ts) : "") + tt.sfx(slot.ts);
-        c.head.textContent = inFlight ? "expected" : "upcoming";
+        setText(c.mag.querySelector(".cap"), (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + tt.short(slot.ts) + (g ? " \xB7 last frame " + tt.time(g.ts) : "") + tt.sfx(slot.ts));
+        setText(c.head, inFlight ? "expected" : "upcoming");
         c.head.classList.remove("stale");
         clearPauseClasses(c.head);
       } else {
@@ -1798,14 +1823,42 @@ var VTCore = (() => {
           }
         }
         const msg = last ? "offline \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : "no data in window";
-        c.mag.querySelector(".cap").textContent = msg;
-        c.head.textContent = msg;
+        setText(c.mag.querySelector(".cap"), msg);
+        setText(c.head, msg);
         c.head.classList.add("stale");
         clearPauseClasses(c.head);
       }
     }
     if (!external && s.cfg.onHover) {
       s.cfg.onHover(s.cursorT);
+    }
+  }
+  function shownKey(slot) {
+    if (!slot) {
+      return "g:none";
+    }
+    if (slot.frame) {
+      return "f:" + slot.frame.ts + ":" + slot.frame.url;
+    }
+    if (slot.paused) {
+      return "p:" + slot.ts + ":" + (slot.reason ?? "") + ":" + String(slot.intended);
+    }
+    if (slot.beyond) {
+      return "b";
+    }
+    if (slot.future) {
+      return null;
+    }
+    return "g:" + slot.ts;
+  }
+  function setText(el, text) {
+    if (el.textContent !== text) {
+      el.textContent = text;
+    }
+  }
+  function setSrc(img, url) {
+    if (img.getAttribute("src") !== url) {
+      img.src = url;
     }
   }
 
@@ -1838,7 +1891,7 @@ var VTCore = (() => {
       const el = document.createElement("div");
       el.className = "tick";
       const x = (ts - from) / s.SPAN * w;
-      el.style.left = x + "px";
+      el.style.left = (x / w * 100).toFixed(3) + "%";
       el.textContent = fmt(ts);
       axis.appendChild(el);
       placed.push({ el, x });
@@ -1849,7 +1902,7 @@ var VTCore = (() => {
       if (p.x - half < 0 || p.x + half > w) {
         p.el.classList.add("edge");
       } else {
-        s.axisLabels.push({ el: p.el, x: p.x, half });
+        s.axisLabels.push({ el: p.el, frac: p.x / w, half });
       }
     });
   }
@@ -1942,7 +1995,7 @@ var VTCore = (() => {
     card.className = "card" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
     const la = model.lastActive;
     const cad = s.cfg.showDetails && la ? '<span class="cad">\u23F1 ' + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + "</span>" : "";
-    card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
+    card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", kiosk) + ">" + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st"' + filterAttrs("site", decl.site) + ">" + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
     const strip = card.querySelector(".strip");
     if (s.hostWidth / model.slots.length >= 12) {
       strip.classList.add("sep");
@@ -2297,8 +2350,9 @@ var VTCore = (() => {
     const MIN_SLICE_PX = 7;
     const hostWidth = cfg.width || root.clientWidth || 800;
     const pxBudget = Math.max(10, Math.floor((hostWidth - 20) / MIN_SLICE_PX));
-    const backend = cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ);
+    const backend = cfg.backend ?? (cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ));
     const wrap = makeWrapper(root);
+    wireFilters(wrap, cfg.onFilter);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="cards"></div><div class="ann-lane" style="display:none"></div><div class="axis"><div class="base"></div><div class="acur"></div></div>';
     const s = {
@@ -2401,7 +2455,7 @@ var VTCore = (() => {
     const zone = zoneFor(decl, s.TZ, s.cfg.thumbTimes, s.PANEL_TT);
     const inline = s.cfg.headerMode === "inline" || s.cfg.headerMode === "inline-gradient";
     el.className = "tile" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
-    el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
+    el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", decl.id) + ">" + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st"' + filterAttrs("site", decl.site) + ">" + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
     attachZoneChip(zone, el);
     const rec = {
       decl,
@@ -2545,9 +2599,10 @@ var VTCore = (() => {
     const TZ = resolveTimeZone(cfg.timeZone);
     const SPAN = Math.max(1, P.to - P.from);
     const LIVE = P.to > Date.now() - 2 * 60 * 1e3;
-    const backend = cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ);
+    const backend = cfg.backend ?? (cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ));
     const budget = 120;
     const wrap = makeWrapper(root);
+    wireFilters(wrap, cfg.onFilter);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="grid"></div>';
     const s = {

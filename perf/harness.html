@@ -29,6 +29,9 @@
         const N = Number(q.get('sources') || 20);
         const HOURS = Number(q.get('hours') || 2);
         const MODE = q.get('mode') || 'timeline';
+        // gaps=1: every source has three outages (staggered per source), so a
+        // sweep crosses many frame/gap boundaries; otherwise only src-1 has one
+        const GAPS = q.get('gaps') === '1';
         const TO = Date.UTC(2026, 8, 15, 12, 0, 0);
         const FROM = TO - HOURS * 3600e3;
 
@@ -52,7 +55,11 @@
             cadence,
             history,
             img: svg((i * 37) % 360),
-            outage: i === 1 ? [FROM + 0.3 * (TO - FROM), FROM + 0.5 * (TO - FROM)] : null,
+            outages: GAPS
+              ? [0.1, 0.4, 0.7].map((a) => [FROM + (a + (i % 5) * 0.02) * (TO - FROM), FROM + (a + 0.12 + (i % 5) * 0.02) * (TO - FROM)])
+              : i === 1
+                ? [[FROM + 0.3 * (TO - FROM), FROM + 0.5 * (TO - FROM)]]
+                : [],
           });
         }
         const byId = new Map(decls.map((d) => [d.id, d]));
@@ -69,7 +76,7 @@
           const step = Number(u.searchParams.get('step'));
           const out = [];
           for (let ts = Math.ceil(from / step) * step; ts <= to; ts += step) {
-            if (d.outage && ts >= d.outage[0] && ts < d.outage[1]) continue;
+            if (d.outages.some(([a, b]) => ts >= a && ts < b)) continue;
             out.push({ source: d.id, ts, url: d.img });
           }
           return ok(out);

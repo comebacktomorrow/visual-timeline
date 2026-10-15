@@ -6,10 +6,16 @@ import type { SourceDecl } from '../types';
 export function esc(s: string | number): string {
   return String(s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
 }
+/* Marks a header element as a filter: a host that passes cfg.onFilter gets
+ * (key, value) when it is clicked (see wireFilters). Keys are the ad hoc
+ * filter keys the Grafana data source offers: host, site, or a tag key. */
+export function filterAttrs(key: string, value: string): string {
+  return ' data-fk="' + esc(key) + '" data-fv="' + esc(value) + '"';
+}
 export function tagChips(decl: Pick<SourceDecl, 'tags'>): string {
   if (!decl.tags) {return '';}
   const chips = Object.entries(decl.tags)
-    .map(([k, v]) => '<span class="st">' + esc(k) + ':' + esc(v) + '</span>')
+    .map(([k, v]) => '<span class="st"' + filterAttrs(k, v) + '>' + esc(k) + ':' + esc(v) + '</span>')
     .join('');
   return '<span class="tags">' + chips + '</span>';
 }
@@ -19,4 +25,19 @@ export function headTitle(decl: Pick<SourceDecl, 'site' | 'location' | 'tags'>):
   if (decl.location) {parts.push(decl.location);}
   if (decl.tags) {for (const [k, v] of Object.entries(decl.tags)) {parts.push(k + ':' + v);}}
   return parts.join(' · ');
+}
+
+/* Header clicks as filters: with cfg.onFilter, a click on any [data-fk]
+ * element (the host name, the site chip, a tag chip) calls it with that key
+ * and value, and the chips show they are clickable. Without it, nothing. */
+export function wireFilters(wrap: HTMLElement, onFilter?: (key: string, value: string) => void): void {
+  if (!onFilter) {return;}
+  wrap.classList.add('filterable');
+  wrap.addEventListener('click', (e) => {
+    const el = (e.target as Element | null)?.closest<HTMLElement>('[data-fk]');
+    if (!el || !wrap.contains(el)) {return;}
+    e.preventDefault();
+    e.stopPropagation();
+    onFilter(el.dataset.fk || '', el.dataset.fv || '');
+  });
 }

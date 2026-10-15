@@ -1,4 +1,5 @@
 import { resolveTimeZone } from '../time/zones';
+import { wireFilters } from '../dom/html';
 import { buildSourceModel } from '../model/slots';
 import { matchesTags, parseTagFilter, parseVar } from '../model/filters';
 import { zoneTexts } from '../zones/source';
@@ -23,10 +24,12 @@ export function mountGrid(root: HTMLElement, cfg: MountConfig): MountInstance & 
   const TZ = resolveTimeZone(cfg.timeZone);   // as mountTimeline
   const SPAN = Math.max(1, P.to - P.from);
   const LIVE = P.to > Date.now() - 2 * 60 * 1000;
-  const backend: Backend = cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ);
+  const backend: Backend =
+    cfg.backend ?? (cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ));
   const budget = 120;   // temporal buckets for crosshair-follow resolution
 
   const wrap = makeWrapper(root);
+  wireFilters(wrap, cfg.onFilter);
   wrap.classList.toggle('fill', cfg.fit === 'fill');
   wrap.innerHTML = '<div class="grid"></div>';
 

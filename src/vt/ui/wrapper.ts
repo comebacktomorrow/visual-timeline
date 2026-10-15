@@ -29,7 +29,10 @@ export async function revealWrapper(root: HTMLElement, wrap: HTMLElement, loaded
     ]),
     new Promise(res => setTimeout(res, 900)),
   ]);
-  if (!wrap.isConnected) {return;}
+  // a mount destroyed while its images loaded has retired its wrapper; its
+  // reveal must not then remove its successor's (both would be gone once the
+  // retired one's own removal timer fires: a blank panel)
+  if (!wrap.isConnected || wrap.dataset.stale) {return;}
   for (const el of [...root.children]) {if (el !== wrap) {el.remove();}}
   wrap.style.visibility = '';
 }

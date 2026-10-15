@@ -176,6 +176,11 @@ export interface MountConfig {
   apiUrl?: string;
   apiKey?: string;
   apiFetch?: ApiFetch;
+  /* the host's own data layer (the Grafana panel: sources from its query
+   * result, frames through its data source). When set it is used as is:
+   * apiUrl/apiKey/apiFetch are ignored, and the host has already applied any
+   * site and tag filtering. */
+  backend?: Backend;
   authHint?: string;           // appended to a token error's message (the panel: how to connect)
   axisFormat?: AxisFormatter;  // timeline: the host's axis label formatter (the panel: Grafana's)
   annotations?: RawAnnotation[];   // timeline: host annotations (else the demo seam's)
@@ -186,6 +191,7 @@ export interface MountConfig {
   onCursor?: (t: number) => void;              // timeline: every cursor move (host chrome)
   onZoom?: (from: number, to: number) => void; // timeline: drag-select released
   onShown?: (t: number | null) => void;        // grid: shown time changed (null = latest)
+  onFilter?: (key: string, value: string) => void; // a header chip was clicked: host, site or a tag key
 }
 
 /* What both mounts return. The timeline has isHovering, the grid

@@ -4,7 +4,7 @@ import { fmtTime } from '../time/zones';
 import { MAG_CAP_ROOM } from '../dom/styles';
 import { q } from '../ui/wrapper';
 import { dressZoneChip } from '../zones/chip';
-import type { Frame, TimeWindow } from '../types';
+import type { Frame, Slot, TimeWindow } from '../types';
 import type { TimelineState } from './state';
 
 /* The timeline's cursor: where it rests at mount, the drag-zoom selection
@@ -69,9 +69,10 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
   const acX = Math.max(acW / 2, Math.min(axisW - acW / 2, frac * axisW));
   ac.style.left = acX + 'px';
   // the cursor tag sits over the axis labels: hide the one it covers rather
-  // than leave a half-hidden label (positions are from buildAxis, no reads)
+  // than leave a half-hidden label (positions are fractions from buildAxis,
+  // scaled by the width read above: no further reads)
   for (const l of s.axisLabels) {
-    l.el.classList.toggle('under-cursor', Math.abs(l.x - acX) < l.half + acW / 2 + 2);
+    l.el.classList.toggle('under-cursor', Math.abs(l.frac * axisW - acX) < l.half + acW / 2 + 2);
   }
 
   for (const k of s.kiosks) {
@@ -80,7 +81,9 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
     const { w, magW } = widths.get(k.id)!;   // measured above for every card
     // external cursor moves (event bus) must not strip local hover state —
     // other panels re-emit hover events and would un-dim us mid-hover
-    if (!external) {c.card.classList.toggle('hovered', hoveredCard === c.card);}
+    if (!external && c.card.classList.contains('hovered') !== (hoveredCard === c.card)) {
+      c.card.classList.toggle('hovered', hoveredCard === c.card);
+    }
     const x = frac * w;
     c.cross.style.left = x + 'px';
     const slot = c.model.slotAt(s.cursorT);
@@ -98,27 +101,34 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
       c.mag.style.setProperty('--cap-lo', -(magL + magW / 2) + 'px');
       c.mag.style.setProperty('--cap-hi', (w - magL - magW / 2) + 'px');
     }
+    // Unchanged content is not rewritten: writing text, even the same text,
+    // replaces the text node and costs a relayout of every card on each move
+    // (the "offline — last seen" header made a gap 4-5x the layout of
+    // frames; perf/README.md). Moves within one slot only move the crosshair.
+    const key = shownKey(slot);
+    if (key !== null && key === c.shown) {continue;}
+    c.shown = key;
     c.mag.classList.remove('ghost');
     if (slot && slot.frame) {
       c.mag.classList.remove('gap', 'future', 'off'); clearPauseClasses(c.mag);
-      c.mag.querySelector('img')!.src = slot.frame.url;
-      c.mag.querySelector('.cap')!.textContent = tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts);
-      c.head.textContent = '';                 // healthy: time lives on the magnifier
+      setSrc(c.mag.querySelector('img')!, slot.frame.url);
+      setText(c.mag.querySelector('.cap')!, tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts));
+      setText(c.head, '');                 // healthy: time lives on the magnifier
       c.head.classList.remove('stale'); clearPauseClasses(c.head);
     } else if (slot && slot.paused) {
       // declared silence — neutral (or amber when unintended), not offline-red
       const pi = pauseInfo(slot);
       c.mag.classList.remove('gap', 'future', 'off'); clearPauseClasses(c.mag);
       c.mag.classList.add(...pi.classes);
-      c.mag.querySelector('.cap')!.textContent = pi.label.toLowerCase();
-      c.head.textContent = pi.label.toLowerCase();
+      setText(c.mag.querySelector('.cap')!, pi.label.toLowerCase());
+      setText(c.head, pi.label.toLowerCase());
       c.head.classList.remove('stale'); clearPauseClasses(c.head);
       c.head.classList.add(...pi.classes);
     } else if (slot && slot.beyond) {
       // ahead of now: unknown — nothing to preview, only the crosshair
       c.mag.classList.remove('gap', 'future'); clearPauseClasses(c.mag);
       c.mag.classList.add('off');
-      c.head.textContent = '';
+      setText(c.head, '');
       c.head.classList.remove('stale'); clearPauseClasses(c.head);
     } else if (slot && slot.future) {
       // not offline, not stale: either the tick is ahead of now, or it
@@ -127,10 +137,10 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
       const g = ghostFor(c.model.slots, slot);
       c.mag.classList.remove('gap', 'off'); clearPauseClasses(c.mag);
       c.mag.classList.add('future');
-      if (g) { c.mag.classList.add('ghost'); c.mag.querySelector('img')!.src = g.url; }
-      c.mag.querySelector('.cap')!.textContent = (inFlight ? 'expected — ' : 'upcoming — ') + tt.short(slot.ts) +
-        (g ? ' · last frame ' + tt.time(g.ts) : '') + tt.sfx(slot.ts);
-      c.head.textContent = inFlight ? 'expected' : 'upcoming';
+      if (g) { c.mag.classList.add('ghost'); setSrc(c.mag.querySelector('img')!, g.url); }
+      setText(c.mag.querySelector('.cap')!, (inFlight ? 'expected — ' : 'upcoming — ') + tt.short(slot.ts) +
+        (g ? ' · last frame ' + tt.time(g.ts) : '') + tt.sfx(slot.ts));
+      setText(c.head, inFlight ? 'expected' : 'upcoming');
       c.head.classList.remove('stale'); clearPauseClasses(c.head);
     } else {
       c.mag.classList.add('gap');
@@ -139,11 +149,31 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
       let last: Frame | null | undefined = null;
       for (let j = i; j >= 0; j--) {if (c.model.slots[j].frame) { last = c.model.slots[j].frame; break; }}
       const msg = last ? 'offline — last seen ' + tt.time(last.ts) + tt.sfx(last.ts) : 'no data in window';
-      c.mag.querySelector('.cap')!.textContent = msg;
-      c.head.textContent = msg;
+      setText(c.mag.querySelector('.cap')!, msg);
+      setText(c.head, msg);
       c.head.classList.add('stale');
       clearPauseClasses(c.head);
     }
   }
   if (!external && s.cfg.onHover) {s.cfg.onHover(s.cursorT);}
+}
+
+/* What a card shows for a slot, as a comparable key: the same key means the
+ * magnifier and header already show it. null for an upcoming slot, whose
+ * text depends on the clock. */
+function shownKey(slot: Slot | null | undefined): string | null {
+  if (!slot) {return 'g:none';}
+  // the frame's time as well as its URL: the caption shows the time, and
+  // two frames can share a URL (stubbed or placeholder images)
+  if (slot.frame) {return 'f:' + slot.frame.ts + ':' + slot.frame.url;}
+  if (slot.paused) {return 'p:' + slot.ts + ':' + (slot.reason ?? '') + ':' + String(slot.intended);}
+  if (slot.beyond) {return 'b';}
+  if (slot.future) {return null;}
+  return 'g:' + slot.ts;
+}
+function setText(el: Element, text: string): void {
+  if (el.textContent !== text) {el.textContent = text;}
+}
+function setSrc(img: HTMLImageElement, url: string): void {
+  if (img.getAttribute('src') !== url) {img.src = url;}
 }

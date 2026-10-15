@@ -13,9 +13,14 @@ Three frontends, one small HTTP contract ([docs/API.md](docs/API.md)):
 - `src/` — the **Grafana app plugin**, which bundles two nested plugins:
   - the **panel**, which draws the timeline and multiview grid;
   - the **Visual Timeline API data source**, frontend-only, which holds the
-    API URL and the viewer token. Its `plugin.json` proxy route makes
-    Grafana's server add the token, so a panel set to it never handles the
-    key (see "Where the viewer token lives" in `docs/API.md`).
+    API URL and the viewer token and owns the data: it answers panel queries
+    with the source list (`src/shared/sources.ts` does the filtering and the
+    data frame), feeds the Site/Host variables and the ad hoc filter bar
+    (`src/datasource/variables.tsx`), and fetches frames for the panel. Its
+    `plugin.json` proxy route makes Grafana's server add the token, so no
+    panel ever handles the key (see "Where the viewer token lives" in
+    `docs/API.md`). It also bundles the starter dashboard
+    (`src/datasource/dashboards/`).
 - `web/app.html` and `web/index.html` — the **standalone app** and
   **embeddable viewer**, the same timeline outside Grafana
   ([docs/VIEWER.md](docs/VIEWER.md)).

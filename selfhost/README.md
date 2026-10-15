@@ -133,7 +133,10 @@ Then, in your Grafana:
    viewer token, and click **Save & test**. The images load from
    `PUBLIC_URL`, so that must be reachable from the browsers viewing the
    dashboards.
-3. Add a **Visual Timeline** panel and pick that data source.
+3. Import the **Visual Timeline** dashboard from the data source's
+   **Dashboards** tab (Site and Host dropdowns and a filter bar ready), or add
+   a **Visual Timeline** panel and choose the data source in its **Query**
+   tab.
 
 ## Storage
 

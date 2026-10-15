@@ -1,7 +1,8 @@
 import { test, expect } from '@grafana/plugin-e2e';
 
-// Panels with the Data source option set read /sources and /frames through
-// that data source's proxy route. The mock API (tests/mock-api) answers only
+// A panel whose query uses a Visual Timeline data source gets its sources
+// from that data source, which reads /sources and /frames through its proxy
+// route. The mock API (tests/mock-api) answers only
 // with the token Grafana adds from the data source's secure settings.
 const proxied = (uid: string, path: string) => new RegExp(`/api/datasources/proxy/uid/${uid}/api/${path}(\\?|$)`);
 
@@ -71,15 +72,18 @@ test("frame images load straight from the API's signed URLs, not through Grafana
   });
 });
 
-test('a data source whose token the API rejects shows the error in the panel', async ({
+test("a data source whose token the API rejects shows the error in Grafana's panel error indicator", async ({
   gotoPanelEditPage,
   readProvisionedDashboard,
   page,
 }) => {
   const dashboard = await readProvisionedDashboard({ fileName: 'datasource-mode.json' });
-  await gotoPanelEditPage({ dashboard, id: '2' });
-  // the API's 401 arrives as Grafana's 400 ("Authentication to data source failed")
-  await expect(page.locator('.ktl .boot-err')).toContainText("The data source's viewer token was rejected", {
-    timeout: 20000,
-  });
+  const editPage = await gotoPanelEditPage({ dashboard, id: '2' });
+  // the API's 401 arrives as Grafana's 400 ("Authentication to data source
+  // failed"); the data source rethrows it in plain words
+  const icon = editPage.panel.getErrorIcon();
+  await expect(icon).toBeVisible({ timeout: 20000 });
+  await icon.hover();
+  await expect(page.getByRole('tooltip')).toContainText("The data source's viewer token was rejected");
+  await expect(page.locator('.ktl .card')).toHaveCount(0);
 });

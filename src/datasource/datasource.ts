@@ -2,15 +2,30 @@ import {
   DataQueryRequest,
   DataQueryResponse,
   DataSourceApi,
+  DataSourceGetTagKeysOptions,
+  DataSourceGetTagValuesOptions,
   DataSourceInstanceSettings,
+  MetricFindValue,
+  ScopedVars,
   TestDataSourceResponse,
 } from '@grafana/data';
+import { getTemplateSrv } from '@grafana/runtime';
 
 import { backendRequest } from '../shared/backendRequest';
 import { ApiFetch, makeProxyFetch, ProxyRequest } from '../shared/proxy';
+import {
+  applySourceFilter,
+  interpolatedList,
+  sourcesToFrame,
+  tagKeys,
+  tagValues,
+} from '../shared/sources';
 // the text Grafana's proxy answers instead of the API's own 401
-import { PROXY_AUTH_FAILED } from '../vt/backends/api';
-import type { VisualTimelineOptions, VisualTimelineQuery } from './types';
+import { makeApiBackend, PROXY_AUTH_FAILED } from '../vt/backends/api';
+import { makeBackend as makeDemoBackend } from '../vt/backends/demo';
+import type { Backend, Frame, SourceDecl } from '../vt/types';
+import type { VisualTimelineOptions, VisualTimelineQuery, VisualTimelineVariableQuery } from './types';
+import { VisualTimelineVariableSupport } from './variables';
 
 
 /** Health-check wording for a failed GET /sources through the proxy. */
@@ -39,37 +54,127 @@ export function describeFailure(status: number, apiUrl: string, body?: unknown):
   }
 }
 
-/* Frontend-only data source. Its job is to hold the API URL (jsonData) and
- * the viewer token (secureJsonData) so the panel never has to: the panel
- * sends /sources and /frames to this data source's proxy route
- * (plugin.json), and Grafana's server adds the token on the way out. */
+/** Replaces dashboard variables in a query field (Grafana's template
+ * service; injected so tests run without a Grafana runtime). */
+export type Interpolate = (value: string, scopedVars?: ScopedVars) => string;
+const grafanaInterpolate: Interpolate = (value, scopedVars) => getTemplateSrv().replace(value, scopedVars, 'csv');
+
+/* The frontend-only data source. It holds the API URL (jsonData) and the
+ * viewer token (secureJsonData), and calls the API through its proxy route
+ * (plugin.json), where Grafana's server adds the token. It answers panel
+ * queries with the source list (dashboard variables and ad hoc filters
+ * applied), feeds the Site and Host variables and the ad hoc filter bar, and
+ * fetches each source's frames when the panel asks. With Demo data on, the
+ * sources are the core's built-in demo ones and no API is called. */
 export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery, VisualTimelineOptions> {
   readonly apiUrl: string;
   readonly demo: boolean;
   private readonly api: ApiFetch;
+  private readonly backend: Backend;
 
   constructor(
     instanceSettings: DataSourceInstanceSettings<VisualTimelineOptions>,
-    request: ProxyRequest = backendRequest
+    request: ProxyRequest = backendRequest,
+    private readonly interpolate: Interpolate = grafanaInterpolate
   ) {
     super(instanceSettings);
     this.apiUrl = (instanceSettings.jsonData?.apiUrl || '').trim().replace(/\/+$/, '');
     this.demo = instanceSettings.jsonData?.demo === true;
     this.api = makeProxyFetch(instanceSettings.uid, request);
+    this.backend = makeApiBackend(this.apiUrl, undefined, this.api);
+    this.variables = new VisualTimelineVariableSupport(this);
   }
 
-  /** The panel reads the API directly through the proxy; there is nothing
-   * to query. plugin.json sets metrics: false, so Grafana doesn't offer this
-   * data source in query editors. */
-  async query(_request: DataQueryRequest<VisualTimelineQuery>): Promise<DataQueryResponse> {
-    return { data: [] };
+  /** Every source, or only those in `sites`. Demo sources depend on the time
+   * window (their outages and eras sit inside it), so the window is passed
+   * when there is one; the panel draws demo frames for the same window. */
+  async sources(sites?: string[] | null, window?: { from: number; to: number }): Promise<SourceDecl[]> {
+    if (this.demo) {
+      const to = window?.to ?? Date.now();
+      const from = window?.from ?? to - 3600e3;
+      return makeDemoBackend({ from, to }, Math.max(1, to - from), 'UTC').kiosks(sites ?? null) as SourceDecl[];
+    }
+    return this.backend.kiosks(sites ?? null);
+  }
+
+  /** One source's frames in a window, at most one per step. The panel calls
+   * this for each source it draws. Not used with Demo data: the panel draws
+   * the demo frames itself. */
+  async frames(site: string, id: string, from: number, to: number, step: number): Promise<Frame[]> {
+    return this.backend.frames(site, id, from, to, step);
+  }
+
+  private field(value: string | undefined, scopedVars?: ScopedVars): string {
+    return value ? this.interpolate(value, scopedVars) : '';
+  }
+
+  async query(request: DataQueryRequest<VisualTimelineQuery>): Promise<DataQueryResponse> {
+    const window = { from: request.range.from.valueOf(), to: request.range.to.valueOf() };
+    const data = await Promise.all(
+      request.targets
+        .filter((t) => !t.hide)
+        .map(async (t) => {
+          const sites = interpolatedList(this.field(t.sites, request.scopedVars));
+          const hosts = interpolatedList(this.field(t.hosts, request.scopedVars));
+          const tags = this.field(t.tags, request.scopedVars);
+          const sources = applySourceFilter(await this.sources(sites, window), {
+            sites,
+            hosts,
+            tags: /\$[{a-zA-Z_]/.test(tags) ? '' : tags,
+            adhoc: request.filters,
+          });
+          return sourcesToFrame(sources, t.refId, { uid: this.uid, demo: this.demo });
+        })
+    );
+    return { data };
+  }
+
+  /** Values for a Site or Host dashboard variable. A plain-text query
+   * ("sites" or "hosts") works too, for dashboards written by hand. */
+  async metricFindQuery(
+    query: VisualTimelineVariableQuery | string,
+    options?: { scopedVars?: ScopedVars }
+  ): Promise<MetricFindValue[]> {
+    const q: Partial<VisualTimelineVariableQuery> =
+      typeof query === 'string' ? { type: query.trim().toLowerCase() === 'hosts' ? 'hosts' : 'sites' } : query;
+    if (q.type === 'hosts') {
+      const sites = interpolatedList(this.field(q.sites, options?.scopedVars));
+      // the API filters by site too, but checking here keeps any API honest
+      const sources = applySourceFilter(await this.sources(sites), { sites });
+      return tagValues(sources, 'host').map((text) => ({ text, value: text }));
+    }
+    return tagValues(await this.sources(), 'site').map((text) => ({ text, value: text }));
+  }
+
+  /** Keys for the ad hoc filter bar: site, host and every tag key among the
+   * sources the other filters leave. */
+  async getTagKeys(options?: DataSourceGetTagKeysOptions<VisualTimelineQuery>): Promise<MetricFindValue[]> {
+    const sources = applySourceFilter(await this.sources(), { adhoc: options?.filters });
+    return tagKeys(sources).map((text) => ({ text }));
+  }
+
+  /** Values for one ad hoc key, among the sources the other filters leave. */
+  async getTagValues(options: DataSourceGetTagValuesOptions<VisualTimelineQuery>): Promise<MetricFindValue[]> {
+    const others = (options.filters || []).filter((f) => f.key !== options.key);
+    const sources = applySourceFilter(await this.sources(), { adhoc: others });
+    return tagValues(sources, options.key).map((text) => ({ text }));
+  }
+
+  /** Queries with their variables replaced, for Explore and mixed panels. */
+  interpolateVariablesInQueries(queries: VisualTimelineQuery[], scopedVars: ScopedVars): VisualTimelineQuery[] {
+    return queries.map((q) => ({
+      ...q,
+      sites: this.field(q.sites, scopedVars),
+      hosts: this.field(q.hosts, scopedVars),
+      tags: this.field(q.tags, scopedVars),
+    }));
   }
 
   async testDatasource(): Promise<TestDataSourceResponse> {
     if (this.demo) {
       return {
         status: 'success',
-        message: 'Demo data is on: panels using this data source show built-in demo sources. No API is called.',
+        message: 'Demo data is on: queries return built-in demo sources. No API is called.',
       };
     }
     if (!this.apiUrl) {

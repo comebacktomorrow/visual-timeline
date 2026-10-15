@@ -1,4 +1,5 @@
 import { resolveTimeZone } from '../time/zones';
+import { wireFilters } from '../dom/html';
 import { buildSourceModel } from '../model/slots';
 import { matchesTags, parseTagFilter, parseVar } from '../model/filters';
 import { zoneTexts } from '../zones/source';
@@ -40,9 +41,11 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
   const MIN_SLICE_PX = 7;
   const hostWidth = cfg.width || root.clientWidth || 800;   // plugin passes width; web mounts measure
   const pxBudget = Math.max(10, Math.floor((hostWidth - 20) / MIN_SLICE_PX));
-  const backend: Backend = cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ);
+  const backend: Backend =
+    cfg.backend ?? (cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ));
 
   const wrap = makeWrapper(root);
+  wireFilters(wrap, cfg.onFilter);
   wrap.classList.toggle('fill', cfg.fit === 'fill');
   wrap.innerHTML =
     '<div class="cards"></div>' +

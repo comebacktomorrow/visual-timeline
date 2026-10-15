@@ -16,6 +16,7 @@ export interface Card {
   sel: HTMLElement;
   mag: HTMLElement;
   lane: HTMLElement;
+  shown?: string | null; // what the magnifier and header show (setCursor's shownKey)
 }
 
 /* Everything one mountTimeline call shares between its parts: what were
@@ -24,8 +25,8 @@ export interface Card {
 /* a visible axis label: its element, centre and half-width in px */
 export interface AxisLabel {
   el: HTMLElement;
-  x: number;
-  half: number;
+  frac: number;   // position along the axis, 0..1 (the axis stretches with the panel)
+  half: number;   // half the label's width at build, px
 }
 
 export interface TimelineState {
