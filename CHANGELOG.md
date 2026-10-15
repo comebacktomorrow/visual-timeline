@@ -8,8 +8,13 @@
   end (`live`, `offline` or `paused`) and a pause's reason. A stock Table or
   Canvas panel can show it; the starter dashboard has a **Last frame per
   host** table. While the range ends now it's the live frame; for a past
-  range, the frame at that range's end. The README shows how to put the
-  frames on a Canvas (a floor plan) with a Rows to fields transformation.
+  range, the frame at that range's end. Status comes coloured (live green,
+  offline red, paused blue).
+- **Per host format, for Canvas.** With Last frame on, the query's
+  **Format** can be **Per host**: one row with fields named by host
+  (`cam-1`, `cam-1 status`, `cam-1 time`, `cam-1 pause reason`), so a Canvas
+  element binds its background image, colour and text to its host's fields
+  with no transformation. The README shows a floor plan.
 - The data source's `history` field is hidden in tables: it's the panel's
   input, not something to read.
 

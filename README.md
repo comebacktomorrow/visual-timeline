@@ -150,7 +150,7 @@ Site and Host variables and the filter bar ready.
 
 Turn on **Last frame** in a query and the data source also answers with each
 host's last frame in the dashboard's time range, for a stock **Table** panel
-(or a Canvas panel's image elements):
+(or, in the **Per host** format below, a Canvas or Stat panel):
 
 | Column           | What it holds                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------ |
@@ -165,7 +165,8 @@ keeps it current; for a past range, or after zooming in on a timeline, it's
 each host's frame at the end of that range. A host offline at that moment
 shows the last frame it took before, and one with no frame in the range has
 an empty cell. Status follows the timeline's rules: offline once a tick is a
-full cadence overdue, paused from a declared pause until the next frame.
+full cadence overdue, paused from a declared pause until a frame a tick or
+more into it.
 
 It costs one or two `/frames` calls per host on every refresh, so leave it off
 in the queries of Visual Timeline panels, which fetch their own frames. The
@@ -176,20 +177,30 @@ that requires a viewer token must sign them. The starter dashboard has a
 ### On a Canvas: frames on a floor plan
 
 A **Canvas** panel can put each host's last frame where the host is, on a
-floor plan or site map. Canvas binds an element to a field by name, so first
-turn the hosts' rows into one field per host:
+floor plan or site map, with its status and time. Set the query's **Format**
+to **Per host**. The answer is then one row with fields named by host:
 
-1. In the query, turn on **Last frame**.
-2. Add a **Rows to fields** transformation. Use **host** as the field name and
-   **Last frame** as the field value. That gives one field per host, named by
-   its id.
-3. For each element (a rectangle, say), set **Background → Image** to
-   **Field**, choose the host's id, and set the size to **Contain**.
+| Field                | Holds                                           |
+| -------------------- | ----------------------------------------------- |
+| `cam-1`              | The last frame's image                          |
+| `cam-1 status`       | `live`, `offline` or `paused`, already coloured |
+| `cam-1 time`         | When the frame was taken                        |
+| `cam-1 pause reason` | A paused host's reason                          |
 
-Auto-refresh and the time range work as they do for a table. Demo data's
-frames don't show on a Canvas: they are `data:` URLs, which Canvas takes for
-paths on the Grafana server. Frames from an API, which are `https://` URLs,
-do.
+For each element (a rectangle, say), bind what you want to its host's fields:
+
+- **Background → Image:** Field, `cam-1`; size **Contain**.
+- **Border color** or **Background color:** Field, `cam-1 status`. Green for
+  live, red for offline, blue for paused.
+- **Text:** Field, `cam-1 time` (give the panel the **From Now** unit to read
+  "3 minutes ago"), or `cam-1 status`.
+
+A host id two sites share is named `site/id`. The same fields work in a Stat
+panel. Auto-refresh and the time range work as they do for a table.
+
+Demo data's frames don't show on a Canvas: they are `data:` URLs, which
+Canvas takes for paths on the Grafana server. The status and time do, and
+frames from an API, which are `https://` URLs, do too.
 
 ## Connect it to your own images
 

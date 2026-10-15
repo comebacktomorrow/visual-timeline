@@ -201,6 +201,16 @@ describe('the last frame in the range', () => {
     expect(hostsOf(res.data[0])).toEqual(['cam-1', 'cam-2', 'kiosk-a']);
   });
 
+  test('per host: one row, fields named by host', async () => {
+    const ds = new VisualTimelineDataSource(settings('https://frames.example.com'), api, interpolate);
+    const res = await ds.query({
+      targets: [{ refId: 'A', lastFrame: true, lastFrameFormat: 'host' }], range: win, scopedVars: {},
+    } as any);
+    expect(res.data[0].length).toBe(1);
+    expect(field(res.data[0], 'kiosk-a').values).toEqual([`https://img.example/kiosk-a/${NOW}.jpg?sig=x`]);
+    expect(field(res.data[0], 'kiosk-a status').values).toEqual(['live']);
+  });
+
   test('Demo data: demo frames, drawn in the browser', async () => {
     const getContext = HTMLCanvasElement.prototype.getContext;
     const toDataURL = HTMLCanvasElement.prototype.toDataURL;

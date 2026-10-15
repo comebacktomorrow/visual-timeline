@@ -46,6 +46,147 @@
         "defaults": {},
         "overrides": []
       }
+    },
+    {
+      "id": 2,
+      "type": "canvas",
+      "title": "Last frame per host, on a canvas",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "vt-demo"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "vt-demo"
+          },
+          "lastFrame": true,
+          "lastFrameFormat": "host"
+        }
+      ],
+      "options": {
+        "inlineEditing": false,
+        "showAdvancedTypes": true,
+        "root": {
+          "type": "frame",
+          "name": "Element root",
+          "elements": [
+            {
+              "type": "rectangle",
+              "name": "source-1",
+              "config": {
+                "text": {
+                  "mode": "field",
+                  "field": "source-1 status",
+                  "fixed": ""
+                },
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "align": "center",
+                "valign": "middle",
+                "size": 16
+              },
+              "background": {
+                "color": {
+                  "field": "source-1 status",
+                  "fixed": "transparent"
+                },
+                "image": {
+                  "mode": "field",
+                  "field": "source-1",
+                  "fixed": ""
+                },
+                "size": "contain"
+              },
+              "border": {
+                "color": {
+                  "fixed": "dark-green"
+                },
+                "width": 1
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "placement": {
+                "left": 20,
+                "top": 20,
+                "width": 200,
+                "height": 120
+              }
+            },
+            {
+              "type": "rectangle",
+              "name": "source-2",
+              "config": {
+                "text": {
+                  "mode": "field",
+                  "field": "source-2 status",
+                  "fixed": ""
+                },
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "align": "center",
+                "valign": "middle",
+                "size": 16
+              },
+              "background": {
+                "color": {
+                  "field": "source-2 status",
+                  "fixed": "transparent"
+                },
+                "image": {
+                  "mode": "field",
+                  "field": "source-2",
+                  "fixed": ""
+                },
+                "size": "contain"
+              },
+              "border": {
+                "color": {
+                  "fixed": "dark-green"
+                },
+                "width": 1
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "placement": {
+                "left": 240,
+                "top": 20,
+                "width": 200,
+                "height": 120
+              }
+            }
+          ],
+          "background": {
+            "color": {
+              "fixed": "transparent"
+            }
+          },
+          "border": {
+            "color": {
+              "fixed": "dark-green"
+            }
+          },
+          "constraint": {
+            "horizontal": "left",
+            "vertical": "top"
+          },
+          "placement": {}
+        }
+      }
     }
   ]
 }

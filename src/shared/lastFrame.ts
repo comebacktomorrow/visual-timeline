@@ -53,8 +53,10 @@ export async function lastFrameIn(
     }
   }
 
-  // a declared pause holds until a frame arrives after it (eras.ts)
-  if (era.paused && !(frame && frame.ts > era.from)) {
+  // a declared pause holds until a frame arrives a tick or more into it: a
+  // host's goodbye frame, taken as it pauses, doesn't end it (as the
+  // timeline's resume probe, slots.ts)
+  if (era.paused && !(frame && frame.ts >= era.from + cadence)) {
     return { frame, status: 'paused', reason: era.reason };
   }
   // offline once a full tick past the next one is missing, as the timeline

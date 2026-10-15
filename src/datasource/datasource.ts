@@ -17,6 +17,7 @@ import { ApiFetch, makeProxyFetch, ProxyRequest } from '../shared/proxy';
 import {
   applySourceFilter,
   interpolatedList,
+  lastFramesByHost,
   sourcesToFrame,
   tagKeys,
   tagValues,
@@ -162,7 +163,9 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
               console.warn('[visual-timeline] last frame failed for ' + s.id + ':', e);
               return null;
             })));
-          return sourcesToFrame(sources, t.refId, meta, last);
+          return t.lastFrameFormat === 'host'
+            ? lastFramesByHost(sources, last, t.refId)
+            : sourcesToFrame(sources, t.refId, meta, last);
         })
     );
     return { data };

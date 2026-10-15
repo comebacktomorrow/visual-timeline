@@ -18,3 +18,18 @@ test('a Table shows each host\'s last frame as an image', async ({ gotoDashboard
   // (cell roles differ between Grafana 12.0's table and later ones)
   await expect(panel.locator.getByText('live', { exact: true }).first()).toBeVisible();
 });
+
+// The same query in Per host format feeds a Canvas panel with no
+// transformation: each element's text binds to "<host> status". (Demo frames
+// are data: URLs, which Canvas doesn't load as images, and every demo host is
+// live at the range's end, so the image and the status colours are checked
+// against a real API, not here; the colours' mapping is unit-tested.)
+test('Per host format: a Canvas element shows its host\'s status', async ({
+  gotoDashboardPage,
+  readProvisionedDashboard,
+}) => {
+  const dashboard = await readProvisionedDashboard({ fileName: 'last-frame.json' });
+  const dashboardPage = await gotoDashboardPage(dashboard);
+  const panel = dashboardPage.getPanelByTitle('Last frame per host, on a canvas');
+  await expect(panel.locator.getByText('live', { exact: true })).toHaveCount(2, { timeout: 20000 });
+});

@@ -72,6 +72,14 @@ describe('lastFrameIn', () => {
     expect(r.frame!.ts).toBe(pausedAt);
   });
 
+  test('a goodbye frame taken as the host pauses does not end the pause', async () => {
+    const pausedAt = T0 + 10 * 3600e3 + 20e3;
+    const api = fakeApi([...every(T0, T0 + 10 * 3600e3), pausedAt + 40e3]);
+    const r = await lastFrameIn(decl([{ since: pausedAt, paused: true, reason: 'screen-sleep' }]), T0, T0 + DAY, api);
+    expect(r.status).toBe('paused');
+    expect(r.frame!.ts).toBe(pausedAt + 40e3);
+  });
+
   test('a frame after a pause ends it', async () => {
     const pausedAt = T0 + 10 * 3600e3;
     const api = fakeApi([...every(T0, pausedAt), ...every(T0 + 20 * 3600e3, T0 + DAY)]);
