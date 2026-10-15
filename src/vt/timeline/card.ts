@@ -2,7 +2,7 @@ import { pauseInfo } from '../model/eras';
 import { ghostFor, slotClass } from '../model/slots';
 import { fmtDur } from '../time/zones';
 import { hiUrlFor } from '../backends/api';
-import { esc, headTitle, tagChips } from '../dom/html';
+import { esc, filterAttrs, headTitle, tagChips } from '../dom/html';
 import { dressGhost } from '../ui/ghost';
 import { q } from '../ui/wrapper';
 import { attachZoneChip, zoneChip } from '../zones/chip';
@@ -57,9 +57,9 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     ? '<span class="cad">⏱ ' + fmtDur(la.cadence) + ' · 1/' + fmtDur(la.step) + (la.step > la.cadence ? ' ↓' : '') + '</span>'
     : '';
   card.innerHTML =
-    '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(kiosk) + '</span>' +
+    '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs('host', kiosk) + '>' + esc(kiosk) + '</span>' +
     '<span class="inline-brk"></span>' + zoneChip(zone.srcTZ) +
-    '<span class="st">' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' +
+    '<span class="st"' + filterAttrs('site', decl.site) + '>' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' +
     tagChips(decl) + '<span class="ft"></span>' +
     cad + '</div>' +
     '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>' +

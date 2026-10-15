@@ -1,26 +1,30 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { dateTimeFormat, PanelPlugin, PanelProps, DataHoverEvent, DataHoverClearEvent, systemDateFormats } from '@grafana/data';
-import { config, getDataSourceSrv, locationService } from '@grafana/runtime';
-import { useTheme2 } from '@grafana/ui';
-import { mountTimeline, mountGrid } from '../core';
+import {
+  dateTimeFormat,
+  DataHoverClearEvent,
+  DataHoverEvent,
+  LoadingState,
+  PanelPlugin,
+  PanelProps,
+  systemDateFormats,
+} from '@grafana/data';
+import { config, getDataSourceSrv } from '@grafana/runtime';
+import { usePanelContext, useTheme2 } from '@grafana/ui';
+import { mountTimeline, mountGrid, resolveTimeZone } from '../core';
 import type { AxisFormatter } from '../vt/time/ticks';
+import { makeBackend as makeDemoBackend } from '../vt/backends/demo';
+import type { Backend, Frame, SourceDecl } from '../vt/types';
 import { themeVars } from '../theme';
 import { coreTimeZone } from '../timezone';
-import { backendRequest } from '../shared/backendRequest';
 import { DATASOURCE_ID } from '../shared/proxy';
-import { ConnectionState, dataSourceOptions, pickDataSource, resolveConnection } from './connection';
+import { SourcesFrameMeta, sourcesFromFrames } from '../shared/sources';
 
 interface VisualTimelineOptions {
-  datasourceUid?: string;
-  apiUrl?: string;
-  apiKey?: string;   // removed option; older dashboards may still carry it (see connection.ts)
-  sites?: string;
   mode?: 'timeline' | 'grid';
   followCrosshair?: boolean;
   imageFit?: 'fit' | 'fill';
   showDetails?: boolean;
   hideEmpty?: boolean;
-  tagFilter?: string;
   showAnnotations?: boolean;
   annotationLanes?: 'shared' | 'per-source';
   headerMode?: 'bar' | 'inline' | 'inline-gradient';
@@ -67,13 +71,38 @@ function extractAnnotations(frames: any[] | undefined): PanelAnnotation[] {
   return out;
 }
 
-/* What a panel that can't show frames says instead, and where it points. */
-function emptyStateText(state: ConnectionState, dataSourceCount: number, canCreate: boolean) {
-  if (state === 'missing') {
-    return { lines: ["This panel's data source no longer exists.", "Select another in the panel's Data source option."] };
+/** The data source method the panel calls for each source's frames. */
+interface FramesSource {
+  frames(site: string, id: string, from: number, to: number, step: number): Promise<Frame[]>;
+}
+
+/* The core's data layer for one query result. The sources come from the
+ * data source's answer, already filtered by the panel's query, the dashboard
+ * variables and the ad hoc filters. Frames come through the same data
+ * source; with Demo data on, from the core's built-in demo for this window. */
+function panelBackend(sources: SourceDecl[], meta: SourcesFrameMeta, from: number, to: number, tz: string): Backend {
+  if (meta.demo) {
+    const demo = makeDemoBackend({ from, to }, Math.max(1, to - from), tz);
+    return { kiosks: () => sources, frames: demo.frames, annotations: demo.annotations };
+  }
+  let ds: Promise<FramesSource> | null = null;
+  return {
+    kiosks: () => sources,
+    frames: async (site, id, f, t, step) => {
+      ds ??= getDataSourceSrv().get({ uid: meta.uid }) as unknown as Promise<FramesSource>;
+      return (await ds).frames(site, id, f, t, step);
+    },
+  };
+}
+
+/* What a panel that can't draw says instead. Errors from the data source
+ * aren't repeated here: Grafana shows them in the panel's error indicator. */
+function emptyStateText(hasSources: boolean, dataSourceCount: number, canCreate: boolean) {
+  if (hasSources) {
+    return { lines: ['No sources match.', "Check this panel's query (Sites, Hosts, Tags) and the dashboard's filters."] };
   }
   if (dataSourceCount > 0) {
-    return { lines: ['No data source selected.', "Select a Visual Timeline data source in the panel's Data source option."] };
+    return { lines: ['No Visual Timeline data source in this panel.', 'Choose one in the Query tab.'] };
   }
   return canCreate
     ? {
@@ -102,31 +131,11 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const from = props.timeRange.from.valueOf();
   const to = props.timeRange.to.valueOf();
   const options = props.options || {};
-  /* The site expression lives in a panel OPTION (persisted in panel JSON)
-   * so Grafana's variable-dependency scan sees it and refreshes this panel
-   * on variable change — resolving it only via replaceVariables() would be
-   * invisible to the scanner and the panel would go stale until refresh. */
-  const siteExpr = options.sites || '${site:csv}';
-  const siteRaw = props.replaceVariables ? props.replaceVariables(siteExpr) : '';
-  // a dashboard WITHOUT the variable leaves the expression literal — that
-  // must mean "all sites", not "filter to a site named ${site:csv}" (a
-  // fresh dashboard would otherwise render an axis and zero cards)
-  const site = /\$[{a-zA-Z_]/.test(siteRaw) ? '' : siteRaw;
   const mode = options.mode || 'timeline';
   const follow = options.followCrosshair !== false;
   const fit = options.imageFit || 'fit';
-  // a Visual Timeline API data source (token server-side; or demo data, if
-  // it has Demo data on), else the API URL option for an open API, else
-  // nothing yet — see connection.ts
-  const datasourceUid = (options.datasourceUid || '').trim();
-  const { state, apiUrl, apiFetch, authHint } = useMemo(
-    () => resolveConnection(options, (uid) => getDataSourceSrv().getInstanceSettings(uid)?.jsonData, backendRequest),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [datasourceUid, options.apiUrl, options.apiKey]
-  );
   const showDetails = options.showDetails === true;
   const hideEmpty = options.hideEmpty === true;
-  const tagFilter = (options.tagFilter || '').trim();
   const showAnnotations = options.showAnnotations !== false;
   const annotations = showAnnotations ? extractAnnotations(props.data?.annotations as any[]) : [];
   // remount only when annotation CONTENT changes, not on every data-object identity flip
@@ -139,28 +148,48 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     [props.timeZone]
   );
 
-  const visualTimelineSources = getDataSourceSrv().getList({ pluginId: DATASOURCE_ID, all: true });
-  /* A panel with nothing selected takes the obvious data source while it is
-   * being created or edited (the only one, or Grafana's default among
-   * several), the way Grafana fills in a new panel's data source. The choice
-   * is saved with the panel; a saved panel is never re-pointed on load, so a
-   * second data source added later can't change what existing panels show. */
-  const editing = locationService.getSearchObject().editPanel !== undefined;
-  const autoPick = state === 'none' && editing ? pickDataSource(visualTimelineSources) : undefined;
-  useEffect(() => {
-    if (autoPick) {
-      props.onOptionsChange({ ...options, datasourceUid: autoPick });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoPick]);
-  const showFrames = state === 'api' || state === 'demo';
+  /* The sources, from this panel's query result (see shared/sources.ts).
+   * The core remounts, fetching frames again, when the sources change (a
+   * variable or filter change) or the time window moves (every refresh of a
+   * relative range). A refresh that changes neither keeps the view: frames
+   * are immutable, and the core polls the live edge itself. */
+  // keyed on content: Grafana can hand over a new copy of the same result
+  // (the panel editor does), and only a real change should remount the core
+  const parsed = sourcesFromFrames(props.data?.series);
+  const resultKey = parsed ? JSON.stringify(parsed) : '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const result = useMemo(() => parsed, [resultKey]);
+  const backend = useMemo(
+    () => (result ? panelBackend(result.sources, result.meta, from, to, resolveTimeZone(timeZone)) : null),
+    [result, from, to, timeZone]
+  );
+  /* Clicking a host, site or tag chip adds that filter to the dashboard's ad
+   * hoc filter for this data source, as a table cell's "filter for value"
+   * does. Grafana leaves onAddAdHocFilter unset where it can't do that. */
+  const { onAddAdHocFilter } = usePanelContext();
+  // the context can hand over a new function on any render: keep the latest
+  // in a ref, so only "can filter at all" affects the mount (a new function
+  // must not tear down and rebuild the timeline)
+  const addFilterRef = useRef(onAddAdHocFilter);
+  addFilterRef.current = onAddAdHocFilter;
+  const canFilter = !!onAddAdHocFilter;
+  const onFilter = useMemo(
+    () =>
+      canFilter
+        ? (key: string, value: string) => addFilterRef.current?.({ key, value, operator: '=' })
+        : undefined,
+    [canFilter]
+  );
+  const loading = props.data?.state === LoadingState.Loading;
+  const failed = props.data?.state === LoadingState.Error;
+  const showFrames = !!backend && result!.sources.length > 0;
 
   useEffect(() => {
-    if (!ref.current || !showFrames) {
+    if (!ref.current || !showFrames || !backend) {
       return;
     }
     const common = {
-      site, from, to, width: props.width, fit, apiUrl, apiFetch, authHint, showDetails, hideEmpty, tagFilter,
+      from, to, width: props.width, fit, backend, showDetails, hideEmpty, onFilter,
       annotations, showAnnotations, annotationLanes: options.annotationLanes || 'shared',
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
@@ -190,7 +219,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFrames, mode, fit, apiUrl, apiFetch, authHint, showDetails, hideEmpty, tagFilter, site, from, to, props.width, props.height, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat]);
+  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, props.width, props.height, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat]);
 
   useEffect(() => {
     const subs = [
@@ -223,9 +252,14 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   }, [props.eventBus, mode, follow]);
 
   if (!showFrames) {
+    // still loading, or failed (Grafana shows the error itself): nothing to say yet
+    if (loading || failed) {
+      return React.createElement('div', { style: { width: '100%', height: '100%' } });
+    }
     const user = config.bootData?.user;
     const canCreate = !!user && (user.orgRole === 'Admin' || user.isGrafanaAdmin === true);
-    const text = emptyStateText(state, visualTimelineSources.length, canCreate);
+    const count = getDataSourceSrv().getList({ pluginId: DATASOURCE_ID }).length;
+    const text = emptyStateText(!!result, count, canCreate);
     const link = text.link
       ? React.createElement(
           'div',
@@ -274,33 +308,6 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
   .setDataSupport({ annotations: true })
   .setPanelOptions((builder) => {
   builder
-    .addSelect({
-      path: 'datasourceUid',
-      name: 'Data source',
-      description:
-        'A Visual Timeline API data source: it holds the API URL and the viewer token in Grafana\'s server-side settings, and API calls go through Grafana, so the token is never in the dashboard JSON or the browser. A data source with Demo data on shows built-in demo sources. Replaces the API URL option below.',
-      settings: {
-        options: [],
-        // all: Grafana's pickers otherwise skip data sources that serve no
-        // queries, and this one only proxies (plugin.json: metrics false)
-        getOptions: async () => dataSourceOptions(getDataSourceSrv().getList({ pluginId: DATASOURCE_ID, all: true })),
-        isClearable: true,
-      },
-    })
-    .addTextInput({
-      path: 'apiUrl',
-      name: 'API URL',
-      description: 'Frames API base URL (see docs/API.md in the repository), for an API with open reads. An API that needs a viewer token connects through a data source instead. Ignored when a data source is selected.',
-      defaultValue: '',
-      showIf: (o) => !o.datasourceUid,
-    })
-    .addTextInput({
-      path: 'sites',
-      name: 'Sites',
-      description:
-        'Site filter expression, e.g. ${site:csv} or a literal site id. Keep the variable here so Grafana refreshes the panel when it changes.',
-      defaultValue: '${site:csv}',
-    })
     .addRadio({
       path: 'mode',
       name: 'Display mode',
@@ -347,12 +354,6 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       name: 'Hide sources with no data in window',
       description: 'Sources with zero frames in the current time range are omitted instead of shown as offline',
       defaultValue: false,
-    })
-    .addTextInput({
-      path: 'tagFilter',
-      name: 'Tag filter',
-      description: 'Only show sources whose declared tags match ALL pairs, e.g. env=prod, room=lobby',
-      defaultValue: '',
     })
     .addBooleanSwitch({
       path: 'showDetails',

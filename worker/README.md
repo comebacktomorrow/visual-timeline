@@ -44,9 +44,11 @@ Then open:
 leaves reads open (no viewer token). To upload real frames with curl, see
 "Try it with curl" in [docs/API.md](../docs/API.md).
 
-To point a local Grafana at it, give a panel the **API URL**
-`http://localhost:8787`. Reads are open locally, so the panel can call the
-Worker straight from your browser, with no data source.
+To point a local Grafana at it, add a **Visual Timeline API** data source with
+the API URL `http://localhost:8787` (no token: reads are open locally). If
+Grafana runs in Docker, use `http://host.docker.internal:8787` instead and
+start the Worker with `--var PUBLIC_URL:http://localhost:8787`, so the image
+URLs it returns are ones your browser can reach.
 
 ## Tests
 

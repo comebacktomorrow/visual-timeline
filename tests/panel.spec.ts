@@ -39,7 +39,9 @@ test('timeline headers show a demo source\'s declared time zone', async ({
 }) => {
   const dashboard = await readProvisionedDashboard({ fileName: 'dashboard.json' });
   await gotoPanelEditPage({ dashboard, id: '1' });
-  const chip = page.locator('.ktl .card-head .tz', { hasText: 'Sydney' });
+  // .first(): during a remount the core briefly keeps the old view painted
+  // while the new one loads (double buffering), so the chip can exist twice
+  const chip = page.locator('.ktl .card-head .tz', { hasText: 'Sydney' }).first();
   await expect(chip).toBeVisible({ timeout: 20000 });
   await expect(chip).toHaveText(ZONE_CHIP('Sydney'));
 });
@@ -51,7 +53,7 @@ test('grid tile headers show a demo source\'s declared time zone', async ({
 }) => {
   const dashboard = await readProvisionedDashboard({ fileName: 'dashboard.json' });
   await gotoPanelEditPage({ dashboard, id: '2' });
-  const chip = page.locator('.ktl .t-head .tz', { hasText: 'Kathmandu' });
+  const chip = page.locator('.ktl .t-head .tz', { hasText: 'Kathmandu' }).first();
   await expect(chip).toBeAttached({ timeout: 20000 });
   await expect(chip).toHaveText(ZONE_CHIP('Kathmandu'));
 });

@@ -6,9 +6,9 @@ export interface VisualTimelineOptions extends DataSourceJsonData {
   /** Frames API base URL, e.g. https://frames.example.com. Grafana's server
    * proxies to it; the browser loads the image URLs it returns directly. */
   apiUrl?: string;
-  /** Demo data: panels using this data source draw the built-in demo
-   * sources instead of calling an API, so the plugin can be tried without
-   * one. The API URL and token are then ignored. */
+  /** Demo data: queries answer with built-in demo sources and panels draw
+   * built-in demo frames, so the plugin can be tried without an API. The API
+   * URL and token are then ignored. */
   demo?: boolean;
 }
 
@@ -18,5 +18,21 @@ export interface VisualTimelineSecureOptions {
   viewerToken?: string;
 }
 
-/** The panel talks to the API through the proxy; there are no queries. */
-export type VisualTimelineQuery = DataQuery;
+/** A panel query: which sources to show. Each field takes ids or dashboard
+ * variables; empty means all. The answer is the source list (one row per
+ * source); the panel fetches each source's frames itself. */
+export interface VisualTimelineQuery extends DataQuery {
+  /** Site ids, comma-separated, or a variable such as ${site:csv}. */
+  sites?: string;
+  /** Host (source id) list, or a variable such as ${host:csv}. */
+  hosts?: string;
+  /** Tag pairs that must all match: "env=prod, room=lobby". */
+  tags?: string;
+}
+
+/** A dashboard variable query: the sites, or the hosts (optionally only
+ * those in some sites, e.g. ${site:csv}, so Host can follow Site). */
+export interface VisualTimelineVariableQuery extends DataQuery {
+  type: 'sites' | 'hosts';
+  sites?: string;
+}

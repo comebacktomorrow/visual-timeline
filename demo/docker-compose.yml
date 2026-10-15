@@ -8,8 +8,10 @@
 # The dashboard's panels use the provisioned "Visual Timeline (demo)" data
 # source, which has Demo data on. For live data, run the local backend:
 #   cd worker && npx wrangler dev --port 8787
-# seed frames at http://localhost:8787/sim.html, then clear a panel's Data
-# source and set its API URL to http://localhost:8787 (local reads are open).
+# seed frames at http://localhost:8787/sim.html, then add a Visual Timeline API
+# data source with API URL http://host.docker.internal:8787 (no token: local
+# reads are open) and start the Worker with --var PUBLIC_URL:http://localhost:8787
+# so image URLs reach your browser. Point the panels' queries at it.
 services:
   build:
     # node 24 bundles npm 11 — npm 10 rejects this repo's lockfile

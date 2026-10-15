@@ -1,33 +1,53 @@
 # Changelog
 
-## 1.0.1 (2026-10-07)
+## Unreleased
 
-- **Demo data is a data source setting.** The Visual Timeline API data source
-  has a **Demo data** switch: panels using a data source with it on draw the
-  built-in demo sources, and no API is called (Save & test says so). A panel
-  no longer shows demo data on its own.
-- **A new panel finds its data source.** While a panel is being created or
-  edited with no data source selected, it takes the only Visual Timeline data
-  source, or Grafana's default among several, and the choice is saved with the
-  panel. A saved panel is never re-pointed when data sources change.
-- **A panel that can't show frames says why.** With no Visual Timeline data
-  source at all it offers to add one (Grafana admins) or to ask an admin
-  (everyone else); with one or more, it asks you to select one; with a
-  deleted data source, it says it no longer exists, instead of a proxy
-  error.
-- **Upgrading from 1.0.0:** a panel with neither a data source nor an API URL
-  showed demo data and now asks for a data source. Add a data source with
-  Demo data on to get the demo back.
-- Self-hosted stack: its Compose project is now `visual-timeline-selfhost`
-  (was `visual-timeline`, the repository's own dev stack, so running both
-  replaced one Grafana with the other). Its frames volume is
-  `visual-timeline-selfhost_frames`.
-- The demo and dev environments provision a "Visual Timeline (demo)" data
-  source, and their dashboards use it.
+### Highlights
+
+- **The data source owns the data.** A panel chooses its Visual Timeline API
+  data source in its **Query** tab, like any Grafana panel, and the data source
+  answers with the sources to draw. The query has **Sites**, **Hosts** and
+  **Tags** fields.
+- **Filter by site, host and tag,** the way Grafana filters Prometheus or Loki
+  data by label: Site and Host dashboard variables (Host can follow Site), an
+  ad hoc filter bar keyed by `site`, `host` and every tag, and a click on a
+  host, site or tag in a source's header adds it to the filter.
+- **A starter dashboard** on the data source's Dashboards tab, with the Site
+  and Host dropdowns and the filter bar ready.
+- **Demo data is a data source switch.** Panels never fall back to demo data
+  on their own.
+- **Requires Grafana 12.0 or later.**
+
+### All changes
+
+- Data source: answers panel queries with the source list as a data frame,
+  with dashboard variables and ad hoc filters applied; supplies query
+  variables (Sites, or Hosts optionally limited to some sites) and the ad hoc
+  filter keys and values; fetches frames for the panel through its proxy
+  route. Ad hoc operators: `=`, `!=`, `=~`, `!~` (whole-value regular
+  expressions) and the multi-value ones; `<` and `>` are ignored. API errors
+  are thrown in plain words, so Grafana's panel error indicator shows them.
+- Data source: a **Demo data** switch. With it on, the API settings hide,
+  Save & test passes without calling anything, and panels draw the built-in
+  demo sources.
+- Panel: the **Data source**, **API URL**, **Sites** and **Tag filter**
+  options are gone; which sources to show is the query's job. A panel with no
+  Visual Timeline data source in its query says so and points at the Query
+  tab, or at adding one (Grafana admins) or asking an admin (everyone else);
+  a query that matches no sources says that.
+- Panel: the view is rebuilt only when the sources or the time window change,
+  not on every query run.
+- Fix: a panel rebuilt twice within about a second (a resize while loading,
+  opening the panel editor) could end up blank. The first build's delayed
+  swap-in removed the second's view.
 - Reference worker and self-hosted image: `sharp` (an image library wrangler's
   Miniflare pins at 0.35.4) is overridden to 0.35.5 for GHSA-wq5f-xc86-pv6w,
-  a high-severity issue in its bundled SVG library. The deployed worker
-  doesn't use it; the self-hosted backend runs wrangler, so it ships it.
+  a high-severity issue in its bundled SVG library.
+- Self-hosted stack: its Compose project is `visual-timeline-selfhost` (it
+  shared the repository's dev stack's name, so running both replaced one
+  Grafana with the other), and its dashboard has the Site and Host variables
+  and the filter bar.
+- Earlier versions were never published, so nothing needs migrating.
 
 ## 1.0.0 (2026-10-06)
 

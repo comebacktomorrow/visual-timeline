@@ -36,9 +36,20 @@
         "x": 12,
         "y": 0
       },
-      "options": {
-        "datasourceUid": "vt-was-deleted"
-      }
+      "options": {},
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "vt-was-deleted"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "vt-was-deleted"
+          }
+        }
+      ]
     }
   ]
 }

@@ -14,11 +14,13 @@ the decisions are in steps 2 and 6.
 - **Never edit `.config/`.** It belongs to `@grafana/create-plugin` and only
   changes through the scaffold update (step 5). `CLAUDE.md`, `AGENTS.md`,
   `GEMINI.md` and `.claude/` are also scaffold templates.
-- **Keep `grafanaDependency` at `>=10.4.0`** in all three `plugin.json`
+- **Keep `grafanaDependency` at `>=12.0.0`** in all three `plugin.json`
   files (`src/`, `src/panel/`, `src/datasource/`). New scaffolds default to
-  `>=13.2.0`; copying that would drop every 10.4–13.1 install for no benefit.
-  The e2e matrix (10.4 up to nightly) is what decides whether the range
-  still holds.
+  the newest Grafana (`>=13.2.0` in October 2026); copying that would drop
+  12.x installs for no benefit. 12.0 was chosen for 1.1 (2026-10-15): it is
+  where the extension-link API, the Scenes dashboards and the data source
+  features 1.1 uses are all present. The e2e matrix (12.0 up to nightly)
+  decides whether the range still holds.
 - **The plugin is an app with two nested plugins.** `src/plugin.json` is the
   app (`savvycocoa1919-visualtimeline-app`); the panel
   (`savvycocoa1919-visualtimeline-panel`, an id dashboards depend on) and the

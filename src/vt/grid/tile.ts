@@ -1,7 +1,7 @@
 import { clearPauseClasses, pauseInfo } from '../model/eras';
 import { ghostFor } from '../model/slots';
 import { hiUrlFor } from '../backends/api';
-import { esc, headTitle, tagChips } from '../dom/html';
+import { esc, filterAttrs, headTitle, tagChips } from '../dom/html';
 import { q } from '../ui/wrapper';
 import { attachZoneChip, dressZoneChip, zoneChip } from '../zones/chip';
 import { zoneFor } from '../zones/source';
@@ -20,9 +20,9 @@ export function buildTile(s: GridState, decl: SourceDecl, model: SourceModel): T
   el.className = 'tile' + (inline ? ' inline-head' : '') +
     (s.cfg.headerMode === 'inline-gradient' ? ' inline-grad' : '');
   el.innerHTML =
-    '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(decl.id) + '</span>' +
+    '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs('host', decl.id) + '>' + esc(decl.id) + '</span>' +
     '<span class="inline-brk"></span>' + zoneChip(zone.srcTZ) +
-    '<span class="st">' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' +
+    '<span class="st"' + filterAttrs('site', decl.site) + '>' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' +
     tagChips(decl) + '</div>' +
     '<div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
   attachZoneChip(zone, el);

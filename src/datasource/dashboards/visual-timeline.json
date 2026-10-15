@@ -1,0 +1,203 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_VISUAL_TIMELINE",
+      "label": "Visual Timeline API",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "savvycocoa1919-visualtimeline-datasource",
+      "pluginName": "Visual Timeline API"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "datasource",
+      "id": "savvycocoa1919-visualtimeline-datasource",
+      "name": "Visual Timeline API",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "savvycocoa1919-visualtimeline-panel",
+      "name": "Visual Timeline",
+      "version": ""
+    }
+  ],
+  "uid": "visual-timeline-starter",
+  "title": "Visual Timeline",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "templating": {
+    "list": [
+      {
+        "name": "site",
+        "label": "Site",
+        "type": "query",
+        "datasource": {
+          "type": "savvycocoa1919-visualtimeline-datasource",
+          "uid": "${DS_VISUAL_TIMELINE}"
+        },
+        "query": {
+          "refId": "site",
+          "type": "sites"
+        },
+        "definition": "sites",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "refresh": 1,
+        "sort": 1,
+        "options": []
+      },
+      {
+        "name": "host",
+        "label": "Host",
+        "type": "query",
+        "datasource": {
+          "type": "savvycocoa1919-visualtimeline-datasource",
+          "uid": "${DS_VISUAL_TIMELINE}"
+        },
+        "query": {
+          "refId": "host",
+          "type": "hosts",
+          "sites": "${site:csv}"
+        },
+        "definition": "hosts in ${site:csv}",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "refresh": 1,
+        "sort": 1,
+        "options": []
+      },
+      {
+        "name": "Filters",
+        "label": "Filters",
+        "type": "adhoc",
+        "datasource": {
+          "type": "savvycocoa1919-visualtimeline-datasource",
+          "uid": "${DS_VISUAL_TIMELINE}"
+        },
+        "filters": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Visual timeline — hover to scrub, drag to zoom",
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {},
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "${DS_VISUAL_TIMELINE}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "${DS_VISUAL_TIMELINE}"
+          },
+          "sites": "${site:csv}",
+          "hosts": "${host:csv}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Multiview — follows crosshair",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "options": {
+        "mode": "grid",
+        "followCrosshair": true
+      },
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "${DS_VISUAL_TIMELINE}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "${DS_VISUAL_TIMELINE}"
+          },
+          "sites": "${site:csv}",
+          "hosts": "${host:csv}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Multiview — latest only",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "options": {
+        "mode": "grid",
+        "followCrosshair": false,
+        "imageFit": "fill"
+      },
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "${DS_VISUAL_TIMELINE}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "${DS_VISUAL_TIMELINE}"
+          },
+          "sites": "${site:csv}",
+          "hosts": "${host:csv}"
+        }
+      ]
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "description": "Timeline and multiview grids for every source, with Site and Host dropdowns and a filter bar. Click a host, site or tag in a header to filter by it.",
+  "tags": [
+    "visual-timeline"
+  ],
+  "version": 1
+}

@@ -13,9 +13,11 @@ The plugin is a Grafana app that installs two plugins:
 
 - the **Visual Timeline panel**, which draws the timeline and the multiview
   grid;
-- the **Visual Timeline API data source**, which keeps your API's URL and
-  viewer token in Grafana's server-side settings. It is optional, and only
-  needed for an API whose reads need a token.
+- the **Visual Timeline API data source**, which connects to your frames API.
+  It keeps the API's URL and viewer token in Grafana's server-side settings,
+  answers each panel's query with the list of sources, and supplies the
+  Site and Host dashboard variables and the ad hoc filter bar. Its **Demo
+  data** switch runs everything on built-in demo data instead.
 
 The app is enabled on install and has no pages of its own.
 
@@ -70,7 +72,7 @@ the API returns one frame per slot.
   minute shows one frame per minute at short ranges, and one in every N
   minutes at longer ones: 2 minutes over 6 hours, about 54 minutes over 7
   days. Turn on **Show cadence details** to see it, for example `⏱ 1m ·
-  1/2m ↓`. Each era of a source gets its own step.
+1/2m ↓`. Each era of a source gets its own step.
 - **Each slot shows the frame nearest its time.** A slot with no frame is
   drawn as offline. When frames are thinned out, an outage shorter than one
   step can be hidden by a frame on either side of it, so zoom in to see
@@ -93,17 +95,19 @@ option can show its frame times in its own local time.
 
 ## Try it with no backend
 
-Add a **Visual Timeline API** data source (**Connections → Data sources →
-Add new data source**) and turn on its **Demo data** switch. Panels using it
-render built-in demo data: five simulated sources across two sites, including
-an outage, a cadence change, a declared pause, two sources in other time zones
-and some annotations. No infrastructure and no account. Turn the switch off
-and set the API URL when you're ready for your own frames.
+1. Add a **Visual Timeline API** data source (**Connections → Data sources →
+   Add new data source**), turn on its **Demo data** switch and click **Save &
+   test**.
+2. On the data source's **Dashboards** tab, import the **Visual Timeline**
+   dashboard: a timeline and two multiview grids, with Site and Host
+   dropdowns and a filter bar.
 
-A new panel picks up your Visual Timeline data source by itself when there is
-only one (or when it is Grafana's default among several); otherwise choose it
-in the panel's **Data source** option. A panel never shows demo data on its
-own: with no data source it says how to add or select one.
+The demo has five simulated sources across two sites, including an outage, a
+cadence change, a declared pause, two sources in other time zones and some
+annotations. No infrastructure and no account. To build your own dashboard
+instead, add a **Visual Timeline** panel and choose the data source in its
+**Query** tab. Turn **Demo data** off and set the API URL when you're ready for
+your own frames.
 
 To see it on a ready-made dashboard instead, clone the
 [repository](https://github.com/comebacktomorrow/visual-timeline) and run:
@@ -118,24 +122,42 @@ a timeline, two multiview grids and a time series panel to show the shared
 crosshair, all on the built-in demo data. Port 3300 taken? Prefix the command
 with `DEMO_PORT=3301`.
 
+## Filter by site, host and tag
+
+Every source has a site, a host (its id) and optional `key=value` tags, and
+panels can be filtered by any of them, the way Grafana filters Prometheus or
+Loki data by label:
+
+- **In a panel's Query tab:** **Sites**, **Hosts** and **Tags** fields. Each
+  takes ids (`home, office`) or dashboard variables (`${site:csv}`); empty
+  means all.
+- **With dashboard variables:** add a **Query** variable on a Visual Timeline
+  data source and choose **Sites** or **Hosts**. A Hosts variable can list
+  only the hosts in some sites, for example `${site:csv}`, so Host follows
+  Site. Use the variables in the panels' Query fields.
+- **With the filter bar:** add an **Ad hoc filters** variable on the data
+  source. Its keys are `site`, `host` and every tag key, each with a list of
+  values, and the operators are `=`, `!=`, `=~` and `!~` (regular expressions
+  match the whole value). Grafana also offers `<` and `>`, which this data
+  source ignores.
+- **By clicking:** click a host, site or tag in a source's header to add it to
+  the dashboard's filter bar.
+
+The **Visual Timeline** dashboard on the data source's Dashboards tab has the
+Site and Host variables and the filter bar ready.
+
 ## Connect it to your own images
 
-The panel talks to a small HTTP API (sources registry, frames by time window,
-and the frame images). It isn't tied to any one backend. There are two ways to
-connect it:
+The panel reads a small HTTP API (sources registry, frames by time window,
+and the frame images) through a Visual Timeline API data source. It isn't tied
+to any one backend. In Grafana, go to **Connections → Data sources → Add new
+data source**, pick **Visual Timeline API**, enter the API URL and, if the API
+needs one, the viewer token, and click **Save & test**. Then choose that data
+source in each panel's **Query** tab. The token is stored encrypted, and
+Grafana's server adds it to the data source's API calls (`/sources`,
+`/frames`), so it never reaches the dashboard JSON or the viewer's browser.
 
-- **Through a Visual Timeline API data source (recommended, and the only
-  way that keeps a viewer token secret).** In Grafana, go to
-  **Connections → Data sources → Add new data source**, pick **Visual
-  Timeline API**, enter the API URL and the viewer token, and click **Save &
-  test**. Then pick that data source in the panel's **Data source** option.
-  The token is stored encrypted, and Grafana's server adds it to the panel's
-  API calls (`/sources`, `/frames`), so it never reaches the dashboard JSON
-  or the viewer's browser.
-- **Directly, for an API with open reads.** Set the panel's **API URL**
-  option to the API's base URL. The browser then calls the API itself.
-
-Either way, the panel needs a server that implements the API:
+The data source needs a server that implements the API:
 
 - The API contract, with curl examples, is in
   [docs/API.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md).
@@ -147,39 +169,33 @@ Either way, the panel needs a server that implements the API:
   immutable frame caching, per-site upload tokens, and private-by-default reads
   (viewer token plus signed, expiring image URLs). Its README covers running it
   locally with a simulated fleet, and deploying it to Cloudflare. To run it on
-  your own hardware instead, see [Self-hosting](#self-hosting).
+  your own hardware instead, see [Self-hosting](#self-hosting-experimental).
 - Uploaders are simple: capture, POST a JPEG on the cadence grid, and on
   failure drop the frame and move on. See "Implementing your own uploader" in
   the API document.
 
-Either way, the frame images load straight from the API into the viewer's
-browser, never through Grafana, because an `<img>` tag can't carry a token.
-So:
-
-- With a data source, the API must be reachable from the Grafana server
-  (for the API calls). The image URLs it returns must be reachable from the
-  viewers' browsers. An API that requires a viewer token for reads must
-  **sign its image URLs**, so each URL authorizes itself. The reference
-  worker does this when `IMG_SIGN_KEY` is set. It builds image URLs from the
-  address it was called on, so give the data source an API URL that browsers
-  can reach as well.
-- With the API URL option, the browser makes every call, so the API must be
-  reachable from the viewers' machines and must allow cross-origin requests.
-  The reference worker sends permissive CORS headers.
+The frame images load straight from the API into the viewer's browser, never
+through Grafana, because an `<img>` tag can't carry a token. So the API must be
+reachable from the Grafana server (for the API calls), and the image URLs it
+returns must be reachable from the viewers' browsers. An API that requires a
+viewer token for reads must **sign its image URLs**, so each URL authorizes
+itself. The reference worker does this when `IMG_SIGN_KEY` is set. It builds
+image URLs from the address it was called on (or from `PUBLIC_URL`), so give
+the data source an API URL that browsers can reach as well.
 
 ## Panel options
 
+Which sources a panel shows is set in its Query tab (see
+[Filter by site, host and tag](#filter-by-site-host-and-tag)). These options
+set how it draws them.
+
 | Option                                  | What it does                                                                                                                                                                                               |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Data source**                         | A Visual Timeline API data source. API calls go through Grafana, which adds the viewer token. A data source with **Demo data** on shows the built-in demo data. While one is set, the API URL option below is hidden and ignored.                                              |
-| **API URL**                             | Base URL of the frames API, for an API with open reads. An API that needs a viewer token connects through a data source. With neither, the panel asks for a data source.                                                                            |
-| **Sites**                               | Site filter: a dashboard variable (default `${site:csv}`) or a literal site id. Keep the variable here so the panel refreshes when it changes. A dashboard without the variable shows all sites.           |
 | **Display mode**                        | Timeline or Multiview grid.                                                                                                                                                                                |
 | **Follow shared crosshair**             | Grid mode only. Show the frame at the crosshair time from other panels; off shows the most recent frame in range.                                                                                          |
 | **Show annotations**                    | Timeline mode only. Draw the dashboard's annotations on the timeline (on by default).                                                                                                                      |
 | **Annotation lanes**                    | Timeline mode, with annotations on. A single shared lane above the axis, or one lane per source carrying its own events plus the global ones.                                                              |
 | **Hide sources with no data in window** | Omit sources with no frames in the current time range instead of showing them as offline.                                                                                                                  |
-| **Tag filter**                          | Only show sources whose declared tags match all the given pairs, for example `env=prod, room=lobby`.                                                                                                       |
 | **Show cadence details**                | Show each source's capture cadence and display resolution (for tuning).                                                                                                                                    |
 | **Header**                              | Bar (a header row per source), Inline (hostname and details float over the image), or Inline with a gradient behind them for busy frames.                                                                  |
 | **Thumbnail times**                     | Dashboard time, or Source local time: a source that declares a time zone shows its frame times in that zone, marked with the offset, e.g. `07:31:00 (+3h)`. The axis and crosshair stay in dashboard time. |
@@ -189,13 +205,12 @@ So:
 
 Keep the viewer token in a **Visual Timeline API data source**. The token is
 stored encrypted in Grafana and is sent only by Grafana's server, as an
-`Authorization: Bearer` header on the panel's calls to `/sources` and
+`Authorization: Bearer` header on the data source's calls to `/sources` and
 `/frames`. The browser never receives it, and the dashboard JSON stores only
 the data source's uid. Grafana's login is what controls who can view. For the
 images to load, the API must sign its image URLs (see above).
 
-The panel itself never holds a token. Its **API URL** option is only for an
-API with open reads.
+Panels never hold a token: they reach the API only through the data source.
 
 The
 [API document](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md)
@@ -225,33 +240,13 @@ are in
 
 ## Requirements
 
-- Grafana 10.4.0 or later (`>=10.4.0`).
+- Grafana 12.0.0 or later (`>=12.0.0`).
 - The app must stay enabled. It is enabled on install. Grafana treats an
   app's panel and data source as disabled while the app is disabled.
 - For your own data: a server that implements the frames API (the included
   reference worker, or your own). See
   [Connect it to your own images](#connect-it-to-your-own-images) for what
   needs to reach it.
-
-## Upgrading from the panel-only plugin
-
-Earlier versions were a standalone panel plugin with the same panel id,
-`savvycocoa1919-visualtimeline-panel`. The app ships that panel under the same
-id, so existing dashboards keep working without changes. Uninstall the old
-panel plugin when you install the app, so that only one copy of the panel id
-is installed.
-
-The panel's **API key** option has been removed: it saved the viewer token in
-plain text in the dashboard JSON. A panel that used it now shows "The frames
-API needs a valid viewer token (401)" with a pointer to the data source.
-To move it over:
-
-1. Add a **Visual Timeline API** data source with the API URL and the viewer
-   token (**Connections → Data sources**), and check it with **Save & test**.
-2. In each panel that used the key, pick that data source in the **Data
-   source** option and save the dashboard.
-3. Revoke the old token at the API: it has been readable by everyone who
-   could view or export those dashboards.
 
 ## Contributing
 

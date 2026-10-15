@@ -3,7 +3,7 @@
   "type": "datasource",
   "name": "Visual Timeline API",
   "id": "savvycocoa1919-visualtimeline-datasource",
-  "metrics": false,
+  "metrics": true,
   "info": {
     "keywords": ["timeline", "screenshot", "camera", "kiosk", "frames"],
     "description": "Connects Visual Timeline panels to a frames API, keeping the API URL and viewer token in Grafana's server-side data source settings instead of the dashboard JSON",
@@ -23,6 +23,13 @@
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },
+  "includes": [
+    {
+      "type": "dashboard",
+      "name": "Visual Timeline",
+      "path": "dashboards/visual-timeline.json"
+    }
+  ],
   "routes": [
     {
       "path": "api",
@@ -37,7 +44,7 @@
     }
   ],
   "dependencies": {
-    "grafanaDependency": ">=10.4.0",
+    "grafanaDependency": ">=12.0.0",
     "plugins": []
   }
 }

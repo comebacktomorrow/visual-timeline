@@ -30,11 +30,23 @@
       },
       "id": 1,
       "options": {
-        "mode": "timeline",
-        "datasourceUid": "vt-mock-api"
+        "mode": "timeline"
       },
       "title": "Visual Timeline — through the data source proxy",
-      "type": "savvycocoa1919-visualtimeline-panel"
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "vt-mock-api"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "vt-mock-api"
+          }
+        }
+      ]
     },
     {
       "gridPos": {
@@ -45,11 +57,23 @@
       },
       "id": 2,
       "options": {
-        "mode": "timeline",
-        "datasourceUid": "vt-mock-api-wrong-token"
+        "mode": "timeline"
       },
       "title": "Visual Timeline — data source with a wrong token",
-      "type": "savvycocoa1919-visualtimeline-panel"
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "vt-mock-api-wrong-token"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "vt-mock-api-wrong-token"
+          }
+        }
+      ]
     }
   ],
   "refresh": "",

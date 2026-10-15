@@ -13,7 +13,73 @@
     "visual-timeline"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "site",
+        "label": "Site",
+        "type": "query",
+        "datasource": {
+          "type": "savvycocoa1919-visualtimeline-datasource",
+          "uid": "vt-selfhost"
+        },
+        "query": {
+          "refId": "site",
+          "type": "sites"
+        },
+        "definition": "sites",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "refresh": 1,
+        "sort": 1,
+        "options": []
+      },
+      {
+        "name": "host",
+        "label": "Host",
+        "type": "query",
+        "datasource": {
+          "type": "savvycocoa1919-visualtimeline-datasource",
+          "uid": "vt-selfhost"
+        },
+        "query": {
+          "refId": "host",
+          "type": "hosts",
+          "sites": "${site:csv}"
+        },
+        "definition": "hosts in ${site:csv}",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "refresh": 1,
+        "sort": 1,
+        "options": []
+      },
+      {
+        "name": "Filters",
+        "label": "Filters",
+        "type": "adhoc",
+        "datasource": {
+          "type": "savvycocoa1919-visualtimeline-datasource",
+          "uid": "vt-selfhost"
+        },
+        "filters": []
+      }
+    ]
   },
   "annotations": {
     "list": []
@@ -30,10 +96,23 @@
         "y": 0
       },
       "options": {
-        "datasourceUid": "vt-selfhost",
-        "sites": "",
         "mode": "timeline"
-      }
+      },
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "vt-selfhost"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "vt-selfhost"
+          },
+          "sites": "${site:csv}",
+          "hosts": "${host:csv}"
+        }
+      ]
     },
     {
       "id": 2,
@@ -46,11 +125,24 @@
         "y": 14
       },
       "options": {
-        "datasourceUid": "vt-selfhost",
-        "sites": "",
         "mode": "grid",
         "followCrosshair": true
-      }
+      },
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "vt-selfhost"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "vt-selfhost"
+          },
+          "sites": "${site:csv}",
+          "hosts": "${host:csv}"
+        }
+      ]
     }
   ]
 }

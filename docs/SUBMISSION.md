@@ -127,18 +127,22 @@ Sign in as an admin of the `savvycocoa1919` org, open **My Plugins**, then
   > Visual Timeline is an app plugin bundling a panel and a data source.
   > The app is auto-enabled.
   >
-  > **No backend needed:** add a Visual Timeline API data source and turn
-  > on its **Demo data** switch, then add a Visual Timeline panel (it picks
-  > up the data source by itself). It renders built-in demo data: five
-  > sources across two sites, with an outage, a cadence change, a declared pause, two
-  > sources in other time zones and some annotations. Hover to scrub, drag
-  > to zoom, and switch Display mode between Timeline and Multiview grid.
+  > **No backend needed:** add a Visual Timeline API data source, turn on
+  > its **Demo data** switch and click Save & test, then import the
+  > **Visual Timeline** dashboard from the data source's Dashboards tab. It
+  > renders built-in demo data: five sources across two sites, with an
+  > outage, a cadence change, a declared pause, two sources in other time
+  > zones and some annotations. Hover to scrub, drag to zoom, use the Site
+  > and Host dropdowns and the filter bar, and click a host, site or tag in
+  > a header to filter by it.
   >
   > **Provisioned environment:** `docker compose up` in the repository
   > starts Grafana with the plugin, a mock frames API (`vt-mock-api`) and:
   >
   > - the dashboard "Provisioned Visual Timeline dashboard" (timeline and
   >   grid, on the demo data source "Visual Timeline (demo)");
+  > - the dashboard "Visual Timeline — filters": Site and Host variables
+  >   and an ad hoc filter bar on the demo data source;
   > - the dashboard "Visual Timeline — data source mode": one panel reads
   >   through the data source "Visual Timeline API (mock)", whose viewer
   >   token is stored in secureJsonData and injected by the plugin.json

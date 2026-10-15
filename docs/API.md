@@ -293,30 +293,33 @@ API data source**, and the data source is where the viewer token belongs:
   (`GET` only), whose URL is `{{ .JsonData.apiUrl }}` and which sets
   `Authorization: Bearer {{ .SecureJsonData.viewerToken }}`. Grafana's server
   fills both in. The header is left empty when no token is configured.
-- A panel whose **Data source** option names that data source calls
-  `/api/datasources/proxy/uid/<uid>/api/sources` and `.../api/frames` on
-  Grafana. Grafana forwards them to `<apiUrl>/sources` and `<apiUrl>/frames`
-  with the token added. The dashboard JSON holds only the data source's uid,
-  and Grafana's own login decides who can view.
+- The data source calls `/api/datasources/proxy/uid/<uid>/api/sources` and
+  `.../api/frames` on Grafana. Grafana forwards them to `<apiUrl>/sources` and
+  `<apiUrl>/frames` with the token added. A panel uses the data source in its
+  Query tab: the data source answers the panel's query with the source list
+  (`/sources`, filtered by the query fields, dashboard variables and ad hoc
+  filters) and fetches each source's frames when the panel asks. The
+  dashboard JSON holds only the data source's uid, and Grafana's own login
+  decides who can view.
 - Frame images still load straight from the API: an `<img>` can't carry the
   token, and image bytes don't pass through Grafana. So a backend with read
   auth **must sign its image URLs** for this mode (the reference worker's
   `IMG_SIGN_KEY`). The proxied `/frames` response then carries each image's
   own short-lived authorization. The panel uses each `url` exactly as
-  returned. It never appends `?k=` in this mode, and it resolves a relative
+  returned. It never appends `?k=`, and it resolves a relative
   `url` against the API URL, not against Grafana. Unsigned image URLs from a
   token-protected backend fail to load.
-- The reference worker builds image URLs from the URL it was called on. In
-  this mode that is the data source's API URL, as seen from the Grafana
-  server, so that URL must also be one viewers' browsers can reach.
+- The reference worker builds image URLs from the URL it was called on: the
+  data source's API URL, as seen from the Grafana server. That URL must also
+  be one viewers' browsers can reach, or the worker must set `PUBLIC_URL`.
 - Grafana's proxy reports an API `401` to the browser as `400`
   ("Authentication to data source failed"), so a rejected token never logs
-  the viewer out of Grafana. The data source's **Save & test** and the panel
-  both report it as a rejected token.
+  the viewer out of Grafana. The data source's **Save & test** and Grafana's
+  panel error indicator both report it as a rejected token.
 
-The panel no longer has an **API key** option: it kept the token in the
-dashboard JSON in plaintext. The **API URL** option on its own remains the
-way to reach an API with open reads. The standalone app (`web/app.html`)
+Panels reach the API only through the data source: they have no API URL or
+key options of their own. An API with open reads is a data source with no
+token. The standalone app (`web/app.html`)
 still takes a viewer key, because it has no server side to hide one in;
 give it a dedicated, revocable viewer token per consumer.
 

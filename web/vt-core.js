@@ -865,11 +865,14 @@ var VTCore = (() => {
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
   }
+  function filterAttrs(key, value) {
+    return ' data-fk="' + esc(key) + '" data-fv="' + esc(value) + '"';
+  }
   function tagChips(decl) {
     if (!decl.tags) {
       return "";
     }
-    const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st">' + esc(k) + ":" + esc(v) + "</span>").join("");
+    const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st"' + filterAttrs(k, v) + ">" + esc(k) + ":" + esc(v) + "</span>").join("");
     return '<span class="tags">' + chips + "</span>";
   }
   function headTitle(decl) {
@@ -883,6 +886,21 @@ var VTCore = (() => {
       }
     }
     return parts.join(" \xB7 ");
+  }
+  function wireFilters(wrap, onFilter) {
+    if (!onFilter) {
+      return;
+    }
+    wrap.classList.add("filterable");
+    wrap.addEventListener("click", (e) => {
+      const el = e.target?.closest("[data-fk]");
+      if (!el || !wrap.contains(el)) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      onFilter(el.dataset.fk || "", el.dataset.fv || "");
+    });
   }
 
   // src/vt/dom/styles.ts
@@ -1036,6 +1054,8 @@ var VTCore = (() => {
 .ktl .slot.paused.r-system-down { background:repeating-linear-gradient(45deg,var(--ktl-down-a),var(--ktl-down-a) 7px,var(--ktl-down-b) 7px,var(--ktl-down-b) 14px); }
 .ktl .slot.paused.r-app-stopped { background:repeating-linear-gradient(45deg,var(--ktl-stopped-a),var(--ktl-stopped-a) 7px,var(--ktl-stopped-b) 7px,var(--ktl-stopped-b) 14px); }
 /* past the API's retention: nothing to show, and no state to hatch */
+.ktl.filterable [data-fk] { cursor:pointer; }
+.ktl.filterable [data-fk]:hover { text-decoration:underline; text-underline-offset:2px; }
 .ktl .slot.paused.r-expired { background:var(--ktl-bg2); }
 .ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,var(--ktl-unint-a),var(--ktl-unint-a) 7px,var(--ktl-unint-b) 7px,var(--ktl-unint-b) 14px); }
 /* hatch continuity: each slot is its own element, so a per-element gradient
@@ -1625,7 +1645,7 @@ var VTCore = (() => {
       ]),
       new Promise((res) => setTimeout(res, 900))
     ]);
-    if (!wrap.isConnected) {
+    if (!wrap.isConnected || wrap.dataset.stale) {
       return;
     }
     for (const el of [...root.children]) {
@@ -1942,7 +1962,7 @@ var VTCore = (() => {
     card.className = "card" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
     const la = model.lastActive;
     const cad = s.cfg.showDetails && la ? '<span class="cad">\u23F1 ' + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + "</span>" : "";
-    card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
+    card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", kiosk) + ">" + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st"' + filterAttrs("site", decl.site) + ">" + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
     const strip = card.querySelector(".strip");
     if (s.hostWidth / model.slots.length >= 12) {
       strip.classList.add("sep");
@@ -2297,8 +2317,9 @@ var VTCore = (() => {
     const MIN_SLICE_PX = 7;
     const hostWidth = cfg.width || root.clientWidth || 800;
     const pxBudget = Math.max(10, Math.floor((hostWidth - 20) / MIN_SLICE_PX));
-    const backend = cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ);
+    const backend = cfg.backend ?? (cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ));
     const wrap = makeWrapper(root);
+    wireFilters(wrap, cfg.onFilter);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="cards"></div><div class="ann-lane" style="display:none"></div><div class="axis"><div class="base"></div><div class="acur"></div></div>';
     const s = {
@@ -2401,7 +2422,7 @@ var VTCore = (() => {
     const zone = zoneFor(decl, s.TZ, s.cfg.thumbTimes, s.PANEL_TT);
     const inline = s.cfg.headerMode === "inline" || s.cfg.headerMode === "inline-gradient";
     el.className = "tile" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
-    el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm">' + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st">' + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
+    el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", decl.id) + ">" + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + '<span class="st"' + filterAttrs("site", decl.site) + ">" + esc(decl.site) + (decl.location ? " \xB7 " + esc(decl.location) : "") + "</span>" + tagChips(decl) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
     attachZoneChip(zone, el);
     const rec = {
       decl,
@@ -2545,9 +2566,10 @@ var VTCore = (() => {
     const TZ = resolveTimeZone(cfg.timeZone);
     const SPAN = Math.max(1, P.to - P.from);
     const LIVE = P.to > Date.now() - 2 * 60 * 1e3;
-    const backend = cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ);
+    const backend = cfg.backend ?? (cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ));
     const budget = 120;
     const wrap = makeWrapper(root);
+    wireFilters(wrap, cfg.onFilter);
     wrap.classList.toggle("fill", cfg.fit === "fill");
     wrap.innerHTML = '<div class="grid"></div>';
     const s = {
