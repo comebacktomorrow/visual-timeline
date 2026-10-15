@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 (2026-10-15)
 
 - **Last frame in a table.** A query's new **Last frame** switch adds each
   host's last frame in the time range to the data source's answer: its image
