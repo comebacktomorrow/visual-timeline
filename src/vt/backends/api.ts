@@ -155,7 +155,8 @@ export function makeApiBackend(apiUrl?: string, apiKey?: string, apiFetch?: ApiF
  * (/frame/{variant}/{site}/{source}/{ts}.jpg) and one signature covers both
  * variants, so the hi URL reuses the lo frame's own base and query: that
  * also works behind a data source, where the panel has no apiUrl. Falls back
- * to apiUrl (+ ?k= key) for a frame URL without a /frame/ path. Site and id
+ * to apiUrl for a frame URL without a /frame/ path. A bare URL gets the ?k=
+ * key only on the API's origin (imageUrlWithKey). Site and id
  * are path segments, so they're encoded (#66). */
 export function hiUrlFor(
   frame: Frame | null, decl: Pick<SourceDecl, 'site' | 'id' | 'hiCadence'>, apiUrl?: string, apiKey?: string
@@ -167,7 +168,9 @@ export function hiUrlFor(
   const at = path.lastIndexOf('/frame/');
   const base = at >= 0 ? path.slice(0, at) : apiUrl ? apiUrl.replace(/\/+$/, '') : null;
   if (base === null) {return null;}
-  const q = qAt >= 0 ? url.slice(qAt) : apiKey ? '?k=' + encodeURIComponent(apiKey) : '';
   const hiTs = Math.round(frame.ts / decl.hiCadence) * decl.hiCadence;
-  return base + '/frame/hi/' + encodeURIComponent(decl.site) + '/' + encodeURIComponent(decl.id) + '/' + hiTs + '.jpg' + q;
+  const hi = base + '/frame/hi/' + encodeURIComponent(decl.site) + '/' + encodeURIComponent(decl.id) + '/' + hiTs + '.jpg';
+  if (qAt >= 0) {return hi + url.slice(qAt);}
+  // a bare URL gets the key only on the API's own origin, as strip images do
+  return apiUrl ? imageUrlWithKey(hi, apiUrl, apiKey) : hi;
 }
