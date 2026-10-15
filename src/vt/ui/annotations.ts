@@ -4,7 +4,7 @@ import type { Annotation, RawAnnotation, TimeWindow } from '../types';
 
 /* Normalize annotations from any provider (Grafana annotation frames, the
  * mock seam, a host page) into { ts, timeEnd?, title, text, tags[], color,
- * source, siteScope }. A `source:<id>` (or legacy `kiosk:<id>`) tag pins the
+ * source, siteScope }. A `host:<id>` (or `source:<id>`, or legacy `kiosk:<id>`) tag pins the
  * marker to that source's strip; a `site:<id>` tag scopes it to every source
  * at that site; everything else renders on the shared lane. Events from
  * wider time windows are kept if they OVERLAP ours and clamp-render. */
@@ -21,7 +21,7 @@ export function normAnnotations(raw: RawAnnotation[] | null | undefined, P: Time
     let source = a.source || null;
     let siteScope: string | null = null;
     for (const t of tags) {
-      const m = /^(?:source|kiosk):(.+)$/.exec(t);
+      const m = /^(?:host|source|kiosk):(.+)$/.exec(t);
       if (m) {source = m[1];}
       const ms = /^site:(.+)$/.exec(t);
       if (ms) {siteScope = ms[1];}

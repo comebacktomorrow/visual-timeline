@@ -12,14 +12,14 @@ const FIELDS: Array<{ key: Field; label: string; placeholder: string; tooltip: s
   {
     key: 'sites',
     label: 'Sites',
-    placeholder: 'all, or ${site:csv}',
+    placeholder: 'empty = all, or ${site:csv}',
     tooltip: 'Site ids, comma-separated, or a dashboard variable such as ${site:csv}. Empty: every site.',
   },
   {
     key: 'hosts',
     label: 'Hosts',
-    placeholder: 'all, or ${host:csv}',
-    tooltip: 'Source ids, comma-separated, or a dashboard variable such as ${host:csv}. Empty: every host.',
+    placeholder: 'empty = all, or ${host:csv}',
+    tooltip: 'Host ids, comma-separated, or a dashboard variable such as ${host:csv}. Empty: every host.',
   },
   {
     key: 'tags',

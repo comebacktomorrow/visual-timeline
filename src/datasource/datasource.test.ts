@@ -197,6 +197,36 @@ describe('variables and ad hoc filters', () => {
   });
 });
 
+describe('the source list is fetched once for a dashboard load', () => {
+  test('queries, variables and the filter bar share one GET /sources', async () => {
+    const request = ok(SOURCES);
+    const ds = new VisualTimelineDataSource(settings('https://frames.example.com'), request, interpolate);
+    await Promise.all([
+      ds.query({ targets: [{ refId: 'A', sites: '${site:csv}' }, { refId: 'B' }], range, scopedVars: {} } as any),
+      ds.metricFindQuery({ refId: 'A', type: 'sites' }),
+      ds.metricFindQuery({ refId: 'A', type: 'hosts', sites: '${site:csv}' }),
+      ds.getTagKeys({ filters: [] }),
+    ]);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  test('a later refresh asks again, and a failure is not kept', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    try {
+      const request = jest.fn().mockRejectedValueOnce({ status: 502, data: {} }).mockResolvedValue({ status: 200, data: SOURCES });
+      const ds = new VisualTimelineDataSource(settings('https://frames.example.com'), request, interpolate);
+      await expect(ds.sources()).rejects.toBeDefined();
+      await expect(ds.sources()).resolves.toHaveLength(3);
+      expect(request).toHaveBeenCalledTimes(2);
+      now.mockReturnValue(1_000_000 + 6000);
+      await ds.sources();
+      expect(request).toHaveBeenCalledTimes(3);
+    } finally {
+      now.mockRestore();
+    }
+  });
+});
+
 describe('describeFailure', () => {
   test.each([403, 404, 0, 500])('%s has a message', (status) => {
     expect(describeFailure(status, 'https://x')).toMatch(/\S/);

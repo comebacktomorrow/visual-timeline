@@ -16,7 +16,7 @@ type EditorProps = QueryEditorProps<
 
 const TYPES = [
   { label: 'Sites', value: 'sites' as const, description: 'Every site the API lists' },
-  { label: 'Hosts', value: 'hosts' as const, description: 'Source ids, optionally only those in some sites' },
+  { label: 'Hosts', value: 'hosts' as const, description: 'Every host, or only those in some sites' },
 ];
 
 /** The variable editor: Sites or Hosts, and for Hosts an optional site list
