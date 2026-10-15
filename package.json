@@ -1,6 +1,6 @@
 {
   "name": "visual-timeline",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "scripts": {
     "build": "webpack -c ./webpack.config.ts --env production",
     "dev": "webpack -w -c ./webpack.config.ts --env development",
@@ -81,7 +81,7 @@
     "react-dom": "^19.0.0"
   },
   "packageManager": "npm@11.17.0",
-  "description": "Scrub-able visual timeline and multiview for image feeds",
+  "description": "Scrubbable visual timeline and multiview for image feeds",
   "repository": {
     "type": "git",
     "url": "https://github.com/comebacktomorrow/visual-timeline"
