@@ -24,7 +24,7 @@ services:
     command: sh -c "npm ci --no-audit --no-fund && npm run build"
 
   grafana:
-    image: grafana/grafana:11.4.0
+    image: grafana/grafana:13.0.2
     container_name: visual-timeline-demo
     depends_on:
       build:
