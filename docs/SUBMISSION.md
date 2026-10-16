@@ -40,11 +40,12 @@ can't run):
 - **Accepted:** 4 moderate advisories in the react-router chain under
   `@grafana/ui` (fixing them needs an `@grafana` major). CI's advisory gate is
   high/critical only, matching the catalog validator.
-- **Accepted until 2027-01-06:** the `braces` high (no fixed release,
-  build-time only), in `osv-scanner.toml`, which both the validator and CI's
-  advisory gate read. New advisories land in osv before `npm audit`, so
-  re-run the validator right before submitting (see
-  `docs/UPSTREAM-UPDATES.md`, "Security gate").
+- **No high or critical advisories** in the lockfile since 1.2.1
+  (create-plugin 7.13.0 dropped `braces`). The latest validator ignores
+  `osv-scanner.toml`, so nothing can be accepted for the catalog. New
+  advisories land in osv before `npm audit`, so re-run the latest validator
+  right before submitting (see `docs/UPSTREAM-UPDATES.md`, "Security
+  gate").
 
 ## 1. Before the release
 
@@ -77,38 +78,42 @@ can't run):
 > 1.0.0 was tagged and built (2026-10-06) but never published or submitted,
 > and 1.0.1 was never released. 1.1.0 (the data source owns the data; filter
 > by site, host and tag; Grafana 12+) was tagged and its release drafted on
-> 2026-10-15 but not published. 1.2.0 (1.1.0 plus each host's last frame for
-> Table, Canvas and Stat panels) is the first release meant for the catalog.
-> The steps below use it; for a later version substitute its number.
+> 2026-10-15 but not published. 1.1.0 and 1.2.0 (1.1.0 plus each host's last
+> frame for Table, Canvas and Stat panels) were both published on GitHub on
+> 2026-10-15, but the latest validator fails 1.2.0 on the `braces` advisory.
+> 1.2.1 (1.2.0 on create-plugin 7.13.0, which drops it) is the release to
+> submit. The steps below use it; for a later version substitute its number.
 
-- [ ] In `CHANGELOG.md`, rename `## Unreleased` to `## 1.2.0 (<date>)`. The
+- [ ] In `CHANGELOG.md`, rename `## Unreleased` to `## 1.2.1 (<date>)`. The
       release workflow uses the **first** `## ` section as the release notes,
       and the catalog shows the changelog. Keep its short "Highlights" list at
       the top.
-- [ ] `npm version 1.2.0 --no-git-tag-version` (updates `package.json` and
+- [ ] `npm version 1.2.1 --no-git-tag-version` (updates `package.json` and
       `package-lock.json`; `plugin.json`'s `%VERSION%` is filled in at build).
 - [ ] Open a PR with both, wait for green CI, merge.
 - [ ] Tag the merge commit on `main`:
-      `git tag v1.2.0 && git push origin v1.2.0`. The tag must match `package.json` or the workflow fails.
+      `git tag v1.2.1 && git push origin v1.2.1`. The tag must match `package.json` or the workflow fails.
 - [ ] Watch the **Release** workflow (`.github/workflows/release.yml`). It
       builds, runs `@grafana/plugin-validator` (0.49.5, pinned by the action)
-      on `savvycocoa1919-visualtimeline-app-1.2.0.zip`, and creates a
+      on `savvycocoa1919-visualtimeline-app-1.2.1.zip`, and creates a
       **draft** GitHub release with the zip and `.zip.sha1`.
   - [ ] Read the validator step's output. Expect no errors. The only
-        expected warning is "unsigned plugin".
-  - [ ] Optional: run the latest validator too, from a machine that can
-        reach grafana.com:
-        `npx -y @grafana/plugin-validator@latest -sourceCodeUri https://github.com/comebacktomorrow/visual-timeline/tree/v1.2.0 savvycocoa1919-visualtimeline-app-1.2.0.zip`
-        A pre-flight run of 0.49.10 on `main` (b8e10fd) on 2026-10-06 found
-        no errors and only the "unsigned plugin" warning; osv-scanner,
-        broken links and React 19 compatibility all passed. (With
+        expected warning is "unsigned plugin". This validator (0.49.13,
+        pinned by the action) still honours `osv-scanner.toml`; the latest
+        doesn't, so also run the latest (next step) before submitting.
+  - [ ] Run the latest validator too, from a machine that can reach
+        grafana.com:
+        `npx -y @grafana/plugin-validator@latest -sourceCodeUri https://github.com/comebacktomorrow/visual-timeline/tree/v1.2.1 savvycocoa1919-visualtimeline-app-1.2.1.zip`
+        Expect no errors and the warnings "unsigned plugin" and
+        "osv-scanner.toml is ignored". 0.49.16, run on the create-plugin
+        7.13.0 branch on 2026-10-16, gave exactly that. (With
         `--cache .cache/npm` the React 19 check fails to start; use npm's
         default cache.)
 - [ ] **Replace the draft's release notes**, then **publish** it. The build
       action writes its own boilerplate (submission instructions, a stray
       `false`, GitHub's list of every PR), not the changelog: paste the
       version's CHANGELOG section instead, e.g.
-      `git show v1.2.0:CHANGELOG.md | awk '/^## / {s++} s == 1' | sed 1d`.
+      `git show v1.2.1:CHANGELOG.md | awk '/^## / {s++} s == 1' | sed 1d`.
       The zip and sha1 links only work once it's published.
 
 ## 3. Submit on grafana.com
@@ -119,7 +124,7 @@ Sign in as an admin of the `savvycocoa1919` org, open **My Plugins**, then
 - **OS & Architecture:** Single. The plugin is frontend-only, with no
   backend binaries.
 - **URL:** the published release's `.zip` asset link.
-- **Source code URL:** `https://github.com/comebacktomorrow/visual-timeline/tree/v1.2.0`
+- **Source code URL:** `https://github.com/comebacktomorrow/visual-timeline/tree/v1.2.1`
 - **SHA1:** the contents of the `.zip.sha1` asset.
 - **Provisioning provided for test environment:** yes (see below).
 - **Signature level questions:** a community plugin (free, open source,

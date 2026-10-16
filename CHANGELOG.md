@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.1 (2026-10-16)
+
+Build tooling only: the plugin itself is unchanged.
+
+- The scaffold is updated to `@grafana/create-plugin` 7.13.0. It replaces
+  the dev-mode ESLint plugin (`eslint-webpack-plugin`) with
+  `diagnostics-webpack-plugin`, which takes `braces` (CVE-2026-93687, no
+  fixed release) out of the lockfile. The catalog's latest plugin validator
+  failed 1.2.0 on that advisory. Also from the scaffold: ESLint config 10,
+  `@stylistic/eslint-plugin` in place of the deprecated
+  `@stylistic/eslint-plugin-ts`, and canvas and IntersectionObserver mocks
+  in the Jest setup.
+
 ## 1.2.0 (2026-10-15)
 
 - **Last frame in a table.** A query's new **Last frame** switch adds each
