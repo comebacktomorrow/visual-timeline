@@ -324,7 +324,7 @@ As of **2026-10-16**:
 | Pin: `overrides.basic-ftp ^6.2.1` | floor under a dev-only high (GHSA-c475-qrg2-pj4r) reached through `@grafana/sign-plugin` → `proxy-agent` → `pac-proxy-agent` → `get-uri`, whose `^5.3.1` range has no fixed release; get-uri's FTP calls (`access`, `lastMod`, `list`, `downloadTo`, `close`) are unchanged in 6.x | drop once `get-uri` requires ≥6.2.1 itself |
 | Pin: `overrides.source-map-js ^1.2.2` | floor under a dev-only high (CVE-2026-93749, osv only; not yet in `npm audit`) reached through `postcss`, `sass` and `imports-loader`, whose ranges still allow 1.2.1 | drop once they require ≥1.2.2 themselves |
 | React | 19 (dev only), since 2026-09-25 | — |
-| `GH_PAT_TOKEN` | expires **2026-10-25** | regenerate before then; `pat-expiry.yml` opens an issue 14 days ahead |
+| `GH_PAT_TOKEN` | regenerated 2026-10-16, expires **2027-01-14** | regenerate before then; `pat-expiry.yml` opens an issue 14 days ahead |
 | Open advisories | no highs, and nothing accepted in `osv-scanner.toml`. Two moderates (`npm audit` counts 23 entries with their dependents): `react-router` under `@grafana/ui`, and `sprintf-js`, dev only through Jest's coverage tooling | `react-router` needs an `@grafana` major; both are below the validator's and CI's high bar, so leave them |
 
 ## Checks that watch for this between passes
