@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.3 (2026-10-16)
+
+Release process only: the plugin itself is unchanged.
+
+- Release zips carry build provenance: the release workflow attests each
+  zip with GitHub's artifact attestations, so anyone can check that this
+  repository's workflow built it (`gh attestation verify <zip> --repo
+  comebacktomorrow/visual-timeline`). The catalog's validator looks for it.
+
 ## 1.2.2 (2026-10-16)
 
 Test environment only: the plugin itself is unchanged.

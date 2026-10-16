@@ -83,40 +83,46 @@ can't run):
 > 2026-10-15, but the latest validator fails 1.2.0 on the `braces` advisory.
 > 1.2.1 (1.2.0 on create-plugin 7.13.0, which drops it) passes it, but its
 > `docker compose up` needed a built `dist/`, so reviewers couldn't run the
-> provisioned environment from a clone. 1.2.2 fixes that and is the release
-> to submit. The steps below use it; for a later version substitute its
+> provisioned environment from a clone. 1.2.2 fixes that; 1.2.3 adds build
+> provenance (an attestation for the zip) and is the release to submit. The
+> steps below use it; for a later version substitute its
 > number.
 
-- [ ] In `CHANGELOG.md`, rename `## Unreleased` to `## 1.2.2 (<date>)`. The
+- [ ] In `CHANGELOG.md`, rename `## Unreleased` to `## 1.2.3 (<date>)`. The
       release workflow uses the **first** `## ` section as the release notes,
       and the catalog shows the changelog. Keep its short "Highlights" list at
       the top.
-- [ ] `npm version 1.2.2 --no-git-tag-version` (updates `package.json` and
+- [ ] `npm version 1.2.3 --no-git-tag-version` (updates `package.json` and
       `package-lock.json`; `plugin.json`'s `%VERSION%` is filled in at build).
 - [ ] Open a PR with both, wait for green CI, merge.
 - [ ] Tag the merge commit on `main`:
-      `git tag v1.2.2 && git push origin v1.2.2`. The tag must match `package.json` or the workflow fails.
+      `git tag v1.2.3 && git push origin v1.2.3`. The tag must match `package.json` or the workflow fails.
 - [ ] Watch the **Release** workflow (`.github/workflows/release.yml`). It
-      builds, runs `@grafana/plugin-validator` (0.49.5, pinned by the action)
-      on `savvycocoa1919-visualtimeline-app-1.2.2.zip`, and creates a
-      **draft** GitHub release with the zip and `.zip.sha1`.
+      builds, runs `@grafana/plugin-validator` (0.49.13, pinned by the action)
+      on `savvycocoa1919-visualtimeline-app-1.2.3.zip`, attests the zip's
+      build provenance, and creates a **draft** GitHub release with the zip
+      and `.zip.sha1`.
   - [ ] Read the validator step's output. Expect no errors. The only
         expected warning is "unsigned plugin". This validator (0.49.13,
         pinned by the action) still honours `osv-scanner.toml`; the latest
         doesn't, so also run the latest (next step) before submitting.
   - [ ] Run the latest validator too, from a machine that can reach
         grafana.com:
-        `npx -y @grafana/plugin-validator@latest -sourceCodeUri https://github.com/comebacktomorrow/visual-timeline/tree/v1.2.2 savvycocoa1919-visualtimeline-app-1.2.2.zip`
+        `npx -y @grafana/plugin-validator@latest -sourceCodeUri https://github.com/comebacktomorrow/visual-timeline/tree/v1.2.3 savvycocoa1919-visualtimeline-app-1.2.3.zip`
         Expect no errors and the warnings "unsigned plugin" and
         "osv-scanner.toml is ignored". 0.49.16, run on the create-plugin
         7.13.0 branch on 2026-10-16, gave exactly that. (With
         `--cache .cache/npm` the React 19 check fails to start; use npm's
         default cache.)
+- [ ] Check the attestation:
+      `gh release download v1.2.3 --pattern '*.zip' && gh attestation verify savvycocoa1919-visualtimeline-app-1.2.3.zip --repo comebacktomorrow/visual-timeline`.
+      Without one, the catalog validator recommends "No provenance
+      attestation" for a zip on GitHub.
 - [ ] **Replace the draft's release notes**, then **publish** it. The build
       action writes its own boilerplate (submission instructions, a stray
       `false`, GitHub's list of every PR), not the changelog: paste the
       version's CHANGELOG section instead, e.g.
-      `git show v1.2.2:CHANGELOG.md | awk '/^## / {s++} s == 1' | sed 1d`.
+      `git show v1.2.3:CHANGELOG.md | awk '/^## / {s++} s == 1' | sed 1d`.
       The zip and sha1 links only work once it's published.
 
 ## 3. Submit on grafana.com
@@ -127,7 +133,7 @@ Sign in as an admin of the `savvycocoa1919` org, open **My Plugins**, then
 - **OS & Architecture:** Single. The plugin is frontend-only, with no
   backend binaries.
 - **URL:** the published release's `.zip` asset link.
-- **Source code URL:** `https://github.com/comebacktomorrow/visual-timeline/tree/v1.2.2`
+- **Source code URL:** `https://github.com/comebacktomorrow/visual-timeline/tree/v1.2.3`
 - **SHA1:** the contents of the `.zip.sha1` asset.
 - **Provisioning provided for test environment:** yes (see below).
 - **Signature level questions:** a community plugin (free, open source,
@@ -142,7 +148,7 @@ Sign in as an admin of the `savvycocoa1919` org, open **My Plugins**, then
 
   1. QUICK START: PROVISIONED TEST ENVIRONMENT
      git clone https://github.com/comebacktomorrow/visual-timeline
-     cd visual-timeline && git checkout v1.2.2
+     cd visual-timeline && git checkout v1.2.3
      docker compose up
      The first run compiles the plugin inside a Node container (a few minutes); no other commands or configuration are needed. Grafana then runs at http://localhost:3000 with anonymous admin access, alongside a mock frames API.
 
@@ -187,10 +193,13 @@ work before that: `npm run sign` fails with "Field is required: rootUrls".
       `savvycocoa1919` org (grafana.com → Administration → Access
       Policies).
 - [ ] Add it as the repository secret `GRAFANA_ACCESS_POLICY_TOKEN`. `ci.yml`
-      then signs on every run.
-- [ ] In `.github/workflows/release.yml`, enable signing by uncommenting the
-      `with:` block and setting
-      `policy_token: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}`.
+      then signs on every run. Not before approval: until the plugin has a
+      signature level, `npm run sign` fails ("Field is required: rootUrls")
+      and the secret would turn CI's main job red.
+- [ ] In `.github/workflows/release.yml`, add
+      `policy_token: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}` under the
+      build step's `with:`, next to `attestation: true` (the comment there
+      marks the spot).
 - [ ] Cut the next version the same way, so the published zip is
       signed, and submit it as an update under **My Plugins**.
 - [ ] Delete this file.
