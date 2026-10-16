@@ -193,14 +193,25 @@ If a high sits in a dev-only chain that `audit fix` can't reach, pin it with
 audit fixes as their own commit (they can ride on a dependency PR, since
 separate PRs would conflict on the lockfile anyway).
 
-If no fixed release exists at all, and the package is build-time only and
-never sees untrusted input, accept it in `osv-scanner.toml` at the repo root:
-the advisory id and its aliases, an `ignoreUntil` about three months out, and
-the reason. The catalog validator's osv-scanner reads that file next to the
-lockfile, and the project checks' advisory gate
-(`.github/scripts/audit-gate.mjs`) reads the same list, so one entry covers
-both. When the date passes, both gates fail again and the advisory gets a
-fresh look. Remove the entry as soon as a fix ships.
+If no fixed release exists at all, the catalog validator will fail the
+submission whatever we accept: since 0.49.16 it ignores `osv-scanner.toml`
+and scans with its own configuration. So the advisory has to leave the
+lockfile, by an upstream fix (the package itself, or the scaffold dropping
+it; check `@grafana/create-plugin`'s release notes) or by removing the
+dependency. `osv-scanner.toml` still lists advisories that CI's own gate
+(`.github/scripts/audit-gate.mjs`) accepts, with an `ignoreUntil` about
+three months out and the reason, so main stays green while that happens.
+Remove the entry as soon as the advisory is gone.
+
+The release workflow's validator is pinned by the build action (0.49.13),
+which still honoured `osv-scanner.toml`, so its run can pass where the
+latest fails. Run the latest before submitting.
+
+Example, October 2026: `braces` (CVE-2026-93687) had no fix and came in only
+through the scaffold's dev-mode ESLint plugin. CI accepted it, but the
+latest validator failed 1.2.0 on it. create-plugin 7.13.0 replaced that
+plugin (`diagnostics-webpack-plugin`), which took `braces` out of the
+lockfile, and 1.2.1 shipped with the scaffold update.
 
 osv-scanner and `npm audit` use different databases, so an advisory can
 reach one first. Run the validator as well as `npm audit` before deciding a
@@ -301,21 +312,20 @@ commit before calling the job done.
 
 Update this section whenever an ignore, pin or token changes.
 
-As of **2026-10-06**:
+As of **2026-10-16**:
 
 | What | State | When to revisit |
 |---|---|---|
-| Scaffold | create-plugin 7.11.0 | 7.12.0 is released on GitHub but not yet npm `latest`; the next scaffold PR brings in the `@grafana/eslint-config` v10 migration |
+| Scaffold | create-plugin 7.13.0 (#107), with the `@grafana/eslint-config` v10 migration and `diagnostics-webpack-plugin` in place of `eslint-webpack-plugin` | the next monthly scaffold PR |
 | Ignore: `eslint` 10.x | blocked by `eslint-plugin-react`, which requires eslint ≤9.7; the upstream template is still on eslint 9 | when the template moves to eslint 10 |
 | Ignore: `typescript` 7.x | blocked by `typescript-eslint`, which requires <6.1 | when `typescript-eslint` supports 7 |
-| Ignore: `@grafana/eslint-config` 10.x | its exports changed; only the scaffold migration updates `.config/eslint.config.mjs` | automatic once the 7.12 scaffold PR merges |
+| `@grafana/eslint-config` | on 10.x since the 7.13.0 scaffold | the old Dependabot ignore for 10.x is moot; lift it with `@dependabot unignore @grafana/eslint-config` on a Dependabot PR if one is still recorded |
 | Pin: `overrides.js-cookie ^3.0.6` | floor under a dev-only high (GHSA-qjx8-664m-686j) reached through `@grafana/data` → `react-use` / `@react-hookz/web`, whose `^3.0.0` range still allows the vulnerable ≤3.0.5 | drop once they require ≥3.0.6 themselves |
 | Pin: `overrides.basic-ftp ^6.2.1` | floor under a dev-only high (GHSA-c475-qrg2-pj4r) reached through `@grafana/sign-plugin` → `proxy-agent` → `pac-proxy-agent` → `get-uri`, whose `^5.3.1` range has no fixed release; get-uri's FTP calls (`access`, `lastMod`, `list`, `downloadTo`, `close`) are unchanged in 6.x | drop once `get-uri` requires ≥6.2.1 itself |
 | Pin: `overrides.source-map-js ^1.2.2` | floor under a dev-only high (CVE-2026-93749, osv only; not yet in `npm audit`) reached through `postcss`, `sass` and `imports-loader`, whose ranges still allow 1.2.1 | drop once they require ≥1.2.2 themselves |
-| Accepted: `braces` ≤3.0.3 (CVE-2026-93687 / GHSA-vfj7-8cjw-p6xm) | no fixed release; reached only through `eslint-webpack-plugin` → `micromatch`, which the scaffold's webpack config uses at build time on repo-local globs; nothing ships | `ignoreUntil` 2027-01-06 in `osv-scanner.toml`, or sooner if braces publishes a fix |
 | React | 19 (dev only), since 2026-09-25 | — |
 | `GH_PAT_TOKEN` | expires **2026-10-25** | regenerate before then; `pat-expiry.yml` opens an issue 14 days ahead |
-| Open advisories | 4 moderate (react-router chain); the one high is the accepted `braces` entry | the moderates need an `@grafana` major, so leave them |
+| Open advisories | no highs, and nothing accepted in `osv-scanner.toml`. Two moderates (`npm audit` counts 23 entries with their dependents): `react-router` under `@grafana/ui`, and `sprintf-js`, dev only through Jest's coverage tooling | `react-router` needs an `@grafana` major; both are below the validator's and CI's high bar, so leave them |
 
 ## Checks that watch for this between passes
 
