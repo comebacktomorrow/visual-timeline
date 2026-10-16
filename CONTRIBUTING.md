@@ -68,6 +68,9 @@ the source of truth: it is also the plugin's page in the Grafana catalog.
   `webpack.config.ts` extends it.
 - `npm run server` starts the scaffold's dev Grafana on `:3000` (that's
   separate from the README's Docker demo on `:3300`); `npm run dev` rebuilds on change.
+  With no `dist/` yet (a fresh clone), its `build-plugin` service builds the
+  plugin first, so `docker compose up` alone works; once `dist/` exists it
+  does nothing.
   It also starts `vt-mock-api`, a stand-in frames API (`tests/mock-api/`).
   Two Visual Timeline API data sources point at it, one with the right token
   and one with a wrong token, and the "Visual Timeline — data source mode"

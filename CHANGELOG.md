@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.2 (2026-10-16)
+
+Test environment only: the plugin itself is unchanged.
+
+- `docker compose up` works from a fresh clone. The repository's compose
+  file only mounted `dist/`, which a clone doesn't have, so Grafana started
+  without the plugin. A `build-plugin` service now builds it first when
+  `dist/` is missing, and does nothing when it's there.
+- The Docker demo (`demo/docker-compose.yml`) runs Grafana 13.0.2 instead of
+  11.4.0, which is older than the plugin's Grafana 12.0 minimum.
+
 ## 1.2.1 (2026-10-16)
 
 Build tooling only: the plugin itself is unchanged.
