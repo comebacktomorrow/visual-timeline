@@ -13,6 +13,9 @@ jobs:
   release:
     permissions:
       contents: write
+      # build provenance: GitHub's OIDC token signs an attestation for the zip
+      id-token: write
+      attestations: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -20,10 +23,12 @@ jobs:
           persist-credentials: false
 
       - uses: grafana/plugin-actions/build-plugin@build-plugin/v1.2.0
-        # Uncomment to enable plugin signing
-        # (For more info on how to generate the access policy token see https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin#generate-an-access-policy-token)
-        #with:
-        # Make sure to save the token in your repository secrets
-        #policy_token: $
-        # Usage of GRAFANA_API_KEY is deprecated, prefer `policy_token` option above
-        #grafana_token: $
+        with:
+          # a verifiable record that this workflow built the zip (the catalog
+          # validator checks for it); needs no Grafana token
+          attestation: true
+          # Signing waits for the catalog review: a public plugin gets its
+          # signature level on approval (docs/SUBMISSION.md, "After approval").
+          # Then save the token as the GRAFANA_ACCESS_POLICY_TOKEN secret and add:
+          # policy_token: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
+          # (https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin#generate-an-access-policy-token)

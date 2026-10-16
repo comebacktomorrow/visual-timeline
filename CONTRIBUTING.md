@@ -116,6 +116,7 @@ Releases are cut from tags.
 The `Release` workflow (`.github/workflows/release.yml`) builds and packages
 the app with `grafana/plugin-actions/build-plugin` and creates a **draft**
 GitHub release with `savvycocoa1919-visualtimeline-app-<version>.zip` and its
-`.zip.sha1`. Publish the draft to make those links public; they are what the
-grafana.com submission form asks for. Signing isn't enabled yet: see
-[docs/SUBMISSION.md](docs/SUBMISSION.md).
+`.zip.sha1`, and attests the zip's build provenance (`gh attestation verify
+<zip> --repo comebacktomorrow/visual-timeline`). Publish the draft to make
+those links public; they are what the grafana.com submission form asks for.
+Signing waits for the catalog review: see [docs/SUBMISSION.md](docs/SUBMISSION.md).
