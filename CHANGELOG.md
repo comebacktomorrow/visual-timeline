@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Eras from any query, and no special path for our data source** (#126).
+  A `cadence` field whose value changes over time now draws each pace on its
+  own grid, as declared pace changes did, for anyone's data. The panel no
+  longer recognises the Visual Timeline data source's answers by a marker:
+  our data source sends its frames (with the pace in force at each), its
+  pauses as a state frame and its source list as a plain host table, and the
+  panel reads them as it reads any data source's.
 - **Header chips and what a click does** (#126). **Header chips** chooses
   which chips follow a host's name, in order (`site`, `location`, tag keys);
   **Chip click** chooses Filter (the ad hoc filter, as before), a **Chip

@@ -169,15 +169,15 @@ TestData, or the Visual Timeline data source's Demo data. The image is a URL tha
 viewer's browser can load (public, or signed by whatever answered the query)
 or Base64 image data. The panel never signs or proxies images itself.
 
-| Field         | Usual names                                                        |                                                    |
-| ------------- | ------------------------------------------------------------------ | -------------------------------------------------- |
-| Time          | the first time field, or `time`, `timestamp`                       | required                                           |
-| Image         | `image`, `url`                                                     | required                                           |
-| Host          | `host`, `source`, `camera`; or a `host` label; or the query's name | required                                           |
-| Site          | `site`, or a `site` label                                          | optional                                           |
-| Preview image | `image_hi`, `preview`                                              | optional, for the click-in preview                 |
-| Cadence       | `cadence` (milliseconds)                                           | optional; otherwise the typical gap between frames |
-| Host details  | `timezone`, `location`, `tags`; or labels on the image field       | optional, shown in the host's header               |
+| Field         | Usual names                                                        |                                                                                                                              |
+| ------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| Time          | the first time field, or `time`, `timestamp`                       | required                                                                                                                     |
+| Image         | `image`, `url`                                                     | required                                                                                                                     |
+| Host          | `host`, `source`, `camera`; or a `host` label; or the query's name | required                                                                                                                     |
+| Site          | `site`, or a `site` label                                          | optional                                                                                                                     |
+| Preview image | `image_hi`, `preview`                                              | optional, for the click-in preview                                                                                           |
+| Cadence       | `cadence` (milliseconds)                                           | optional; otherwise the typical gap between frames. A value that changes over time draws each pace on its own grid (an era). |
+| Host details  | `timezone`, `location`, `tags`; or labels on the image field       | optional, shown in the host's header                                                                                         |
 
 A **wide table** works too, as a SQL pivot returns it: one time column and an
 image column per host, each column named for its host (or carrying a `host`

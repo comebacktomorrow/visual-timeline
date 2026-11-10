@@ -9,7 +9,7 @@
  * data, and nothing here signs, rewrites or authenticates anything. */
 import { DataFrame, Field, FieldType, getFieldDisplayName } from '@grafana/data';
 
-import type { Backend, Frame, SourceDecl } from '../vt/types';
+import type { Backend, Frame, HistoryEvent, SourceDecl } from '../vt/types';
 import { withPauseStates, type HostStates } from './hostState';
 
 /** Which field plays which role. Empty means "find it by the usual names". */
@@ -36,6 +36,10 @@ export interface HostRecords extends HostMeta {
   frames: Frame[];
   /** From a cadence field (ms), else the median gap between frames. */
   cadence: number;
+  /** Where a cadence field's value changes over time: a cadence event at the
+   * first frame of each new value, so the timeline draws each pace on its own
+   * grid (an era) instead of a slow stretch as false gaps. */
+  history?: HistoryEvent[];
 }
 
 /** The usual names for each role, matched without regard to case. */
@@ -209,13 +213,13 @@ function wideColumns(frame: DataFrame, roles: FieldRoles): Field[] {
 /** The frame records in a query result, one entry per host, or null when no
  * frame in it has an image field (or image columns, in a wide table). */
 export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldRoles = {}): HostRecords[] | null {
-  const byHost = new Map<string, { id: string; site: string; frames: Map<number, Frame>; cadence?: number; meta: HostMeta }>();
+  const byHost = new Map<string, { id: string; site: string; frames: Map<number, Frame>; cadence?: number; paces: Map<number, number>; meta: HostMeta }>();
   let found = false;
   const recFor = (id: string, siteId: string) => {
     const key = siteId + '/' + id;
     let rec = byHost.get(key);
     if (!rec) {
-      rec = { id, site: siteId, frames: new Map(), meta: {} };
+      rec = { id, site: siteId, frames: new Map(), paces: new Map(), meta: {} };
       byHost.set(key, rec);
     }
     return rec;
@@ -259,7 +263,7 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
       const key = siteId + '/' + id;
       let rec = byHost.get(key);
       if (!rec) {
-        rec = { id, site: siteId, frames: new Map(), meta: {} };
+        rec = { id, site: siteId, frames: new Map(), paces: new Map(), meta: {} };
         addMeta(rec.meta, fromLabels);
         byHost.set(key, rec);
       }
@@ -269,13 +273,16 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
       if (hi) {f.hi = hi;}
       rec.frames.set(ts, f); // a repeated timestamp: the later row wins
       const c = cadence ? Number(cadence.values[i]) : NaN;
-      if (Number.isFinite(c) && c > 0) {rec.cadence = c;}
+      if (Number.isFinite(c) && c > 0) { rec.cadence = c; rec.paces.set(ts, c); }
     }
   }
   if (!found) {return null;}
   return [...byHost.values()].map((r) => {
     const frames = [...r.frames.values()].sort((a, b) => a.ts - b.ts);
-    return { ...r.meta, id: r.id, site: r.site, frames, cadence: r.cadence ?? inferCadence(frames.map((f) => f.ts)) };
+    const history = paceHistory(r.paces);
+    // the pace in force at the end of the window
+    const cadence = history ? history[history.length - 1].cadence! : r.cadence ?? inferCadence(frames.map((f) => f.ts));
+    return { ...r.meta, id: r.id, site: r.site, frames, cadence, ...(history ? { history } : {}) };
   });
 }
 
@@ -287,8 +294,6 @@ export function hostTableFromSeries(series: DataFrame[] | undefined, roles: Fiel
   const out = new Map<string, SourceDecl>();
   for (const frame of series || []) {
     if (fieldNamed(frame, roles.image, ROLE_NAMES.image) || fieldNamed(frame, undefined, ['state', 'status'])) {continue;}
-    // the Visual Timeline data source's own source list is read in full elsewhere
-    if (frame.meta?.custom?.visualTimeline) {continue;}
     const host = fieldNamed(frame, roles.host, [...ROLE_NAMES.host, 'id']);
     const meta = metaFields(frame);
     const cadence = fieldNamed(frame, roles.cadence, ROLE_NAMES.cadence);
@@ -305,6 +310,16 @@ export function hostTableFromSeries(series: DataFrame[] | undefined, roles: Fiel
     }
   }
   return [...out.values()];
+}
+
+/* A cadence field's values by frame time, as cadence events where the value
+ * changes; null while there's only one pace. */
+function paceHistory(paces: Map<number, number>): HistoryEvent[] | null {
+  const events: HistoryEvent[] = [];
+  for (const [ts, c] of [...paces.entries()].sort((a, b) => a[0] - b[0])) {
+    if (!events.length || events[events.length - 1].cadence !== c) {events.push({ since: ts, cadence: c });}
+  }
+  return events.length > 1 ? events : null;
 }
 
 /** At most one frame per step, the one nearest each step's tick, from a
@@ -338,7 +353,7 @@ export function recordsBackend(hosts: HostRecords[], known: SourceDecl[] = [], s
     const k = known.find((d) => d.id === h.id && (d.site === h.site || !h.site));
     if (k) {matched.add(k);}
     const own: SourceDecl = {
-      id: h.id, site: h.site, cadence: h.cadence,
+      id: h.id, site: h.site, cadence: h.cadence, ...(h.history ? { history: h.history } : {}),
       ...(h.timezone ? { timezone: h.timezone } : {}), ...(h.location ? { location: h.location } : {}), ...(h.tags ? { tags: h.tags } : {}),
     };
     // what a source list or host table says wins; the rows fill in the rest

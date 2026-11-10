@@ -222,18 +222,14 @@ describe('host metadata from any query (M4c)', () => {
     expect(decls[1]).toMatchObject({ id: 'cam-9', site: 'home', cadence: 60_000 });
   });
 
-  test('frames of images, state queries and our own source list are not host tables', () => {
+  test('frames of images and state queries are not host tables', () => {
     const images = table([[T0, 'cam', 'https://img/1.jpg']], { timezone: ['UTC'] });
     const state = createDataFrame({ fields: [
       { name: 'host', type: FieldType.string, values: ['cam'] },
       { name: 'state', type: FieldType.string, values: ['down'] },
       { name: 'location', type: FieldType.string, values: ['x'] },
     ] });
-    const ours = createDataFrame({ meta: { custom: { visualTimeline: { uid: 'x' } } }, fields: [
-      { name: 'host', type: FieldType.string, values: ['cam'] },
-      { name: 'timezone', type: FieldType.string, values: ['UTC'] },
-    ] });
-    expect(hostTableFromSeries([images, state, ours])).toEqual([]);
+    expect(hostTableFromSeries([images, state])).toEqual([]);
   });
 
   test('a host two lists name is drawn once, the first list winning', async () => {
@@ -271,5 +267,23 @@ describe('wide tables (#126)', () => {
       { name: 'pic', type: FieldType.string, values: ['https://img/1.jpg'] },
     ] });
     expect(recordsFromSeries([withHost])).toBeNull();
+  });
+});
+
+describe('cadence that changes over time (eras from any query)', () => {
+  test('a cadence field whose value changes gives cadence events at each change', async () => {
+    const rows = [0, 2, 4, 8, 12].map((m) => T0 + m * MIN);
+    const f = table(rows.map((t) => [t, 'cam', 'https://img/' + t + '.jpg'] as [number, string, string]),
+      { cadence: [120000, 120000, 120000, 240000, 240000] });
+    const [h] = recordsFromSeries([f])!;
+    expect(h.cadence).toBe(240000);
+    expect(h.history).toEqual([{ since: T0, cadence: 120000 }, { since: T0 + 8 * MIN, cadence: 240000 }]);
+    const [decl] = await recordsBackend([h]).kiosks(null);
+    expect(decl.history).toEqual(h.history);
+  });
+
+  test('one pace throughout: no history', () => {
+    const [h] = recordsFromSeries([table([[T0, 'cam', 'https://img/1.jpg'], [T0 + MIN, 'cam', 'https://img/2.jpg']], { cadence: [60000, 60000] })])!;
+    expect(h.history).toBeUndefined();
   });
 });

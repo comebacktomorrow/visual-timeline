@@ -1,12 +1,11 @@
 import type { ApiSourceDecl } from '../vt/backends/api';
+import { hostTableFromSeries } from './frameRecords';
 import type { SourceDecl } from '../vt/types';
 import {
   applySourceFilter,
-  FRAME_MARKER,
   interpolatedList,
   lastFramesByHost,
   matchesAdhoc,
-  sourcesFromFrames,
   sourcesToFrame,
   tagKeys,
   tagValues,
@@ -103,8 +102,8 @@ describe('the last frames, per host', () => {
     expect(f['cam-2 status'].config.mappings[0].options.paused.color).toBe('blue');
   });
 
-  test('not a source list: Visual Timeline panels ignore it', () => {
-    expect(sourcesFromFrames([lastFramesByHost(SOURCES, last, 'A')])).toBeNull();
+  test('not a host table (no host field): Visual Timeline panels draw no hosts from it', () => {
+    expect(hostTableFromSeries([lastFramesByHost(SOURCES, last, 'A')])).toEqual([]);
   });
 
   test('a host id two sites share is named site/id', () => {
@@ -116,20 +115,20 @@ describe('the last frames, per host', () => {
 });
 
 describe('the source list frame', () => {
-  const meta = { uid: 'vt-ds', demo: false };
-  test('round-trips every field the core reads', () => {
-    const back = sourcesFromFrames([sourcesToFrame(SOURCES, 'A', meta)]);
-    expect(back?.meta).toEqual(meta);
-    expect(back?.sources).toEqual(SOURCES);
+  // no marker: the panel reads it as it reads anyone's host table (#126)
+  test('is a host table: every host with its time zone, location, tags and cadence', () => {
+    const decls = hostTableFromSeries([sourcesToFrame(SOURCES, 'A')]);
+    expect(decls).toEqual([
+      { id: 'cam-1', site: 'home', cadence: 60000, timezone: 'Australia/Brisbane', tags: { env: 'prod', room: 'lobby' } },
+      { id: 'cam-2', site: 'home', cadence: 60000, tags: { env: 'test' } },
+      { id: 'kiosk-a', site: 'office', cadence: 300000, location: 'foyer' },
+    ]);
   });
-  test('merges several queries without duplicates', () => {
-    const back = sourcesFromFrames([sourcesToFrame(SOURCES.slice(0, 2), 'A', meta), sourcesToFrame(SOURCES.slice(1), 'B', meta)]);
-    expect(ids(back!.sources)).toEqual(['cam-1', 'cam-2', 'kiosk-a']);
+  test('several queries\' lists merge without duplicates', () => {
+    const decls = hostTableFromSeries([sourcesToFrame(SOURCES.slice(0, 2), 'A'), sourcesToFrame(SOURCES.slice(1), 'B')]);
+    expect(ids(decls)).toEqual(['cam-1', 'cam-2', 'kiosk-a']);
   });
-  test('other data sources\' frames are ignored; none of ours is null', () => {
-    const other = { ...sourcesToFrame(SOURCES, 'A', meta), meta: {} };
-    expect(sourcesFromFrames([other])).toBeNull();
-    expect(sourcesFromFrames(undefined)).toBeNull();
-    expect(sourcesToFrame(SOURCES, 'A', meta).meta?.custom?.[FRAME_MARKER]).toEqual(meta);
+  test('carries no marker for the panel', () => {
+    expect(sourcesToFrame(SOURCES, 'A').meta?.custom).toBeUndefined();
   });
 });
