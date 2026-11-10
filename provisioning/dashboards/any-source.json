@@ -188,6 +188,39 @@
           }
         ]
       }
+    },
+    {
+      "id": 4,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Irregular feed from TestData",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "trlxrdZVk"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "trlxrdZVk"
+          },
+          "scenarioId": "csv_content",
+          "csvContent": "time,host,image\n2026-01-01T10:00:00Z,cam-x,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:01:40Z,cam-x,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:02:10Z,cam-x,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:07:00Z,cam-x,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:19:00Z,cam-x,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:20:00Z,cam-x,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n"
+        }
+      ],
+      "options": {
+        "mode": "timeline",
+        "holdFrames": "threshold",
+        "holdFor": "5m",
+        "missingFrames": "nodata"
+      },
+      "description": "An irregular feed (frames at uneven times, like a motion-triggered camera): each frame is held for up to 5 minutes, and a longer silence is a neutral \"no data\" gap, not offline."
     }
   ]
 }

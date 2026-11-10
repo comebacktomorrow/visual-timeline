@@ -12,7 +12,7 @@ type ActiveSpan = { from: number; to: number; cadence: number };
 const PROBE_BUCKETS = 400;
 
 export async function buildSourceModel(
-  decl: SourceDecl, P: TimeWindow, backend: Pick<Backend, 'frames'>, budgetSlots: number
+  decl: SourceDecl, P: TimeWindow, backend: Pick<Backend, 'frames'>, budgetSlots: number, holdMs = 0
 ): Promise<SourceModel> {
   const eras = erasFor(decl, P);
   const slots: Slot[] = [];
@@ -185,8 +185,34 @@ export async function buildSourceModel(
     }
     return slots[slots.length - 1] || null;
   }
+  holdFrames(slots, holdMs);
   const lastActive = [...slots].reverse().find((sl) => !sl.paused && !sl.beyond) || null;
   return { eras, slots, slotAt, lastActive };
+}
+
+/* A slot that got no frame shows the last frame before it, for up to
+ * holdMs after that frame (Infinity: always), instead of a gap: for feeds
+ * that don't send a frame on every tick (motion-triggered cameras, drifting
+ * timestamps). Pending slots stay pending, and a pause band ends the hold:
+ * the pause explains the silence itself. Returns the slots it filled, for
+ * the live poll to draw. Re-runnable: a held slot is re-held from its own
+ * frame's time. */
+export function holdFrames(slots: Slot[], holdMs: number): TickSlot[] {
+  const filled: TickSlot[] = [];
+  if (!(holdMs > 0)) {return filled;}
+  let last: Frame | null = null;
+  for (const sl of slots) {
+    if (sl.paused) { last = null; continue; }
+    if (sl.beyond) {continue;}
+    if (sl.frame && !sl.held) { last = sl.frame; continue; }
+    if (sl.held || sl.future) {continue;}
+    if (last && sl.ts - last.ts <= holdMs) {
+      sl.frame = last;
+      sl.held = true;
+      filled.push(sl);
+    }
+  }
+  return filled;
 }
 
 /* The pending slot's "last known" frame: the nearest earlier frame, carried
@@ -200,11 +226,16 @@ export function ghostFor(slots: Slot[], sl: Slot): Frame | null {
   return null;
 }
 /* the slot state slotClass reads: any Slot, or a slot-shaped object */
-export type SlotState = PauseSubject & { beyond?: boolean; frame?: Frame | null; future?: boolean };
+export type SlotState = PauseSubject & { beyond?: boolean; frame?: Frame | null; future?: boolean; held?: boolean };
 /* A strip slot's state classes (appended to "slot"): a pause band, the
  * beyond-now spacer, a frame, pending ("future") or offline ("gap"). */
-export function slotClass(sl: SlotState): string {
-  return sl.paused ? ' ' + pauseInfo(sl).classes.join(' ') : sl.beyond ? ' beyond' : sl.frame ? '' : sl.future ? ' future' : ' gap';
+export function slotClass(sl: SlotState, missing = 'offline'): string {
+  return sl.paused ? ' ' + pauseInfo(sl).classes.join(' ') : sl.beyond ? ' beyond'
+    : sl.frame ? (sl.held ? ' held' : '') : sl.future ? ' future' : gapClass(missing);
+}
+/* a gap's classes: the red offline hatch, or the neutral "no frame" one */
+export function gapClass(missing = 'offline'): string {
+  return missing === 'nodata' ? ' gap nodata' : ' gap';
 }
 /* a pending slot still empty a full step past its tick has missed its
  * heartbeat: the live poll turns it from pending into offline */

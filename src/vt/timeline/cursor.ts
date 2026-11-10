@@ -148,10 +148,13 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
       const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
       let last: Frame | null | undefined = null;
       for (let j = i; j >= 0; j--) {if (c.model.slots[j].frame) { last = c.model.slots[j].frame; break; }}
-      const msg = last ? 'offline — last seen ' + tt.time(last.ts) + tt.sfx(last.ts) : 'no data in window';
+      const nodata = s.cfg.missingFrames === 'nodata';
+      const msg = last ? (nodata ? 'no frame — last seen ' : 'offline — last seen ') + tt.time(last.ts) + tt.sfx(last.ts) : 'no data in window';
       setText(c.mag.querySelector('.cap')!, msg);
       setText(c.head, msg);
       c.head.classList.add('stale');
+      c.mag.classList.toggle('nodata', nodata);
+      c.head.classList.toggle('nodata', nodata);
       clearPauseClasses(c.head);
     }
   }

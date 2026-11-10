@@ -126,12 +126,16 @@ export interface TickSlot extends SlotBase {
   cadence: number;
   step: number;
   future: boolean;
+  /* the frame is an earlier one, held over a slot that got none
+   * (MountConfig.holdFrames) */
+  held?: boolean;
   paused?: undefined;
   beyond?: undefined;
 }
 /* a declared pause band: [ts, ts + span) */
 export interface PauseSlot extends SlotBase {
   paused: true;
+  held?: undefined;
   reason?: string;
   intended?: boolean;
   label?: string;
@@ -148,6 +152,7 @@ export interface BeyondSlot extends SlotBase {
   frame?: undefined;
   future?: undefined;
   step?: undefined;
+  held?: undefined;
 }
 export type Slot = TickSlot | PauseSlot | BeyondSlot;
 
@@ -197,6 +202,13 @@ export interface MountConfig {
   annotations?: RawAnnotation[];   // timeline: host annotations (else the demo seam's)
   showAnnotations?: boolean;       // timeline: false hides them
   annotationLanes?: string;        // timeline: 'shared' (default) | 'per-source'
+  /* a slot that got no frame shows the last one for up to this long (ms;
+   * Infinity: always; 0 or unset: never), for feeds that don't send a frame
+   * on every tick */
+  holdFrames?: number;
+  /* what a gap means: 'offline' (default: the red hatch, "offline — last
+   * seen") or 'nodata' (neutral: nothing says the host should have sent one) */
+  missingFrames?: string;
   onHover?: (t: number) => void;               // timeline: a local hover moved the cursor
   onHoverClear?: () => void;                   // timeline: the mouse left a strip
   onCursor?: (t: number) => void;              // timeline: every cursor move (host chrome)
