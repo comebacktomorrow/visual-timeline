@@ -79,7 +79,9 @@ describe('slotClass', () => {
     [{ ts: 0, span: 1, frame: { ts: 0, url: 'u' }, future: true }, ''],
     [{ ts: 0, span: 1, beyond: true }, ' beyond'],
     [{ ts: 0, span: 1, paused: true }, ' paused'],
-    [{ ts: 0, span: 1, paused: true, reason: 'screen-sleep', intended: false }, ' paused r-screen-sleep unintended'],
+    // the core knows no reasons: a pause is its label and colour
+    [{ ts: 0, span: 1, paused: true, reason: 'screen-sleep', intended: false }, ' paused'],
+    [{ ts: 0, span: 1, paused: true, label: 'Down', color: '#f00' }, ' paused tinted'],
   ])('%p → %p', (sl, cls) => {
     expect(slotClass(sl)).toBe(cls);
   });
@@ -341,7 +343,7 @@ describe('buildSourceModel', () => {
     });
     const m = await build(d, P, backendWith(every(MIN, T0, T0 + 30 * MIN)), BUDGET);
     const at30 = m.slots.filter((sl: any) => sl.ts === T0 + 30 * MIN);
-    expect(at30.map((sl: any) => slotClass(sl).trim())).toEqual(['', 'paused r-quiet']);
+    expect(at30.map((sl: any) => slotClass(sl).trim())).toEqual(['', 'paused']);
   });
 
   test('a declared (bounded) pause next to an unexpected gap: neutral band vs offline slots', async () => {
@@ -372,7 +374,7 @@ describe('buildSourceModel', () => {
     // drawn right before the band, so the band owns it.
     expect(v.slice(20, 30)).toEqual([20, 21, 22, 23, 24, 25, 26, 27, 28, 29].map((t) => [t, 'gap']));
     // the declared pause: ONE band slot spanning the whole bounded era
-    expect(v[30]).toEqual([30, 'paused r-quiet']);
+    expect(v[30]).toEqual([30, 'paused']);
     expect(m.slots[30]).toMatchObject({ ts: T0 + 30 * MIN, span: 15 * MIN, paused: true, reason: 'quiet' });
     expect(v.slice(31).every(([, c]) => c === '')).toBe(true);
     expect(v.slice(31)[0]).toEqual([45, '']);
@@ -397,7 +399,7 @@ describe('buildSourceModel', () => {
       reason: 'screen-sleep',
       intended: false,
     });
-    expect(slotClass(last)).toBe(' paused r-screen-sleep unintended');
+    expect(slotClass(last)).toBe(' paused');
     expect(m.lastActive.ts).toBe(T0 + 30 * MIN);
   });
 

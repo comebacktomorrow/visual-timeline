@@ -47,11 +47,6 @@ export function themeVars(theme: GrafanaTheme2): Record<string, string> {
   }
 
   const text = c.text.primary;
-  const band = (hue: string, fg: string, prefix: string) => ({
-    [`--ktl-${prefix}-a`]: a(hue, 0.14),
-    [`--ktl-${prefix}-b`]: a(hue, 0.3),
-    [`--ktl-${prefix}`]: fg,
-  });
   return {
     ...vars,
     '--ktl-axis-grid': c.border.medium,
@@ -66,10 +61,5 @@ export function themeVars(theme: GrafanaTheme2): Record<string, string> {
     '--ktl-pause-b': a(text, 0.13),
     '--ktl-tpause-a': a(text, 0.03),
     '--ktl-tpause-b': a(text, 0.09),
-    ...band(viz('blue'), viz('dark-blue'), 'sleep'),
-    ...band(viz('purple'), viz('dark-purple'), 'down'),
-    // the palette has no teal; keep app-stopped's hue from the dark default
-    ...band('#2ba08c', colorManipulator.darken('#6fc4b4', 0.45), 'stopped'),
-    ...band(viz('orange'), c.warning.text, 'unint'),
   };
 }

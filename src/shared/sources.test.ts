@@ -1,3 +1,4 @@
+import type { ApiSourceDecl } from '../vt/backends/api';
 import type { SourceDecl } from '../vt/types';
 import {
   applySourceFilter,
@@ -11,7 +12,7 @@ import {
   tagValues,
 } from './sources';
 
-const SOURCES: SourceDecl[] = [
+const SOURCES: ApiSourceDecl[] = [
   { id: 'cam-1', site: 'home', cadence: 60000, tags: { env: 'prod', room: 'lobby' }, timezone: 'Australia/Brisbane', history: [] },
   { id: 'cam-2', site: 'home', cadence: 60000, tags: { env: 'test' }, hiCadence: 300000, history: [{ since: 5, cadence: 60000 }] },
   { id: 'kiosk-a', site: 'office', cadence: 300000, location: 'foyer', history: [] },

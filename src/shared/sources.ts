@@ -6,7 +6,9 @@
 import { AdHocVariableFilter, createDataFrame, DataFrame, FieldConfig, FieldType, MappingType, ValueMapping } from '@grafana/data';
 
 import { matchesTags, parseTagFilter, parseVar } from '../vt/model/filters';
+import { labelPauses } from '../vt/backends/reasons';
 import type { HistoryEvent, RawAnnotation, SourceDecl } from '../vt/types';
+import type { ApiSourceDecl } from '../vt/backends/api';
 import type { LastFrame } from './lastFrame';
 
 /** Marks the frames a Visual Timeline data source returns: meta.custom[FRAME_MARKER]. */
@@ -136,7 +138,7 @@ const IMAGE_CELL = { cellOptions: { type: 'image' } };
  * host's last frame in the range: its image, already set to show as one in
  * a Table, its time, and the host's status at the range's end. */
 export function sourcesToFrame(
-  sources: SourceDecl[], refId: string, meta: SourcesFrameMeta, last?: Array<LastFrame | null>
+  sources: ApiSourceDecl[], refId: string, meta: SourcesFrameMeta, last?: Array<LastFrame | null>
 ): DataFrame {
   const lastFields = last
     ? [
@@ -289,11 +291,11 @@ export function annotationsToFrame(events: RawAnnotation[], refId: string): Data
 /** The sources and their data source, from a panel's query result: every
  * Visual Timeline frame, merged (a panel may have several queries), or null
  * when the result holds none. */
-export function sourcesFromFrames(series: DataFrame[] | undefined): { sources: SourceDecl[]; meta: SourcesFrameMeta } | null {
+export function sourcesFromFrames(series: DataFrame[] | undefined): { sources: ApiSourceDecl[]; meta: SourcesFrameMeta } | null {
   const ours = (series || []).filter((f) => f.meta?.custom?.[FRAME_MARKER]);
   if (!ours.length) {return null;}
   const seen = new Set<string>();
-  const sources: SourceDecl[] = [];
+  const sources: ApiSourceDecl[] = [];
   for (const frame of ours) {
     const col = (name: string) => frame.fields.find((f) => f.name === name)?.values;
     const host = col('host') || [];
@@ -303,14 +305,14 @@ export function sourcesFromFrames(series: DataFrame[] | undefined): { sources: S
       const site = String(at('site'));
       if (seen.has(site + '/' + id)) {continue;}
       seen.add(site + '/' + id);
-      const s: SourceDecl = { id, site, cadence: Number(at('cadence')) };
+      const s: ApiSourceDecl = { id, site, cadence: Number(at('cadence')) };
       if (at('location')) {s.location = String(at('location'));}
       if (at('timezone')) {s.timezone = String(at('timezone'));}
       if (at('hiCadence') != null) {s.hiCadence = Number(at('hiCadence'));}
       const tags = at('tags') as Record<string, string> | undefined;
       if (tags && Object.keys(tags).length) {s.tags = tags;}
       s.history = (at('history') as HistoryEvent[] | undefined) || [];
-      sources.push(s);
+      sources.push(labelPauses(s));
     }
   }
   return { sources, meta: ours[0].meta!.custom![FRAME_MARKER] as SourcesFrameMeta };

@@ -1,4 +1,6 @@
 import { clearPauseClasses, erasFor, pauseInfo, PAUSE_CLASSES } from './core';
+import { addPauseClasses } from './vt/model/eras';
+import { labelPauses, reasonDisplay } from './vt/backends/reasons';
 
 /* These pin the CURRENT behaviour of src/core.ts as a safety net for the
  * split in #64. A test marked "NOTE: current behaviour" documents something
@@ -162,7 +164,8 @@ describe('retention (an API that deletes old frames)', () => {
       { since: 0, variant: 'lo', paused: true, reason: 'expired', intended: true },
       { since: cutoff, variant: 'lo', cadence: 60e3 },
     ];
-    const eras = erasFor({ cadence: 60e3, history }, { from: cutoff - 600e3, to: cutoff + 600e3 });
+    // the API backend labels the API's reasons (labelPauses) before the core sees them
+    const eras = erasFor(labelPauses({ cadence: 60e3, history }), { from: cutoff - 600e3, to: cutoff + 600e3 });
     expect(eras.map((e) => [e.from, e.to, e.paused, e.reason])).toEqual([
       [cutoff - 600e3, cutoff, true, 'expired'],
       [cutoff, cutoff + 600e3, false, undefined],
@@ -172,65 +175,53 @@ describe('retention (an API that deletes old frames)', () => {
 });
 
 describe('pauseInfo', () => {
-  test.each([
-    [undefined, true, 'PAUSED', ['paused']],
-    ['quiet', true, 'QUIET HOURS', ['paused', 'r-quiet']],
-    ['screen-sleep', true, 'SCREEN ASLEEP', ['paused', 'r-screen-sleep']],
-    ['screen-sleep', false, 'SCREEN DARK (UNEXPECTED)', ['paused', 'r-screen-sleep', 'unintended']],
-    ['system-down', true, 'SYSTEM DOWN (PLANNED)', ['paused', 'r-system-down']],
-    ['app-stopped', true, 'APP STOPPED', ['paused', 'r-app-stopped']],
-    ['app-stopped', false, 'APP STOPPED', ['paused', 'r-app-stopped', 'unintended']],
-    [undefined, false, 'PAUSED', ['paused', 'unintended']],
-    ['expired', true, 'NO DATA', ['paused', 'r-expired']],
-  ])('reason %p, intended %p → %p', (reason, intended, label, classes) => {
-    expect(pauseInfo({ paused: true, reason, intended })).toEqual({ label, classes });
+  // the core knows no reasons: a pause is its label and colour
+  test('a pause with a label and colour is tinted that colour', () => {
+    expect(pauseInfo({ paused: true, label: 'Maintenance', color: '#B877D9' })).toEqual({ label: 'Maintenance', classes: ['paused', 'tinted'], color: '#B877D9' });
   });
-
-  test('only intended === false is unintended (undefined intent is not)', () => {
-    expect(pauseInfo({ reason: 'quiet' }).classes).not.toContain('unintended');
-    expect(pauseInfo({ reason: 'quiet', intended: null }).classes).not.toContain('unintended');
-  });
-
-  test('a missing slot reads as a plain pause', () => {
+  test('without a colour it takes the neutral hatch; without a label it is PAUSED', () => {
+    expect(pauseInfo({ paused: true, label: 'QUIET HOURS' })).toEqual({ label: 'QUIET HOURS', classes: ['paused'] });
+    expect(pauseInfo({ paused: true })).toEqual({ label: 'PAUSED', classes: ['paused'] });
     expect(pauseInfo(null)).toEqual({ label: 'PAUSED', classes: ['paused'] });
-    expect(pauseInfo(undefined)).toEqual({ label: 'PAUSED', classes: ['paused'] });
+  });
+});
+
+describe('reasonDisplay (the reference worker\'s reasons, at the edge)', () => {
+  test.each([
+    [undefined, true, 'PAUSED', undefined],
+    ['quiet', true, 'QUIET HOURS', undefined],
+    ['screen-sleep', true, 'SCREEN ASLEEP', '#5794F2'],
+    ['screen-sleep', false, 'SCREEN DARK (UNEXPECTED)', '#FF9830'],
+    ['system-down', true, 'SYSTEM DOWN (PLANNED)', '#B877D9'],
+    ['app-stopped', true, 'APP STOPPED', '#2BA08C'],
+    ['app-stopped', false, 'APP STOPPED', '#FF9830'],
+    [undefined, false, 'PAUSED', '#FF9830'],
+    ['expired', true, 'NO DATA', undefined],
+    ['maintenance', undefined, 'PAUSED', undefined],
+  ])('reason %p, intended %p → %p in %p', (reason, intended, label, color) => {
+    expect(reasonDisplay(reason, intended)).toEqual(color ? { label, color } : { label });
   });
 
-  test('every class for a known reason is one the cursor knows how to clear', () => {
-    for (const reason of [undefined, 'quiet', 'screen-sleep', 'system-down', 'app-stopped', 'expired']) {
-      for (const intended of [true, false]) {
-        for (const c of pauseInfo({ reason, intended }).classes) {
-          expect(PAUSE_CLASSES).toContain(c);
-        }
-      }
-    }
-  });
-
-  test('an unknown reason labels as PAUSED but still adds an r-<reason> class', () => {
-    // PAUSE_CLASSES cannot list it; clearPauseClasses (below) clears it anyway
-    const info = pauseInfo({ reason: 'maintenance' });
-    expect(info).toEqual({ label: 'PAUSED', classes: ['paused', 'r-maintenance'] });
-    expect(PAUSE_CLASSES).not.toContain('r-maintenance');
+  test('labelPauses labels a history\'s declared pauses and leaves the rest', () => {
+    const decl = { history: [{ since: 0, cadence: 60000 }, { since: 1, paused: true, reason: 'quiet' }, { since: 2, paused: true, label: 'Own' }] };
+    expect(labelPauses(decl).history).toEqual([
+      { since: 0, cadence: 60000 },
+      { since: 1, paused: true, reason: 'quiet', label: 'QUIET HOURS' },
+      { since: 2, paused: true, label: 'Own' },
+    ]);
   });
 });
 
 describe('clearPauseClasses', () => {
-  test('clears an unknown reason’s r-<reason> class too (#65 regression)', () => {
-    // setCursor and the grid used to clear only PAUSE_CLASSES, so
-    // "r-maintenance" stuck to the magnifier/header after the cursor left
-    // the band
+  test('clears the pause classes and colour, and leaves the rest alone', () => {
     const el = document.createElement('div');
     el.className = 'mag gap';
-    el.classList.add(...pauseInfo({ reason: 'maintenance', intended: false }).classes);
-    expect(el.className).toBe('mag gap paused r-maintenance unintended');
+    addPauseClasses(el, { label: 'x', color: '#f00' });
+    expect(el.className).toBe('mag gap paused tinted');
+    expect(el.style.getPropertyValue('--ktl-band')).toBe('#f00');
     clearPauseClasses(el);
     expect(el.className).toBe('mag gap');
-  });
-
-  test('clears every known pause class and leaves the rest alone', () => {
-    const el = document.createElement('div');
-    el.className = 'ft stale ' + PAUSE_CLASSES.join(' ');
-    clearPauseClasses(el);
-    expect(el.className).toBe('ft stale');
+    expect(el.style.getPropertyValue('--ktl-band')).toBe('');
+    expect(PAUSE_CLASSES).toEqual(['paused', 'tinted']);
   });
 });

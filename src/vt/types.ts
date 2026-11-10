@@ -34,7 +34,6 @@ export interface SourceDecl {
   location?: string;
   tags?: Record<string, string>;
   cadence: number;
-  hiCadence?: number;
   history?: HistoryEvent[];
   timezone?: string; // only when the source declared one (X-Timezone)
 }
