@@ -6,6 +6,12 @@
 # does this).
 FROM node:24-slim
 
+# workerd loads the system's CA certificates at startup and refuses to run
+# without them (since wrangler 4.159's workerd); node:24-slim has none
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app/worker
 COPY worker/package.json worker/package-lock.json ./
 RUN npm ci --no-audit --no-fund

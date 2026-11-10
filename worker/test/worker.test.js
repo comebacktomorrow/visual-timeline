@@ -355,3 +355,104 @@ test('retention: unset or invalid RETENTION_DAYS keeps everything', async () => 
     assert.equal(framesOf(env, 'lo', 'ret-d', 'cam'), 2, `RETENTION_DAYS=${RETENTION_DAYS}`);
   }
 });
+
+/* ---------------- /frames for every source (#126 M2) ---------------- */
+
+/* memR2's frames plus an index.json, as the worker keeps them */
+function indexedR2(keys, sites) {
+  const r2 = memR2(keys);
+  const body = JSON.stringify({ sites });
+  const get = r2.get;
+  r2.get = async (key) => (key === 'index.json' ? { text: async () => body, json: async () => JSON.parse(body) } : get(key));
+  return r2;
+}
+const keysFor = (site, source, cadence, hours) => {
+  const out = [];
+  for (let t = NOW - hours * 3600e3; t <= NOW; t += cadence) {out.push(`lo/${site}/${source}/${t}.jpg`);}
+  return out;
+};
+const allPath = (q) => `/frames?${q}`;
+
+test('/frames without source answers every source as rows of site, source, ts and url', async () => {
+  const FRAMES = indexedR2(
+    [...keysFor('site-a', 'cam-1', MIN, 1), ...keysFor('site-a', 'cam-2', 5 * MIN, 1), ...keysFor('site-b', 'lobby', MIN, 1)],
+    { 'site-a': { 'cam-1': { cadence: MIN }, 'cam-2': { cadence: 5 * MIN } }, 'site-b': { lobby: { cadence: MIN } } }
+  );
+  const res = await call(allPath(`from=${NOW - 3600e3}&to=${NOW}&step=${MIN}`), { FRAMES });
+  assert.equal(res.status, 200);
+  const rows = await res.json();
+  assert.deepEqual(Object.keys(rows[0]), ['site', 'source', 'ts', 'url']);
+  const count = (site, source) => rows.filter((r) => r.site === site && r.source === source).length;
+  assert.equal(count('site-a', 'cam-1'), 61, 'every minute of the hour');
+  // a 5-minute source answers at its own cadence, not at the 60 s asked for
+  assert.equal(count('site-a', 'cam-2'), 13);
+  assert.equal(count('site-b', 'lobby'), 61);
+  assert.ok(rows.every((r) => r.url === `https://w.example/frame/lo/${r.site}/${r.source}/${r.ts}.jpg`));
+});
+
+test('/frames without source: site= narrows, and a site-scoped viewer sees only its sites', async () => {
+  const FRAMES = indexedR2(
+    [...keysFor('site-a', 'cam-1', MIN, 1), ...keysFor('site-b', 'lobby', MIN, 1)],
+    { 'site-a': { 'cam-1': { cadence: MIN } }, 'site-b': { lobby: { cadence: MIN } } }
+  );
+  const q = `from=${NOW - 3600e3}&to=${NOW}&step=${MIN}`;
+  const sitesOf = async (path, env) => [...new Set((await (await call(path, env)).json()).map((r) => r.site))];
+  assert.deepEqual(await sitesOf(allPath(`site=site-b&${q}`), { FRAMES }), ['site-b']);
+  assert.deepEqual(await sitesOf(allPath(`site=All&${q}`), { FRAMES }), ['site-a', 'site-b']);
+  // sources= keeps only those ids, as a Host variable would ask
+  const rows = await (await call(allPath(`sources=lobby&${q}`), { FRAMES })).json();
+  assert.deepEqual([...new Set(rows.map((r) => r.source))], ['lobby']);
+  assert.equal((await call(allPath(`sources=All&${q}`), { FRAMES })).status, 200);
+  const VIEWER_TOKEN = JSON.stringify({ wall: { token: 'w', sites: ['site-a'] } });
+  const scoped = { FRAMES, VIEWER_TOKEN };
+  assert.deepEqual(await sitesOf(allPath(`${q}&k=w`), scoped), ['site-a']);
+  assert.deepEqual(await (await call(allPath(`site=site-b&${q}&k=w`), scoped)).json(), []);
+  assert.equal((await call(allPath(q), scoped)).status, 401);
+});
+
+test('/frames without source coarsens a long window to at most 800 frames per source', async () => {
+  const FRAMES = indexedR2(keysFor('site-a', 'cam-1', MIN, 24), { 'site-a': { 'cam-1': { cadence: MIN } } });
+  const rows = await (await call(allPath(`from=${NOW - 24 * 3600e3}&to=${NOW}&step=1000`), { FRAMES })).json();
+  assert.ok(rows.length <= 801 && rows.length > 700, `${rows.length} rows`);
+  // every 2 minutes, a whole multiple of the cadence; the newest frame is the
+  // last bucket's nearest whatever the minute, so the last gap may be shorter
+  const gaps = new Set(rows.slice(1, -1).map((r, i) => r.ts - rows[i].ts));
+  assert.deepEqual([...gaps], [2 * MIN]);
+});
+
+test('/frames without source shares one scan budget and names the sources it could not finish', async () => {
+  // 6 sources × 2 days of minutes = 6 × 2,881 frames: 18 pages, within the
+  // 50-page budget; 20 sources need 60 pages, past it
+  const sites = { 'site-a': {} };
+  const keys = [];
+  for (let i = 0; i < 20; i++) {
+    const id = `cam-${String(i).padStart(2, '0')}`;
+    sites['site-a'][id] = { cadence: MIN };
+    keys.push(...keysFor('site-a', id, MIN, 48));
+  }
+  const FRAMES = indexedR2(keys, sites);
+  const warns = [];
+  const orig = console.warn; console.warn = (m) => warns.push(m);
+  let res;
+  try { res = await call(allPath(`from=${NOW - 48 * 3600e3}&to=${NOW}&step=${MIN}`), { FRAMES }); } finally { console.warn = orig; }
+  assert.equal(res.status, 200);
+  assert.ok(FRAMES.stats.lists <= 50, `${FRAMES.stats.lists} lists`);
+  const named = (res.headers.get('x-frames-truncated-sources') || '').split(',').filter(Boolean);
+  assert.ok(named.length > 0 && named.every((n) => /^site-a\/cam-\d\d@\d+$/.test(n)), named.join(','));
+  assert.equal(Number(res.headers.get('x-frames-truncated-after')), Math.min(...named.map((n) => Number(n.split('@')[1]))));
+  assert.ok(warns.some((w) => w.includes('frames scan truncated (all sources)')));
+});
+
+test('/frames without source: bad ranges and steps are 400s, and an empty registry is no rows', async () => {
+  const FRAMES = indexedR2([], {});
+  assert.equal((await call(allPath(`from=${NOW}&to=${NOW - 1}&step=${MIN}`), { FRAMES })).status, 400);
+  assert.equal((await call(allPath(`from=${NOW - MIN}&to=${NOW}&step=10`), { FRAMES })).status, 400);
+  assert.equal((await call(allPath(`site=Bad!&from=${NOW - MIN}&to=${NOW}&step=${MIN}`), { FRAMES })).status, 400);
+  assert.deepEqual(await (await call(allPath(`from=${NOW - MIN}&to=${NOW}&step=${MIN}`), { FRAMES })).json(), []);
+});
+
+test('/frames for one source also carries its site', async () => {
+  const FRAMES = memR2(frameKeys(1));
+  const rows = await (await call(framesPath(NOW - 3600e3, NOW, MIN), { FRAMES })).json();
+  assert.equal(rows[0].site, 'site-a');
+});

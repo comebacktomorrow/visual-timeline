@@ -242,14 +242,16 @@ with curl examples, is in
 Uploaders are simple: capture, POST a JPEG on the cadence grid, and on failure
 drop the frame and move on.
 
-In Grafana, read it through a stock data source that keeps the viewer token
-on Grafana's server, such as Infinity with Bearer token authentication: the
-panel draws the rows it returns. The images load straight from the worker into
+In Grafana, read it through the Infinity data source, which keeps the viewer
+token on Grafana's server: one query per panel returns every host's frames as
+rows, and the panel draws them. The settings, the query and Site and Host
+variables are in
+[docs/INFINITY.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/INFINITY.md). The images load straight from the worker into
 the viewer's browser, never through Grafana, because an `<img>` tag can't carry
 a token, so a worker that requires a viewer token must sign its image URLs
 (`IMG_SIGN_KEY`). Version 1.x read it through the Visual Timeline data
-source's own API mode, which 2.0 removes
-([#126](https://github.com/comebacktomorrow/visual-timeline/issues/126)).
+source's own API mode, which 2.0 removes: to move 1.x dashboards, see
+[docs/MIGRATING-2.0.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/MIGRATING-2.0.md).
 
 ## Panel options
 

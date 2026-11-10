@@ -131,7 +131,7 @@ its URLs should keep the signature stable over a block of hours, as the
 reference worker does (see `IMG_SIGN_KEY` below).
 
 ```json
-[{"source":"source-1","ts":1783488360000,"url":"https://…/frame/lo/site-a/source-1/1783488360000.jpg"}]
+[{"site":"site-a","source":"source-1","ts":1783488360000,"url":"https://…/frame/lo/site-a/source-1/1783488360000.jpg"}]
 ```
 
 Clients load each `url` exactly as returned, with one exception: a client
@@ -153,6 +153,36 @@ frames (about 17 days at a 60 s cadence). When it stops early, the
 response carries `X-Frames-Truncated-After: <ts>`: nothing after `<ts>`
 was examined. Request the rest with `from=<ts+1>`, and don't render that
 span as offline.
+
+### `GET /frames?site=<csv>&from=&to=&step=&variant=` (every source)
+
+Without `source`, `/frames` answers for every source of the sites asked for
+(`site` omitted or `All` = every site the viewer may read), as one table of
+rows: what a table-shaped Grafana data source such as Infinity reads, with one
+query for a whole dashboard. The rows are the same as above, sorted by site,
+source and time. `sources=<csv>` keeps only those source ids (omitted or
+`All` = every one), for a Host variable:
+
+```json
+[{"site":"site-a","source":"cam-1","ts":1783488360000,"url":"https://…/frame/lo/site-a/cam-1/1783488360000.jpg"},
+ {"site":"site-a","source":"cam-2","ts":1783488300000,"url":"https://…/frame/lo/site-a/cam-2/1783488300000.jpg"}]
+```
+
+`step` is the finest spacing wanted (Grafana's `${__interval_ms}`). Each
+source answers at that step rounded up to a whole multiple of its own cadence,
+and coarser still when the window would need more than 800 frames from it, so
+a 5-minute source asked for a 60 s step answers every 5 minutes. A source with
+no frames of the `variant` (no `hiCadence` for `hi`) is left out.
+
+The reference worker shares one scan budget (50 pages of 1000 keys) across
+every source in the request. A source the budget didn't cover is named in
+`X-Frames-Truncated-Sources`, as `site/source@ts` entries meaning nothing after
+`ts` was examined for that source; `X-Frames-Truncated-After` carries the
+earliest of those. A client that can't read headers (Infinity can't) draws the
+unexamined span as offline, so keep windows and fleets within the budget.
+Each source costs one page per 1000 frames in the window, and at least one:
+50 pages cover 25 sources at a 60 s cadence over a day, or 50 sources over
+16 hours. A frame index (#44) lifts this.
 
 ### `GET /frame/{variant}/{site}/{source}/{ts}.jpg`
 
