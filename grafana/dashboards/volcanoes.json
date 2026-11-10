@@ -1,0 +1,669 @@
+{
+  "uid": "vt-volcanoes",
+  "title": "Volcanoes — USGS AshCam",
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "15m",
+  "tags": ["visual-timeline", "public-feeds"],
+  "description": "Live public data: six USGS volcano cameras from the AshCam API through Infinity, each at its own pace, with night from the same API as a state.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Volcano cameras",
+      "gridPos": {
+        "h": 17,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "description": "Queries A to F: each camera's images in the time range (USGS AshCam API, through Infinity). G: an inline host table with each camera's volcano (its site), place and time zone. H to J: whether each image was taken at night, as a state; the Hawaii cameras don't say.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "state"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "Y": {
+                        "text": "Night",
+                        "color": "dark-blue",
+                        "index": 0
+                      },
+                      "N": {
+                        "text": "Day",
+                        "color": "transparent",
+                        "index": 1
+                      },
+                      "?": {
+                        "text": "Unknown",
+                        "color": "transparent",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "mode": "timeline",
+        "missingFrames": "nodata",
+        "thumbTimes": "source",
+        "chips": "site, location"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=kilauea-v1-cam&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "imageUrl",
+              "text": "image",
+              "type": "string"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=kilauea-f1-cam&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "imageUrl",
+              "text": "image",
+              "type": "string"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=mauna-loa-ml-cam&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "imageUrl",
+              "text": "image",
+              "type": "string"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=msh-edifice&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "imageUrl",
+              "text": "image",
+              "type": "string"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=Spurr_ANCW&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "imageUrl",
+              "text": "image",
+              "type": "string"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "F",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=ys-bbsn2&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "imageUrl",
+              "text": "image",
+              "type": "string"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "G",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "csv",
+          "source": "inline",
+          "format": "table",
+          "parser": "backend",
+          "data": "host,site,location,timezone\nkilauea-v1-cam,Kīlauea,\"Halemaʻumaʻu, the summit vent (V1)\",Pacific/Honolulu\nkilauea-f1-cam,Kīlauea,\"Halemaʻumaʻu, thermal (F1)\",Pacific/Honolulu\nmauna-loa-ml-cam,Mauna Loa,\"Mokuʻāweoweo caldera (ML)\",Pacific/Honolulu\nmsh-edifice,Mount St. Helens,\"North full view, from Johnston Ridge\",America/Los_Angeles\nSpurr_ANCW,Spurr,\"From Anchorage (ANCW)\",America/Anchorage\nys-bbsn2,Yellowstone,\"Biscuit Basin\",America/Denver",
+          "columns": [],
+          "filters": []
+        },
+        {
+          "refId": "H",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=msh-edifice&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "isNighttimeInd",
+              "text": "state",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "I",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=Spurr_ANCW&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "isNighttimeInd",
+              "text": "state",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "J",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=ys-bbsn2&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "isNighttimeInd",
+              "text": "state",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Each volcano now (follows the crosshair)",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "options": {
+        "mode": "grid",
+        "followCrosshair": true,
+        "missingFrames": "nodata",
+        "chips": "location"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=kilauea-v1-cam&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "imageUrl",
+              "text": "image",
+              "type": "string"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=kilauea-f1-cam&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "imageUrl",
+              "text": "image",
+              "type": "string"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=mauna-loa-ml-cam&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "imageUrl",
+              "text": "image",
+              "type": "string"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=msh-edifice&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "imageUrl",
+              "text": "image",
+              "type": "string"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=Spurr_ANCW&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "imageUrl",
+              "text": "image",
+              "type": "string"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "F",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam?webcamCode=ys-bbsn2&startTimestamp=${__from:date:seconds}&endTimestamp=${__to:date:seconds}&order=oldestFirst&limit=0",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "images",
+          "columns": [
+            {
+              "selector": "imageTimestamp",
+              "text": "time",
+              "type": "timestamp_epoch_s"
+            },
+            {
+              "selector": "imageUrl",
+              "text": "image",
+              "type": "string"
+            },
+            {
+              "selector": "webcamCode",
+              "text": "host",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "G",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "csv",
+          "source": "inline",
+          "format": "table",
+          "parser": "backend",
+          "data": "host,site,location,timezone\nkilauea-v1-cam,Kīlauea,\"Halemaʻumaʻu, the summit vent (V1)\",Pacific/Honolulu\nkilauea-f1-cam,Kīlauea,\"Halemaʻumaʻu, thermal (F1)\",Pacific/Honolulu\nmauna-loa-ml-cam,Mauna Loa,\"Mokuʻāweoweo caldera (ML)\",Pacific/Honolulu\nmsh-edifice,Mount St. Helens,\"North full view, from Johnston Ridge\",America/Los_Angeles\nSpurr_ANCW,Spurr,\"From Anchorage (ANCW)\",America/Anchorage\nys-bbsn2,Yellowstone,\"Biscuit Basin\",America/Denver",
+          "columns": [],
+          "filters": []
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Images: **U.S. Geological Survey** Volcano Hazards Program (public domain): the Hawaiian, Cascades, Alaska and Yellowstone volcano observatories' webcams, from the [AshCam](https://volcview.wr.usgs.gov/ashcam-gui/) API. Each camera keeps its own pace, from every 2 minutes (Kīlauea's vent) to hourly (Spurr). Night is the API's own flag; the Hawaii cameras don't set it."
+      }
+    }
+  ]
+}

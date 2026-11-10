@@ -101,6 +101,10 @@ the API returns one frame per slot.
   thumbnails load from the live edge backwards, a few at a time, so on a
   slow connection the most recent frames appear first. Browsers keep the
   frames cached, so a dashboard refresh doesn't download them again.
+- **The live edge follows the dashboard's refresh.** New frames arrive with
+  each refresh; between refreshes the panel slides the strip along on its
+  own and turns slots that are overdue into gaps. A short auto-refresh keeps
+  it near live. It doesn't use Grafana Live streaming.
 - **The time axis matches Grafana's own time series panel:** the same tick
   spacing, steps and label formats.
 
@@ -139,7 +143,7 @@ a timeline, two multiview grids and a time series panel to show the shared
 crosshair, all on the built-in demo data. Port 3300 taken? Prefix the command
 with `DEMO_PORT=3301`.
 
-Two more dashboards there read real, public feeds (they need internet access):
+Three more dashboards there read real, public feeds (they need internet access):
 
 - **Rivers** (`/d/vt-rivers`): four USGS river cameras, each a day's light
   and night gap in its own time zone, beside the rivers' gauge heights. The
@@ -149,9 +153,13 @@ Two more dashboards there read real, public feeds (they need internet access):
 - **The Sun** (`/d/vt-sun`): NASA SDO's images of the Sun in four channels,
   read from its web folder, above GOES X-ray flux, with solar flares as
   annotations across both.
+- **Volcanoes** (`/d/vt-volcanoes`): six USGS volcano cameras (Kīlauea, Mauna
+  Loa, Mount St. Helens, Spurr, Yellowstone), each at its own pace from every
+  2 minutes to hourly, read from USGS's AshCam API through Infinity, with
+  night from the same API as a state.
 
-Both are examples of the panel on data it knows nothing about: a folder, a
-bucket and two JSON APIs, none of them made for it.
+They are examples of the panel on data it knows nothing about: a folder, a
+bucket and three JSON APIs, none of them made for it.
 
 ## Filter by site, host and tag
 
