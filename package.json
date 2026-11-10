@@ -79,8 +79,8 @@
     "@grafana/runtime": "13.3.0",
     "@grafana/schema": "13.3.0",
     "@grafana/ui": "13.3.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "packageManager": "npm@11.17.0",
   "description": "Scrubbable visual timeline and multiview for image feeds",
