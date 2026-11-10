@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+- **Breaking: the data source's frames API mode is removed** (#126). The
+  Visual Timeline data source no longer has an API URL or a viewer token, no
+  longer declares a proxy route, and calls no API: it is Demo data (and,
+  before 2.0 ships, folder and bucket listings, #125). To keep reading the
+  reference worker, or any frames API, in Grafana, read it through a stock
+  data source that keeps the token on Grafana's server, such as Infinity with
+  Bearer token authentication; the panel draws the rows it returns. The
+  standalone viewer still reads the API directly. Dashboards on a 1.x API
+  data source need their panels' queries moved; a migration note follows.
+  The data source is now named **Visual Timeline** (its id is unchanged).
+- **Frames from any data source** (the first step of 2.0, #126). The panel
+  now draws rows with a time, an image and a host from whatever answered its
+  query: a SQL table, Infinity over an API, TestData, and so on. The image is
+  a URL (public or signed) or Base64 image data. The panel finds the fields
+  by their usual names (`time`, `image` or `url`, `host`, `site`,
+  `image_hi`, `cadence`), and new **Frame fields** options name them when
+  they differ. A host's cadence comes from a cadence field or the typical gap
+  between its frames.
+- A panel whose query returns data but no frames says so, and points at the
+  Frame fields options.
+- Hosts without a site no longer show an empty site chip.
+- **Demo data answers with frame rows.** The data source's Demo data now
+  returns its frames in the query result like any other source, instead of
+  the panel drawing them itself, so the demo exercises the same path as real
+  data. Demo frames are small SVG images (a few hundred bytes) drawn in the
+  dashboard's time zone, and a host with no frames in the window (paused all
+  along, say) still shows.
+- **Annotation queries.** The Visual Timeline data source can be used for
+  dashboard annotations: with Demo data it returns the demo's events. The
+  starter dashboard and the demo dashboards have a **Host events**
+  annotation query.
+
 ## 1.2.3 (2026-10-16)
 
 Release process only: the plugin itself is unchanged.

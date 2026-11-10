@@ -59,7 +59,10 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   card.innerHTML =
     '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs('host', kiosk, !!s.cfg.onFilter) + '>' + esc(kiosk) + '</span>' +
     '<span class="inline-brk"></span>' + zoneChip(zone.srcTZ) +
-    '<span class="st"' + filterAttrs('site', decl.site, !!s.cfg.onFilter) + '>' + esc(decl.site) + (decl.location ? ' · ' + esc(decl.location) : '') + '</span>' +
+    // frame records from other sources may have no site: no empty chip then
+    (decl.site || decl.location
+      ? '<span class="st"' + filterAttrs('site', decl.site, !!s.cfg.onFilter) + '>' + esc(decl.site) + (decl.site && decl.location ? ' · ' : '') + esc(decl.location || '') + '</span>'
+      : '') +
     tagChips(decl, !!s.cfg.onFilter) + '<span class="ft"></span>' +
     cad + '</div>' +
     '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>' +

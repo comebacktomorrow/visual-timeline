@@ -3,6 +3,7 @@ import {
   dateTimeFormat,
   DataHoverClearEvent,
   DataHoverEvent,
+  FieldType,
   LoadingState,
   PanelPlugin,
   PanelProps,
@@ -10,14 +11,13 @@ import {
 } from '@grafana/data';
 import { config, getDataSourceSrv } from '@grafana/runtime';
 import { usePanelContext, useTheme2 } from '@grafana/ui';
-import { mountTimeline, mountGrid, resolveTimeZone } from '../core';
+import { mountTimeline, mountGrid } from '../core';
 import type { AxisFormatter } from '../vt/time/ticks';
-import { makeBackend as makeDemoBackend } from '../vt/backends/demo';
-import type { Backend, Frame, SourceDecl } from '../vt/types';
 import { themeVars } from '../theme';
 import { coreTimeZone } from '../timezone';
-import { DATASOURCE_ID } from '../shared/proxy';
-import { SourcesFrameMeta, sourcesFromFrames } from '../shared/sources';
+import { DATASOURCE_ID } from '../shared/ids';
+import { sourcesFromFrames } from '../shared/sources';
+import { FieldRoles, recordsBackend, recordsFromSeries } from '../shared/frameRecords';
 import { needsRebuild } from './resize';
 
 interface VisualTimelineOptions {
@@ -30,6 +30,14 @@ interface VisualTimelineOptions {
   annotationLanes?: 'shared' | 'per-source';
   headerMode?: 'bar' | 'inline' | 'inline-gradient';
   thumbTimes?: 'panel' | 'source';
+  /** Frame fields (#126): which fields of the query hold each frame's time,
+   * image, host and so on. Empty: found by their usual names. */
+  timeField?: string;
+  imageField?: string;
+  hostField?: string;
+  siteField?: string;
+  previewField?: string;
+  cadenceField?: string;
 }
 
 interface PanelAnnotation {
@@ -74,45 +82,25 @@ function extractAnnotations(frames: any[] | undefined): PanelAnnotation[] {
 
 /** How long a resized panel's width must hold before the core rebuilds. */
 const RESIZE_SETTLE_MS = 250;
-/** The data source method the panel calls for each source's frames. */
-interface FramesSource {
-  frames(site: string, id: string, from: number, to: number, step: number): Promise<Frame[]>;
-}
-
-/* The core's data layer for one query result. The sources come from the
- * data source's answer, already filtered by the panel's query, the dashboard
- * variables and the ad hoc filters. Frames come through the same data
- * source; with Demo data on, from the core's built-in demo for this window. */
-function panelBackend(sources: SourceDecl[], meta: SourcesFrameMeta, from: number, to: number, tz: string): Backend {
-  if (meta.demo) {
-    const demo = makeDemoBackend({ from, to }, Math.max(1, to - from), tz);
-    return { kiosks: () => sources, frames: demo.frames, annotations: demo.annotations };
-  }
-  let ds: Promise<FramesSource> | null = null;
-  return {
-    kiosks: () => sources,
-    frames: async (site, id, f, t, step) => {
-      ds ??= getDataSourceSrv().get({ uid: meta.uid }) as unknown as Promise<FramesSource>;
-      return (await ds).frames(site, id, f, t, step);
-    },
-  };
-}
-
 /* What a panel that can't draw says instead. Errors from the data source
  * aren't repeated here: Grafana shows them in the panel's error indicator. */
-function emptyStateText(hasSources: boolean, dataSourceCount: number, canCreate: boolean) {
+function emptyStateText(hasSources: boolean, dataSourceCount: number, canCreate: boolean, hasData = false) {
+  if (hasData && !hasSources) {
+    return { lines: ["No frames in this panel's query.", 'It needs a time, an image URL and a host per row. Set Frame fields in the panel options if they have other names.'] };
+  }
   if (hasSources) {
     return { lines: ['No hosts match.', "Check this panel's query (Sites, Hosts, Tags) and the dashboard's filters."] };
   }
+  const needs = 'It draws rows with a time, an image and a host, from any data source.';
   if (dataSourceCount > 0) {
-    return { lines: ['This panel has no Visual Timeline API data source.', 'Edit the panel and choose one in the Query tab.'] };
+    return { lines: ["This panel's query returned nothing.", needs, 'A Visual Timeline data source with Demo data on has some to try.'] };
   }
   return canCreate
     ? {
-        lines: ['No Visual Timeline API data source yet.'],
-        link: { text: 'Add one', after: ' (turn on its Demo data to try the panel without an API).' },
+        lines: ["This panel's query returned nothing.", needs],
+        link: { text: 'Add a Visual Timeline data source', after: ' and turn on its Demo data to try the panel.' },
       }
-    : { lines: ['No Visual Timeline API data source yet.', 'Ask a Grafana admin to add one.'] };
+    : { lines: ["This panel's query returned nothing.", needs, 'A Grafana admin can add a Visual Timeline data source with Demo data to try it.'] };
 }
 
 interface MountInstance {
@@ -162,9 +150,27 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const resultKey = parsed ? JSON.stringify(parsed) : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const result = useMemo(() => parsed, [resultKey]);
+  /* Frame records: rows with a time, an image and a host, from any data
+   * source (#126). When the query returns any, they are what the panel
+   * draws; a Visual Timeline source list in the same result adds what it
+   * knows about each host (history, time zone, tags). */
+  const roles: FieldRoles = {
+    time: options.timeField, image: options.imageField, host: options.hostField,
+    site: options.siteField, preview: options.previewField, cadence: options.cadenceField,
+  };
+  const records = recordsFromSeries(props.data?.series, roles);
+  // keyed on content, as above: a host's frames only ever grow, so its count
+  // and newest frame say whether anything changed
+  const recordsKey = records
+    ? JSON.stringify(records.map((h) => [h.site, h.id, h.cadence, h.frames.length, h.frames[0]?.ts, h.frames.at(-1)?.ts, h.frames.at(-1)?.url]))
+    : '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const recordsMemo = useMemo(() => records, [recordsKey]);
+  // a source list without records (no frames in the window) still draws its
+  // hosts: a host that was silent the whole time is information
   const backend = useMemo(
-    () => (result ? panelBackend(result.sources, result.meta, from, to, resolveTimeZone(timeZone)) : null),
-    [result, from, to, timeZone]
+    () => (recordsMemo || result ? recordsBackend(recordsMemo ?? [], result?.sources) : null),
+    [recordsMemo, result]
   );
   /* Clicking a host, site or tag chip adds that filter to the dashboard's ad
    * hoc filter for this data source, as a table cell's "filter for value"
@@ -199,7 +205,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   }, [props.width, buildWidth]);
   const loading = props.data?.state === LoadingState.Loading;
   const failed = props.data?.state === LoadingState.Error;
-  const showFrames = !!backend && result!.sources.length > 0;
+  const showFrames = !!backend && (recordsMemo ? recordsMemo.length > 0 : result!.sources.length > 0);
 
   useEffect(() => {
     if (!ref.current || !showFrames || !backend) {
@@ -276,7 +282,8 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     const user = config.bootData?.user;
     const canCreate = !!user && (user.orgRole === 'Admin' || user.isGrafanaAdmin === true);
     const count = getDataSourceSrv().getList({ pluginId: DATASOURCE_ID }).length;
-    const text = emptyStateText(!!result, count, canCreate);
+    const hasData = (props.data?.series || []).some((f) => f.length > 0);
+    const text = emptyStateText(!!result || !!recordsMemo, count, canCreate, hasData);
     const link = text.link
       ? React.createElement(
           'div',
@@ -404,6 +411,47 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
           { value: 'source', label: 'Host local time' },
         ],
       },
+    })
+    // Frame fields (#126): which fields of the query hold each frame's parts.
+    // Empty finds them by their usual names; the pickers list the query's fields.
+    .addFieldNamePicker({
+      path: 'imageField',
+      name: 'Image',
+      category: ['Frame fields'],
+      description: 'The image URL (or Base64 image data) for each frame. Empty: a field named image or url.',
+      settings: { filter: (f) => f.type === FieldType.string },
+    })
+    .addFieldNamePicker({
+      path: 'timeField',
+      name: 'Time',
+      category: ['Frame fields'],
+      description: 'When each frame was taken. Empty: the first time field, or one named time or timestamp.',
+    })
+    .addFieldNamePicker({
+      path: 'hostField',
+      name: 'Host',
+      category: ['Frame fields'],
+      description: 'Which host each frame is from: one strip or tile per host. Empty: a field named host, a host label, or the query name.',
+    })
+    .addFieldNamePicker({
+      path: 'siteField',
+      name: 'Site',
+      category: ['Frame fields'],
+      description: 'Optional: groups hosts. Empty: a field named site, or a site label.',
+    })
+    .addFieldNamePicker({
+      path: 'previewField',
+      name: 'Preview image',
+      category: ['Frame fields'],
+      description: 'Optional: a larger image for the click-in preview. Empty: a field named image_hi or preview; without one, the image itself.',
+      settings: { filter: (f) => f.type === FieldType.string },
+    })
+    .addFieldNamePicker({
+      path: 'cadenceField',
+      name: 'Cadence',
+      category: ['Frame fields'],
+      description: 'Optional: how often each host takes a frame, in milliseconds. Empty: a field named cadence, else the typical gap between frames.',
+      settings: { filter: (f) => f.type === FieldType.number },
     })
     .addRadio({
       path: 'imageFit',

@@ -27,7 +27,10 @@ const HUES: Record<string, number> = { 'source-1': 205, 'source-2': 275, 'source
 /* demo screen shapes: source-3 is 4:3, source-5 is portrait 9:16 */
 const DIMS: Record<string, [number, number]> = { 'source-3': [288, 216], 'source-5': [216, 384] };
 
-/* the demo backend: synchronous kiosks(), canvas frames, and the mock
+/* text inside the demo SVG */
+const xml = (t: string) => t.replace(/[&<>'"]/g, (c) => '&#' + c.charCodeAt(0) + ';');
+
+/* the demo backend: synchronous kiosks(), SVG frames, and the mock
  * annotation seam */
 export type DemoBackend = Backend & { annotations(): RawAnnotation[] };
 
@@ -35,31 +38,28 @@ export type DemoBackend = Backend & { annotations(): RawAnnotation[] };
  * zone shows its own local time (labelled with the city), the rest the
  * mount's zone, so they agree with their captions and the axis */
 export function makeBackend(P: TimeWindow, SPAN: number, tz: string): DemoBackend {
+  /* An SVG data URL rather than a canvas JPEG: a few hundred bytes, so demo
+   * frames can travel in a query result as rows like any source's (#126),
+   * and no canvas is needed to make them. */
   function renderMockFrame(site: string, kiosk: string, ts: number, step: number): string {
     const dims = DIMS[kiosk] || [384, 216];
     const w = dims[0], h = dims[1];
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    const g = c.getContext('2d')!;   // a fresh canvas always has a 2d context
     const hue = HUES[kiosk] != null ? HUES[kiosk] : 130;
-    g.fillStyle = 'hsl(' + hue + ' 30% 14%)'; g.fillRect(0, 0, w, h);
-    g.fillStyle = 'hsl(' + hue + ' 60% 30%)'; g.fillRect(0, 0, w, Math.round(h * 0.14));
-    g.fillStyle = '#fff'; g.font = 'bold ' + Math.round(h * 0.06) + 'px sans-serif';
-    g.fillText(site + ' / ' + kiosk, 8, Math.round(h * 0.10));
-    g.font = 'bold ' + Math.round(Math.min(w * 0.16, h * 0.18)) + 'px monospace';
-    g.fillStyle = 'hsl(' + hue + ' 70% 72%)';
-    g.textAlign = 'center';
     const own = DEMO_ZONES[kiosk];
-    g.fillText(fmtTime(ts, own || tz), w / 2, h * 0.55);
-    if (own) {
-      g.font = Math.round(Math.min(h * 0.055, w * 0.06)) + 'px sans-serif';
-      g.fillText(zoneLabel(own) + ' local time', w / 2, h * 0.655);
-    }
-    g.textAlign = 'left';
     const phase = (ts / step) % 20 / 20;
-    g.fillStyle = 'hsl(' + hue + ' 80% 55%)';
-    g.fillRect(w * 0.04 + phase * (w * 0.8), h * 0.72, w * 0.13, h * 0.16);
-    return c.toDataURL('image/jpeg', 0.7);
+    const big = Math.round(Math.min(w * 0.16, h * 0.18));
+    const svg =
+      `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}' viewBox='0 0 ${w} ${h}'>` +
+      `<rect width='${w}' height='${h}' fill='hsl(${hue},30%,14%)'/>` +
+      `<rect width='${w}' height='${Math.round(h * 0.14)}' fill='hsl(${hue},60%,30%)'/>` +
+      `<text x='8' y='${Math.round(h * 0.10)}' font-family='sans-serif' font-weight='bold' font-size='${Math.round(h * 0.06)}' fill='#fff'>${xml(site)} / ${xml(kiosk)}</text>` +
+      `<text x='${w / 2}' y='${Math.round(h * 0.55)}' text-anchor='middle' font-family='monospace' font-weight='bold' font-size='${big}' fill='hsl(${hue},70%,72%)'>${xml(fmtTime(ts, own || tz))}</text>` +
+      (own
+        ? `<text x='${w / 2}' y='${Math.round(h * 0.655)}' text-anchor='middle' font-family='sans-serif' font-size='${Math.round(Math.min(h * 0.055, w * 0.06))}' fill='hsl(${hue},70%,72%)'>${xml(zoneLabel(own))} local time</text>`
+        : '') +
+      `<rect x='${(w * 0.04 + phase * w * 0.8).toFixed(1)}' y='${(h * 0.72).toFixed(1)}' width='${(w * 0.13).toFixed(1)}' height='${(h * 0.16).toFixed(1)}' fill='hsl(${hue},80%,55%)'/>` +
+      `</svg>`;
+    return 'data:image/svg+xml,' + encodeURIComponent(svg);
   }
   return {
     kiosks(sites) {

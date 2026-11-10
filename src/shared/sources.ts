@@ -6,7 +6,7 @@
 import { AdHocVariableFilter, createDataFrame, DataFrame, FieldConfig, FieldType, MappingType } from '@grafana/data';
 
 import { matchesTags, parseTagFilter, parseVar } from '../vt/model/filters';
-import type { HistoryEvent, SourceDecl } from '../vt/types';
+import type { HistoryEvent, RawAnnotation, SourceDecl } from '../vt/types';
 import type { LastFrame } from './lastFrame';
 
 /** Marks the frames a Visual Timeline data source returns: meta.custom[FRAME_MARKER]. */
@@ -200,6 +200,39 @@ export function lastFramesByHost(sources: SourceDecl[], last: Array<LastFrame | 
     ];
   });
   return createDataFrame({ refId, fields });
+}
+
+/** Frame records as rows the panel reads like any source's (#126): one row
+ * per frame, with its time, host, site and image locator. */
+export function recordsToFrame(rows: Array<{ ts: number; host: string; site: string; url: string }>, refId: string): DataFrame {
+  return createDataFrame({
+    refId,
+    name: 'frames',
+    fields: [
+      { name: 'time', type: FieldType.time, values: rows.map((r) => r.ts) },
+      { name: 'host', type: FieldType.string, values: rows.map((r) => r.host) },
+      { name: 'site', type: FieldType.string, values: rows.map((r) => r.site) },
+      { name: 'image', type: FieldType.string, values: rows.map((r) => r.url) },
+    ],
+  });
+}
+
+/** Events as an annotation query's answer: Grafana maps time, timeEnd,
+ * title, text and tags by name. */
+export function annotationsToFrame(events: RawAnnotation[], refId: string): DataFrame {
+  const time = (a: RawAnnotation) => Number(a.ts ?? a.time);
+  const tags = (a: RawAnnotation) => (Array.isArray(a.tags) ? a.tags.map(String) : a.tags ? String(a.tags).split(',').map((t) => t.trim()) : []);
+  return createDataFrame({
+    refId,
+    fields: [
+      { name: 'time', type: FieldType.time, values: events.map(time) },
+      { name: 'timeEnd', type: FieldType.time, values: events.map((a) => (a.timeEnd != null ? Number(a.timeEnd) : null)) },
+      { name: 'title', type: FieldType.string, values: events.map((a) => a.title ?? '') },
+      { name: 'text', type: FieldType.string, values: events.map((a) => a.text ?? '') },
+      { name: 'tags', type: FieldType.other, values: events.map(tags) },
+      { name: 'color', type: FieldType.string, values: events.map((a) => a.color ?? '') },
+    ],
+  });
 }
 
 /** The sources and their data source, from a panel's query result: every

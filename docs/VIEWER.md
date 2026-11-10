@@ -51,5 +51,6 @@ browser history. So:
   revocable entry.
 - Turn on signed image URLs (`IMG_SIGN_KEY`), so the token isn't repeated in
   every image URL.
-- Inside Grafana, use the panel with a Visual Timeline API data source
-  instead: the token then never reaches the browser.
+- Inside Grafana, read the worker through a data source that keeps the token
+  on Grafana's server (Infinity's Bearer token authentication, for example):
+  the token then never reaches the browser.
