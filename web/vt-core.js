@@ -962,6 +962,21 @@ var VTCore = (() => {
     const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st"' + filterAttrs(k, v, filterable) + ">" + esc(k) + "=" + esc(v) + "</span>").join("");
     return '<span class="tags">' + chips + "</span>";
   }
+  function headChips(decl, chips, filterable = false) {
+    if (!chips) {
+      return (decl.site || decl.location ? '<span class="st"' + filterAttrs("site", decl.site, filterable) + ">" + esc(decl.site) + (decl.site && decl.location ? " \xB7 " : "") + esc(decl.location || "") + "</span>" : "") + tagChips(decl, filterable);
+    }
+    let out = "";
+    for (const key of chips) {
+      const value = key === "site" ? decl.site : key === "location" ? decl.location : decl.tags?.[key];
+      if (!value) {
+        continue;
+      }
+      const text = key === "site" || key === "location" ? esc(value) : esc(key) + "=" + esc(value);
+      out += '<span class="st"' + filterAttrs(key, value, filterable) + ">" + text + "</span>";
+    }
+    return out;
+  }
   function headTitle(decl) {
     const parts = [decl.site];
     if (decl.location) {
@@ -986,7 +1001,8 @@ var VTCore = (() => {
       }
       e.preventDefault();
       e.stopPropagation();
-      onFilter(el.dataset.fk || "", el.dataset.fv || "");
+      const host = el.closest(".card-head, .t-head")?.querySelector(".nm")?.dataset.fv;
+      onFilter(el.dataset.fk || "", el.dataset.fv || "", host);
     };
     wrap.addEventListener("click", filter, true);
     wrap.addEventListener("keydown", (e) => {
@@ -2083,8 +2099,7 @@ var VTCore = (() => {
     card.className = "card" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
     const la = model.lastActive;
     const cad = s.cfg.showDetails && la ? '<span class="cad">\u23F1 ' + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + "</span>" : "";
-    card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", kiosk, !!s.cfg.onFilter) + ">" + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + // frame records from other sources may have no site: no empty chip then
-    (decl.site || decl.location ? '<span class="st"' + filterAttrs("site", decl.site, !!s.cfg.onFilter) + ">" + esc(decl.site) + (decl.site && decl.location ? " \xB7 " : "") + esc(decl.location || "") + "</span>" : "") + tagChips(decl, !!s.cfg.onFilter) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
+    card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", kiosk, !!s.cfg.onFilter) + ">" + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
     const strip = card.querySelector(".strip");
     if (s.hostWidth / model.slots.length >= 12) {
       strip.classList.add("sep");
@@ -2584,8 +2599,7 @@ var VTCore = (() => {
     const zone = zoneFor(decl, s.TZ, s.cfg.thumbTimes, s.PANEL_TT);
     const inline = s.cfg.headerMode === "inline" || s.cfg.headerMode === "inline-gradient";
     el.className = "tile" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
-    el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", decl.id, !!s.cfg.onFilter) + ">" + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + // frame records from other sources may have no site: no empty chip then
-    (decl.site || decl.location ? '<span class="st"' + filterAttrs("site", decl.site, !!s.cfg.onFilter) + ">" + esc(decl.site) + (decl.site && decl.location ? " \xB7 " : "") + esc(decl.location || "") + "</span>" : "") + tagChips(decl, !!s.cfg.onFilter) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
+    el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", decl.id, !!s.cfg.onFilter) + ">" + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
     attachZoneChip(zone, el);
     const rec = {
       decl,

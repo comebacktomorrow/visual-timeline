@@ -221,6 +221,48 @@
         "missingFrames": "nodata"
       },
       "description": "An irregular feed (frames at uneven times, like a motion-triggered camera): each frame is held for up to 5 minutes, and a longer silence is a neutral \"no data\" gap, not offline."
+    },
+    {
+      "id": 5,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Chips from TestData",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "trlxrdZVk"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "trlxrdZVk"
+          },
+          "scenarioId": "csv_content",
+          "csvContent": "time,host,image\n2026-01-01T10:00:00Z,cam-a,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:03:00Z,cam-a,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMzwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:06:00Z,cam-a,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowNjwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:09:00Z,cam-a,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowOTwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:12:00Z,cam-a,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDoxMjwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:15:00Z,cam-a,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDoxNTwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:18:00Z,cam-a,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDoxODwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:21:00Z,cam-a,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDoyMTwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:24:00Z,cam-a,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDoyNDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:27:00Z,cam-a,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDoyNzwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:00:00Z,cam-b,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyM4YTNhM2EnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYiAxMDowMDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:03:00Z,cam-b,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyM4YTNhM2EnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYiAxMDowMzwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:06:00Z,cam-b,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyM4YTNhM2EnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYiAxMDowNjwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:09:00Z,cam-b,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyM4YTNhM2EnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYiAxMDowOTwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:18:00Z,cam-b,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyM4YTNhM2EnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYiAxMDoxODwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:21:00Z,cam-b,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyM4YTNhM2EnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYiAxMDoyMTwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:24:00Z,cam-b,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyM4YTNhM2EnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYiAxMDoyNDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:27:00Z,cam-b,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyM4YTNhM2EnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYiAxMDoyNzwvdGV4dD48L3N2Zz4=\""
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "trlxrdZVk"
+          },
+          "scenarioId": "csv_content",
+          "csvContent": "host,timezone,location,tags\ncam-a,Australia/Sydney,lobby,env=prod\ncam-c,,,\n"
+        }
+      ],
+      "options": {
+        "mode": "timeline",
+        "chips": "env",
+        "chipClick": "link",
+        "chipLink": "/d/vt-filters?var-host=${__host}"
+      },
+      "description": "User-defined header chips: only each host's env tag, and a click opens the filters dashboard for that host."
     }
   ]
 }

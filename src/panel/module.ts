@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FieldConfigProperty,
+  locationUtil,
   rangeUtil,
   dateTimeFormat,
   DataHoverClearEvent,
@@ -11,7 +12,7 @@ import {
   PanelProps,
   systemDateFormats,
 } from '@grafana/data';
-import { config, getDataSourceSrv } from '@grafana/runtime';
+import { config, getDataSourceSrv, locationService } from '@grafana/runtime';
 import { usePanelContext, useTheme2 } from '@grafana/ui';
 import { mountTimeline, mountGrid } from '../core';
 import type { AxisFormatter } from '../vt/time/ticks';
@@ -22,6 +23,7 @@ import { sourcesFromFrames } from '../shared/sources';
 import { FieldRoles, hostTableFromSeries, recordsBackend, recordsFromSeries } from '../shared/frameRecords';
 import { stateAnnotations, statesFromSeries } from '../shared/hostState';
 import { needsRebuild } from './resize';
+import { chipLinkUrl, parseChips } from './chips';
 
 interface VisualTimelineOptions {
   mode?: 'timeline' | 'grid';
@@ -38,6 +40,10 @@ interface VisualTimelineOptions {
   holdFrames?: 'never' | 'always' | 'threshold';
   holdFor?: string;
   missingFrames?: 'offline' | 'nodata';
+  /** Header chips (#126): which, in order, and what a click does. */
+  chips?: string;
+  chipClick?: 'filter' | 'link' | 'none';
+  chipLink?: string;
   /** Frame fields (#126): which fields of the query hold each frame's time,
    * image, host and so on. Empty: found by their usual names. */
   timeField?: string;
@@ -219,13 +225,28 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const addFilterRef = useRef(onAddAdHocFilter);
   addFilterRef.current = onAddAdHocFilter;
   const canFilter = !!onAddAdHocFilter;
-  const onFilter = useMemo(
-    () =>
-      canFilter
-        ? (key: string, value: string) => addFilterRef.current?.({ key, value, operator: '=' })
-        : undefined,
-    [canFilter]
-  );
+  /* What a header chip does when clicked (Chip click): add an ad hoc filter
+   * (where Grafana can), follow a link with the chip's key, value and host,
+   * or nothing (the chips are then plain text). */
+  const chipClick = options.chipClick || 'filter';
+  const chipLink = options.chipLink || '';
+  const replaceRef = useRef(props.replaceVariables);
+  replaceRef.current = props.replaceVariables;
+  const onFilter = useMemo(() => {
+    if (chipClick === 'none') {return undefined;}
+    if (chipClick === 'link') {
+      if (!chipLink) {return undefined;}
+      return (key: string, value: string, host?: string) => {
+        const url = replaceRef.current(chipLinkUrl(chipLink, key, value, host));
+        // another site in a new tab; this Grafana's own pages in place
+        if (/^https?:\/\//i.test(url) && !url.startsWith(window.location.origin)) {window.open(url, '_blank', 'noopener');}
+        else {locationService.push(locationUtil.stripBaseFromUrl(url));}
+      };
+    }
+    return canFilter ? (key: string, value: string) => addFilterRef.current?.({ key, value, operator: '=' }) : undefined;
+  }, [canFilter, chipClick, chipLink]);
+  const chips = parseChips(options.chips);
+  const chipsKey = chips ? chips.join(',') : '';
   /* The width the core builds for. Slot counts and axis ticks depend on it,
    * so a new width needs a rebuild, and a rebuild refetches every source's
    * frames. While a panel is being resized Grafana reports a new width many
@@ -254,7 +275,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     const common = {
       from, to, width: buildWidth, fit, backend, showDetails, hideEmpty, onFilter,
       annotations, showAnnotations, annotationLanes: options.annotationLanes || 'shared',
-      holdFrames, missingFrames: options.missingFrames || 'offline',
+      holdFrames, missingFrames: options.missingFrames || 'offline', chips,
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
       timeZone,
@@ -283,7 +304,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, holdFrames, options.missingFrames]);
+  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, holdFrames, options.missingFrames, chipsKey]);
 
   useEffect(() => {
     const subs = [
@@ -433,6 +454,33 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
         ],
       },
       showIf: (o) => o.mode !== 'grid' && o.showAnnotations !== false,
+    })
+    .addTextInput({
+      path: 'chips',
+      name: 'Header chips',
+      category: ['Header'],
+      description: 'Which chips follow each host\'s name, in order: site, location, or tag keys, comma-separated (for example: site, env). Empty: the site and location, and every tag.',
+      defaultValue: '',
+    })
+    .addRadio({
+      path: 'chipClick',
+      name: 'Chip click',
+      category: ['Header'],
+      description: 'What clicking a host or chip does. Filter: add it to the dashboard\'s ad hoc filter, where the data source supports one. Link: open a URL. None: the chips are plain text.',
+      defaultValue: 'filter',
+      settings: { options: [
+        { value: 'filter', label: 'Filter' },
+        { value: 'link', label: 'Link' },
+        { value: 'none', label: 'None' },
+      ] },
+    })
+    .addTextInput({
+      path: 'chipLink',
+      name: 'Chip link',
+      category: ['Header'],
+      description: 'The URL a click opens. ${__chip.key}, ${__chip.value} and ${__host} are the clicked chip\'s; dashboard variables work too. For example: /d/abc?var-host=${__host}',
+      defaultValue: '',
+      showIf: (o) => o.chipClick === 'link',
     })
     .addRadio({
       path: 'holdFrames',
