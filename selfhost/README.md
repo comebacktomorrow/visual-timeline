@@ -19,11 +19,22 @@ leave your network, and there are no request quotas or cloud accounts.
   [`worker/`](../worker), unchanged, running on workerd (Cloudflare's
   open-source Workers runtime) through wrangler's local mode. It stores frames
   on a Docker volume and also serves the standalone viewer at `/app.html`.
-- **Grafana** (`http://localhost:3000`): with the Visual Timeline app, a
-  **Visual Timeline API** data source pointing at the backend, and a starter
-  dashboard. Already run Grafana? See [Use your own Grafana](#use-your-own-grafana).
+- **Grafana** (`http://localhost:3000`): with the Visual Timeline app, the
+  [Infinity](https://grafana.com/grafana/plugins/yesoreyeram-infinity-datasource/)
+  data source reading the backend (**Visual Timeline worker**), and a starter
+  dashboard with Site and Host dropdowns. Grafana downloads Infinity from the
+  Grafana catalog on its first start. Already run Grafana? See
+  [Use your own Grafana](#use-your-own-grafana).
 
 You need Docker with Compose v2, and a clone of this repository.
+
+Until host state arrives (#126), a declared pause draws as offline, and a
+host's own time zone and tags aren't shown: see
+[docs/INFINITY.md](../docs/INFINITY.md), "What it doesn't carry yet".
+
+Coming from 1.x? The stack replaces its Visual Timeline API data source and
+starter dashboard itself, and your frames are kept. See
+[docs/MIGRATING-2.0.md](../docs/MIGRATING-2.0.md).
 
 ## Start it
 
@@ -136,15 +147,16 @@ Then, in your Grafana:
    `savvycocoa1919-visualtimeline-app`, `savvycocoa1919-visualtimeline-panel`
    and `savvycocoa1919-visualtimeline-datasource` in
    `allow_loading_unsigned_plugins`, then restart Grafana.
-2. Add a **Visual Timeline API** data source with the backend's address as the
-   API URL (one your Grafana server can reach) and `VIEWER_TOKEN` as the
-   viewer token, and click **Save & test**. The images load from
-   `PUBLIC_URL`, so that must be reachable from the browsers viewing the
-   dashboards.
-3. Import the **Visual Timeline** dashboard from the data source's
-   **Dashboards** tab (Site and Host dropdowns and a filter bar ready), or add
-   a **Visual Timeline** panel and choose the data source in its **Query**
-   tab.
+2. Install [Infinity](https://grafana.com/grafana/plugins/yesoreyeram-infinity-datasource/)
+   and add an Infinity data source for the backend, with `VIEWER_TOKEN` as its
+   bearer token and the backend's address (one your Grafana server can reach)
+   as its allowed host: [docs/INFINITY.md](../docs/INFINITY.md). The images
+   load from `PUBLIC_URL`, so that must be reachable from the browsers viewing
+   the dashboards.
+3. Import [grafana/dashboards/visual-timeline.json](grafana/dashboards/visual-timeline.json),
+   choosing your Infinity data source and replacing `http://backend:8787` in
+   its queries with the backend's address, or add a **Visual Timeline** panel
+   with the frames query from docs/INFINITY.md.
 
 ## Storage
 

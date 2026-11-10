@@ -1,0 +1,27 @@
+apiVersion: 1
+# The self-hosted backend, read through the Infinity data source (installed
+# by docker-compose.yml): Grafana's server calls it on the compose network
+# with the viewer token, which comes from VIEWER_TOKEN in selfhost/.env and
+# never reaches the dashboard JSON or the browser. Image URLs come back on
+# PUBLIC_URL, which the browser can reach, signed (IMG_SIGN_KEY).
+
+# 1.x provisioned a Visual Timeline API data source here; 2.0 removed that
+# mode, so an existing install drops it
+deleteDatasources:
+  - name: Visual Timeline API
+    orgId: 1
+
+datasources:
+  - name: Visual Timeline worker
+    type: yesoreyeram-infinity-datasource
+    uid: vt-worker
+    access: proxy
+    isDefault: true
+    editable: false
+    jsonData:
+      auth_method: bearerToken
+      # Infinity sends the token only to these hosts
+      allowedHosts:
+        - http://backend:8787
+    secureJsonData:
+      bearerToken: ${VT_VIEWER_TOKEN}

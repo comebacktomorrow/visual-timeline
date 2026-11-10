@@ -10,10 +10,14 @@
  *   GET  /sources?site=csv            → [{id, site, location, timezone, cadence, hiCadence}]
  *                                     (cadence ms; /kiosks is a deprecated alias)
  *   GET  /frames?site&source&from&to&step&variant
- *                                     → [{source, ts, url}], ≤1 frame per step
- *                                     bucket (source= falls back to kiosk=);
+ *                                     → [{site, source, ts, url}], ≤1 frame per
+ *                                     step bucket (source= falls back to kiosk=);
  *                                     X-Frames-Truncated-After: <ts> when the
  *                                     window holds more than one scan covers.
+ *                                     Without source: every source of the sites
+ *                                     (site= csv, omitted = all), each at its own
+ *                                     cadence or coarser, one row per frame, for
+ *                                     a table-shaped data source such as Infinity.
  *   GET  /frame/{variant}/{site}/{source}/{ts}.jpg
  *                                     immutable frame image (POC path; production
  *                                     serves images from an R2 custom domain and
@@ -43,13 +47,18 @@ const MAX_BUCKETS = 800;
  * it stopped (X-Frames-Truncated-After) instead of dropping the newest
  * frames silently. */
 const MAX_LIST_PAGES = 25;
+/* An all-sources /frames shares one scan budget across its sources: R2 calls
+ * count toward the per-request subrequest limit (1000 to Cloudflare services
+ * on the free plan), and walking keys costs CPU time (10 ms on the free plan). */
+const MAX_LIST_PAGES_ALL = 50;
+const SCAN_CONCURRENCY = 6;
 const INDEX_KEY = 'index.json';
 
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
   'access-control-allow-headers': 'authorization, content-type, x-site, x-source, x-kiosk, x-cadence, x-variant, x-timestamp, x-location, x-timezone, x-tags',
-  'access-control-expose-headers': 'x-frames-truncated-after',
+  'access-control-expose-headers': 'x-frames-truncated-after, x-frames-truncated-sources',
   'access-control-max-age': '86400',
 };
 
@@ -464,7 +473,9 @@ function parseCsv(v) {
   return parts.length ? parts : null;
 }
 
-async function handleSources(url, env, ctx, viewer) {
+/* index.json through a 15 s edge cache, shared by /sources and the
+ * all-sources /frames: a dashboard load asks for both, many times over. */
+async function readIndex(url, env, ctx) {
   const cache = caches.default;
   const cacheKey = new Request(new URL('/sources-index', url.origin));
   let res = await cache.match(cacheKey);
@@ -476,7 +487,11 @@ async function handleSources(url, env, ctx, viewer) {
     });
     ctx.waitUntil(cache.put(cacheKey, res.clone()));
   }
-  const index = await res.json();
+  return res.json();
+}
+
+async function handleSources(url, env, ctx, viewer) {
+  const index = await readIndex(url, env, ctx);
   const filter = parseCsv(url.searchParams.get('site'));
   const keep = retentionMs(env, 'lo');
   const cutoff = keep ? Date.now() - keep : 0;
@@ -497,9 +512,71 @@ async function handleSources(url, env, ctx, viewer) {
 
 /* ---------------- frames ---------------- */
 
+/* One source's frames in [from, to], at most one per step bucket (the one
+ * nearest each bucket tick), in one bounded LIST over its prefix. Keys are
+ * 13-digit epochs, so lexicographic order == numeric order and startAfter
+ * can seek to `from`. `budget.pages` is shared by every scan of a request;
+ * a scan that runs out says where it stopped: nothing after truncatedAfter
+ * was examined, so clients must not read that span as offline. */
+async function scanSource(env, prefix, from, to, step, budget) {
+  const bucketStart = Math.ceil(from / step) * step;
+  const best = new Map();   // bucket idx → {ts, dist to bucket tick}
+  let cursor, done = false, listedUntil = from;
+  while (!done && budget.pages > 0) {
+    budget.pages--;
+    const listing = await env.FRAMES.list({
+      prefix,
+      limit: 1000,
+      ...(cursor ? { cursor } : { startAfter: `${prefix}${from - 1}` }),
+    });
+    for (const obj of listing.objects) {
+      const ts = Number(obj.key.slice(prefix.length, -4));
+      if (!Number.isFinite(ts)) {continue;}
+      if (ts > to) { done = true; break; }
+      listedUntil = ts;
+      const idx = Math.round((ts - bucketStart) / step);
+      const dist = Math.abs(ts - (bucketStart + idx * step));
+      const cur = best.get(idx);
+      if (!cur || dist < cur.dist) {best.set(idx, { ts, dist });}
+    }
+    if (!listing.truncated) {done = true;}
+    else {cursor = listing.cursor;}
+  }
+  return { ts: [...best.values()].map((v) => v.ts).sort((a, b) => a - b), truncatedAfter: done ? null : listedUntil };
+}
+
+/* The query string that authorizes a source's image URLs, or ''.
+ * Default-private: when IMG_SIGN_KEY is set, worker-served image URLs carry a
+ * source-scoped expiring signature instead of needing the viewer token
+ * appended. IMG_BASE (public bucket domain) is the explicit public opt-out —
+ * R2 can't verify signatures, so those URLs stay bare. */
+async function imageAuth(env, site, source) {
+  if (!env.IMG_SIGN_KEY || env.IMG_BASE) {return '';}
+  // validity must comfortably outlive this JSON response's cache life
+  // (≤1h) plus an open viewing session; a leak exposes one source for
+  // about a day. The expiry is rounded UP to a 6-hour boundary, so every
+  // response in that block mints the SAME URLs: the browser's cache keys
+  // on the full URL, and an expiry of "now + 24h" made every refresh
+  // re-download every thumbnail despite the immutable cache header.
+  // Valid for 24-30 h from minting.
+  const exp = Math.ceil(Date.now() / SIG_BLOCK_MS) * SIG_BLOCK_MS + 24 * 3600 * 1000;
+  return `?e=${exp}&sig=${await signScope(env, site, source, exp)}`;
+}
+
+/* Where image URLs point. PUBLIC_URL is the address browsers use, for a
+ * worker that is also called on one they can't reach (a self-hosted backend
+ * that Grafana's data source calls as http://backend:8787, say): image URLs
+ * are built on it, and still signed. */
+function imageBase(env, url) {
+  let publicUrl = env.PUBLIC_URL || '';
+  while (publicUrl.endsWith('/')) {publicUrl = publicUrl.slice(0, -1);}   // a loop, not /\/+$/: CodeQL flags that regex as polynomial
+  return env.IMG_BASE || publicUrl || url.origin;
+}
+
 async function handleFrames(url, env, ctx, viewer) {
-  const site = (url.searchParams.get('site') || '').toLowerCase();
   const source = (url.searchParams.get('source') || url.searchParams.get('kiosk') || '').toLowerCase();
+  if (!source) {return handleFramesAll(url, env, ctx, viewer);}
+  const site = (url.searchParams.get('site') || '').toLowerCase();
   const variant = (url.searchParams.get('variant') || 'lo').toLowerCase();
   let from = Number(url.searchParams.get('from'));
   let to = Number(url.searchParams.get('to'));
@@ -525,71 +602,103 @@ async function handleFrames(url, env, ctx, viewer) {
   const hit = await cache.match(cacheKey);
   if (hit) {return hit;}
 
-  // One bounded LIST over the kiosk/variant prefix. Keys are 13-digit epochs,
-  // so lexicographic order == numeric order and startAfter can seek to `from`.
-  const prefix = `${variant}/${site}/${source}/`;
-  const bucketStart = Math.ceil(from / step) * step;
-  const best = new Map();   // bucket idx → {ts, dist to bucket tick}
-  let cursor, done = false, pages = 0, listedUntil = from;
-  while (!done && pages < MAX_LIST_PAGES) {
-    const listing = await env.FRAMES.list({
-      prefix,
-      limit: 1000,
-      ...(cursor ? { cursor } : { startAfter: `${prefix}${from - 1}` }),
-    });
-    pages++;
-    for (const obj of listing.objects) {
-      const ts = Number(obj.key.slice(prefix.length, -4));
-      if (!Number.isFinite(ts)) {continue;}
-      if (ts > to) { done = true; break; }
-      listedUntil = ts;
-      const idx = Math.round((ts - bucketStart) / step);
-      const dist = Math.abs(ts - (bucketStart + idx * step));
-      const cur = best.get(idx);
-      if (!cur || dist < cur.dist) {best.set(idx, { ts, dist });}
-    }
-    if (!listing.truncated) {done = true;}
-    else {cursor = listing.cursor;}
-  }
-  // stopped at the cap with the window unfinished: nothing after listedUntil
-  // was examined, so flag it rather than let clients read it as offline
-  const truncatedAfter = done ? null : listedUntil;
+  const { ts, truncatedAfter } = await scanSource(env, `${variant}/${site}/${source}/`, from, to, step, { pages: MAX_LIST_PAGES });
   if (truncatedAfter !== null) {
     console.warn(JSON.stringify({ msg: 'frames scan truncated', site, source, variant, from, to, step, truncatedAfter }));
   }
-
-  // Default-private: when IMG_SIGN_KEY is set, worker-served image URLs
-  // carry a source-scoped expiring signature instead of needing the viewer
-  // token appended. IMG_BASE (public bucket domain) is the explicit public
-  // opt-out — R2 can't verify signatures, so those URLs stay bare.
-  // PUBLIC_URL is the address browsers use, for a worker that is also called
-  // on one they can't reach (a self-hosted backend behind Grafana's data
-  // source proxy, say http://backend:8787): image URLs are built on it, and
-  // still signed.
-  let publicUrl = env.PUBLIC_URL || '';
-  while (publicUrl.endsWith('/')) {publicUrl = publicUrl.slice(0, -1);}   // a loop, not /\/+$/: CodeQL flags that regex as polynomial
-  const base = env.IMG_BASE || publicUrl || url.origin;
-  let auth = '';
-  if (env.IMG_SIGN_KEY && !env.IMG_BASE) {
-    // validity must comfortably outlive this JSON response's cache life
-    // (≤1h) plus an open viewing session; a leak exposes one source for
-    // about a day. The expiry is rounded UP to a 6-hour boundary, so every
-    // response in that block mints the SAME URLs: the browser's cache keys
-    // on the full URL, and an expiry of "now + 24h" made every refresh
-    // re-download every thumbnail despite the immutable cache header.
-    // Valid for 24-30 h from minting.
-    const exp = Math.ceil(Date.now() / SIG_BLOCK_MS) * SIG_BLOCK_MS + 24 * 3600 * 1000;
-    auth = `?e=${exp}&sig=${await signScope(env, site, source, exp)}`;
-  }
-  const frames = [...best.values()]
-    .map(v => v.ts)
-    .sort((a, b) => a - b)
-    .map(ts => ({ source, ts, url: `${base}/frame/${variant}/${site}/${source}/${ts}.jpg${auth}` }));
+  const base = imageBase(env, url);
+  const auth = await imageAuth(env, site, source);
+  const frames = ts.map((t) => ({ site, source, ts: t, url: `${base}/frame/${variant}/${site}/${source}/${t}.jpg${auth}` }));
 
   const live = to > Date.now() - step;
   const res = json(frames, 200, {
     'cache-control': `public, max-age=${live ? 15 : 3600}`,
     ...(truncatedAfter !== null ? { 'x-frames-truncated-after': String(truncatedAfter) } : {}),
+  });
+  ctx.waitUntil(cache.put(cacheKey, res.clone()));
+  return res;
+}
+
+/* /frames without source=: every source of the sites asked for (all the
+ * viewer may read when site= is omitted), as one table of rows — what a
+ * table-shaped Grafana data source such as Infinity reads, one query for a
+ * whole dashboard. sources= (csv, omitted or All = every one) keeps only
+ * those source ids, for a Host variable. `step` is the finest spacing wanted (Grafana's
+ * ${__interval_ms}); each source answers at its own cadence or a multiple of
+ * it, and no more than MAX_BUCKETS frames. Sources without frames of this
+ * variant are left out. All scans share one budget; a source the budget
+ * didn't cover is named in X-Frames-Truncated-Sources (site/source@ts: nothing
+ * after ts examined), and X-Frames-Truncated-After carries the earliest ts. */
+async function handleFramesAll(url, env, ctx, viewer) {
+  const variant = (url.searchParams.get('variant') || 'lo').toLowerCase();
+  const from = Number(url.searchParams.get('from'));
+  const to = Number(url.searchParams.get('to'));
+  const step = Number(url.searchParams.get('step'));
+  const wanted = parseCsv(url.searchParams.get('site'));
+  const only = parseCsv(url.searchParams.get('sources'));
+  if (!VARIANTS.has(variant) || ![wanted, only].every((l) => !l || l.every((s) => ID_RE.test(s)))) {return json({ error: 'bad params' }, 400);}
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {return json({ error: 'bad range' }, 400);}
+  if (to === from) {return json([]);}
+  if (!Number.isFinite(step) || step < 1000) {return json({ error: 'bad step' }, 400);}
+
+  const index = await readIndex(url, env, ctx);
+  const sites = Object.keys(index.sites || {})
+    .filter((s) => (!viewer.sites || viewer.sites.includes(s)) && (!wanted || wanted.includes(s)))
+    .sort();
+  const field = variant === 'hi' ? 'hiCadence' : 'cadence';
+  const jobs = [];
+  for (const site of sites) {
+    for (const [source, meta] of Object.entries(own(index.sites, site) || {}).sort(([a], [b]) => a.localeCompare(b))) {
+      const cadence = Number(meta && meta[field]);
+      if (!(cadence >= 1000) || (only && !only.includes(source))) {continue;}
+      // the step wanted, rounded up to the source's cadence, and coarser
+      // still if the window would need more than MAX_BUCKETS of them
+      const per = Math.max(step, (to - from) / MAX_BUCKETS);
+      const s = Math.ceil(per / cadence) * cadence;
+      jobs.push({ site, source, step: s, from: Math.floor(from / s) * s, to: Math.ceil(to / s) * s });
+    }
+  }
+
+  // the answer depends only on which sites it covers, not on who asked
+  const grid = Math.floor(step);
+  const canonical = new URL('/frames', url.origin);
+  for (const [k, v] of [['site', sites.join(',')], ['sources', only ? [...only].sort().join(',') : ''], ['variant', variant], ['from', Math.floor(from / grid) * grid], ['to', Math.ceil(to / grid) * grid], ['step', grid]]) {
+    canonical.searchParams.set(k, v);
+  }
+  canonical.searchParams.set('all', '1');
+  const cache = caches.default;
+  const cacheKey = new Request(canonical);
+  const hit = await cache.match(cacheKey);
+  if (hit) {return hit;}
+
+  const budget = { pages: MAX_LIST_PAGES_ALL };
+  const base = imageBase(env, url);
+  const results = new Array(jobs.length);
+  let next = 0;
+  const drain = async () => {
+    while (next < jobs.length) {
+      const i = next++;
+      const j = jobs[i];
+      const scan = await scanSource(env, `${variant}/${j.site}/${j.source}/`, j.from, j.to, j.step, budget);
+      const auth = scan.ts.length ? await imageAuth(env, j.site, j.source) : '';
+      results[i] = { ...scan, rows: scan.ts.map((t) => ({ site: j.site, source: j.source, ts: t, url: `${base}/frame/${variant}/${j.site}/${j.source}/${t}.jpg${auth}` })) };
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(SCAN_CONCURRENCY, jobs.length) }, drain));
+
+  const truncated = jobs
+    .map((j, i) => ({ key: `${j.site}/${j.source}`, after: results[i].truncatedAfter }))
+    .filter((t) => t.after !== null);
+  if (truncated.length) {
+    console.warn(JSON.stringify({ msg: 'frames scan truncated (all sources)', variant, from, to, step, sources: truncated.length }));
+  }
+  const live = to > Date.now() - step;
+  const res = json(results.flatMap((r) => r.rows), 200, {
+    'cache-control': `public, max-age=${live ? 15 : 3600}`,
+    ...(truncated.length ? {
+      'x-frames-truncated-after': String(Math.min(...truncated.map((t) => t.after))),
+      'x-frames-truncated-sources': truncated.map((t) => `${t.key}@${t.after}`).join(','),
+    } : {}),
   });
   ctx.waitUntil(cache.put(cacheKey, res.clone()));
   return res;

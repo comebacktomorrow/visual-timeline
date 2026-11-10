@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **The reference worker answers for every host at once.** `/frames`
+  without `source=` returns every source of the sites asked for (`site=`,
+  and `sources=` for a Host variable) as rows of site, source, time and
+  image URL, each source at its own cadence or a multiple of it, within a
+  shared scan budget. One Infinity query then feeds a whole panel:
+  [docs/INFINITY.md](docs/INFINITY.md) has the data source, the query and
+  the Site and Host variables. Single-source rows now carry `site` too.
+- **Moving 1.x dashboards:** [docs/MIGRATING-2.0.md](docs/MIGRATING-2.0.md).
+- **Self-hosting reads the backend through Infinity.** The stack installs
+  Infinity, provisions a data source for the backend, removes 1.x's Visual
+  Timeline API data source and replaces the starter dashboard. Its backend
+  image now includes CA certificates, which the current workerd needs to
+  start.
 - **Breaking: the data source's frames API mode is removed** (#126). The
   Visual Timeline data source no longer has an API URL or a viewer token, no
   longer declares a proxy route, and calls no API: it is Demo data (and,

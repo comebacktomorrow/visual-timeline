@@ -19,16 +19,37 @@
         "label": "Site",
         "type": "query",
         "datasource": {
-          "type": "savvycocoa1919-visualtimeline-datasource",
-          "uid": "vt-selfhost"
+          "type": "yesoreyeram-infinity-datasource",
+          "uid": "vt-worker"
         },
         "query": {
+          "queryType": "infinity",
           "refId": "site",
-          "type": "sites"
+          "infinityQuery": {
+            "refId": "site",
+            "type": "json",
+            "source": "url",
+            "format": "table",
+            "parser": "backend",
+            "url": "http://backend:8787/sources",
+            "url_options": {
+              "method": "GET",
+              "data": ""
+            },
+            "root_selector": "",
+            "columns": [
+              {
+                "selector": "site",
+                "text": "site",
+                "type": "string"
+              }
+            ],
+            "filters": []
+          }
         },
-        "definition": "sites",
         "multi": true,
         "includeAll": true,
+        "allValue": "All",
         "current": {
           "text": [
             "All"
@@ -46,17 +67,37 @@
         "label": "Host",
         "type": "query",
         "datasource": {
-          "type": "savvycocoa1919-visualtimeline-datasource",
-          "uid": "vt-selfhost"
+          "type": "yesoreyeram-infinity-datasource",
+          "uid": "vt-worker"
         },
         "query": {
+          "queryType": "infinity",
           "refId": "host",
-          "type": "hosts",
-          "sites": "${site:csv}"
+          "infinityQuery": {
+            "refId": "host",
+            "type": "json",
+            "source": "url",
+            "format": "table",
+            "parser": "backend",
+            "url": "http://backend:8787/sources?site=${site:csv}",
+            "url_options": {
+              "method": "GET",
+              "data": ""
+            },
+            "root_selector": "",
+            "columns": [
+              {
+                "selector": "id",
+                "text": "id",
+                "type": "string"
+              }
+            ],
+            "filters": []
+          }
         },
-        "definition": "hosts in ${site:csv}",
         "multi": true,
         "includeAll": true,
+        "allValue": "All",
         "current": {
           "text": [
             "All"
@@ -68,16 +109,6 @@
         "refresh": 1,
         "sort": 1,
         "options": []
-      },
-      {
-        "name": "filters",
-        "label": "Filters",
-        "type": "adhoc",
-        "datasource": {
-          "type": "savvycocoa1919-visualtimeline-datasource",
-          "uid": "vt-selfhost"
-        },
-        "filters": []
       }
     ]
   },
@@ -112,18 +143,49 @@
         "mode": "timeline"
       },
       "datasource": {
-        "type": "savvycocoa1919-visualtimeline-datasource",
-        "uid": "vt-selfhost"
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "vt-worker"
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "savvycocoa1919-visualtimeline-datasource",
-            "uid": "vt-selfhost"
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "http://backend:8787/frames?site=${site:csv}&sources=${host:csv}&from=${__from}&to=${__to}&step=${__interval_ms}",
+          "url_options": {
+            "method": "GET",
+            "data": ""
           },
-          "sites": "${site:csv}",
-          "hosts": "${host:csv}"
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "ts",
+              "text": "time",
+              "type": "timestamp_epoch"
+            },
+            {
+              "selector": "site",
+              "text": "site",
+              "type": "string"
+            },
+            {
+              "selector": "source",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "url",
+              "text": "image",
+              "type": "string"
+            }
+          ],
+          "filters": [],
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-worker"
+          }
         }
       ],
       "description": "Hover to scrub through the frames; drag across a strip to zoom in."
@@ -143,20 +205,52 @@
         "followCrosshair": true
       },
       "datasource": {
-        "type": "savvycocoa1919-visualtimeline-datasource",
-        "uid": "vt-selfhost"
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "vt-worker"
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "savvycocoa1919-visualtimeline-datasource",
-            "uid": "vt-selfhost"
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "http://backend:8787/frames?site=${site:csv}&sources=${host:csv}&from=${__from}&to=${__to}&step=${__interval_ms}",
+          "url_options": {
+            "method": "GET",
+            "data": ""
           },
-          "sites": "${site:csv}",
-          "hosts": "${host:csv}"
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "ts",
+              "text": "time",
+              "type": "timestamp_epoch"
+            },
+            {
+              "selector": "site",
+              "text": "site",
+              "type": "string"
+            },
+            {
+              "selector": "source",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "url",
+              "text": "image",
+              "type": "string"
+            }
+          ],
+          "filters": [],
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-worker"
+          }
         }
       ]
     }
-  ]
+  ],
+  "description": "Frames from the self-hosted backend, read through Infinity: one query per panel asks the backend's /frames for every host of the selected sites."
 }
