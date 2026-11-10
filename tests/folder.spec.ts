@@ -3,10 +3,12 @@ import { test, expect } from '@grafana/plugin-e2e';
 // The HTTP folder connection (#125) against the seeded fixture nginx serves in
 // docker-compose.yaml (tests/folder-fixture): two hosts, a frame about every
 // 3 minutes with drifting seconds, small and large images, and cam-b missing
-// 10:12 and 10:15. Each listing format draws the same timeline.
+// 10:12 and 10:15. Each listing format draws the same timeline. A folder
+// promises no cadence, so a missing frame is never offline: the frame before
+// it is shown on (docs/TIMELINE-MODEL.md).
 
 for (const title of ['Folder with an HTML listing', 'Folder with a JSON listing']) {
-  test(`${title}: hosts, frames from the folder, and a missing frame as a gap`, async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
+  test(`${title}: hosts, frames from the folder, and a missing frame shown on, not offline`, async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
     await page.setViewportSize({ width: 1280, height: 1200 });
     const dashboard = await readProvisionedDashboard({ fileName: 'folder.json' });
     const dashboardPage = await gotoDashboardPage(dashboard);
@@ -14,10 +16,25 @@ for (const title of ['Folder with an HTML listing', 'Folder with a JSON listing'
     await expect(panel.locator.locator('.ktl .card .card-head .nm')).toHaveText(['cam-a', 'cam-b'], { timeout: 20000 });
     // the small images, loaded straight from the folder's published address
     await expect(panel.locator.locator('.ktl .slot img[src^="http://localhost:8098/"]').first()).toBeAttached();
-    const camB = panel.locator.locator('.ktl .card').filter({ has: page.locator('.nm', { hasText: 'cam-b' }) });
-    await expect(camB.locator('.slot.gap')).not.toHaveCount(0);
+    const card = (h: string) => panel.locator.locator('.ktl .card').filter({ has: page.locator('.nm', { hasText: h }) });
+    await expect(card('cam-b').locator('.slot.gap:not(.nodata)')).toHaveCount(0);
+    // 10:09 is shown until 10:18: one cell, so cam-b has fewer image cells
+    expect(await card('cam-b').locator('.slot img').count()).toBeLessThan(await card('cam-a').locator('.slot img').count());
   });
 }
+
+test('a folder with Expected every promises it: a missing frame is offline', async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
+  await page.setViewportSize({ width: 1280, height: 1400 });
+  const dashboard = await readProvisionedDashboard({ fileName: 'folder.json' });
+  const dashboardPage = await gotoDashboardPage(dashboard);
+  const panel = dashboardPage.getPanelByTitle('Folder that expects a frame every 3 minutes');
+  await expect(panel.locator.locator('.ktl .card .card-head .nm')).toHaveText(['cam-a', 'cam-b'], { timeout: 20000 });
+  const card = (h: string) => panel.locator.locator('.ktl .card').filter({ has: page.locator('.nm', { hasText: h }) });
+  await expect(card('cam-b').locator('.slot.gap:not(.nodata)').first()).toBeAttached();
+  // cam-a keeps its promise (its seconds drift within the tolerance): red
+  // only before its first frame, when the window starts before it
+  expect(await card('cam-a').locator('.slot.gap:not(.nodata)').count()).toBeLessThanOrEqual(1);
+});
 
 test('Save & test on a folder says what it found', async ({ readProvisionedDataSource, gotoDataSourceConfigPage, selectors }) => {
   // the fixture's frames are on 2026-01-01, outside the last 24 hours that

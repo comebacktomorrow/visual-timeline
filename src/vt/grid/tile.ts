@@ -1,10 +1,9 @@
-import { addPauseClasses, clearPauseClasses, pauseInfo } from '../model/eras';
-import { ghostFor } from '../model/slots';
+import { addPauseClasses, clearPauseClasses, pauseInfo, type PauseSubject } from '../model/eras';
 import { esc, filterAttrs, headChips, headTitle } from '../dom/html';
 import { q } from '../ui/wrapper';
 import { attachZoneChip, dressZoneChip, zoneChip } from '../zones/chip';
 import { zoneFor } from '../zones/source';
-import type { Frame, Slot, SourceDecl, SourceModel } from '../types';
+import type { Frame, SourceDecl, SourceModel } from '../types';
 import type { GridState, Tile } from './state';
 
 /* The grid's tiles: building one (header, image, click-in preview), the
@@ -39,69 +38,68 @@ export function buildTile(s: GridState, decl: SourceDecl, model: SourceModel): T
   return rec;
 }
 
+/* the latest frame the tile's host took in the window */
 export function lastFrame(rec: Tile): Frame | null {
-  for (let i = rec.model.slots.length - 1; i >= 0; i--) {
-    if (rec.model.slots[i].frame) {return rec.model.slots[i].frame as Frame;}   // truthy, so a Frame (no narrowing through slots[i])
-  }
+  const f = rec.model.frames;
+  return f.length ? f[f.length - 1] : null;
+}
+
+/* the last frame taken at or before t */
+function frameBefore(rec: Tile, t: number): Frame | null {
+  const f = rec.model.frames;
+  for (let i = f.length - 1; i >= 0; i--) {if (f[i].ts <= t) {return f[i];}}
   return null;
 }
 
-/* t = null → most recent in window; otherwise frame at crosshair time */
+/* t = null → most recent in window; otherwise what's in force at the
+ * crosshair time: a frame, a pending one (shown as expected), a pause,
+ * dropped (offline: a promise broke) or no data (neutral) */
 export function setShown(s: GridState, t: number | null): void {
   s.shownT = t;
   if (s.cfg.onShown) {s.cfg.onShown(t);}                // host chrome hook (standalone app)
   // zone chips: offset at the crosshair, else at the window's live edge
-  const zoneAt = t == null ? Math.min(s.P.to, Date.now()) : t;
+  const live = Math.min(s.P.to, Date.now());
+  const zoneAt = t == null ? live : t;
   for (const k of s.kiosks) {
     const rec = s.tiles[k.id];
     if (!rec) {continue;}
     if (rec.zone.el) {dressZoneChip(rec.zone, zoneAt);}
     const tt = rec.tt;
-    let frame: Frame | null | undefined = null, offMsg: string | null = null, pausedMsg: string | null = null,
-      pausedSlot: Slot | null = null, expectedTs: number | null = null;
-    const la = rec.model.lastActive;
-    const nodata = s.cfg.missingFrames === 'nodata';
-    if (t == null) {
-      const tail = rec.model.slots.length ? rec.model.slots[rec.model.slots.length - 1] : null;
-      const tailPaused = tail && tail.paused;
-      frame = lastFrame(rec);
-      if (tailPaused) {
-        pausedSlot = tail;
-        pausedMsg = pauseInfo(tail).label + (frame ? ' — last frame ' + tt.time(frame.ts) + tt.sfx(frame.ts) : '');
-      }
-      else if (!frame) {offMsg = 'no data in window';}
-      // a held frame keeps the tile live for as long as the hold lasts
-      else if (s.LIVE && la && Date.now() - frame.ts > Math.max(2 * la.step, s.cfg.holdFrames ?? 0))
-        {offMsg = (nodata ? 'NO FRAME' : 'OFFLINE') + ' — last seen ' + tt.time(frame.ts) + tt.sfx(frame.ts);}
+    let frame: Frame | null = null, offMsg: string | null = null, pausedMsg: string | null = null,
+      pausedAt: PauseSubject | null = null, expectedTs: number | null = null, nodata = false;
+    // "latest": in a live window, what's in force now; in a past one, the
+    // window's last frame (no offline call), or the pause it ended in
+    const at = t == null ? live - 1 : t;
+    const iv = rec.model.intervalAt(at);
+    let kind = iv ? iv.kind : 'nodata';
+    const latest = t == null ? lastFrame(rec) : null;
+    if (t == null && !s.LIVE && kind !== 'paused') {kind = latest ? 'frame' : 'nodata';}
+    if (t == null && kind === 'frame' && latest) {
+      frame = latest;
+    } else if (kind === 'frame') {
+      frame = iv!.frame!;
+    } else if (kind === 'pending') {
+      // the promise is due, the frame still in flight: the last frame, as expected
+      frame = iv!.frame!;
+      expectedTs = iv!.from;
+    } else if (kind === 'paused') {
+      pausedAt = { paused: true, label: iv!.pause!.label, color: iv!.pause!.color };
+      const last = t == null ? lastFrame(rec) : null;
+      pausedMsg = pauseInfo(pausedAt).label + (last ? ' — last frame ' + tt.time(last.ts) + tt.sfx(last.ts) : '');
+    } else if (kind === 'beyond') {
+      offMsg = '—';   // ahead of now: unknown, not a failure: neutral
+      nodata = true;
     } else {
-      const slot = rec.model.slotAt(t);
-      if (slot && slot.paused) {
-        pausedSlot = slot;
-        pausedMsg = pauseInfo(slot).label;
-      } else {
-        frame = slot && slot.frame;
-        if (!frame) {
-          if (slot && slot.beyond) {
-            offMsg = '—';   // ahead of now: unknown, not a failure
-          } else if (slot && slot.future) {
-            // just-passed tick, frame in flight: show the last frame as a
-            // ghost when there is one (never the red offline tile)
-            frame = ghostFor(rec.model.slots, slot);
-            if (frame) {expectedTs = slot.ts;}
-            else {offMsg = 'EXPECTED — ' + tt.short(slot.ts) + tt.sfx(slot.ts);}
-          } else {
-            const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
-            let last: Frame | null | undefined = null;
-            for (let j = i; j >= 0; j--) {if (rec.model.slots[j].frame) { last = rec.model.slots[j].frame; break; }}
-            offMsg = last ? (nodata ? 'NO FRAME' : 'OFFLINE') + ' — last seen ' + tt.time(last.ts) + tt.sfx(last.ts) : 'no data';
-          }
-        }
-      }
+      nodata = kind === 'nodata';
+      const last = frameBefore(rec, at);
+      offMsg = last
+        ? (nodata ? 'NO FRAME' : 'OFFLINE') + ' — last seen ' + tt.time(last.ts) + tt.sfx(last.ts)
+        : t == null ? 'no data in window' : 'no data';
     }
     rec.el.classList.toggle('offline', !!offMsg);
     rec.el.classList.toggle('nodata', !!offMsg && nodata);
     clearPauseClasses(rec.el);
-    if (pausedMsg && !offMsg) {addPauseClasses(rec.el, pausedSlot);}
+    if (pausedMsg && !offMsg) {addPauseClasses(rec.el, pausedAt);}
     rec.off.textContent = offMsg || pausedMsg || '';
     rec.el.classList.toggle('ghost', !!expectedTs);
     rec.shown = frame;

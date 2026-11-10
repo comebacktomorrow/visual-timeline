@@ -2,6 +2,7 @@
  * through the data source's proxy route and turned into each host's frames.
  * The listings go through Grafana's server (CORS, and the bearer token stays
  * there); the images load straight from the folder in viewers' browsers. */
+import { rangeUtil } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
 import { lastValueFrom } from 'rxjs';
 
@@ -54,6 +55,8 @@ const encodePath = (p: string) => p.split('/').map(encodeURIComponent).join('/')
 export class FolderSource {
   readonly listing: ListingFormat;
   readonly tz: string;
+  /** the promise each host makes (ms), from Expected every; 0: none */
+  readonly expected: number;
   private readonly imageBase: string;
   private readonly small?: string;
   private readonly large?: string;
@@ -64,6 +67,9 @@ export class FolderSource {
   constructor(o: VisualTimelineOptions, private readonly fetchText: TextFetch) {
     this.listing = o.listing || 'html';
     this.tz = (o.timezone || '').trim() || 'UTC';
+    let expected = 0;
+    try { expected = o.expectedEvery ? rangeUtil.intervalToMs(o.expectedEvery.trim()) : 0; } catch { expected = 0; }
+    this.expected = expected > 0 ? expected : 0;
     this.imageBase = trimSlashes(o.imageUrl || o.folderUrl || '');
     this.small = (o.smallVariant || '').trim() || undefined;
     this.large = (o.largeVariant || '').trim() || undefined;
@@ -138,7 +144,11 @@ export class FolderSource {
         const l = h.large[j];
         if (l && Math.abs(l.ts - f.ts) <= cadence) {f.hi = l.url;}
       }
-      records.push({ id: h.id, site: h.site, frames: h.small, cadence });
+      // a folder promises its Expected every, else nothing: its cadence is
+      // then only the typical gap
+      records.push(this.expected
+        ? { id: h.id, site: h.site, frames: h.small, cadence: this.expected }
+        : { id: h.id, site: h.site, frames: h.small, cadence, inferred: true });
     }
     records.sort((a, b) => a.site.localeCompare(b.site) || a.id.localeCompare(b.id));
     return { records, truncated };

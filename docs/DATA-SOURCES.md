@@ -33,6 +33,11 @@ can load; `image_hi` (optional) is a larger one for the click-in preview;
 `site` (optional) groups hosts. Name the columns as you like and set them
 under the panel's **Frame fields** when they differ.
 
+To have missing frames drawn as offline, add a `cadence` column (ms): how
+often the host promises a frame, such as `60000 AS cadence`. Without one, a
+host promises nothing, and its silences are neutral "no data" (the panel's
+**Expected cadence** sets a promise for every host instead).
+
 A host's pauses, from a second query in the same panel:
 
 ```sql

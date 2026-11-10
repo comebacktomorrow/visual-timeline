@@ -92,4 +92,17 @@ describe('lastFrameIn', () => {
     const api = fakeApi(every(T0 - DAY, T0 - MIN));
     await expect(lastFrameIn(decl(), T0, T0 + DAY, api)).resolves.toEqual({ frame: null, status: 'offline' });
   });
+  describe('a host that promises no cadence (only inferred)', () => {
+    const inferred = { ...decl(), inferred: true } as SourceDecl;
+    test('live while its last frame is within three typical gaps', async () => {
+      const api = fakeApi(every(T0, T0 + 60 * MIN));
+      expect((await lastFrameIn(inferred, T0, T0 + 62 * MIN, api)).status).toBe('live');
+    });
+    test('then no data, never offline', async () => {
+      const api = fakeApi(every(T0, T0 + 60 * MIN));
+      const r = await lastFrameIn(inferred, T0, T0 + 90 * MIN, api);
+      expect([r.status, r.frame?.ts]).toEqual(['nodata', T0 + 60 * MIN]);
+      expect((await lastFrameIn(inferred, T0 + DAY, T0 + 2 * DAY, api)).status).toBe('nodata');
+    });
+  });
 });

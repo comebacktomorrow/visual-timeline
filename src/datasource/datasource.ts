@@ -274,7 +274,7 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
 }
 
 /* a folder host as a source declaration */
-const declOf = (r: HostRecords): SourceDecl => ({ id: r.id, site: r.site, cadence: r.cadence });
+const declOf = (r: HostRecords): SourceDecl => ({ id: r.id, site: r.site, cadence: r.cadence, ...(r.inferred ? { inferred: true } : {}) });
 
 /* a folder's frames as rows: one per step for each host, at its own cadence
  * or coarser, so no more rows than the panel has pixels */

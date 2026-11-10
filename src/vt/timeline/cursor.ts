@@ -138,8 +138,11 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
       c.mag.classList.remove('gap', 'off'); clearPauseClasses(c.mag);
       c.mag.classList.add('future');
       if (g) { c.mag.classList.add('ghost'); setSrc(c.mag.querySelector('img')!, g.url); }
-      setText(c.mag.querySelector('.cap')!, (inFlight ? 'expected — ' : 'upcoming — ') + tt.short(slot.ts) +
-        (g ? ' · last frame ' + tt.time(g.ts) : '') + tt.sfx(slot.ts));
+      // when the frame is due: the pending interval's start (the tick, failing that)
+      const iv = c.model.intervalAt(slot.ts);
+      const due = iv && iv.kind === 'pending' ? iv.from : slot.ts;
+      setText(c.mag.querySelector('.cap')!, (inFlight ? 'expected — ' : 'upcoming — ') + tt.short(due) +
+        (g ? ' · last frame ' + tt.time(g.ts) : '') + tt.sfx(due));
       setText(c.head, inFlight ? 'expected' : 'upcoming');
       c.head.classList.remove('stale'); clearPauseClasses(c.head);
     } else {
@@ -148,7 +151,8 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
       const i = slot ? c.model.slots.indexOf(slot) : c.model.slots.length - 1;
       let last: Frame | null | undefined = null;
       for (let j = i; j >= 0; j--) {if (c.model.slots[j].frame) { last = c.model.slots[j].frame; break; }}
-      const nodata = s.cfg.missingFrames === 'nodata';
+      // dropped time is offline (a promise broke); no data is neutral
+      const nodata = !!(slot && !slot.paused && !slot.beyond && slot.nodata);
       const msg = last ? (nodata ? 'no frame — last seen ' : 'offline — last seen ') + tt.time(last.ts) + tt.sfx(last.ts) : 'no data in window';
       setText(c.mag.querySelector('.cap')!, msg);
       setText(c.head, msg);

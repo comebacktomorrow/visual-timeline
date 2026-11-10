@@ -47,6 +47,23 @@ datasources:
       smallVariant: lo
       largeVariant: hi
 
+  # The same folder with a promise (M9): every host a frame every 3 minutes,
+  # so cam-b's missing frames are offline.
+  - name: Visual Timeline (folder, expected)
+    type: savvycocoa1919-visualtimeline-datasource
+    uid: vt-folder-expected
+    access: proxy
+    editable: true
+    jsonData:
+      connection: folder
+      folderUrl: http://vt-folder/html
+      imageUrl: http://localhost:8098/html
+      listing: html
+      template: '{host}/{YYYY}-{MM}-{DD}/{HH}{mm}{ss}_{variant}.svg'
+      smallVariant: lo
+      largeVariant: hi
+      expectedEvery: 3m
+
   # Existing data sources holding the same frames (M5): see docker-compose.yaml.
   # Throwaway test credentials for a database that holds only the fixture.
   - name: PostgreSQL (frames)

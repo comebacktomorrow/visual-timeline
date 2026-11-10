@@ -104,9 +104,8 @@
       ],
       "options": {
         "mode": "timeline",
-        "holdFrames": "threshold",
+        "holdFrames": "limit",
         "holdFor": "30m",
-        "missingFrames": "nodata",
         "annotationLanes": "shared"
       }
     },

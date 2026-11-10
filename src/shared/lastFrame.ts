@@ -5,13 +5,16 @@
  * that range's end, as Grafana's Stat panel reads "Last". Pure apart from the
  * frames call, so it is unit-tested with a fake API. */
 import { erasFor } from '../vt/model/eras';
+import { AUTO_HOLD_FACTOR } from '../vt/model/intervals';
 import type { Backend, Frame, SourceDecl } from '../vt/types';
 
 /* The most buckets one coarse search asks for (the reference worker allows
  * 800), as the timeline's resume probe. */
 const PROBE_BUCKETS = 400;
 
-export type HostStatus = 'live' | 'offline' | 'paused';
+/** live; offline (a promise broke); paused; or nodata (no promise, and
+ * nothing for longer than the timeline holds a frame: never offline) */
+export type HostStatus = 'live' | 'offline' | 'paused' | 'nodata';
 
 export interface LastFrame {
   frame: Frame | null;
@@ -59,7 +62,13 @@ export async function lastFrameIn(
   if (era.paused && !(frame && frame.ts >= era.from + cadence)) {
     return { frame, status: 'paused', reason: era.reason };
   }
-  // offline once a full tick past the next one is missing, as the timeline
-  // turns a pending slot into a gap
+  // a host with no promise is never offline: live while its last frame is
+  // within the timeline's Auto hold (AUTO_HOLD_FACTOR typical gaps), then no
+  // data (docs/TIMELINE-MODEL.md)
+  if (decl.inferred) {
+    return { frame, status: frame && end - frame.ts <= AUTO_HOLD_FACTOR * cadence ? 'live' : 'nodata' };
+  }
+  // offline once the promise is a full cadence overdue, as the timeline's
+  // live edge turns pending into dropped
   return { frame, status: frame && end - frame.ts <= 2 * cadence ? 'live' : 'offline' };
 }

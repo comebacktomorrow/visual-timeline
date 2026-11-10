@@ -4,6 +4,9 @@ import { test, expect } from '@grafana/plugin-e2e';
 // provisioning/dashboards/any-source.json feeds it TestData CSV rows of time,
 // host and image (Base64 SVG data URLs), with no Visual Timeline data source
 // involved. cam-a has 10 frames 3 minutes apart; cam-b misses two of them.
+// Only the first panel's rows carry a cadence (a promise, so a missing frame
+// is offline); the others make none, so nothing is ever red
+// (docs/TIMELINE-MODEL.md).
 
 test('a timeline draws hosts and frames from a stock data source', async ({ gotoDashboardPage, readProvisionedDashboard }) => {
   const dashboard = await readProvisionedDashboard({ fileName: 'any-source.json' });
@@ -13,9 +16,10 @@ test('a timeline draws hosts and frames from a stock data source', async ({ goto
   await expect(names).toHaveText(['cam-a', 'cam-b'], { timeout: 20000 });
   // the frames are the rows' own images
   await expect(panel.locator.locator('.ktl .card .strip img[src^="data:image/svg+xml"]').first()).toBeAttached();
-  // cam-b's missing frames are a gap, drawn as offline
+  // the rows promise a frame every 3 minutes: cam-b's missing ones are
+  // dropped, drawn as offline
   const camB = panel.locator.locator('.ktl .card').filter({ has: panel.locator.page().locator('.nm', { hasText: 'cam-b' }) });
-  await expect(camB.locator('.slot.gap').first()).toBeAttached();
+  await expect(camB.locator('.slot.gap:not(.nodata)').first()).toBeAttached();
   // no site in the rows: no empty site chip
   await expect(panel.locator.locator('.ktl .card-head .st:empty')).toHaveCount(0);
 });
@@ -38,10 +42,9 @@ test('a state query set to pause frames explains a host\'s missing frames, in it
   const band = camB.locator('.slot.paused.tinted');
   await expect(band).toHaveCount(1, { timeout: 20000 });
   await expect(band.locator('.band-label')).toHaveText('Maintenance');
-  // the frames it didn't send are explained, not offline: its only gap left
-  // is the window's last tick, after the last frame (cam-a has the same one)
-  await expect(camB.locator('.slot.gap')).toHaveCount(1);
-  await expect(camB.locator('.slot').last()).toHaveClass(/\bgap\b/);
+  // the frames it didn't send are explained by the pause; nothing promised
+  // them, so nothing is offline
+  await expect(camB.locator('.slot.gap:not(.nodata)')).toHaveCount(0);
   // cam-a has no state: untouched
   const camA = panel.locator.locator('.ktl .card').filter({ has: panel.locator.page().locator('.nm', { hasText: 'cam-a' }) });
   await expect(camA.locator('.slot.paused')).toHaveCount(0);
@@ -82,8 +85,11 @@ test('an irregular feed holds its last frame, and a longer silence is a neutral 
   const dashboardPage = await gotoDashboardPage(dashboard);
   const panel = dashboardPage.getPanelByTitle('Irregular feed from TestData');
   const strip = panel.locator.locator('.ktl .card .strip');
-  // frames held over the slots between them (10:07 is held until 10:12)
-  await expect(strip.locator('.slot.held').first()).toBeAttached({ timeout: 20000 });
+  // a frame is shown until the next one, up to the 5-minute hold: 10:07 is
+  // one cell, wider than a single slot, until 10:12
+  await expect(strip.locator('.slot img').first()).toBeAttached({ timeout: 20000 });
+  const grows = await strip.locator('.slot:has(img)').evaluateAll((els) => els.map((e) => Number((e as HTMLElement).style.flexGrow)));
+  expect(Math.max(...grows)).toBeGreaterThan(1.5 * Math.min(...grows));
   // the silence past the hold (10:12 to 10:19) is "no data", never the red
   // offline hatch: a gap with frames on both sides of it
   const classes = await strip.locator('.slot').evaluateAll((els) => els.map((e) => e.className));
@@ -112,6 +118,10 @@ test('a wide table (an image column per host) draws a strip per column', async (
   const dashboardPage = await gotoDashboardPage(dashboard);
   const panel = dashboardPage.getPanelByTitle('Wide table from TestData');
   await expect(panel.locator.locator('.ktl .card .card-head .nm')).toHaveText(['cam-p', 'cam-q'], { timeout: 20000 });
-  const camQ = panel.locator.locator('.ktl .card').filter({ has: page.locator('.nm', { hasText: 'cam-q' }) });
-  await expect(camQ.locator('.slot.gap')).not.toHaveCount(0);
+  // cam-q's empty cells: its frame before each is shown on (no promise, so
+  // never offline), one cell, so it has fewer cells with images than cam-p
+  const card = (h: string) => panel.locator.locator('.ktl .card').filter({ has: page.locator('.nm', { hasText: h }) });
+  await expect(card('cam-q').locator('.slot.gap:not(.nodata)')).toHaveCount(0);
+  const imgs = async (h: string) => card(h).locator('.slot img').count();
+  expect(await imgs('cam-q')).toBeLessThan(await imgs('cam-p'));
 });
