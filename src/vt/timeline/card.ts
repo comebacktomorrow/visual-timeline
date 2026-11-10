@@ -1,7 +1,6 @@
 import { pauseInfo } from '../model/eras';
 import { ghostFor, slotClass } from '../model/slots';
 import { fmtDur } from '../time/zones';
-import { hiUrlFor } from '../backends/api';
 import { esc, filterAttrs, headTitle, tagChips } from '../dom/html';
 import { dressGhost } from '../ui/ghost';
 import { q } from '../ui/wrapper';
@@ -113,7 +112,7 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     const sl = model.slotAt(s.cursorT);
     const f = sl && sl.frame;
     const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
-    if (f) {s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, s.cfg.apiUrl, s.cfg.apiKey), null, tt);}
+    if (f) {s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt);}
     else if (g) {s.pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl!.ts, tt);}   // g is only set from a slot
   });
   /* magnifier takes the aspect of the actual frames (portrait screens etc.) */

@@ -126,32 +126,40 @@ export function makeApiBackend(apiUrl?: string, apiKey?: string, apiFetch?: ApiF
     signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined,
   });
   const get: ApiFetch = apiFetch ? (path) => apiFetch(path) : (path) => fetch(base + path, opts());
+  const image = (u: string) => (apiFetch ? resolveFrameUrl(u, base) : imageUrlWithKey(u, base, key));
+  // what /sources said about each source, for older workers' preview URLs
+  const decls = new Map<string, SourceDecl>();
   return {
     async kiosks(sites) {
       const r = await get(sourcesPath(sites));
       if (!r.ok) {throw await apiError('sources', r, !!apiFetch);}
-      return r.json() as Promise<SourceDecl[]>;   // the API's contract; not validated
+      const list = (await r.json()) as SourceDecl[];   // the API's contract; not validated
+      for (const d of list) {decls.set(d.site + '/' + d.id, d);}
+      return list;
     },
     async frames(site, kiosk, from, to, step) {
       const r = await get(framesPath(site, kiosk, from, to, step));
       if (!r.ok) {throw await apiError('frames', r, !!apiFetch);}
-      const frames = (await r.json()) as Frame[];   // the API's contract; not validated
-      for (const f of frames) {
-        f.url = apiFetch ? resolveFrameUrl(f.url, base) : imageUrlWithKey(f.url, base, key);
+      const rows = (await r.json()) as Array<Frame & { url_hi?: string }>;   // the API's contract; not validated
+      const decl = decls.get(site + '/' + kiosk);
+      for (const f of rows) {
+        f.url = image(f.url);
+        // the preview: the worker's own url_hi (#129), else derived from the
+        // lo URL as workers before it require
+        if (f.url_hi) {f.hi = image(f.url_hi);}
+        else if (decl) {f.hi = hiUrlFor(f, decl, base, key) ?? undefined;}
+        delete f.url_hi;
       }
-      return frames;
+      return rows;
     },
   };
 }
 
 
-/* Nearest hi-variant URL for the click-in preview (API mode only); the
- * preview falls back to the lo frame if the hi key 404s. The lo frame's
- * query string is reused verbatim: it carries whatever authorization the
- * backend chose (a source-scoped signature covers hi too, and an appended
- * viewer key is the same key) — this is the only image URL built
- * client-side, so it can't mint its own signature. */
-/* The hi-res frame nearest a lo frame. The contract fixes the image path
+/* The hi-res frame nearest a lo frame, for workers that don't return url_hi
+ * (before #129). Only the API backend uses it, when it reads frames: the
+ * timeline and grid take frame.hi and know no URL conventions. The preview
+ * falls back to the lo frame if the hi image doesn't load. The contract fixes the image path
  * (/frame/{variant}/{site}/{source}/{ts}.jpg) and one signature covers both
  * variants, so the hi URL reuses the lo frame's own base and query: that
  * also works behind a data source, where the panel has no apiUrl. Falls back

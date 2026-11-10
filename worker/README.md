@@ -155,6 +155,45 @@ retention on. Reads are the frames in each chunk a request misses in the
 cache: a live 6-hour chunk is read again every 15 seconds while someone
 watches it.
 
+### Optional: images straight from R2 (presigned links)
+
+By default the worker serves every image itself, at `/frame/…`: one worker
+request per image view, cache hits included. On the free plan's 100,000
+requests a day, a few long views of a large fleet use that up. With presigned
+links, `/frames` hands out R2 links that browsers load straight from R2: one
+R2 read each (10 million a month free) and no worker request.
+
+1. In the Cloudflare dashboard, under **R2 → Manage API tokens**, create a
+   token with **Object Read only** permission, limited to the frames bucket.
+   Note its **Access Key ID** and **Secret Access Key**.
+2. Set them as secrets:
+
+   ```bash
+   npx wrangler secret put R2_ACCESS_KEY_ID
+   npx wrangler secret put R2_SECRET_ACCESS_KEY
+   ```
+
+3. Add the rest as plain variables in `wrangler.jsonc`, with your account id
+   (the dashboard shows it, and R2's S3 endpoint is built from it):
+
+   ```jsonc
+   "vars": {
+     "IMG_DELIVERY": "presigned",
+     "R2_S3_ENDPOINT": "https://<account id>.r2.cloudflarestorage.com",
+     "R2_BUCKET": "visual-timeline-frames"
+   }
+   ```
+
+4. Deploy. If a setting is missing, the worker logs which and keeps serving
+   images itself.
+
+Links are signed per 6-hour block and last 30 hours, so a frame keeps the same
+URL for the whole block and browsers reuse their cached copy. `/frame/…` keeps
+working for links already handed out and for the standalone viewer. R2's S3
+endpoint isn't cached at Cloudflare's edge, so every first view of an image is
+an R2 read; a public bucket on a custom domain (`IMG_BASE`) is cached and free,
+but makes every frame public.
+
 ## Uploading frames
 
 An uploader captures a JPEG on its cadence and POSTs it to `/upload` with

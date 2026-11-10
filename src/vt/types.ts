@@ -42,8 +42,8 @@ export interface Frame {
   url: string;
   source?: string;
   kiosk?: string;
-  /* the larger image for the click-in preview, when the source gives one
-   * per frame (frame records, #126); otherwise hiUrlFor derives it */
+  /* the larger image for the click-in preview, when the source gives one:
+   * a preview field in frame records (#126), or the API's url_hi (#129) */
   hi?: string;
 }
 

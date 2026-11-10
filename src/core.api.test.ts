@@ -197,3 +197,35 @@ describe('hiUrlFor', () => {
     expect(hiUrlFor({ ts: TS, url: 'blob:x' }, odd, API)).toBe(`${API}/frame/hi/site%20a%2Fb/cam%3F%231/${TS}.jpg`);
   });
 });
+
+describe('makeApiBackend: each frame\'s preview link (#129)', () => {
+  const TS = 1783488360000;
+  const decls = [{ id: 'source-1', site: 'site-a', cadence: 60000, hiCadence: 300000 }];
+  const backendWith = (rows: unknown[], key = '') => {
+    const apiFetch = async (path: string) => response(path.startsWith('/sources') ? decls : rows);
+    return makeApiBackend(API, key, apiFetch);
+  };
+
+  test("the worker's url_hi becomes frame.hi, resolved like the frame's own URL", async () => {
+    const b = backendWith([{ ts: TS, url: SIGNED, url_hi: '/frame/hi/site-a/source-1/1783488300000.jpg?e=1&sig=h' }]);
+    await b.kiosks(null);
+    const [f] = await b.frames('site-a', 'source-1', 0, 1, 60000);
+    expect(f.hi).toBe(`${API}/frame/hi/site-a/source-1/1783488300000.jpg?e=1&sig=h`);
+    expect(f).not.toHaveProperty('url_hi');
+  });
+
+  test('without url_hi (an older worker), the preview is derived from the frame URL and the hi cadence', async () => {
+    const b = backendWith([{ ts: TS, url: SIGNED }]);
+    await b.kiosks(null);
+    const [f] = await b.frames('site-a', 'source-1', 0, 1, 60000);
+    expect(f.hi).toBe(`${API}/frame/hi/site-a/source-1/${Math.round(TS / 300000) * 300000}.jpg?e=1783574760000&sig=abc123`);
+  });
+
+  test('a source with no hi variant gets no preview link', async () => {
+    const apiFetch = async (path: string) => response(path.startsWith('/sources') ? [{ id: 'source-1', site: 'site-a', cadence: 60000 }] : [{ ts: TS, url: SIGNED }]);
+    const b = makeApiBackend(API, '', apiFetch);
+    await b.kiosks(null);
+    const [f] = await b.frames('site-a', 'source-1', 0, 1, 60000);
+    expect(f.hi).toBeUndefined();
+  });
+});
