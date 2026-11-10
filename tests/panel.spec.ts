@@ -14,7 +14,9 @@ test('timeline mode renders source cards with frames from demo data', async ({
   // page-level locators: plugin-e2e's panel.locator test-id doesn't match
   // every Grafana version's edit pane, and there is only one panel here
   await expect(page.locator('.ktl .card').first()).toBeVisible({ timeout: 20000 });
-  await expect(page.locator('.ktl .slot img').first()).toBeVisible();
+  // a frame has loaded: any one, since images load newest first (the first
+  // slot's is the last, and a slow runner took longer than 5 s to reach it)
+  await expect(page.locator('.ktl .slot img[src]').first()).toBeVisible({ timeout: 20000 });
   await expect(page.locator('.ktl .axis .tick').first()).toBeVisible();
 });
 
