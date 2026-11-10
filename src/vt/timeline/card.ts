@@ -74,7 +74,11 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   for (const sl of slots) {
     const el = document.createElement('div');
     el.className = 'slot' + slotClass(sl);
-    if (sl.paused) {el.title = pauseInfo(sl).label.toLowerCase();}
+    if (sl.paused) {
+      const pi = pauseInfo(sl);
+      el.title = pi.label.toLowerCase();
+      if (pi.color) {el.style.setProperty('--ktl-band', pi.color);}
+    }
     // width ∝ time span, so x↔time stays linear across era boundaries
     el.style.flexGrow = String(sl.span / 1000);
     if (sl.frame) {

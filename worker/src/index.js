@@ -18,6 +18,12 @@
  *                                     (site= csv, omitted = all), each at its own
  *                                     cadence or coarser, one row per frame, for
  *                                     a table-shaped data source such as Infinity.
+ *   GET  /states?site=csv&sources=csv&to=
+ *                                     → [{time, site, source, state}]: each
+ *                                     source's declared pauses as state rows
+ *                                     (the reason, ":unexpected" when nobody
+ *                                     intended it; "" when it ends), for a
+ *                                     state query (Infinity).
  *   GET  /frame/{variant}/{site}/{source}/{ts}.jpg
  *                                     immutable frame image (POC path; production
  *                                     serves images from an R2 custom domain and
@@ -105,7 +111,7 @@ export default {
       if (url.pathname === '/upload' && request.method === 'POST') {return await handleUpload(request, env, ctx);}
       if (url.pathname === '/declare' && request.method === 'POST') {return await handleDeclare(request, env);}
       if (url.pathname === '/reindex' && request.method === 'POST') {return await handleReindex(request, env, url);}
-      const isData = url.pathname === '/sources' || url.pathname === '/kiosks' ||
+      const isData = url.pathname === '/sources' || url.pathname === '/kiosks' || url.pathname === '/states' ||
                      url.pathname === '/frames' || url.pathname.startsWith('/frame/');
       if (isData && request.method === 'GET') {
         // viewer auth: when VIEWER_TOKEN is set, all data reads require it
@@ -113,6 +119,7 @@ export default {
         const viewer = await viewerFor(request, env, url);
         if (!viewer) {return json({ error: 'unauthorized' }, 401);}
         if (url.pathname === '/frames') {return await handleFrames(url, env, ctx, viewer);}
+        if (url.pathname === '/states') {return await handleStates(url, env, ctx, viewer);}
         if (url.pathname.startsWith('/frame/')) {return await handleFrame(url, env, ctx, viewer);}
         return await handleSources(url, env, ctx, viewer);   // /kiosks = deprecated alias
       }
@@ -588,6 +595,44 @@ async function handleSources(url, env, ctx, viewer) {
   }
   out.sort((a, b) => a.site.localeCompare(b.site) || a.id.localeCompare(b.id));
   return json(out, 200, { 'cache-control': 'public, max-age=15' });
+}
+
+/* GET /states: each source's declared pauses as rows of time, site,
+ * source and state, the shape a state query reads (#126, M4). A pause's row
+ * holds its reason ("paused" without one), with ":unexpected" when the
+ * source said nobody intended it; the event that ends it (a resume or a new
+ * pace) is a row with an empty state. Under retention, the "expired" pause
+ * leads each history, as /sources reports it. to= leaves out later events. */
+async function handleStates(url, env, ctx, viewer) {
+  const wanted = parseCsv(url.searchParams.get('site'));
+  const only = parseCsv(url.searchParams.get('sources'));
+  if (![wanted, only].every((l) => !l || l.every((x) => ID_RE.test(x)))) {return json({ error: 'bad params' }, 400);}
+  const to = url.searchParams.has('to') ? Number(url.searchParams.get('to')) : Infinity;
+  if (Number.isNaN(to)) {return json({ error: 'bad range' }, 400);}
+  const index = await readIndex(url, env, ctx);
+  const keep = retentionMs(env, 'lo');
+  const cutoff = keep ? Date.now() - keep : 0;
+  const rows = [];
+  for (const [site, sources] of Object.entries(index.sites || {}).sort(([a], [b]) => a.localeCompare(b))) {
+    if ((viewer.sites && !viewer.sites.includes(site)) || (wanted && !wanted.includes(site))) {continue;}
+    for (const [source, meta] of Object.entries(sources).sort(([a], [b]) => a.localeCompare(b))) {
+      if (only && !only.includes(source)) {continue;}
+      const history = (keep ? retainedHistory(meta.history, cutoff, meta.cadence) : meta.history || [])
+        .filter((h) => (h.variant || 'lo') === 'lo' && h.since <= to)
+        .sort((a, b) => a.since - b.since);
+      let paused = false;
+      for (const h of history) {
+        if (h.paused) {
+          rows.push({ time: h.since, site, source, state: (h.reason || 'paused') + (h.intended === false ? ':unexpected' : '') });
+          paused = true;
+        } else if (paused) {
+          rows.push({ time: h.since, site, source, state: '' });
+          paused = false;
+        }
+      }
+    }
+  }
+  return json(rows, 200, { 'cache-control': 'public, max-age=15' });
 }
 
 /* ---------------- frame index (D1, optional) ---------------- */

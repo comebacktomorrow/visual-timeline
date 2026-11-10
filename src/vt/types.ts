@@ -21,6 +21,10 @@ export interface HistoryEvent {
   paused?: boolean;
   reason?: string;
   intended?: boolean;
+  /* what a pause says about itself when it comes from a state query (#126):
+   * its label and colour from the value mappings, in place of a reason */
+  label?: string;
+  color?: string;
 }
 
 /* A source as GET /sources returns it (and the demo backend builds it). */
@@ -57,6 +61,8 @@ export interface Era {
   paused: boolean;
   reason: string | undefined;
   intended: boolean | undefined;
+  label?: string;
+  color?: string;
 }
 
 /* The data layer both mounts read through: the API backend (makeApiBackend)
@@ -128,6 +134,8 @@ export interface PauseSlot extends SlotBase {
   paused: true;
   reason?: string;
   intended?: boolean;
+  label?: string;
+  color?: string;
   beyond?: undefined;
   frame?: undefined;
   future?: undefined;

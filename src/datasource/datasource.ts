@@ -17,6 +17,7 @@ import {
   applySourceFilter,
   interpolatedList,
   annotationsToFrame,
+  pauseStatesToFrame,
   lastFramesByHost,
   recordsToFrame,
   sourcesToFrame,
@@ -100,7 +101,10 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
             // Demo data answers with its frames as rows, as any source would (#126)
             // the demo frames draw a clock: in the dashboard's time zone, so they agree with the captions
             const tz = resolveTimeZone(coreTimeZone(request.timezone));
-            return this.demo ? [list, await this.demoRecords(sources, window, request.maxDataPoints, t.refId, tz)] : list;
+            // and its pauses as state rows, so the panel reads them as it would anyone's (#126, M4)
+            return this.demo
+              ? [list, await this.demoRecords(sources, window, request.maxDataPoints, t.refId, tz), pauseStatesToFrame(sources, t.refId)]
+              : list;
           }
           // the last frame at the range's end, or now if the range runs past it
           const end = Math.min(window.to, Date.now());

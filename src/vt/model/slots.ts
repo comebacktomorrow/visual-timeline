@@ -118,7 +118,7 @@ export async function buildSourceModel(
     // into a sliver of pause plus a frameless "active" run of offline-red.
     if (!isTail) {
       if (eTo > eFrom) {
-        slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
+        slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended, label: era.label, color: era.color });
         resolveBoundary(prev, firstIdx);
       }
       continue;
@@ -146,10 +146,10 @@ export async function buildSourceModel(
     }
     if (resume) {
       const resumeTs = resume.ts;
-      slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended });
+      slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended, label: era.label, color: era.color });
       if (eTo > resumeTs) {await pushActive({ from: resumeTs, to: eTo, cadence: era.cadence });}
     } else {
-      slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
+      slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended, label: era.label, color: era.color });
     }
     resolveBoundary(prev, tailIdx);
   }

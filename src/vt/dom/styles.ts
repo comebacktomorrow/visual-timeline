@@ -138,6 +138,8 @@ const CSS = `
 .ktl.filterable .inline-head [data-fk] { pointer-events:auto; }
 .ktl .slot.paused.r-expired { background:var(--ktl-bg2); }
 .ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,var(--ktl-unint-a),var(--ktl-unint-a) 7px,var(--ktl-unint-b) 7px,var(--ktl-unint-b) 14px); }
+/* a pause from a state query brings its own colour (its value mapping) */
+.ktl .slot.paused.tinted { background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--ktl-band) 30%,transparent),color-mix(in srgb,var(--ktl-band) 30%,transparent) 7px,color-mix(in srgb,var(--ktl-band) 12%,transparent) 7px,color-mix(in srgb,var(--ktl-band) 12%,transparent) 14px); }
 /* hatch continuity: each slot is its own element, so a per-element gradient
  * restarts at every slot edge — a run of narrow slots shows only the first
  * stripe color and reads as a SOLID block. dressStrip aligns each empty
@@ -154,6 +156,7 @@ const CSS = `
 .ktl .slot.r-system-down .band-label { color:var(--ktl-down); }
 .ktl .slot.r-app-stopped .band-label { color:var(--ktl-stopped); }
 .ktl .slot.unintended .band-label { color:var(--ktl-unint); }
+.ktl .slot.tinted .band-label { color:var(--ktl-band); }
 /* the ONE pending slot (its tick passed, frame in flight) pulses gently —
  * in limbo, not offline. Everything further ahead is one inert .beyond
  * filler: the future is unknown, so it gets no shading at all. */
@@ -187,6 +190,7 @@ const CSS = `
 .ktl .card-head .ft.paused.r-system-down, .ktl .tile.paused.r-system-down .t-off { color:var(--ktl-down); }
 .ktl .card-head .ft.paused.r-app-stopped, .ktl .tile.paused.r-app-stopped .t-off { color:var(--ktl-stopped); }
 .ktl .card-head .ft.paused.unintended, .ktl .tile.paused.unintended .t-off { color:var(--ktl-unint); }
+.ktl .card-head .ft.paused.tinted, .ktl .tile.paused.tinted .t-off { color:var(--ktl-band); }
 .ktl .mag.paused { border-color:var(--ktl-dim); }
 .ktl .mag.paused img { display:none; }
 .ktl .card-head .ft.paused { color:var(--ktl-dim); }
