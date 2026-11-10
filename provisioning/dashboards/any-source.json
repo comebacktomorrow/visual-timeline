@@ -263,6 +263,36 @@
         "chipLink": "/d/vt-filters?var-host=${__host}"
       },
       "description": "User-defined header chips: only each host's env tag, and a click opens the filters dashboard for that host."
+    },
+    {
+      "id": 6,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Wide table from TestData",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      },
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "trlxrdZVk"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "trlxrdZVk"
+          },
+          "scenarioId": "csv_content",
+          "csvContent": "time,cam-p,cam-q\n2026-01-01T10:00:00Z,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\",\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:03:00Z,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\",\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:06:00Z,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\",\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:09:00Z,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\",\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:12:00Z,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\",\n2026-01-01T10:15:00Z,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\",\n2026-01-01T10:18:00Z,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\",\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:21:00Z,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\",\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:24:00Z,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\",\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n2026-01-01T10:27:00Z,\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\",\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nOTAnPjxyZWN0IHdpZHRoPScxNjAnIGhlaWdodD0nOTAnIGZpbGw9JyMyZjZmNWUnLz48dGV4dCB4PSc4JyB5PSc1MicgZm9udC1mYW1pbHk9J3NhbnMtc2VyaWYnIGZvbnQtc2l6ZT0nMTgnIGZpbGw9J3doaXRlJz5jYW0tYSAxMDowMDwvdGV4dD48L3N2Zz4=\"\n"
+        }
+      ],
+      "options": {
+        "mode": "timeline"
+      },
+      "description": "A wide table, as a SQL pivot returns it: one time column and an image column per host (cam-q misses two)."
     }
   ]
 }

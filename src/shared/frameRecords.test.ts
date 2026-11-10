@@ -241,3 +241,35 @@ describe('host metadata from any query (M4c)', () => {
     expect(await b.kiosks(null)).toEqual([{ id: 'a', site: 's', cadence: MIN, timezone: 'UTC' }]);
   });
 });
+
+describe('wide tables (#126)', () => {
+  test('one time field and an image column per host: each column is a host', () => {
+    const wide = createDataFrame({ fields: [
+      { name: 'time', type: FieldType.time, values: [T0, T0 + MIN] },
+      { name: 'lobby', type: FieldType.string, values: ['https://img/l1.jpg', 'https://img/l2.jpg'] },
+      { name: 'v', type: FieldType.string, values: ['https://img/d1.jpg', null], labels: { host: 'dock', site: 'hq' } },
+      { name: 'note', type: FieldType.string, values: ['fine', 'fine'] },   // not images: not a host
+    ] });
+    const hosts = recordsFromSeries([wide])!;
+    expect(hosts.map((h) => [h.site, h.id, h.frames.map((f) => f.url)])).toEqual([
+      ['', 'lobby', ['https://img/l1.jpg', 'https://img/l2.jpg']],
+      ['hq', 'dock', ['https://img/d1.jpg']],
+    ]);
+  });
+
+  test('not a wide table: our per-host last frame table (a time field per host), or one with a host field', () => {
+    const perHost = createDataFrame({ fields: [
+      { name: 'cam-1', type: FieldType.string, values: ['https://img/1.jpg'] },
+      { name: 'cam-1 time', type: FieldType.time, values: [T0] },
+      { name: 'cam-2', type: FieldType.string, values: ['https://img/2.jpg'] },
+      { name: 'cam-2 time', type: FieldType.time, values: [T0] },
+    ] });
+    expect(recordsFromSeries([perHost])).toBeNull();
+    const withHost = createDataFrame({ fields: [
+      { name: 'time', type: FieldType.time, values: [T0] },
+      { name: 'host', type: FieldType.string, values: ['a'] },
+      { name: 'pic', type: FieldType.string, values: ['https://img/1.jpg'] },
+    ] });
+    expect(recordsFromSeries([withHost])).toBeNull();
+  });
+});

@@ -105,3 +105,13 @@ test('header chips are the ones the panel names, and a click follows the chip li
   // Grafana adds the dashboard's slug to the path
   await expect(page).toHaveURL(/\/d\/vt-filters\b.*[?&]var-host=cam-a\b/);
 });
+
+test('a wide table (an image column per host) draws a strip per column', async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
+  await page.setViewportSize({ width: 1280, height: 2600 });
+  const dashboard = await readProvisionedDashboard({ fileName: 'any-source.json' });
+  const dashboardPage = await gotoDashboardPage(dashboard);
+  const panel = dashboardPage.getPanelByTitle('Wide table from TestData');
+  await expect(panel.locator.locator('.ktl .card .card-head .nm')).toHaveText(['cam-p', 'cam-q'], { timeout: 20000 });
+  const camQ = panel.locator.locator('.ktl .card').filter({ has: page.locator('.nm', { hasText: 'cam-q' }) });
+  await expect(camQ.locator('.slot.gap')).not.toHaveCount(0);
+});
