@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Reference worker: an optional frame index in D1** (#44). With a D1
+  database bound as `DB`, uploads also record each frame in a table, and
+  `/frames` reads it instead of listing R2: no scan budget or truncation, and
+  key lists cached in 6-hour chunks that every zoom level and viewer share.
+  `POST /reindex` (a site's upload token) indexes the frames already in R2;
+  retention removes index rows with the frames. Without `DB`, nothing
+  changes. Setup and free-plan sizes are in worker/README.md.
 - **The reference worker answers for every host at once.** `/frames`
   without `source=` returns every source of the sites asked for (`site=`,
   and `sources=` for a Host variable) as rows of site, source, time and

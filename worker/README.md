@@ -96,12 +96,64 @@ in-memory bucket. They don't need a Cloudflare account.
    npx wrangler deploy
    ```
 
-   Wrangler prints the Worker's URL. Use it as the **API URL** in a Visual
-   Timeline API data source in Grafana, with a viewer token from
-   `VIEWER_TOKEN`. The standalone viewer is at `<that URL>/app.html`.
+   Wrangler prints the Worker's URL. In Grafana, read it through an Infinity
+   data source with a viewer token from `VIEWER_TOKEN`
+   ([docs/INFINITY.md](../docs/INFINITY.md)). The standalone viewer is at
+   `<that URL>/app.html`.
 
 `npx wrangler rollback` returns to the previous version if a deploy goes
 wrong.
+
+### Optional: a frame index in D1
+
+Without one, `/frames` finds frames by listing R2, which costs a Class A
+operation per 1000 frames on every uncached request and caps how much one
+request can cover. With a D1 database bound as `DB`, uploads also record each
+frame in a table, and `/frames` reads that instead, in 6-hour chunks that are
+cached and shared by every zoom level and viewer. The table creates itself.
+
+1. Create the database:
+
+   ```bash
+   npx wrangler d1 create visual-timeline-index
+   ```
+
+2. Add the binding it prints to `wrangler.jsonc`:
+
+   ```jsonc
+   "d1_databases": [
+     { "binding": "DB", "database_name": "visual-timeline-index", "database_id": "<the id it printed>" }
+   ]
+   ```
+
+3. Deploy (`npx wrangler deploy`). New frames are indexed from then on.
+
+4. Index the frames already in R2, once per site, with that site's upload
+   token. Each call works through about 5,000 frames and says where to carry
+   on:
+
+   ```bash
+   BASE=https://<your worker>; SITE=site-a; TOKEN=<site-a's upload token>
+   CURSOR=
+   while :; do
+     R=$(curl -s -X POST "$BASE/reindex" --url-query "cursor=$CURSOR" \
+       -H "Authorization: Bearer $TOKEN" -H "X-Site: $SITE")
+     echo "$R"
+     [ "$(echo "$R" | jq -r .done)" = true ] && break
+     CURSOR=$(echo "$R" | jq -r '.cursor // empty')
+     [ -n "$CURSOR" ] || break   # an error: the response says why
+   done
+   ```
+
+   Until a site is indexed, its older frames don't show: the worker reads the
+   index alone once `DB` is bound.
+
+On the free plan, D1 allows 100,000 rows written and 5 million read a day.
+Each upload writes one row, and retention deletes one per frame it removes,
+so that's about 50,000 uploads a day (35 hosts at one frame a minute) with
+retention on. Reads are the frames in each chunk a request misses in the
+cache: a live 6-hour chunk is read again every 15 seconds while someone
+watches it.
 
 ## Uploading frames
 
