@@ -191,9 +191,119 @@
             "type": "yesoreyeram-infinity-datasource",
             "uid": "vt-worker"
           }
+        },
+        {
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "",
+          "filters": [],
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-worker"
+          },
+          "refId": "B",
+          "url": "http://backend:8787/states?site=${site:csv}&sources=${host:csv}&to=${__to}",
+          "columns": [
+            {
+              "selector": "time",
+              "text": "time",
+              "type": "timestamp_epoch"
+            },
+            {
+              "selector": "site",
+              "text": "site",
+              "type": "string"
+            },
+            {
+              "selector": "source",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "state",
+              "text": "state",
+              "type": "string"
+            }
+          ]
         }
       ],
-      "description": "Hover to scrub through the frames; drag across a strip to zoom in."
+      "description": "Hover to scrub through the frames; drag across a strip to zoom in.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "state"
+            },
+            "properties": [
+              {
+                "id": "custom.pausesFrames",
+                "value": true
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "paused": {
+                        "text": "PAUSED",
+                        "index": 0
+                      },
+                      "quiet": {
+                        "text": "QUIET HOURS",
+                        "index": 1
+                      },
+                      "screen-sleep": {
+                        "text": "SCREEN ASLEEP",
+                        "color": "blue",
+                        "index": 2
+                      },
+                      "screen-sleep:unexpected": {
+                        "text": "SCREEN DARK (UNEXPECTED)",
+                        "color": "orange",
+                        "index": 3
+                      },
+                      "system-down": {
+                        "text": "SYSTEM DOWN (PLANNED)",
+                        "color": "purple",
+                        "index": 4
+                      },
+                      "app-stopped": {
+                        "text": "APP STOPPED",
+                        "color": "#2ba08c",
+                        "index": 5
+                      },
+                      "expired": {
+                        "text": "NO DATA",
+                        "index": 6
+                      }
+                    }
+                  },
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": "^(.*):unexpected$",
+                      "result": {
+                        "text": "$1 (UNEXPECTED)",
+                        "color": "orange",
+                        "index": 7
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "id": 2,
@@ -258,8 +368,118 @@
             "type": "yesoreyeram-infinity-datasource",
             "uid": "vt-worker"
           }
+        },
+        {
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "",
+          "filters": [],
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-worker"
+          },
+          "refId": "B",
+          "url": "http://backend:8787/states?site=${site:csv}&sources=${host:csv}&to=${__to}",
+          "columns": [
+            {
+              "selector": "time",
+              "text": "time",
+              "type": "timestamp_epoch"
+            },
+            {
+              "selector": "site",
+              "text": "site",
+              "type": "string"
+            },
+            {
+              "selector": "source",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "state",
+              "text": "state",
+              "type": "string"
+            }
+          ]
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "state"
+            },
+            "properties": [
+              {
+                "id": "custom.pausesFrames",
+                "value": true
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "paused": {
+                        "text": "PAUSED",
+                        "index": 0
+                      },
+                      "quiet": {
+                        "text": "QUIET HOURS",
+                        "index": 1
+                      },
+                      "screen-sleep": {
+                        "text": "SCREEN ASLEEP",
+                        "color": "blue",
+                        "index": 2
+                      },
+                      "screen-sleep:unexpected": {
+                        "text": "SCREEN DARK (UNEXPECTED)",
+                        "color": "orange",
+                        "index": 3
+                      },
+                      "system-down": {
+                        "text": "SYSTEM DOWN (PLANNED)",
+                        "color": "purple",
+                        "index": 4
+                      },
+                      "app-stopped": {
+                        "text": "APP STOPPED",
+                        "color": "#2ba08c",
+                        "index": 5
+                      },
+                      "expired": {
+                        "text": "NO DATA",
+                        "index": 6
+                      }
+                    }
+                  },
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": "^(.*):unexpected$",
+                      "result": {
+                        "text": "$1 (UNEXPECTED)",
+                        "color": "orange",
+                        "index": 7
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
     }
   ],
   "description": "Frames from the self-hosted backend, read through Infinity: one query per panel asks the backend's /frames for every host of the selected sites."

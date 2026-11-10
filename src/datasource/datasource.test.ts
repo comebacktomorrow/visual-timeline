@@ -94,7 +94,13 @@ describe('query', () => {
     try {
       const ds = new VisualTimelineDataSource(settings(true), interpolate);
       const res = await ds.query({ targets: [{ refId: 'A' }], range, scopedVars: {}, maxDataPoints: 1000 } as any);
-      expect(res.data).toHaveLength(2);
+      // the source list, the frames as rows, and the pauses as state rows
+      expect(res.data).toHaveLength(3);
+      const states = res.data[2];
+      const sf = (n: string) => states.fields.find((f: any) => f.name === n);
+      expect(sf('host').values).toEqual(['source-4']);
+      expect(sf('state').values).toEqual(['screen-sleep:unexpected']);
+      expect(sf('state').config.custom).toEqual({ pausesFrames: true });
       const rows = res.data[1];
       const col = (n: string) => rows.fields.find((f: any) => f.name === n).values;
       expect(rows.fields.map((f: any) => f.name)).toEqual(['time', 'host', 'site', 'image']);

@@ -33,10 +33,10 @@ viewer stay as they were. On 1.x workers, `/frames` without `source=` is a 400.
 
 ## What 2.0 doesn't carry over yet
 
-Through Infinity, the panel sees frames but not what `/sources` says about
-each host: declared pauses draw as offline, and a host's own time zone, tags
-and location aren't shown. See INFINITY.md, "What it doesn't carry yet".
-Host state from any data source (#126, M4) brings the pauses back.
+Declared pauses come back through a second Infinity query, for the worker's
+`/states`, with a field override: INFINITY.md, "Pauses". A host's own time
+zone, tags and location aren't shown yet: INFINITY.md, "What it doesn't
+carry yet".
 
 ## The self-hosted stack
 

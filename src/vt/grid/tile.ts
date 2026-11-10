@@ -1,4 +1,4 @@
-import { clearPauseClasses, pauseInfo } from '../model/eras';
+import { addPauseClasses, clearPauseClasses, pauseInfo } from '../model/eras';
 import { ghostFor } from '../model/slots';
 import { esc, filterAttrs, headTitle, tagChips } from '../dom/html';
 import { q } from '../ui/wrapper';
@@ -102,7 +102,7 @@ export function setShown(s: GridState, t: number | null): void {
     }
     rec.el.classList.toggle('offline', !!offMsg);
     clearPauseClasses(rec.el);
-    if (pausedMsg && !offMsg) {rec.el.classList.add(...pauseInfo(pausedSlot).classes);}
+    if (pausedMsg && !offMsg) {addPauseClasses(rec.el, pausedSlot);}
     rec.off.textContent = offMsg || pausedMsg || '';
     rec.el.classList.toggle('ghost', !!expectedTs);
     rec.shown = frame;

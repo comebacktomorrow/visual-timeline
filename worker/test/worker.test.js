@@ -657,3 +657,34 @@ test('presigned delivery falls back to worker URLs, and says so, without its set
   const pub = await (await call(path, { FRAMES, ...presignEnv({ IMG_BASE: 'https://img.example' }) })).json();
   assert.ok(pub[0].url.startsWith('https://img.example/frame/lo/'));
 });
+
+/* ---------------- /states (#126, M4) ---------------- */
+
+test('/states answers each source\'s pauses as state rows, and the end of each as an empty one', async () => {
+  const FRAMES = indexedR2([], {
+    'site-a': {
+      'cam-1': { cadence: MIN, history: [
+        { since: 1000, variant: 'lo', cadence: MIN },
+        { since: 2000, variant: 'lo', paused: true, reason: 'screen-sleep', intended: false },
+        { since: 3000, variant: 'lo', cadence: MIN },
+        { since: 4000, variant: 'lo', paused: true },
+        { since: 4500, variant: 'hi', cadence: 5 * MIN },
+      ] },
+      'cam-2': { cadence: MIN, history: [{ since: 1500, variant: 'lo', paused: true, reason: 'quiet' }] },
+    },
+    'site-b': { lobby: { cadence: MIN, history: [{ since: 1000, variant: 'lo', paused: true, reason: 'system-down' }] } },
+  });
+  const get = async (q, env = {}) => (await call(`/states${q}`, { FRAMES, ...env })).json();
+  assert.deepEqual(await get('?site=site-a'), [
+    { time: 2000, site: 'site-a', source: 'cam-1', state: 'screen-sleep:unexpected' },
+    { time: 3000, site: 'site-a', source: 'cam-1', state: '' },
+    { time: 4000, site: 'site-a', source: 'cam-1', state: 'paused' },
+    { time: 1500, site: 'site-a', source: 'cam-2', state: 'quiet' },
+  ]);
+  assert.deepEqual((await get('?sources=lobby')).map((r) => r.state), ['system-down']);
+  assert.deepEqual((await get('?site=site-a&sources=cam-1&to=2500')).map((r) => r.time), [2000]);
+  // a site-scoped viewer sees only its sites
+  const VIEWER_TOKEN = JSON.stringify({ wall: { token: 'w', sites: ['site-b'] } });
+  assert.deepEqual((await get('?k=w', { VIEWER_TOKEN })).map((r) => r.site), ['site-b']);
+  assert.equal((await call('/states', { FRAMES, VIEWER_TOKEN })).status, 401);
+});

@@ -397,7 +397,7 @@ var VTCore = (() => {
     }
     const evts = [{ since: -864e13, cadence: runCad, paused: false, reason: void 0, intended: void 0 }];
     for (const h of hist) {
-      evts.push({ since: h.since, cadence: h.cadence, paused: !!h.paused, reason: h.reason, intended: h.intended });
+      evts.push({ since: h.since, cadence: h.cadence, paused: !!h.paused, reason: h.reason, intended: h.intended, label: h.label, color: h.color });
     }
     const eras = [];
     for (let i = 0; i < evts.length; i++) {
@@ -412,18 +412,27 @@ var VTCore = (() => {
         continue;
       }
       const prev = eras[eras.length - 1];
-      if (prev && prev.paused === !!e.paused && prev.cadence === runCad && prev.reason === e.reason && prev.intended === e.intended) {
+      if (prev && prev.paused === !!e.paused && prev.cadence === runCad && prev.reason === e.reason && prev.intended === e.intended && prev.label === e.label && prev.color === e.color) {
         prev.to = to;
         continue;
       }
-      eras.push({ from, to, cadence: runCad, paused: !!e.paused, reason: e.reason, intended: e.intended });
+      eras.push({
+        from,
+        to,
+        cadence: runCad,
+        paused: !!e.paused,
+        reason: e.reason,
+        intended: e.intended,
+        ...e.label ? { label: e.label } : {},
+        ...e.color ? { color: e.color } : {}
+      });
     }
     if (!eras.length) {
       eras.push({ from: P.from, to: P.to, cadence: runCad, paused: false, reason: void 0, intended: void 0 });
     }
     return eras;
   }
-  var PAUSE_CLASSES = ["paused", "unintended", "r-quiet", "r-screen-sleep", "r-app-stopped", "r-system-down", "r-expired"];
+  var PAUSE_CLASSES = ["paused", "unintended", "tinted", "r-quiet", "r-screen-sleep", "r-app-stopped", "r-system-down", "r-expired"];
   function clearPauseClasses(el) {
     el.classList.remove(...PAUSE_CLASSES);
     for (const c of Array.from(el.classList)) {
@@ -431,8 +440,19 @@ var VTCore = (() => {
         el.classList.remove(c);
       }
     }
+    el.style?.removeProperty("--ktl-band");
+  }
+  function addPauseClasses(el, x) {
+    const pi = pauseInfo(x);
+    el.classList.add(...pi.classes);
+    if (pi.color) {
+      el.style.setProperty("--ktl-band", pi.color);
+    }
   }
   function pauseInfo(x) {
+    if (x && x.label) {
+      return { label: x.label, classes: x.color ? ["paused", "tinted"] : ["paused"], ...x.color ? { color: x.color } : {} };
+    }
     const r = x && x.reason;
     const unintended = !!x && x.intended === false;
     const label = r === "screen-sleep" ? unintended ? "SCREEN DARK (UNEXPECTED)" : "SCREEN ASLEEP" : r === "system-down" ? "SYSTEM DOWN (PLANNED)" : r === "app-stopped" ? "APP STOPPED" : r === "quiet" ? "QUIET HOURS" : (
@@ -531,7 +551,7 @@ var VTCore = (() => {
       }
       if (!isTail) {
         if (eTo > eFrom) {
-          slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
+          slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended, label: era.label, color: era.color });
           resolveBoundary(prev, firstIdx);
         }
         continue;
@@ -550,12 +570,12 @@ var VTCore = (() => {
       }
       if (resume) {
         const resumeTs = resume.ts;
-        slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended });
+        slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended, label: era.label, color: era.color });
         if (eTo > resumeTs) {
           await pushActive({ from: resumeTs, to: eTo, cadence: era.cadence });
         }
       } else {
-        slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended });
+        slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended, label: era.label, color: era.color });
       }
       resolveBoundary(prev, tailIdx);
     }
@@ -1094,6 +1114,8 @@ var VTCore = (() => {
 .ktl.filterable .inline-head [data-fk] { pointer-events:auto; }
 .ktl .slot.paused.r-expired { background:var(--ktl-bg2); }
 .ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,var(--ktl-unint-a),var(--ktl-unint-a) 7px,var(--ktl-unint-b) 7px,var(--ktl-unint-b) 14px); }
+/* a pause from a state query brings its own colour (its value mapping) */
+.ktl .slot.paused.tinted { background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--ktl-band) 30%,transparent),color-mix(in srgb,var(--ktl-band) 30%,transparent) 7px,color-mix(in srgb,var(--ktl-band) 12%,transparent) 7px,color-mix(in srgb,var(--ktl-band) 12%,transparent) 14px); }
 /* hatch continuity: each slot is its own element, so a per-element gradient
  * restarts at every slot edge \u2014 a run of narrow slots shows only the first
  * stripe color and reads as a SOLID block. dressStrip aligns each empty
@@ -1110,6 +1132,7 @@ var VTCore = (() => {
 .ktl .slot.r-system-down .band-label { color:var(--ktl-down); }
 .ktl .slot.r-app-stopped .band-label { color:var(--ktl-stopped); }
 .ktl .slot.unintended .band-label { color:var(--ktl-unint); }
+.ktl .slot.tinted .band-label { color:var(--ktl-band); }
 /* the ONE pending slot (its tick passed, frame in flight) pulses gently \u2014
  * in limbo, not offline. Everything further ahead is one inert .beyond
  * filler: the future is unknown, so it gets no shading at all. */
@@ -1143,6 +1166,7 @@ var VTCore = (() => {
 .ktl .card-head .ft.paused.r-system-down, .ktl .tile.paused.r-system-down .t-off { color:var(--ktl-down); }
 .ktl .card-head .ft.paused.r-app-stopped, .ktl .tile.paused.r-app-stopped .t-off { color:var(--ktl-stopped); }
 .ktl .card-head .ft.paused.unintended, .ktl .tile.paused.unintended .t-off { color:var(--ktl-unint); }
+.ktl .card-head .ft.paused.tinted, .ktl .tile.paused.tinted .t-off { color:var(--ktl-band); }
 .ktl .mag.paused { border-color:var(--ktl-dim); }
 .ktl .mag.paused img { display:none; }
 .ktl .card-head .ft.paused { color:var(--ktl-dim); }
@@ -1825,12 +1849,12 @@ var VTCore = (() => {
         const pi = pauseInfo(slot);
         c.mag.classList.remove("gap", "future", "off");
         clearPauseClasses(c.mag);
-        c.mag.classList.add(...pi.classes);
+        addPauseClasses(c.mag, slot);
         setText(c.mag.querySelector(".cap"), pi.label.toLowerCase());
         setText(c.head, pi.label.toLowerCase());
         c.head.classList.remove("stale");
         clearPauseClasses(c.head);
-        c.head.classList.add(...pi.classes);
+        addPauseClasses(c.head, slot);
       } else if (slot && slot.beyond) {
         c.mag.classList.remove("gap", "future");
         clearPauseClasses(c.mag);
@@ -2048,7 +2072,11 @@ var VTCore = (() => {
       const el = document.createElement("div");
       el.className = "slot" + slotClass(sl);
       if (sl.paused) {
-        el.title = pauseInfo(sl).label.toLowerCase();
+        const pi = pauseInfo(sl);
+        el.title = pi.label.toLowerCase();
+        if (pi.color) {
+          el.style.setProperty("--ktl-band", pi.color);
+        }
       }
       el.style.flexGrow = String(sl.span / 1e3);
       if (sl.frame) {
@@ -2612,7 +2640,7 @@ var VTCore = (() => {
       rec.el.classList.toggle("offline", !!offMsg);
       clearPauseClasses(rec.el);
       if (pausedMsg && !offMsg) {
-        rec.el.classList.add(...pauseInfo(pausedSlot).classes);
+        addPauseClasses(rec.el, pausedSlot);
       }
       rec.off.textContent = offMsg || pausedMsg || "";
       rec.el.classList.toggle("ghost", !!expectedTs);

@@ -3,7 +3,7 @@
  * values offered to Grafana's ad hoc filter bar, and the data frame that
  * carries the list from the data source to the panel. Pure: no Grafana
  * runtime, so it is unit-tested directly. */
-import { AdHocVariableFilter, createDataFrame, DataFrame, FieldConfig, FieldType, MappingType } from '@grafana/data';
+import { AdHocVariableFilter, createDataFrame, DataFrame, FieldConfig, FieldType, MappingType, ValueMapping } from '@grafana/data';
 
 import { matchesTags, parseTagFilter, parseVar } from '../vt/model/filters';
 import type { HistoryEvent, RawAnnotation, SourceDecl } from '../vt/types';
@@ -213,6 +213,57 @@ export function recordsToFrame(rows: Array<{ ts: number; host: string; site: str
       { name: 'host', type: FieldType.string, values: rows.map((r) => r.host) },
       { name: 'site', type: FieldType.string, values: rows.map((r) => r.site) },
       { name: 'image', type: FieldType.string, values: rows.map((r) => r.url) },
+    ],
+  });
+}
+
+/* How our own pause states look: value mappings like any state query's
+ * (#126, M4), in the colours the core used for these reasons before. A
+ * dashboard can override them like any mapping. */
+export const PAUSE_STATE_MAPPINGS: ValueMapping[] = [
+  {
+    type: MappingType.ValueToText,
+    options: {
+      paused: { text: 'PAUSED', index: 0 },
+      quiet: { text: 'QUIET HOURS', index: 1 },
+      'screen-sleep': { text: 'SCREEN ASLEEP', color: 'blue', index: 2 },
+      'screen-sleep:unexpected': { text: 'SCREEN DARK (UNEXPECTED)', color: 'orange', index: 3 },
+      'system-down': { text: 'SYSTEM DOWN (PLANNED)', color: 'purple', index: 4 },
+      'app-stopped': { text: 'APP STOPPED', color: '#2ba08c', index: 5 },
+      expired: { text: 'NO DATA', index: 6 },
+    },
+  },
+  // any other reason nobody asked for: amber, as before
+  { type: MappingType.RegexToText, options: { pattern: '^(.*):unexpected$', result: { text: '$1 (UNEXPECTED)', color: 'orange', index: 7 } } },
+];
+
+/** Each source's declared pauses as a state query's answer (#126, M4): a
+ * row when a pause starts (its reason, ":unexpected" when nobody intended
+ * it) and an empty one when it ends. The state field is set to pause frames,
+ * so the panel draws these as it drew declared pauses. */
+export function pauseStatesToFrame(sources: SourceDecl[], refId: string): DataFrame {
+  const rows: Array<{ ts: number; host: string; site: string; state: string }> = [];
+  for (const s of sources) {
+    let paused = false;
+    for (const h of [...(s.history || [])].filter((e) => (e.variant || 'lo') === 'lo').sort((a, b) => a.since - b.since)) {
+      if (h.paused) {
+        rows.push({ ts: h.since, host: s.id, site: s.site, state: (h.reason || 'paused') + (h.intended === false ? ':unexpected' : '') });
+        paused = true;
+      } else if (paused) {
+        rows.push({ ts: h.since, host: s.id, site: s.site, state: '' });
+        paused = false;
+      }
+    }
+  }
+  return createDataFrame({
+    refId,
+    name: 'states',
+    fields: [
+      { name: 'time', type: FieldType.time, values: rows.map((r) => r.ts) },
+      { name: 'host', type: FieldType.string, values: rows.map((r) => r.host) },
+      { name: 'site', type: FieldType.string, values: rows.map((r) => r.site) },
+      { name: 'state', type: FieldType.string, values: rows.map((r) => r.state),
+        config: { mappings: PAUSE_STATE_MAPPINGS, custom: { pausesFrames: true } } },
     ],
   });
 }

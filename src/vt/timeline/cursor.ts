@@ -1,4 +1,4 @@
-import { clearPauseClasses, pauseInfo } from '../model/eras';
+import { addPauseClasses, clearPauseClasses, pauseInfo } from '../model/eras';
 import { ghostFor } from '../model/slots';
 import { fmtTime } from '../time/zones';
 import { MAG_CAP_ROOM } from '../dom/styles';
@@ -119,11 +119,11 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
       // declared silence — neutral (or amber when unintended), not offline-red
       const pi = pauseInfo(slot);
       c.mag.classList.remove('gap', 'future', 'off'); clearPauseClasses(c.mag);
-      c.mag.classList.add(...pi.classes);
+      addPauseClasses(c.mag, slot);
       setText(c.mag.querySelector('.cap')!, pi.label.toLowerCase());
       setText(c.head, pi.label.toLowerCase());
       c.head.classList.remove('stale'); clearPauseClasses(c.head);
-      c.head.classList.add(...pi.classes);
+      addPauseClasses(c.head, slot);
     } else if (slot && slot.beyond) {
       // ahead of now: unknown — nothing to preview, only the crosshair
       c.mag.classList.remove('gap', 'future'); clearPauseClasses(c.mag);

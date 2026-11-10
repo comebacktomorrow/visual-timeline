@@ -73,19 +73,40 @@ Two **Query** variables on the Infinity data source, each with the query type
 Turn on **Multi-value** and **Include All option**, with the custom all value
 `All`, which the worker reads as "every one".
 
+## Pauses
+
+A host that declares a pause (a screen asleep, quiet hours) sends no frames
+while it lasts. To draw that as a pause rather than as offline, add a second
+query to the panel, for the worker's `/states`, which answers each host's
+pauses as state rows:
+
+| Setting | Value                                                                                                                               |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| URL     | `https://frames.example.com/states?site=${site:csv}&sources=${host:csv}&to=${__to}`                                                 |
+| Columns | `time` as **time** (Timestamp, epoch ms); `site` as **site** (String); `source` as **host** (String); `state` as **state** (String) |
+
+Then, in the panel's **Overrides**, add **Fields with name** `state` with two
+properties:
+
+- **Pauses frames:** on. While a state lasts, the host's missing frames are
+  explained by it instead of drawn as offline.
+- **Value mappings:** a label and colour for each state. The worker's states
+  are a pause's reason (`quiet`, `screen-sleep`, `system-down`, `app-stopped`,
+  `expired` for frames past retention, `paused` without a reason), with
+  `:unexpected` added when nobody intended it, and an empty state where a pause
+  ends. The self-hosted dashboard (`selfhost/grafana/dashboards/visual-timeline.json`)
+  has a full set to copy; Grafana draws an unmapped state as its own text.
+
+Any data source's states work the same way: rows with a time, a host and a
+state field. Map a state to the colour **Transparent** to draw nothing (the
+normal state), and leave **Pauses frames** off for a state that runs
+alongside the frames.
+
 ## What it doesn't carry yet
 
-The panel draws what the rows say: a host's frames, and gaps where it sent
-none. What the worker's `/sources` adds about a host is not read from Infinity
-yet, so for now:
-
-- a declared pause (a screen asleep, quiet hours) draws as offline, and
-  frames removed by retention draw as offline rather than "no data";
-- a host's own time zone, tags and location aren't shown;
-- there is no ad hoc filter bar (Infinity doesn't offer one); the Site and
+- A host's own time zone, tags and location aren't read from Infinity.
+- There is no ad hoc filter bar (Infinity doesn't offer one); the Site and
   Host variables filter instead.
-
-Host state from any data source (#126, M4) brings the pauses back.
 
 ## Limits
 

@@ -28,9 +28,9 @@ leave your network, and there are no request quotas or cloud accounts.
 
 You need Docker with Compose v2, and a clone of this repository.
 
-Until host state arrives (#126), a declared pause draws as offline, and a
-host's own time zone and tags aren't shown: see
-[docs/INFINITY.md](../docs/INFINITY.md), "What it doesn't carry yet".
+Declared pauses come from the backend's `/states` through a second query, as
+in [docs/INFINITY.md](../docs/INFINITY.md), "Pauses". A host's own time zone
+and tags aren't shown yet.
 
 Coming from 1.x? The stack replaces its Visual Timeline API data source and
 starter dashboard itself, and your frames are kept. See

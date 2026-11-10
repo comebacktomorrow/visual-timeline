@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  FieldConfigProperty,
   dateTimeFormat,
   DataHoverClearEvent,
   DataHoverEvent,
@@ -18,6 +19,7 @@ import { coreTimeZone } from '../timezone';
 import { DATASOURCE_ID } from '../shared/ids';
 import { sourcesFromFrames } from '../shared/sources';
 import { FieldRoles, recordsBackend, recordsFromSeries } from '../shared/frameRecords';
+import { statesFromSeries } from '../shared/hostState';
 import { needsRebuild } from './resize';
 
 interface VisualTimelineOptions {
@@ -37,6 +39,8 @@ interface VisualTimelineOptions {
   hostField?: string;
   siteField?: string;
   previewField?: string;
+  /** State fields (#126, M4): which field holds each host's state. */
+  stateField?: string;
   cadenceField?: string;
 }
 
@@ -166,11 +170,18 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const recordsMemo = useMemo(() => records, [recordsKey]);
+  /* Host state (#126, M4): rows with a time, a host and a state value, from
+   * any query; labels and colours from the field's value mappings. A state
+   * field set to "Pauses frames" explains the frames a host doesn't send. */
+  const states = statesFromSeries(props.data?.series, theme, { time: options.timeField, host: options.hostField, site: options.siteField, state: options.stateField });
+  const statesKey = states ? JSON.stringify(states) : '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const statesMemo = useMemo(() => states, [statesKey]);
   // a source list without records (no frames in the window) still draws its
   // hosts: a host that was silent the whole time is information
   const backend = useMemo(
-    () => (recordsMemo || result ? recordsBackend(recordsMemo ?? [], result?.sources) : null),
-    [recordsMemo, result]
+    () => (recordsMemo || result || statesMemo ? recordsBackend(recordsMemo ?? [], result?.sources, statesMemo ?? []) : null),
+    [recordsMemo, result, statesMemo]
   );
   /* Clicking a host, site or tag chip adds that filter to the dashboard's ad
    * hoc filter for this data source, as a table cell's "filter for value"
@@ -330,6 +341,26 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
   // without this Grafana strips annotations out of PanelData before the
   // panel sees them — declaring support is what turns the stream on
   .setDataSupport({ annotations: true })
+  /* Field config for state queries (#126, M4): value mappings give each
+   * state its label and colour (a mapping to Transparent is the normal state,
+   * drawn as nothing), and "Pauses frames" marks a state field whose states
+   * mean the host deliberately sends no frames. Set per field with
+   * overrides. The other standard options don't apply to frames. */
+  .useFieldConfig({
+    disableStandardOptions: [
+      FieldConfigProperty.Unit, FieldConfigProperty.Min, FieldConfigProperty.Max, FieldConfigProperty.Decimals,
+      FieldConfigProperty.DisplayName, FieldConfigProperty.NoValue, FieldConfigProperty.Thresholds,
+      FieldConfigProperty.Color, FieldConfigProperty.Links, FieldConfigProperty.FieldMinMax,
+    ],
+    useCustomConfig: (builder) => {
+      builder.addBooleanSwitch({
+        path: 'pausesFrames',
+        name: 'Pauses frames',
+        description: 'For a state field: while a state lasts the host deliberately sends no frames, so missing frames are explained by the state instead of drawn as offline. Off: the state runs alongside the frames.',
+        defaultValue: false,
+      });
+    },
+  })
   .setPanelOptions((builder) => {
   builder
     .addRadio({
@@ -432,6 +463,12 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       name: 'Host',
       category: ['Frame fields'],
       description: 'Which host each frame is from: one strip or tile per host. Empty: a field named host, a host label, or the query name.',
+    })
+    .addFieldNamePicker({
+      path: 'stateField',
+      name: 'State',
+      category: ['Frame fields'],
+      description: 'Optional: a query of host states (a time, a host and this field, no image). Empty: a field named state or status. Value mappings set each state\'s label and colour; map the normal state to Transparent.',
     })
     .addFieldNamePicker({
       path: 'siteField',

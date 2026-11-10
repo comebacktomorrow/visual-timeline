@@ -116,6 +116,25 @@ captions, last-seen messages) in its zone, marked with the offset:
 `07:31:00 (+3h)`. The time axis and the crosshair stay in the dashboard's
 zone.
 
+### `GET /states?site=<csv>&sources=<csv>&to=`
+
+Each source's declared pauses as rows of a state query (#126): what a
+table-shaped Grafana data source such as Infinity reads to draw pauses, with
+the panel's **Pauses frames** set on the `state` field
+([INFINITY.md](INFINITY.md), "Pauses").
+
+```json
+[{"time":1783524213946,"site":"site-a","source":"source-1","state":"screen-sleep:unexpected"},
+ {"time":1783527813946,"site":"site-a","source":"source-1","state":""}]
+```
+
+A pause's row holds its reason (`paused` without one), with `:unexpected`
+added when the source said nobody intended it (`X-Intended: 0`); the event
+that ends a pause (a frame's resume, or a new pace) is a row with an empty
+state. Under retention, each source's history starts with an `expired` pause
+up to the cutoff. `site` and `sources` filter as for `/frames`; `to` leaves out
+later events. Same viewer auth and site scoping as `/sources`.
+
 ### `GET /frames?site=&source=&from=&to=&step=&variant=`
 
 At most one frame per `step`-sized bucket (the frame nearest each bucket

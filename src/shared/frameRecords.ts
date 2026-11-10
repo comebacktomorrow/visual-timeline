@@ -10,6 +10,7 @@
 import { DataFrame, Field, FieldType, getFieldDisplayName } from '@grafana/data';
 
 import type { Backend, Frame, SourceDecl } from '../vt/types';
+import { withPauseStates, type HostStates } from './hostState';
 
 /** Which field plays which role. Empty means "find it by the usual names". */
 export interface FieldRoles {
@@ -30,8 +31,8 @@ export interface HostRecords {
   cadence: number;
 }
 
-/* The usual names for each role, matched without regard to case. */
-const NAMES = {
+/** The usual names for each role, matched without regard to case. */
+export const ROLE_NAMES = {
   time: ['time', 'timestamp', 'ts', 'datetime', 'date'],
   image: ['image', 'url', 'image_url', 'imageurl', 'src', 'frame', 'snapshot'],
   host: ['host', 'source', 'camera', 'kiosk', 'device'],
@@ -43,7 +44,7 @@ const NAMES = {
 /** Without a cadence field and with fewer than two frames, a host's cadence. */
 export const DEFAULT_CADENCE = 60_000;
 
-function fieldNamed(frame: DataFrame, wanted: string | undefined, defaults: string[]): Field | undefined {
+export function fieldNamed(frame: DataFrame, wanted: string | undefined, defaults: string[]): Field | undefined {
   const names = wanted ? [wanted.toLowerCase()] : defaults;
   for (const n of names) {
     const f = frame.fields.find(
@@ -54,12 +55,12 @@ function fieldNamed(frame: DataFrame, wanted: string | undefined, defaults: stri
   return undefined;
 }
 
-function timeField(frame: DataFrame, wanted?: string): Field | undefined {
+export function timeField(frame: DataFrame, wanted?: string): Field | undefined {
   if (wanted) {return fieldNamed(frame, wanted, []);}
-  return frame.fields.find((f) => f.type === FieldType.time) ?? fieldNamed(frame, undefined, NAMES.time);
+  return frame.fields.find((f) => f.type === FieldType.time) ?? fieldNamed(frame, undefined, ROLE_NAMES.time);
 }
 
-function toMillis(v: unknown): number | null {
+export function toMillis(v: unknown): number | null {
   if (typeof v === 'number') {return Number.isFinite(v) ? v : null;}
   if (typeof v === 'string' && v) {
     const n = Number(v);
@@ -116,14 +117,14 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
   const byHost = new Map<string, { id: string; site: string; frames: Map<number, Frame>; cadence?: number }>();
   let found = false;
   for (const frame of series || []) {
-    const image = fieldNamed(frame, roles.image, NAMES.image);
+    const image = fieldNamed(frame, roles.image, ROLE_NAMES.image);
     const time = timeField(frame, roles.time);
     if (!image || !time || image === time) {continue;}
     found = true;
-    const host = fieldNamed(frame, roles.host, NAMES.host);
-    const site = fieldNamed(frame, roles.site, NAMES.site);
-    const preview = fieldNamed(frame, roles.preview, NAMES.preview);
-    const cadence = fieldNamed(frame, roles.cadence, NAMES.cadence);
+    const host = fieldNamed(frame, roles.host, ROLE_NAMES.host);
+    const site = fieldNamed(frame, roles.site, ROLE_NAMES.site);
+    const preview = fieldNamed(frame, roles.preview, ROLE_NAMES.preview);
+    const cadence = fieldNamed(frame, roles.cadence, ROLE_NAMES.cadence);
     // a frame without a host field: one host, from a label or the query
     const fallbackHost = image.labels?.host ?? frame.name ?? frame.refId ?? 'host';
     const fallbackSite = image.labels?.site ?? '';
@@ -180,7 +181,7 @@ export function framesPerStep(frames: Frame[], from: number, to: number, step: n
  * location); records alone give id, site and cadence. A known host with no
  * records in the window is still drawn: a host that was paused or silent the
  * whole time is information, not something to hide. */
-export function recordsBackend(hosts: HostRecords[], known: SourceDecl[] = []): Backend {
+export function recordsBackend(hosts: HostRecords[], known: SourceDecl[] = [], states: HostStates[] = []): Backend {
   const matched = new Set<SourceDecl>();
   const decls: SourceDecl[] = hosts.map((h) => {
     const k = known.find((d) => d.id === h.id && (d.site === h.site || !h.site));
@@ -191,6 +192,13 @@ export function recordsBackend(hosts: HostRecords[], known: SourceDecl[] = []): 
   const byKey = new Map(decls.map((d, i) => [d.site + '/' + d.id, hosts[i]]));
   for (const k of known) {
     if (!matched.has(k)) {decls.push(k);}
+  }
+  // a host's states (#126): pause states take the place of its declared
+  // pauses; a host only a state query knows of is drawn too
+  for (const st of states) {
+    const i = decls.findIndex((d) => d.id === st.id && (d.site === st.site || !st.site));
+    if (i >= 0) {decls[i] = withPauseStates(decls[i], st.spans);}
+    else if (st.spans.some((s) => s.pauses)) {decls.push(withPauseStates<SourceDecl>({ id: st.id, site: st.site, cadence: DEFAULT_CADENCE }, st.spans));}
   }
   return {
     kiosks: (sites) => (sites ? decls.filter((d) => sites.includes(d.site)) : decls),

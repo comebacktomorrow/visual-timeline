@@ -27,3 +27,22 @@ test('the grid shows each host\'s latest frame from a stock data source', async 
   await expect(panel.locator.locator('.ktl .tile')).toHaveCount(2, { timeout: 20000 });
   await expect(panel.locator.locator('.ktl .tile img[src^="data:image/svg+xml"]')).toHaveCount(2);
 });
+
+test('a state query set to pause frames explains a host\'s missing frames, in its mapped label and colour', async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
+  // the panel is third: tall enough that Grafana renders it without scrolling
+  await page.setViewportSize({ width: 1280, height: 1400 });
+  const dashboard = await readProvisionedDashboard({ fileName: 'any-source.json' });
+  const dashboardPage = await gotoDashboardPage(dashboard);
+  const panel = dashboardPage.getPanelByTitle('Pauses from TestData');
+  const camB = panel.locator.locator('.ktl .card').filter({ has: panel.locator.page().locator('.nm', { hasText: 'cam-b' }) });
+  const band = camB.locator('.slot.paused.tinted');
+  await expect(band).toHaveCount(1, { timeout: 20000 });
+  await expect(band.locator('.band-label')).toHaveText('Maintenance');
+  // the frames it didn't send are explained, not offline: its only gap left
+  // is the window's last tick, after the last frame (cam-a has the same one)
+  await expect(camB.locator('.slot.gap')).toHaveCount(1);
+  await expect(camB.locator('.slot').last()).toHaveClass(/\bgap\b/);
+  // cam-a has no state: untouched
+  const camA = panel.locator.locator('.ktl .card').filter({ has: panel.locator.page().locator('.nm', { hasText: 'cam-a' }) });
+  await expect(camA.locator('.slot.paused')).toHaveCount(0);
+});

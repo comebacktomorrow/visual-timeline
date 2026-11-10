@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Host state from any data source** (#126, M4). A query of rows with a
+  time, a host and a state (`state` or `status`, or the new **State** field
+  option) gives each host state spans, labelled and coloured by the field's
+  value mappings, as in Grafana's State timeline. A state mapped to the
+  colour Transparent, or an empty one, is the normal state and ends a span.
+  The new field option **Pauses frames** (set per field with an override)
+  marks states during which the host deliberately sends no frames: they draw
+  as pause bands, explaining the missing frames instead of showing them
+  offline. The Visual Timeline data source now sends its demo pauses this
+  way, with default mappings in the colours they had, and the reference
+  worker answers its pauses at `GET /states` for Infinity; the self-hosted
+  dashboard reads them. States that don't pause frames are read but not yet
+  drawn: a state lane comes next.
 - **Reference worker: optional presigned R2 links** (#129). With
   `IMG_DELIVERY=presigned` and a read-only R2 API token, `/frames` hands out
   R2 presigned links, so browsers load images straight from R2: no worker
