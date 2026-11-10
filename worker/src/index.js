@@ -28,6 +28,12 @@
  * variant) deletes older frames, pruned after uploads; /sources then starts
  * each source's history with a "no data" pause ending at the cutoff.
  *
+ * Frame index (optional, #44): with a D1 database bound as DB, /upload also
+ * records each frame in a D1 table, and /frames reads that instead of
+ * listing R2: no scan cap, and key lists are cached in 6-hour chunks that
+ * every zoom level and viewer share. POST /reindex (a site's upload token)
+ * fills the table from what R2 already holds. Without DB, /frames lists R2.
+ *
  * R2 layout: {variant}/{site}/{source}/{epoch-ms}.jpg  (epoch cadence-aligned),
  *            index.json — source registry {sites: {site: {source: {cadence,
  *            hiCadence, location, timezone, history: [{since, variant, cadence}]}}}},
@@ -52,6 +58,12 @@ const MAX_LIST_PAGES = 25;
  * on the free plan), and walking keys costs CPU time (10 ms on the free plan). */
 const MAX_LIST_PAGES_ALL = 50;
 const SCAN_CONCURRENCY = 6;
+/* The frame index answers in fixed, epoch-aligned chunks, cached with the
+ * Cache API: a chunk's key list doesn't depend on step, so every zoom level
+ * and every viewer shares it. A chunk is "live" (cached briefly) until a
+ * while after it ends, so late frames on its last ticks still show. */
+const CHUNK_MS = 6 * 3600 * 1000;
+const CHUNK_LIVE_FOR = 10 * 60 * 1000;
 const INDEX_KEY = 'index.json';
 
 const CORS = {
@@ -83,6 +95,7 @@ export default {
       if (request.method === 'OPTIONS') {return new Response(null, { status: 204, headers: CORS });}
       if (url.pathname === '/upload' && request.method === 'POST') {return await handleUpload(request, env, ctx);}
       if (url.pathname === '/declare' && request.method === 'POST') {return await handleDeclare(request, env);}
+      if (url.pathname === '/reindex' && request.method === 'POST') {return await handleReindex(request, env, url);}
       const isData = url.pathname === '/sources' || url.pathname === '/kiosks' ||
                      url.pathname === '/frames' || url.pathname.startsWith('/frame/');
       if (isData && request.method === 'GET') {
@@ -240,6 +253,15 @@ async function handleUpload(request, env, ctx) {
   await env.FRAMES.put(key, body, {
     httpMetadata: { contentType: 'image/jpeg', cacheControl: FRAME_CACHE },
   });
+  if (env.DB) {
+    // a frame the index missed is invisible until POST /reindex finds it, so
+    // say so loudly; the upload itself succeeded
+    try {
+      await indexFrames(env, [[site, source, variant, ts]]);
+    } catch (err) {
+      console.error(JSON.stringify({ msg: 'frame index write failed', site, source, variant, ts, error: String(err) }));
+    }
+  }
   await ensureRegistered(env, site, source, variant, cadence, ts, location, tags, timezone);
   if (retentionMs(env, 'lo') || retentionMs(env, 'hi')) {ctx.waitUntil(pruneSite(env, site, source));}
   return json({ ok: true, key, ts });
@@ -299,6 +321,11 @@ async function pruneSource(env, variant, site, source, now) {
       .filter((k) => Number(k.slice(prefix.length, -'.jpg'.length)) < cutoff);
     if (old.length) {await env.FRAMES.delete(old); deleted += old.length;}
     if (old.length < listed.objects.length || !listed.truncated) {break;}
+  }
+  if (env.DB && deleted) {
+    await ensureSchema(env);
+    await env.DB.prepare('DELETE FROM frames WHERE site = ?1 AND source = ?2 AND variant = ?3 AND ts < ?4')
+      .bind(site, source, variant, cutoff).run();
   }
   if (deleted) {console.log(JSON.stringify({ msg: 'retention pruned', variant, site, source, deleted }));}
   return deleted;
@@ -510,6 +537,100 @@ async function handleSources(url, env, ctx, viewer) {
   return json(out, 200, { 'cache-control': 'public, max-age=15' });
 }
 
+/* ---------------- frame index (D1, optional) ---------------- */
+
+/* The table is created on first use in each isolate, so binding a fresh D1
+ * database is all the setup it needs. One row per frame; the key orders rows
+ * as /frames reads them (a source's frames by time). */
+const schemaReady = new WeakMap();   // per database binding
+function ensureSchema(env) {
+  let ready = schemaReady.get(env.DB);
+  if (!ready) {
+    ready = env.DB.prepare(
+      'CREATE TABLE IF NOT EXISTS frames (site TEXT NOT NULL, source TEXT NOT NULL, variant TEXT NOT NULL, ' +
+      'ts INTEGER NOT NULL, PRIMARY KEY (site, source, variant, ts)) WITHOUT ROWID'
+    ).run().catch((err) => { schemaReady.delete(env.DB); throw err; });
+    schemaReady.set(env.DB, ready);
+  }
+  return ready;
+}
+
+/* Rows of [site, source, variant, ts], 25 to a statement: D1 binds at most
+ * 100 parameters per query. A frame already indexed is left as it is. */
+async function indexFrames(env, rows) {
+  if (!rows.length) {return;}
+  await ensureSchema(env);
+  const stmts = [];
+  for (let i = 0; i < rows.length; i += 25) {
+    const part = rows.slice(i, i + 25);
+    stmts.push(env.DB.prepare(
+      'INSERT OR IGNORE INTO frames (site, source, variant, ts) VALUES ' + part.map(() => '(?, ?, ?, ?)').join(', ')
+    ).bind(...part.flat()));
+  }
+  await env.DB.batch(stmts);
+}
+
+/* One source's indexed frame times in [from, to], sorted, read chunk by
+ * chunk through the Cache API. */
+async function indexedTimes(env, ctx, origin, variant, site, source, from, to) {
+  await ensureSchema(env);
+  const cache = caches.default;
+  const now = Date.now();
+  const out = [];
+  for (let c = Math.floor(from / CHUNK_MS) * CHUNK_MS; c <= to; c += CHUNK_MS) {
+    const key = new Request(`${origin}/frames-index/${variant}/${site}/${source}/${c}`);
+    let res = await cache.match(key);
+    if (!res) {
+      const { results } = await env.DB.prepare(
+        'SELECT ts FROM frames WHERE site = ?1 AND source = ?2 AND variant = ?3 AND ts >= ?4 AND ts < ?5 ORDER BY ts'
+      ).bind(site, source, variant, c, c + CHUNK_MS).all();
+      const live = c + CHUNK_MS > now - CHUNK_LIVE_FOR;
+      res = new Response(JSON.stringify(results.map((r) => r.ts)), {
+        headers: { 'content-type': 'application/json', 'cache-control': `public, max-age=${live ? 15 : 3600}` },
+      });
+      ctx.waitUntil(cache.put(key, res.clone()));
+    }
+    for (const ts of await res.json()) {
+      if (ts >= from && ts <= to) {out.push(ts);}
+    }
+  }
+  return out;
+}
+
+/* POST /reindex, with a site's upload token: fill the frame index from the
+ * frames R2 already holds for that site (for a database bound to an existing
+ * bucket, or to repair a missed write). Works through up to REINDEX_PAGES
+ * pages of 1000 keys a call and answers where to carry on: call again with
+ * ?cursor=<cursor> until done is true. Indexing a frame twice is harmless. */
+const REINDEX_PAGES = 5;
+async function handleReindex(request, env, url) {
+  const site = (request.headers.get('x-site') || '').toLowerCase();
+  if (!ID_RE.test(site)) {return json({ error: 'bad site' }, 400);}
+  if (!(await authorize(request, env, site))) {return json({ error: 'unauthorized' }, 401);}
+  if (!env.DB) {return json({ error: 'no frame index: bind a D1 database as DB' }, 400);}
+  // the cursor is "<variant>:<R2 cursor>", so one walk covers lo then hi
+  const [startVariant, startCursor] = (url.searchParams.get('cursor') || 'lo:').split(/:(.*)/s);
+  const variants = [...VARIANTS];
+  let v = Math.max(0, variants.indexOf(startVariant));
+  let cursor = startCursor || undefined;
+  let indexed = 0;
+  for (let page = 0; page < REINDEX_PAGES && v < variants.length; page++) {
+    const prefix = `${variants[v]}/${site}/`;
+    const listing = await env.FRAMES.list({ prefix, limit: 1000, ...(cursor ? { cursor } : {}) });
+    const rows = [];
+    for (const obj of listing.objects) {
+      const m = obj.key.slice(prefix.length).match(/^([a-z0-9][a-z0-9_-]{0,62})\/(\d{13})\.jpg$/);
+      if (m) {rows.push([site, m[1], variants[v], Number(m[2])]);}
+    }
+    await indexFrames(env, rows);
+    indexed += rows.length;
+    if (listing.truncated) {cursor = listing.cursor;}
+    else { v++; cursor = undefined; }
+  }
+  const done = v >= variants.length;
+  return json({ ok: true, site, indexed, done, ...(done ? {} : { cursor: `${variants[v]}:${cursor || ''}` }) });
+}
+
 /* ---------------- frames ---------------- */
 
 /* One source's frames in [from, to], at most one per step bucket (the one
@@ -519,8 +640,7 @@ async function handleSources(url, env, ctx, viewer) {
  * a scan that runs out says where it stopped: nothing after truncatedAfter
  * was examined, so clients must not read that span as offline. */
 async function scanSource(env, prefix, from, to, step, budget) {
-  const bucketStart = Math.ceil(from / step) * step;
-  const best = new Map();   // bucket idx → {ts, dist to bucket tick}
+  const pick = bucketPicker(from, step);
   let cursor, done = false, listedUntil = from;
   while (!done && budget.pages > 0) {
     budget.pages--;
@@ -534,15 +654,37 @@ async function scanSource(env, prefix, from, to, step, budget) {
       if (!Number.isFinite(ts)) {continue;}
       if (ts > to) { done = true; break; }
       listedUntil = ts;
-      const idx = Math.round((ts - bucketStart) / step);
-      const dist = Math.abs(ts - (bucketStart + idx * step));
-      const cur = best.get(idx);
-      if (!cur || dist < cur.dist) {best.set(idx, { ts, dist });}
+      pick.add(ts);
     }
     if (!listing.truncated) {done = true;}
     else {cursor = listing.cursor;}
   }
-  return { ts: [...best.values()].map((v) => v.ts).sort((a, b) => a - b), truncatedAfter: done ? null : listedUntil };
+  return { ts: pick.result(), truncatedAfter: done ? null : listedUntil };
+}
+
+/* At most one frame per step bucket: the one nearest each bucket tick, the
+ * first on a tie. Fed in time order. */
+function bucketPicker(from, step) {
+  const bucketStart = Math.ceil(from / step) * step;
+  const best = new Map();   // bucket idx → {ts, dist to bucket tick}
+  return {
+    add(ts) {
+      const idx = Math.round((ts - bucketStart) / step);
+      const dist = Math.abs(ts - (bucketStart + idx * step));
+      const cur = best.get(idx);
+      if (!cur || dist < cur.dist) {best.set(idx, { ts, dist });}
+    },
+    result: () => [...best.values()].map((v) => v.ts).sort((a, b) => a - b),
+  };
+}
+
+/* A source's frames, one per step bucket: from the frame index when there
+ * is one (never truncated), else an R2 scan within the budget. */
+async function framesOf(env, ctx, origin, variant, site, source, from, to, step, budget) {
+  if (!env.DB) {return scanSource(env, `${variant}/${site}/${source}/`, from, to, step, budget);}
+  const pick = bucketPicker(from, step);
+  for (const ts of await indexedTimes(env, ctx, origin, variant, site, source, from, to)) {pick.add(ts);}
+  return { ts: pick.result(), truncatedAfter: null };
 }
 
 /* The query string that authorizes a source's image URLs, or ''.
@@ -602,7 +744,7 @@ async function handleFrames(url, env, ctx, viewer) {
   const hit = await cache.match(cacheKey);
   if (hit) {return hit;}
 
-  const { ts, truncatedAfter } = await scanSource(env, `${variant}/${site}/${source}/`, from, to, step, { pages: MAX_LIST_PAGES });
+  const { ts, truncatedAfter } = await framesOf(env, ctx, url.origin, variant, site, source, from, to, step, { pages: MAX_LIST_PAGES });
   if (truncatedAfter !== null) {
     console.warn(JSON.stringify({ msg: 'frames scan truncated', site, source, variant, from, to, step, truncatedAfter }));
   }
@@ -679,7 +821,7 @@ async function handleFramesAll(url, env, ctx, viewer) {
     while (next < jobs.length) {
       const i = next++;
       const j = jobs[i];
-      const scan = await scanSource(env, `${variant}/${j.site}/${j.source}/`, j.from, j.to, j.step, budget);
+      const scan = await framesOf(env, ctx, url.origin, variant, j.site, j.source, j.from, j.to, j.step, budget);
       const auth = scan.ts.length ? await imageAuth(env, j.site, j.source) : '';
       results[i] = { ...scan, rows: scan.ts.map((t) => ({ site: j.site, source: j.source, ts: t, url: `${base}/frame/${variant}/${j.site}/${j.source}/${t}.jpg${auth}` })) };
     }

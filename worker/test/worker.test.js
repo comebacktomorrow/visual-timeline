@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../src/index.js';
+import { DatabaseSync } from 'node:sqlite';
 
 const MIN = 60e3;
 const NOW = Math.floor(Date.now() / MIN) * MIN;
@@ -455,4 +456,137 @@ test('/frames for one source also carries its site', async () => {
   const FRAMES = memR2(frameKeys(1));
   const rows = await (await call(framesPath(NOW - 3600e3, NOW, MIN), { FRAMES })).json();
   assert.equal(rows[0].site, 'site-a');
+});
+
+/* ---------------- frame index in D1 (#44) ---------------- */
+
+/* D1's API over node:sqlite, so the SQL itself is exercised; counts queries */
+function d1() {
+  const db = new DatabaseSync(':memory:');
+  const stats = { queries: 0 };
+  const stmt = (sql, args = []) => ({
+    bind: (...a) => stmt(sql, a),
+    async run() { stats.queries++; db.prepare(sql).run(...args); return { success: true }; },
+    async all() { stats.queries++; return { results: db.prepare(sql).all(...args) }; },
+  });
+  return {
+    stats,
+    count: (where = '1') => db.prepare(`SELECT COUNT(*) AS n FROM frames WHERE ${where}`).get().n,
+    prepare: (sql) => stmt(sql),
+    async batch(list) { for (const s of list) {await s.run();} return []; },
+  };
+}
+/* a Cache API that keeps what is put, for the chunk-cache tests */
+async function withCache(fn) {
+  const store = new Map();
+  const orig = globalThis.caches;
+  globalThis.caches = { default: {
+    match: async (req) => store.get(req.url)?.clone(),
+    put: async (req, res) => { store.set(req.url, res); },
+  } };
+  try { return await fn(store); } finally { globalThis.caches = orig; }
+}
+
+test('with a frame index, /upload records the frame and /frames reads it without listing R2', async () => {
+  const DB = d1();
+  const env = { FRAMES: storeR2(), DB, UPLOAD_TOKENS: JSON.stringify({ 'idx-a': 'tok' }) };
+  const res = await uploadTo(env, 'idx-a', 'cam');
+  assert.equal(res.status, 200);
+  const { ts } = await res.json();
+  assert.equal(DB.count(`site = 'idx-a' AND source = 'cam' AND variant = 'lo' AND ts = ${ts}`), 1);
+  env.FRAMES.list = async () => { throw new Error('/frames listed R2'); };
+  const frames = await (await call(`/frames?site=idx-a&source=cam&from=${ts - 3600e3}&to=${ts + MIN}&step=${MIN}`, env)).json();
+  assert.deepEqual(frames.map((f) => f.ts), [ts]);
+});
+
+test('with a frame index, a month of frames needs no scan cap', async () => {
+  const keys = frameKeys(30);
+  const DB = d1();
+  // the table appears on first use; fill it through the worker's own path
+  const env = { FRAMES: memR2(keys), DB, UPLOAD_TOKENS: JSON.stringify({ 'site-a': 'tok' }) };
+  for (let cursor = ''; ;) {
+    const r = await (await call(`/reindex${cursor ? '?cursor=' + encodeURIComponent(cursor) : ''}`, env,
+      { method: 'POST', headers: { authorization: 'Bearer tok', 'x-site': 'site-a' } })).json();
+    if (r.done) {break;}
+    cursor = r.cursor;
+  }
+  const res = await call(framesPath(NOW - 30 * 864e5, NOW, 108 * MIN), env);
+  assert.equal(res.headers.get('x-frames-truncated-after'), null);
+  const frames = await res.json();
+  assert.ok(NOW - frames.at(-1).ts < 108 * MIN, 'reaches the present, past where the R2 scan stopped');
+});
+
+test('/reindex fills the index from R2, a call at a time, and needs the site\'s upload token', async () => {
+  const keys = [...frameKeys(5), ...frameKeys(1, 5 * MIN).map((k) => k.replace(/^lo\//, 'hi/'))];
+  const DB = d1();
+  const env = { FRAMES: memR2(keys), DB, UPLOAD_TOKENS: JSON.stringify({ 'site-a': 'tok' }) };
+  const post = (q = '', token = 'tok') => call(`/reindex${q}`, env, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'x-site': 'site-a' } });
+  assert.equal((await post('', 'wrong')).status, 401);
+  let calls = 0;
+  for (let q = ''; ;) {
+    const r = await (await post(q)).json();
+    calls++;
+    if (r.done) {break;}
+    q = '?cursor=' + encodeURIComponent(r.cursor);
+  }
+  assert.ok(calls > 1, 'more than one call for 5 days of minutes');
+  assert.equal(DB.count("variant = 'lo'"), frameKeys(5).length);
+  assert.equal(DB.count("variant = 'hi'"), frameKeys(1, 5 * MIN).length);
+  // again: nothing doubles
+  for (let q = ''; ;) { const r = await (await post(q)).json(); if (r.done) {break;} q = '?cursor=' + encodeURIComponent(r.cursor); }
+  assert.equal(DB.count(), keys.length);
+  assert.equal((await call('/reindex', { FRAMES: memR2([]), UPLOAD_TOKENS: env.UPLOAD_TOKENS },
+    { method: 'POST', headers: { authorization: 'Bearer tok', 'x-site': 'site-a' } })).status, 400);
+});
+
+test('the index is read in cached chunks that every step and viewer share', async () => {
+  await withCache(async () => {
+    const keys = frameKeys(2);
+    const DB = d1();
+    const env = { FRAMES: memR2(keys), DB, UPLOAD_TOKENS: JSON.stringify({ 'site-a': 'tok' }) };
+    for (let q = ''; ;) {
+      const r = await (await call(`/reindex${q}`, env, { method: 'POST', headers: { authorization: 'Bearer tok', 'x-site': 'site-a' } })).json();
+      if (r.done) {break;}
+      q = '?cursor=' + encodeURIComponent(r.cursor);
+    }
+    const before = DB.stats.queries;
+    await call(framesPath(NOW - 864e5, NOW, 5 * MIN), env);
+    const first = DB.stats.queries - before;
+    assert.ok(first >= 4 && first <= 6, `a day is 4 or 5 six-hour chunks (${first} queries)`);
+    // another zoom of the same day: every chunk comes from the cache
+    await call(framesPath(NOW - 864e5, NOW, 15 * MIN), env);
+    assert.equal(DB.stats.queries - before, first);
+  });
+});
+
+test('with a frame index, /frames for every source finishes them all', async () => {
+  const sites = { 'site-a': {} };
+  const keys = [];
+  const DB = d1();
+  for (let i = 0; i < 20; i++) {
+    const id = `cam-${String(i).padStart(2, '0')}`;
+    sites['site-a'][id] = { cadence: MIN };
+    keys.push(...keysFor('site-a', id, MIN, 48));
+  }
+  const env = { FRAMES: indexedR2(keys, sites), DB, UPLOAD_TOKENS: JSON.stringify({ 'site-a': 'tok' }) };
+  for (let q = ''; ;) {
+    const r = await (await call(`/reindex${q}`, env, { method: 'POST', headers: { authorization: 'Bearer tok', 'x-site': 'site-a' } })).json();
+    if (r.done) {break;}
+    q = '?cursor=' + encodeURIComponent(r.cursor);
+  }
+  const res = await call(`/frames?from=${NOW - 48 * 3600e3}&to=${NOW}&step=${MIN}`, env);
+  assert.equal(res.headers.get('x-frames-truncated-sources'), null);
+  const rows = await res.json();
+  assert.equal(new Set(rows.map((r) => r.source)).size, 20);
+});
+
+test('retention removes pruned frames from the index too', async () => {
+  const DB = d1();
+  const env = { FRAMES: storeR2(), DB, UPLOAD_TOKENS: JSON.stringify({ 'idx-r': 'tok' }), RETENTION_DAYS: '30' };
+  const now = Date.now();
+  putFrames(env, 'lo', 'idx-r', 'cam', [now - 40 * DAY, now - 31 * DAY, now - DAY]);
+  await callAndSettle('/reindex', env, { method: 'POST', headers: { authorization: 'Bearer tok', 'x-site': 'idx-r' } });
+  assert.equal(DB.count("site = 'idx-r'"), 3);
+  assert.equal((await uploadTo(env, 'idx-r', 'cam')).status, 200);
+  assert.equal(DB.count("site = 'idx-r'"), 2, 'the two old frames gone from the index; the recent one and the upload kept');
 });

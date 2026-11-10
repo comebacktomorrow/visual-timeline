@@ -182,7 +182,31 @@ earliest of those. A client that can't read headers (Infinity can't) draws the
 unexamined span as offline, so keep windows and fleets within the budget.
 Each source costs one page per 1000 frames in the window, and at least one:
 50 pages cover 25 sources at a 60 s cadence over a day, or 50 sources over
-16 hours. A frame index (#44) lifts this.
+16 hours. With a frame index (below) there is no budget: every source is
+answered whole.
+
+### Frame index (reference worker, optional)
+
+With a D1 database bound as `DB`, `/upload` also records each frame in a D1
+table, and `/frames` reads that table instead of listing R2, in 6-hour chunks
+cached for 15 seconds while live and an hour once past. Nothing in the
+contract changes, except that `X-Frames-Truncated-*` never appear. Setup and
+free-plan sizes are in [worker/README.md](../worker/README.md).
+
+### `POST /reindex?cursor=`
+
+Fills the frame index from the frames R2 already holds for one site (both
+variants): run it once after binding `DB` to a bucket with frames in it, or
+to repair a missed write. `Authorization: Bearer <the site's upload token>`
+and `X-Site: <site>`, as for uploads. Each call works through up to 5,000
+frames and answers
+
+```json
+{"ok":true,"site":"site-a","indexed":5000,"done":false,"cursor":"lo:…"}
+```
+
+Call again with that `cursor` until `done` is `true`. Indexing a frame twice
+is harmless. Without `DB` it's a 400.
 
 ### `GET /frame/{variant}/{site}/{source}/{ts}.jpg`
 

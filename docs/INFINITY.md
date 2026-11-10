@@ -89,9 +89,10 @@ Host state from any data source (#126, M4) brings the pauses back.
 
 ## Limits
 
-The worker lists frames from R2 for every host in the window, within a shared
-budget: 50 pages of 1000 frames per request, or about 25 hosts at one frame a
-minute over a day. Past it, the hosts it couldn't finish draw as offline for
-the rest of the window (the worker names them in a response header, which
-Infinity doesn't show). Narrow the window or the hosts, or see #44 for the
-frame index that lifts this.
+Without a frame index, the worker lists frames from R2 for every host in the
+window, within a shared budget: 50 pages of 1000 frames per request, or about
+25 hosts at one frame a minute over a day. Past it, the hosts it couldn't
+finish draw as offline for the rest of the window (the worker names them in a
+response header, which Infinity doesn't show). Narrow the window or the
+hosts, or give the worker a frame index in D1, which has no such budget:
+[worker/README.md](../worker/README.md), "Optional: a frame index in D1".
