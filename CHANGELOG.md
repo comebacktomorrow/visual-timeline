@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Breaking: the data source's frames API mode is removed** (#126). The
+  Visual Timeline data source no longer has an API URL or a viewer token, no
+  longer declares a proxy route, and calls no API: it is Demo data (and,
+  before 2.0 ships, folder and bucket listings, #125). To keep reading the
+  reference worker, or any frames API, in Grafana, read it through a stock
+  data source that keeps the token on Grafana's server, such as Infinity with
+  Bearer token authentication; the panel draws the rows it returns. The
+  standalone viewer still reads the API directly. Dashboards on a 1.x API
+  data source need their panels' queries moved; a migration note follows.
+  The data source is now named **Visual Timeline** (its id is unchanged).
 - **Frames from any data source** (the first step of 2.0, #126). The panel
   now draws rows with a time, an image and a host from whatever answered its
   query: a SQL table, Infinity over an API, TestData, and so on. The image is
@@ -9,7 +19,7 @@
   by their usual names (`time`, `image` or `url`, `host`, `site`,
   `image_hi`, `cadence`), and new **Frame fields** options name them when
   they differ. A host's cadence comes from a cadence field or the typical gap
-  between its frames. The Visual Timeline data source works as before.
+  between its frames.
 - A panel whose query returns data but no frames says so, and points at the
   Frame fields options.
 - Hosts without a site no longer show an empty site chip.

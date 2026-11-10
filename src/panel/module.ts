@@ -13,11 +13,10 @@ import { config, getDataSourceSrv } from '@grafana/runtime';
 import { usePanelContext, useTheme2 } from '@grafana/ui';
 import { mountTimeline, mountGrid } from '../core';
 import type { AxisFormatter } from '../vt/time/ticks';
-import type { Backend, Frame, SourceDecl } from '../vt/types';
 import { themeVars } from '../theme';
 import { coreTimeZone } from '../timezone';
-import { DATASOURCE_ID } from '../shared/proxy';
-import { SourcesFrameMeta, sourcesFromFrames } from '../shared/sources';
+import { DATASOURCE_ID } from '../shared/ids';
+import { sourcesFromFrames } from '../shared/sources';
 import { FieldRoles, recordsBackend, recordsFromSeries } from '../shared/frameRecords';
 import { needsRebuild } from './resize';
 
@@ -83,27 +82,6 @@ function extractAnnotations(frames: any[] | undefined): PanelAnnotation[] {
 
 /** How long a resized panel's width must hold before the core rebuilds. */
 const RESIZE_SETTLE_MS = 250;
-/** The data source method the panel calls for each source's frames. */
-interface FramesSource {
-  frames(site: string, id: string, from: number, to: number, step: number): Promise<Frame[]>;
-}
-
-/* The core's data layer for a Visual Timeline source list without frame
- * records (the frames API mode): the sources come from the data source's
- * answer, already filtered by the panel's query, the dashboard variables and
- * the ad hoc filters, and frames through the same data source. Demo data
- * answers with frame records instead (#126). */
-function panelBackend(sources: SourceDecl[], meta: SourcesFrameMeta): Backend {
-  let ds: Promise<FramesSource> | null = null;
-  return {
-    kiosks: () => sources,
-    frames: async (site, id, f, t, step) => {
-      ds ??= getDataSourceSrv().get({ uid: meta.uid }) as unknown as Promise<FramesSource>;
-      return (await ds).frames(site, id, f, t, step);
-    },
-  };
-}
-
 /* What a panel that can't draw says instead. Errors from the data source
  * aren't repeated here: Grafana shows them in the panel's error indicator. */
 function emptyStateText(hasSources: boolean, dataSourceCount: number, canCreate: boolean, hasData = false) {
@@ -113,15 +91,16 @@ function emptyStateText(hasSources: boolean, dataSourceCount: number, canCreate:
   if (hasSources) {
     return { lines: ['No hosts match.', "Check this panel's query (Sites, Hosts, Tags) and the dashboard's filters."] };
   }
+  const needs = 'It draws rows with a time, an image and a host, from any data source.';
   if (dataSourceCount > 0) {
-    return { lines: ['This panel has no Visual Timeline API data source.', 'Edit the panel and choose one in the Query tab.'] };
+    return { lines: ["This panel's query returned nothing.", needs, 'A Visual Timeline data source with Demo data on has some to try.'] };
   }
   return canCreate
     ? {
-        lines: ['No Visual Timeline API data source yet.'],
-        link: { text: 'Add one', after: ' (turn on its Demo data to try the panel without an API).' },
+        lines: ["This panel's query returned nothing.", needs],
+        link: { text: 'Add a Visual Timeline data source', after: ' and turn on its Demo data to try the panel.' },
       }
-    : { lines: ['No Visual Timeline API data source yet.', 'Ask a Grafana admin to add one.'] };
+    : { lines: ["This panel's query returned nothing.", needs, 'A Grafana admin can add a Visual Timeline data source with Demo data to try it.'] };
 }
 
 interface MountInstance {
@@ -187,10 +166,12 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const recordsMemo = useMemo(() => records, [recordsKey]);
-  const backend = useMemo(() => {
-    if (recordsMemo) {return recordsBackend(recordsMemo, result?.sources);}
-    return result ? panelBackend(result.sources, result.meta) : null;
-  }, [recordsMemo, result]);
+  // a source list without records (no frames in the window) still draws its
+  // hosts: a host that was silent the whole time is information
+  const backend = useMemo(
+    () => (recordsMemo || result ? recordsBackend(recordsMemo ?? [], result?.sources) : null),
+    [recordsMemo, result]
+  );
   /* Clicking a host, site or tag chip adds that filter to the dashboard's ad
    * hoc filter for this data source, as a table cell's "filter for value"
    * does. Grafana leaves onAddAdHocFilter unset where it can't do that. */

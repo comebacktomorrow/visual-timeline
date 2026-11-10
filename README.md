@@ -13,13 +13,14 @@ The plugin is a Grafana app that installs two plugins:
 
 - the **Visual Timeline panel**, which draws the timeline and the multiview
   grid;
-- the **Visual Timeline API data source**, which connects to your frames API.
-  It keeps the API's URL and viewer token in Grafana's server-side settings,
-  answers each panel's query with the list of hosts, and supplies the
-  Site and Host dashboard variables and the ad hoc filter bar. It can also
-  answer with each host's last frame and status, for a stock Table, Canvas
-  or Stat panel. Its **Demo data** switch runs everything on built-in demo
-  data instead.
+- the **Visual Timeline data source**, whose **Demo data** runs everything on
+  built-in demo hosts and frames. It supplies the Site and Host dashboard
+  variables, the ad hoc filter bar and annotations, and can answer with each
+  host's last frame and status, for a stock Table, Canvas or Stat panel.
+
+The panel reads your own frames from
+[any data source](#frames-from-any-data-source) whose rows have a time, an
+image and a host.
 
 The app is enabled on install and has no pages of its own.
 
@@ -97,7 +98,7 @@ option can show its frame times in its own local time.
 
 ## Try it with no backend
 
-1. Add a **Visual Timeline API** data source (**Connections → Data sources →
+1. Add a **Visual Timeline** data source (**Connections → Data sources →
    Add new data source**), turn on its **Demo data** switch and click **Save &
    test**.
 2. On the data source's **Dashboards** tab, import the **Visual Timeline**
@@ -108,8 +109,8 @@ The demo has five simulated hosts across two sites, including an outage, a
 cadence change, a declared pause, two hosts in other time zones and some
 annotations. No infrastructure and no account. To build your own dashboard
 instead, add a **Visual Timeline** panel and choose the data source in its
-**Query** tab. Turn **Demo data** off and set the API URL when you're ready for
-your own frames.
+**Query** tab. For your own frames, see
+[Frames from any data source](#frames-from-any-data-source).
 
 To see it on a ready-made dashboard instead, clone the
 [repository](https://github.com/comebacktomorrow/visual-timeline) and run:
@@ -152,7 +153,7 @@ Site and Host variables and the filter bar ready.
 
 The panel draws frames from any query that returns, per row, **a time, an
 image and a host**: a SQL table of snapshot records, Infinity reading an API,
-TestData, or the Visual Timeline data source. The image is a URL that the
+TestData, or the Visual Timeline data source's Demo data. The image is a URL that the
 viewer's browser can load (public, or signed by whatever answered the query)
 or Base64 image data. The panel never signs or proxies images itself.
 
@@ -191,11 +192,8 @@ an empty cell. Status follows the timeline's rules: offline once a tick is a
 full cadence overdue, paused from a declared pause until a frame a tick or
 more into it.
 
-It costs one or two `/frames` calls per host on every refresh, so leave it off
-in the queries of Visual Timeline panels, which fetch their own frames. The
-images load straight from the API's image URLs, as the panel's do, so an API
-that requires a viewer token must sign them. The starter dashboard has a
-**Last frame per host** table.
+Leave it off in the queries of Visual Timeline panels, which draw every
+frame anyway. The starter dashboard has a **Last frame per host** table.
 
 ### On a Canvas: frames on a floor plan
 
@@ -223,44 +221,29 @@ panel. Auto-refresh and the time range work as they do for a table.
 
 Demo data's frames don't show on a Canvas: they are `data:` URLs, which
 Canvas takes for paths on the Grafana server. The status and time do, and
-frames from an API, which are `https://` URLs, do too.
+frames with `https://` URLs do too.
 
-## Connect it to your own images
+## The reference backend
 
-The panel reads a small HTTP API (the source registry, frames by time window,
-and the frame images) through a Visual Timeline API data source. It isn't tied
-to any one backend. In Grafana, go to **Connections → Data sources → Add new
-data source**, pick **Visual Timeline API**, enter the API URL and, if the API
-needs one, the viewer token, and click **Save & test**. Then choose that data
-source in each panel's **Query** tab. The token is stored encrypted, and
-Grafana's server adds it to the data source's API calls (`/sources`,
-`/frames`), so it never reaches the dashboard JSON or the viewer's browser.
+The repository includes a reference backend for your own images, in
+[`worker/`](https://github.com/comebacktomorrow/visual-timeline/tree/main/worker):
+a single-file Cloudflare Worker over R2, with cadence-aligned storage,
+immutable frame caching, per-site upload tokens, and private-by-default reads
+(viewer token plus signed, expiring image URLs). Its README covers running it
+locally with a simulated fleet, and deploying it to Cloudflare. Its HTTP API,
+with curl examples, is in
+[docs/API.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md).
+Uploaders are simple: capture, POST a JPEG on the cadence grid, and on failure
+drop the frame and move on.
 
-The data source needs a server that implements the API:
-
-- The API contract, with curl examples, is in
-  [docs/API.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md).
-  Anything that speaks it works: kiosk screens, security cameras, website
-  thumbnailers, render farms.
-- A reference backend is included in
-  [`worker/`](https://github.com/comebacktomorrow/visual-timeline/tree/main/worker):
-  a single-file Cloudflare Worker over R2, with cadence-aligned storage,
-  immutable frame caching, per-site upload tokens, and private-by-default reads
-  (viewer token plus signed, expiring image URLs). Its README covers running it
-  locally with a simulated fleet, and deploying it to Cloudflare. To run it on
-  your own hardware instead, see [Self-hosting](#self-hosting-experimental).
-- Uploaders are simple: capture, POST a JPEG on the cadence grid, and on
-  failure drop the frame and move on. See "Implementing your own uploader" in
-  the API document.
-
-The frame images load straight from the API into the viewer's browser, never
-through Grafana, because an `<img>` tag can't carry a token. So the API must be
-reachable from the Grafana server (for the API calls), and the image URLs it
-returns must be reachable from the viewers' browsers. An API that requires a
-viewer token for reads must **sign its image URLs**, so each URL authorizes
-itself. The reference worker does this when `IMG_SIGN_KEY` is set. It builds
-image URLs from the address it was called on (or from `PUBLIC_URL`), so give
-the data source an API URL that browsers can reach as well.
+In Grafana, read it through a stock data source that keeps the viewer token
+on Grafana's server, such as Infinity with Bearer token authentication: the
+panel draws the rows it returns. The images load straight from the worker into
+the viewer's browser, never through Grafana, because an `<img>` tag can't carry
+a token, so a worker that requires a viewer token must sign its image URLs
+(`IMG_SIGN_KEY`). Version 1.x read it through the Visual Timeline data
+source's own API mode, which 2.0 removes
+([#126](https://github.com/comebacktomorrow/visual-timeline/issues/126)).
 
 ## Panel options
 
@@ -279,21 +262,6 @@ set how it draws them.
 | **Header**                  | Bar (a header row per host), Inline (the header floats over the image), or Inline with a gradient behind them for busy frames.                                                                         |
 | **Thumbnail times**         | Dashboard time, or Host local time: a host that declares a time zone shows its frame times in that zone, marked with the offset, e.g. `07:31:00 (+3h)`. The axis and crosshair stay in dashboard time. |
 | **Image fit**               | Fit letterboxes the whole frame; Fill crops to cover. Never stretches.                                                                                                                                 |
-
-## About the viewer token
-
-Keep the viewer token in a **Visual Timeline API data source**. The token is
-stored encrypted in Grafana and is sent only by Grafana's server, as an
-`Authorization: Bearer` header on the data source's calls to `/sources` and
-`/frames`. The browser never receives it, and the dashboard JSON stores only
-the data source's uid. Grafana's login is what controls who can view. For the
-images to load, the API must sign its image URLs (see above).
-
-Panels never hold a token: they reach the API only through the data source.
-
-The
-[API document](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md)
-has the details.
 
 ## Self-hosting (experimental)
 
@@ -322,10 +290,8 @@ are in
 - Grafana 12.0.0 or later (`>=12.0.0`).
 - The app must stay enabled. It is enabled on install. Grafana treats an
   app's panel and data source as disabled while the app is disabled.
-- For your own data: a server that implements the frames API (the included
-  reference worker, or your own). See
-  [Connect it to your own images](#connect-it-to-your-own-images) for what
-  needs to reach it.
+- For your own data: any data source whose rows have a time, an image and a
+  host. See [Frames from any data source](#frames-from-any-data-source).
 
 ## Contributing
 

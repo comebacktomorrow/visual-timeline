@@ -56,7 +56,7 @@
     },
     {
       "type": "datasource",
-      "name": "Visual Timeline API",
+      "name": "Visual Timeline",
       "path": "datasource/plugin.json"
     }
   ],
