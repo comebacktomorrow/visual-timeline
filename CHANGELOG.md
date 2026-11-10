@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **Frames from any data source** (the first step of 2.0, #126). The panel
+  now draws rows with a time, an image and a host from whatever answered its
+  query: a SQL table, Infinity over an API, TestData, and so on. The image is
+  a URL (public or signed) or Base64 image data. The panel finds the fields
+  by their usual names (`time`, `image` or `url`, `host`, `site`,
+  `image_hi`, `cadence`), and new **Frame fields** options name them when
+  they differ. A host's cadence comes from a cadence field or the typical gap
+  between its frames. The Visual Timeline data source works as before.
+- A panel whose query returns data but no frames says so, and points at the
+  Frame fields options.
+- Hosts without a site no longer show an empty site chip.
+
 ## 1.2.3 (2026-10-16)
 
 Release process only: the plugin itself is unchanged.

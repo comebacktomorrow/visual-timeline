@@ -3,7 +3,7 @@ import { ApiError, bootErrorText, framesPath, hiUrlFor as untypedHiUrlFor, makeA
 // the tests pass loose shapes (partial frames and decls): give them the signatures they use
 type ApiFetch = (path: string) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 const makeApiBackend = untypedMakeApiBackend as (apiUrl: string, apiKey: string, apiFetch?: ApiFetch) => any;
-const hiUrlFor = untypedHiUrlFor as (frame: { ts: number; url?: string } | null, decl: object, apiUrl?: string, apiKey?: string) => string | null;
+const hiUrlFor = untypedHiUrlFor as (frame: { ts: number; url?: string; hi?: string } | null, decl: object, apiUrl?: string, apiKey?: string) => string | null;
 
 const API = 'https://frames.example.com';
 const FRAME = `${API}/frame/lo/site-a/source-1/1783488360000.jpg`;
@@ -179,6 +179,12 @@ describe('hiUrlFor', () => {
   test('an image host that is not the API is never handed the key', () => {
     const bucket = `https://img.example.net/frame/lo/site-a/source-1/${TS}.jpg`;
     expect(hiUrlFor({ ts: TS, url: bucket }, decl, API, 'viewer tok')).toBe(`https://img.example.net/frame/hi/site-a/source-1/${TS}.jpg`);
+  });
+
+  test('a preview the frame carries itself wins, with or without a hi variant declared', () => {
+    const own = { ts: TS, url: FRAME, hi: 'https://img.example/large.jpg' };
+    expect(hiUrlFor(own, decl, API)).toBe('https://img.example/large.jpg');
+    expect(hiUrlFor(own, { site: 'site-a', id: 'source-1' }, API)).toBe('https://img.example/large.jpg');
   });
 
   test('falls back to apiUrl when the frame URL has no /frame/ path', () => {

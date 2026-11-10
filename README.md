@@ -148,6 +148,27 @@ Loki data by label:
 The **Visual Timeline** dashboard on the data source's Dashboards tab has the
 Site and Host variables and the filter bar ready.
 
+## Frames from any data source
+
+The panel draws frames from any query that returns, per row, **a time, an
+image and a host**: a SQL table of snapshot records, Infinity reading an API,
+TestData, or the Visual Timeline data source. The image is a URL that the
+viewer's browser can load (public, or signed by whatever answered the query)
+or Base64 image data. The panel never signs or proxies images itself.
+
+| Field         | Usual names                                                        |                                                    |
+| ------------- | ------------------------------------------------------------------ | -------------------------------------------------- |
+| Time          | the first time field, or `time`, `timestamp`                       | required                                           |
+| Image         | `image`, `url`                                                     | required                                           |
+| Host          | `host`, `source`, `camera`; or a `host` label; or the query's name | required                                           |
+| Site          | `site`, or a `site` label                                          | optional                                           |
+| Preview image | `image_hi`, `preview`                                              | optional, for the click-in preview                 |
+| Cadence       | `cadence` (milliseconds)                                           | optional; otherwise the typical gap between frames |
+
+When your fields have other names, set them under **Frame fields** in the
+panel options. The provisioned dashboard **Visual Timeline — any data
+source** shows a timeline and a grid drawn from TestData CSV rows.
+
 ## Show the last frame in a table
 
 Turn on **Last frame** in a query and the data source also answers with each
