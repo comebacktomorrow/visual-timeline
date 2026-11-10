@@ -1,12 +1,12 @@
 {
   "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
   "type": "datasource",
-  "name": "Visual Timeline API",
+  "name": "Visual Timeline",
   "id": "savvycocoa1919-visualtimeline-datasource",
   "metrics": true,
   "info": {
-    "keywords": ["timeline", "screenshot", "camera", "kiosk", "frames"],
-    "description": "Connects Visual Timeline panels to a frames API, with site and host variables, ad hoc filters, and each host's last frame for Table and Canvas panels; the viewer token stays on Grafana's server",
+    "keywords": ["timeline", "screenshot", "camera", "kiosk", "frames", "demo"],
+    "description": "Demo data for Visual Timeline panels, with site and host variables, ad hoc filters, annotations, and each host's last frame for Table and Canvas panels",
     "author": {
       "name": "Xzibit"
     },
@@ -18,10 +18,6 @@
       {
         "name": "Documentation",
         "url": "https://github.com/comebacktomorrow/visual-timeline#readme"
-      },
-      {
-        "name": "Frames API",
-        "url": "https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/API.md"
       },
       {
         "name": "Repository",
@@ -40,19 +36,6 @@
       "type": "dashboard",
       "name": "Visual Timeline",
       "path": "dashboards/visual-timeline.json"
-    }
-  ],
-  "routes": [
-    {
-      "path": "api",
-      "method": "GET",
-      "url": "{{ .JsonData.apiUrl }}",
-      "headers": [
-        {
-          "name": "Authorization",
-          "content": "{{ if .SecureJsonData.viewerToken }}Bearer {{ .SecureJsonData.viewerToken }}{{ end }}"
-        }
-      ]
     }
   ],
   "dependencies": {

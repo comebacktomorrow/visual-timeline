@@ -12,9 +12,7 @@ import {
 } from '@grafana/data';
 import { getTemplateSrv } from '@grafana/runtime';
 
-import { backendRequest } from '../shared/backendRequest';
 import { lastFrameIn } from '../shared/lastFrame';
-import { ApiFetch, makeProxyFetch, ProxyRequest } from '../shared/proxy';
 import {
   applySourceFilter,
   interpolatedList,
@@ -25,77 +23,35 @@ import {
   tagKeys,
   tagValues,
 } from '../shared/sources';
-// the text Grafana's proxy answers instead of the API's own 401
-import { makeApiBackend, PROXY_AUTH_FAILED } from '../vt/backends/api';
 import { DemoBackend, makeBackend as makeDemoBackend } from '../vt/backends/demo';
 import { resolveTimeZone } from '../vt/time/zones';
 import { coreTimeZone } from '../timezone';
 import { limited, MODEL_CONCURRENCY } from '../vt/model/pool';
-import type { Backend, Frame, SourceDecl } from '../vt/types';
+import type { SourceDecl } from '../vt/types';
 import type { VisualTimelineOptions, VisualTimelineQuery, VisualTimelineVariableQuery } from './types';
 import { VisualTimelineVariableSupport } from './variables';
-
-/** How long one GET /sources answer serves every caller. A dashboard load
- * asks for the list once per panel query, per Site or Host variable and per
- * filter-bar dropdown, all within a second or two. */
-export const SOURCES_TTL_MS = 5000;
-
-
-/** Health-check wording for a failed GET /sources through the proxy. */
-export function describeFailure(status: number, apiUrl: string, body?: unknown): string {
-  switch (status) {
-    case 400: {
-      const text = typeof body === 'string' ? body : JSON.stringify(body ?? '');
-      return text.includes(PROXY_AUTH_FAILED)
-        ? `The API at ${apiUrl} rejected the viewer token (Grafana's proxy reports the API's 401 as 400). Check the token, and that the API still accepts it.`
-        : `The API at ${apiUrl} refused the request (400). Grafana's proxy also reports an API 401 as 400, so check the viewer token.`;
-    }
-    case 401:
-      return `The API at ${apiUrl} rejected the viewer token (401). Check the token, and that the API still accepts it.`;
-    case 403:
-      return `The API at ${apiUrl} accepted the viewer token but refused access (403). The token may be scoped to other sites.`;
-    case 404:
-      return `${apiUrl}/sources was not found (404). The API URL should be the frames API's base URL, without /sources.`;
-    case 502:
-    case 503:
-    case 504:
-      return `Grafana could not reach ${apiUrl} (${status}). Check the URL, and that the Grafana server can reach it.`;
-    case 0:
-      return `No response from ${apiUrl} through the Grafana proxy.`;
-    default:
-      return `GET ${apiUrl}/sources through the Grafana proxy failed (${status}).`;
-  }
-}
 
 /** Replaces dashboard variables in a query field (Grafana's template
  * service; injected so tests run without a Grafana runtime). */
 export type Interpolate = (value: string, scopedVars?: ScopedVars) => string;
 const grafanaInterpolate: Interpolate = (value, scopedVars) => getTemplateSrv().replace(value, scopedVars, 'csv');
 
-/* The frontend-only data source. It holds the API URL (jsonData) and the
- * viewer token (secureJsonData), and calls the API through its proxy route
- * (plugin.json), where Grafana's server adds the token. It answers panel
- * queries with the source list (dashboard variables and ad hoc filters
- * applied), feeds the Site and Host variables and the ad hoc filter bar, and
- * fetches each source's frames when the panel asks. With Demo data on, the
- * sources are the core's built-in demo ones and no API is called. */
+/* The frontend-only data source. With Demo data on, it answers panel
+ * queries with built-in demo hosts and their frames as rows (time, host,
+ * site, image), the way any data source can (#126), feeds the Site and Host
+ * variables and the ad hoc filter bar, and answers annotation queries with
+ * the demo events. Without it there is nothing to read yet: the folder and
+ * bucket listings (#125) come before 2.0. The frames API mode of 1.x is gone
+ * (#126); its worker is read through a stock data source such as Infinity. */
 export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery, VisualTimelineOptions> {
-  readonly apiUrl: string;
   readonly demo: boolean;
-  private readonly api: ApiFetch;
-  private readonly backend: Backend;
-  private cached: { at: number; list: Promise<SourceDecl[]> } | null = null;
 
   constructor(
     instanceSettings: DataSourceInstanceSettings<VisualTimelineOptions>,
-    request: ProxyRequest = backendRequest,
     private readonly interpolate: Interpolate = grafanaInterpolate
   ) {
     super(instanceSettings);
-    this.apiUrl = (instanceSettings.jsonData?.apiUrl || '').trim().replace(/\/+$/, '');
     this.demo = instanceSettings.jsonData?.demo === true;
-    this.api = makeProxyFetch(instanceSettings.uid, request);
-    this.backend = makeApiBackend(this.apiUrl, undefined, this.api);
     this.variables = new VisualTimelineVariableSupport(this);
     // annotation queries: Demo data's demo events, as dashboard annotations
     this.annotations = { getDefaultQuery: () => ({ kind: 'annotations' }) };
@@ -103,26 +59,9 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
 
   /** Every source, or only those in `sites`. Demo sources depend on the time
    * window (their outages and eras sit inside it), so the window is passed
-   * when there is one; the panel draws demo frames for the same window. */
+   * when there is one. Without Demo data there are none yet. */
   async sources(sites?: string[] | null, window?: { from: number; to: number }): Promise<SourceDecl[]> {
-    if (this.demo) {
-      return this.demoBackend(window).kiosks(sites ?? null) as SourceDecl[];
-    }
-    const all = await this.allSources();
-    return sites ? all.filter((s) => sites.includes(s.site)) : all;
-  }
-
-  /** Every source the API lists, shared by callers within SOURCES_TTL_MS
-   * (including one still in flight). A failure isn't kept. */
-  private allSources(): Promise<SourceDecl[]> {
-    const now = Date.now();
-    if (this.cached && now - this.cached.at < SOURCES_TTL_MS) {return this.cached.list;}
-    const entry = { at: now, list: Promise.resolve(this.backend.kiosks(null)) };
-    this.cached = entry;
-    entry.list.catch(() => {
-      if (this.cached === entry) {this.cached = null;}
-    });
-    return entry.list;
+    return this.demo ? (this.demoBackend(window).kiosks(sites ?? null) as SourceDecl[]) : [];
   }
 
   /** The built-in demo hosts and frames for a time window (an hour to now
@@ -131,13 +70,6 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
     const to = window?.to ?? Date.now();
     const from = window?.from ?? to - 3600e3;
     return makeDemoBackend({ from, to }, Math.max(1, to - from), timeZone);
-  }
-
-  /** One source's frames in a window, at most one per step. The panel calls
-   * this for each source it draws. Not used with Demo data: the panel draws
-   * the demo frames itself. */
-  async frames(site: string, id: string, from: number, to: number, step: number): Promise<Frame[]> {
-    return this.backend.frames(site, id, from, to, step);
   }
 
   private field(value: string | undefined, scopedVars?: ScopedVars): string {
@@ -172,7 +104,7 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
           }
           // the last frame at the range's end, or now if the range runs past it
           const end = Math.min(window.to, Date.now());
-          const backend = this.demo ? this.demoBackend(window) : this.backend;
+          const backend = this.demoBackend(window);
           const last = await Promise.all(limited(sources, MODEL_CONCURRENCY, (s) =>
             lastFrameIn(s, window.from, end, backend).catch((e) => {
               // one host's failure leaves its cells empty, not the whole table
@@ -251,32 +183,12 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
 
   async testDatasource(): Promise<TestDataSourceResponse> {
     if (this.demo) {
-      return {
-        status: 'success',
-        message: 'Demo data is on: queries return built-in demo sources. No API is called.',
-      };
+      return { status: 'success', message: 'Demo data is on: queries return built-in demo hosts and frames.' };
     }
-    if (!this.apiUrl) {
-      return { status: 'error', message: 'Set the API URL: the base URL of the frames API.' };
-    }
-    if (!/^https?:\/\/[^/]/i.test(this.apiUrl)) {
-      return { status: 'error', message: 'The API URL must start with http:// or https://.' };
-    }
-    const r = await this.api('/sources');
-    if (!r.ok) {
-      return { status: 'error', message: describeFailure(r.status, this.apiUrl, await r.json()) };
-    }
-    const body = await r.json();
-    if (!Array.isArray(body)) {
-      return {
-        status: 'error',
-        message: `${this.apiUrl}/sources answered, but not with a list of sources. Is this a frames API?`,
-      };
-    }
-    const n = body.length;
     return {
-      status: 'success',
-      message: `Connected: the API lists ${n} source${n === 1 ? '' : 's'}.`,
+      status: 'error',
+      message:
+        'Nothing to read yet: turn on Demo data. Panels read your own frames from any data source that returns rows of time, image and host.',
     };
   }
 }
