@@ -6,9 +6,12 @@
 # Port taken? DEMO_PORT=3301 docker compose -f demo/docker-compose.yml up
 #
 # The dashboard's panels use the provisioned "Visual Timeline (demo)" data
-# source, which has Demo data on. For your own frames, point the panels'
-# queries at any data source whose rows have a time, an image and a host
-# (README: "Frames from any data source").
+# source, which has Demo data on. Two more dashboards read live public feeds
+# (internet access needed): Rivers (USGS river cameras and water levels) at
+# /d/vt-rivers, and The Sun (NASA SDO and NOAA's X-ray flux and flares) at
+# /d/vt-sun. For your own frames, point the panels' queries at any data
+# source whose rows have a time, an image and a host (README: "Frames from
+# any data source").
 services:
   build:
     # node 24 bundles npm 11 — npm 10 rejects this repo's lockfile
@@ -34,6 +37,9 @@ services:
       # the app and its two nested plugins are each checked under their own id
       GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: "savvycocoa1919-visualtimeline-app,savvycocoa1919-visualtimeline-panel,savvycocoa1919-visualtimeline-datasource"
       GF_PANELS_DISABLE_SANITIZE_HTML: "true"   # only for the iframe-fallback demo panel
+      # Infinity reads the public feeds' measurements (Rivers, The Sun);
+      # installed before provisioning, which names it
+      GF_PLUGINS_PREINSTALL_SYNC: "yesoreyeram-infinity-datasource@4.1.6"
     volumes:
       - ../grafana/provisioning:/etc/grafana/provisioning
       - ../grafana/dashboards:/var/lib/grafana/dashboards
