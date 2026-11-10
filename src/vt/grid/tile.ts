@@ -1,6 +1,6 @@
 import { addPauseClasses, clearPauseClasses, pauseInfo } from '../model/eras';
 import { ghostFor } from '../model/slots';
-import { esc, filterAttrs, headTitle, tagChips } from '../dom/html';
+import { esc, filterAttrs, headChips, headTitle } from '../dom/html';
 import { q } from '../ui/wrapper';
 import { attachZoneChip, dressZoneChip, zoneChip } from '../zones/chip';
 import { zoneFor } from '../zones/source';
@@ -21,11 +21,7 @@ export function buildTile(s: GridState, decl: SourceDecl, model: SourceModel): T
   el.innerHTML =
     '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs('host', decl.id, !!s.cfg.onFilter) + '>' + esc(decl.id) + '</span>' +
     '<span class="inline-brk"></span>' + zoneChip(zone.srcTZ) +
-    // frame records from other sources may have no site: no empty chip then
-    (decl.site || decl.location
-      ? '<span class="st"' + filterAttrs('site', decl.site, !!s.cfg.onFilter) + '>' + esc(decl.site) + (decl.site && decl.location ? ' · ' : '') + esc(decl.location || '') + '</span>'
-      : '') +
-    tagChips(decl, !!s.cfg.onFilter) + '</div>' +
+    headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '</div>' +
     '<div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
   attachZoneChip(zone, el);
   // img, .t-ts and .t-off are in the template just set

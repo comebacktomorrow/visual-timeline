@@ -432,14 +432,9 @@ var VTCore = (() => {
     }
     return eras;
   }
-  var PAUSE_CLASSES = ["paused", "unintended", "tinted", "r-quiet", "r-screen-sleep", "r-app-stopped", "r-system-down", "r-expired"];
+  var PAUSE_CLASSES = ["paused", "tinted"];
   function clearPauseClasses(el) {
     el.classList.remove(...PAUSE_CLASSES);
-    for (const c of Array.from(el.classList)) {
-      if (c.startsWith("r-")) {
-        el.classList.remove(c);
-      }
-    }
     el.style?.removeProperty("--ktl-band");
   }
   function addPauseClasses(el, x) {
@@ -450,23 +445,9 @@ var VTCore = (() => {
     }
   }
   function pauseInfo(x) {
-    if (x && x.label) {
-      return { label: x.label, classes: x.color ? ["paused", "tinted"] : ["paused"], ...x.color ? { color: x.color } : {} };
-    }
-    const r = x && x.reason;
-    const unintended = !!x && x.intended === false;
-    const label = r === "screen-sleep" ? unintended ? "SCREEN DARK (UNEXPECTED)" : "SCREEN ASLEEP" : r === "system-down" ? "SYSTEM DOWN (PLANNED)" : r === "app-stopped" ? "APP STOPPED" : r === "quiet" ? "QUIET HOURS" : (
-      // the API's retention cutoff: frames this old have been deleted
-      r === "expired" ? "NO DATA" : "PAUSED"
-    );
-    const classes = ["paused"];
-    if (r) {
-      classes.push("r-" + String(r).replace(/[^\w-]/g, ""));
-    }
-    if (unintended) {
-      classes.push("unintended");
-    }
-    return { label, classes };
+    const label = x && x.label || "PAUSED";
+    const color = x && x.color;
+    return { label, classes: color ? ["paused", "tinted"] : ["paused"], ...color ? { color } : {} };
   }
 
   // src/vt/model/slots.ts
@@ -766,6 +747,32 @@ var VTCore = (() => {
     return { srcTZ, texts, tt: texts && thumbTimes === "source" ? texts : panelTT, el: null, offEl: null, off: null };
   }
 
+  // src/vt/backends/reasons.ts
+  var REASONS = {
+    quiet: { label: "QUIET HOURS" },
+    "screen-sleep": { label: "SCREEN ASLEEP", color: "#5794F2" },
+    "system-down": { label: "SYSTEM DOWN (PLANNED)", color: "#B877D9" },
+    "app-stopped": { label: "APP STOPPED", color: "#2BA08C" },
+    // the retention cutoff: frames this old have been deleted
+    expired: { label: "NO DATA" }
+  };
+  var UNEXPECTED = "#FF9830";
+  function reasonDisplay(reason, intended) {
+    const known = reason ? REASONS[reason] : void 0;
+    const label = known?.label ?? "PAUSED";
+    if (intended === false) {
+      return { label: reason === "screen-sleep" ? "SCREEN DARK (UNEXPECTED)" : label, color: UNEXPECTED };
+    }
+    return known?.color ? { label, color: known.color } : { label };
+  }
+  function labelPauses(decl) {
+    if (!decl.history?.some((h) => h.paused && !h.label)) {
+      return decl;
+    }
+    const history = decl.history.map((h) => h.paused && !h.label ? { ...h, ...reasonDisplay(h.reason, h.intended) } : h);
+    return { ...decl, history };
+  }
+
   // src/vt/backends/api.ts
   function imageUrlWithKey(url, apiBase, apiKey) {
     if (!apiKey || !url) {
@@ -891,7 +898,7 @@ var VTCore = (() => {
         if (!r.ok) {
           throw await apiError("sources", r, !!apiFetch);
         }
-        const list = await r.json();
+        const list = (await r.json()).map(labelPauses);
         for (const d of list) {
           decls.set(d.site + "/" + d.id, d);
         }
@@ -955,6 +962,21 @@ var VTCore = (() => {
     const chips = Object.entries(decl.tags).map(([k, v]) => '<span class="st"' + filterAttrs(k, v, filterable) + ">" + esc(k) + "=" + esc(v) + "</span>").join("");
     return '<span class="tags">' + chips + "</span>";
   }
+  function headChips(decl, chips, filterable = false) {
+    if (!chips) {
+      return (decl.site || decl.location ? '<span class="st"' + filterAttrs("site", decl.site, filterable) + ">" + esc(decl.site) + (decl.site && decl.location ? " \xB7 " : "") + esc(decl.location || "") + "</span>" : "") + tagChips(decl, filterable);
+    }
+    let out = "";
+    for (const key of chips) {
+      const value = key === "site" ? decl.site : key === "location" ? decl.location : decl.tags?.[key];
+      if (!value) {
+        continue;
+      }
+      const text = key === "site" || key === "location" ? esc(value) : esc(key) + "=" + esc(value);
+      out += '<span class="st"' + filterAttrs(key, value, filterable) + ">" + text + "</span>";
+    }
+    return out;
+  }
   function headTitle(decl) {
     const parts = [decl.site];
     if (decl.location) {
@@ -979,7 +1001,8 @@ var VTCore = (() => {
       }
       e.preventDefault();
       e.stopPropagation();
-      onFilter(el.dataset.fk || "", el.dataset.fv || "");
+      const host = el.closest(".card-head, .t-head")?.querySelector(".nm")?.dataset.fv;
+      onFilter(el.dataset.fk || "", el.dataset.fv || "", host);
     };
     wrap.addEventListener("click", filter, true);
     wrap.addEventListener("keydown", (e) => {
@@ -1019,18 +1042,6 @@ var VTCore = (() => {
     "--ktl-pause-b": "#232830",
     "--ktl-tpause-a": "#17191c",
     "--ktl-tpause-b": "#1d2024",
-    "--ktl-sleep-a": "#182a4e",
-    "--ktl-sleep-b": "#223c6e",
-    "--ktl-sleep": "#8fb0e8",
-    "--ktl-down-a": "#28204a",
-    "--ktl-down-b": "#372c66",
-    "--ktl-down": "#a897e0",
-    "--ktl-stopped-a": "#123832",
-    "--ktl-stopped-b": "#1a4c44",
-    "--ktl-stopped": "#6fc4b4",
-    "--ktl-unint-a": "#4a350e",
-    "--ktl-unint-b": "#614614",
-    "--ktl-unint": "#e8b155",
     "--ktl-ann": "#5794F2",
     "--ktl-ann-edge": "#0b0c0e",
     "--ktl-ann-region": "rgba(87,148,242,.12)",
@@ -1137,21 +1148,11 @@ var VTCore = (() => {
 .ktl .slot.gap.nodata { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 5px,var(--ktl-pause-b) 5px,var(--ktl-pause-b) 10px); }
 .ktl .slot.held img { opacity:.55; }
 .ktl .slot.paused { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 7px,var(--ktl-pause-b) 7px,var(--ktl-pause-b) 14px); }
-/* pause REASONS: one color grammar with the dashboards \u2014 planned = distinct
- * cool hues (indigo = screen asleep, violet-slate = system down, teal = app
- * stopped), unintended = amber, undeclared silence stays the red .gap.
- * Reason classes replace the hatch; .unintended overrides them all. */
-.ktl .slot.paused.r-screen-sleep { background:repeating-linear-gradient(45deg,var(--ktl-sleep-a),var(--ktl-sleep-a) 7px,var(--ktl-sleep-b) 7px,var(--ktl-sleep-b) 14px); }
-.ktl .slot.paused.r-system-down { background:repeating-linear-gradient(45deg,var(--ktl-down-a),var(--ktl-down-a) 7px,var(--ktl-down-b) 7px,var(--ktl-down-b) 14px); }
-.ktl .slot.paused.r-app-stopped { background:repeating-linear-gradient(45deg,var(--ktl-stopped-a),var(--ktl-stopped-a) 7px,var(--ktl-stopped-b) 7px,var(--ktl-stopped-b) 14px); }
-/* past the API's retention: nothing to show, and no state to hatch */
 .ktl.filterable [data-fk] { cursor:pointer; }
 .ktl.filterable [data-fk]:hover { text-decoration:underline; text-underline-offset:2px; }
 .ktl.filterable [data-fk]:focus-visible { outline:2px solid var(--ktl-accent); outline-offset:1px; }
 /* an inline header lets hover through to the image, but not its filters */
 .ktl.filterable .inline-head [data-fk] { pointer-events:auto; }
-.ktl .slot.paused.r-expired { background:var(--ktl-bg2); }
-.ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,var(--ktl-unint-a),var(--ktl-unint-a) 7px,var(--ktl-unint-b) 7px,var(--ktl-unint-b) 14px); }
 /* a pause from a state query brings its own colour (its value mapping) */
 .ktl .slot.paused.tinted { background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--ktl-band) 30%,transparent),color-mix(in srgb,var(--ktl-band) 30%,transparent) 7px,color-mix(in srgb,var(--ktl-band) 12%,transparent) 7px,color-mix(in srgb,var(--ktl-band) 12%,transparent) 14px); }
 /* hatch continuity: each slot is its own element, so a per-element gradient
@@ -1166,10 +1167,6 @@ var VTCore = (() => {
 .ktl .slot .band-label { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   font-size:10px; font-weight:700; letter-spacing:.06em; color:var(--ktl-dim);
   white-space:nowrap; overflow:hidden; pointer-events:none; }
-.ktl .slot.r-screen-sleep .band-label { color:var(--ktl-sleep); }
-.ktl .slot.r-system-down .band-label { color:var(--ktl-down); }
-.ktl .slot.r-app-stopped .band-label { color:var(--ktl-stopped); }
-.ktl .slot.unintended .band-label { color:var(--ktl-unint); }
 .ktl .slot.tinted .band-label { color:var(--ktl-band); }
 /* the ONE pending slot (its tick passed, frame in flight) pulses gently \u2014
  * in limbo, not offline. Everything further ahead is one inert .beyond
@@ -1200,10 +1197,6 @@ var VTCore = (() => {
                  color:var(--ktl-off); font-size:12px; text-align:center; padding:14px; }
 .ktl .mag.future { border-color:var(--ktl-dim); }
 .ktl .mag.future img { display:none; }
-.ktl .card-head .ft.paused.r-screen-sleep, .ktl .tile.paused.r-screen-sleep .t-off { color:var(--ktl-sleep); }
-.ktl .card-head .ft.paused.r-system-down, .ktl .tile.paused.r-system-down .t-off { color:var(--ktl-down); }
-.ktl .card-head .ft.paused.r-app-stopped, .ktl .tile.paused.r-app-stopped .t-off { color:var(--ktl-stopped); }
-.ktl .card-head .ft.paused.unintended, .ktl .tile.paused.unintended .t-off { color:var(--ktl-unint); }
 .ktl .card-head .ft.paused.tinted, .ktl .tile.paused.tinted .t-off { color:var(--ktl-band); }
 .ktl .mag.paused { border-color:var(--ktl-dim); }
 .ktl .mag.paused img { display:none; }
@@ -1405,7 +1398,7 @@ var VTCore = (() => {
               { since: P.from + SPAN * 0.2, variant: "lo", paused: true, reason: "screen-sleep", intended: false }
             ];
           }
-          return decl;
+          return labelPauses(decl);
         }));
       },
       frames(site, kiosk, from, to, step) {
@@ -2106,8 +2099,7 @@ var VTCore = (() => {
     card.className = "card" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
     const la = model.lastActive;
     const cad = s.cfg.showDetails && la ? '<span class="cad">\u23F1 ' + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + "</span>" : "";
-    card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", kiosk, !!s.cfg.onFilter) + ">" + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + // frame records from other sources may have no site: no empty chip then
-    (decl.site || decl.location ? '<span class="st"' + filterAttrs("site", decl.site, !!s.cfg.onFilter) + ">" + esc(decl.site) + (decl.site && decl.location ? " \xB7 " : "") + esc(decl.location || "") + "</span>" : "") + tagChips(decl, !!s.cfg.onFilter) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
+    card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", kiosk, !!s.cfg.onFilter) + ">" + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
     const strip = card.querySelector(".strip");
     if (s.hostWidth / model.slots.length >= 12) {
       strip.classList.add("sep");
@@ -2607,8 +2599,7 @@ var VTCore = (() => {
     const zone = zoneFor(decl, s.TZ, s.cfg.thumbTimes, s.PANEL_TT);
     const inline = s.cfg.headerMode === "inline" || s.cfg.headerMode === "inline-gradient";
     el.className = "tile" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
-    el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", decl.id, !!s.cfg.onFilter) + ">" + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + // frame records from other sources may have no site: no empty chip then
-    (decl.site || decl.location ? '<span class="st"' + filterAttrs("site", decl.site, !!s.cfg.onFilter) + ">" + esc(decl.site) + (decl.site && decl.location ? " \xB7 " : "") + esc(decl.location || "") + "</span>" : "") + tagChips(decl, !!s.cfg.onFilter) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
+    el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", decl.id, !!s.cfg.onFilter) + ">" + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
     attachZoneChip(zone, el);
     const rec = {
       decl,

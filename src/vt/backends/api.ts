@@ -1,4 +1,12 @@
+import { labelPauses } from './reasons';
 import type { ApiFetch, ApiResponse, Backend, Frame, SourceDecl } from '../types';
+
+/** A source as the reference worker's /sources declares it: the core's
+ * SourceDecl plus the worker's own hi-res cadence, which only this backend
+ * uses (to find a frame's hi-res preview for workers that don't send one). */
+export interface ApiSourceDecl extends SourceDecl {
+  hiCadence?: number;
+}
 
 /* <img> can't send headers, so a key-protected backend's image URLs carry
  * the viewer key as ?k= — but only bare URLs on the API's own origin. A URL
@@ -128,12 +136,13 @@ export function makeApiBackend(apiUrl?: string, apiKey?: string, apiFetch?: ApiF
   const get: ApiFetch = apiFetch ? (path) => apiFetch(path) : (path) => fetch(base + path, opts());
   const image = (u: string) => (apiFetch ? resolveFrameUrl(u, base) : imageUrlWithKey(u, base, key));
   // what /sources said about each source, for older workers' preview URLs
-  const decls = new Map<string, SourceDecl>();
+  const decls = new Map<string, ApiSourceDecl>();
   return {
     async kiosks(sites) {
       const r = await get(sourcesPath(sites));
       if (!r.ok) {throw await apiError('sources', r, !!apiFetch);}
-      const list = (await r.json()) as SourceDecl[];   // the API's contract; not validated
+      // the API's contract, not validated; its pause reasons get their labels here
+      const list = ((await r.json()) as ApiSourceDecl[]).map(labelPauses);
       for (const d of list) {decls.set(d.site + '/' + d.id, d);}
       return list;
     },
@@ -167,7 +176,7 @@ export function makeApiBackend(apiUrl?: string, apiKey?: string, apiFetch?: ApiF
  * key only on the API's origin (imageUrlWithKey). Site and id
  * are path segments, so they're encoded (#66). */
 export function hiUrlFor(
-  frame: Frame | null, decl: Pick<SourceDecl, 'site' | 'id' | 'hiCadence'>, apiUrl?: string, apiKey?: string
+  frame: Frame | null, decl: Pick<ApiSourceDecl, 'site' | 'id' | 'hiCadence'>, apiUrl?: string, apiKey?: string
 ): string | null {
   if (frame?.hi) {return frame.hi;}   // the source gave the preview itself
   if (!decl.hiCadence || !frame) {return null;}

@@ -38,17 +38,14 @@ export function erasFor(decl: Partial<Pick<SourceDecl, 'cadence' | 'history'>>, 
   return eras;
 }
 
-/* Presentation of a paused era/slot: the pause is the MECHANIC, the reason
- * carries the meaning ("screen asleep" is a world-state; "paused" is what the
- * uploader did about it). intended === false is the triage color: explained
- * but nobody asked for it (power-policy blank, display handoff failure). */
-export const PAUSE_CLASSES = ['paused', 'unintended', 'tinted', 'r-quiet', 'r-screen-sleep', 'r-app-stopped', 'r-system-down', 'r-expired'];
-/* clear every pause class off an element: PAUSE_CLASSES plus ANY r-<reason>.
- * pauseInfo passes unknown reasons through as classes, so no fixed list can
- * cover them, and a leftover one would outlive the band it came from. */
+/* Presentation of a paused era/slot. The core knows no reasons: a pause
+ * says what it is (its label) and how it looks (its colour), whether it came
+ * from a state query's value mappings or from a backend that translated its
+ * own vocabulary (backends/reasons.ts). Without either it's a plain PAUSED
+ * band in the neutral hatch. */
+export const PAUSE_CLASSES = ['paused', 'tinted'];
 export function clearPauseClasses(el: Element): void {
   el.classList.remove(...PAUSE_CLASSES);
-  for (const c of Array.from(el.classList)) {if (c.startsWith('r-')) {el.classList.remove(c);}}
   (el as HTMLElement).style?.removeProperty('--ktl-band');
 }
 /* a pause's classes and, for one that brings its own colour, that colour */
@@ -57,25 +54,10 @@ export function addPauseClasses(el: Element, x: PauseSubject | null | undefined)
   el.classList.add(...pi.classes);
   if (pi.color) {(el as HTMLElement).style.setProperty('--ktl-band', pi.color);}
 }
-/* what pauseInfo reads off a paused slot or era (null intent tolerated:
- * only intended === false is unintended) */
-export type PauseSubject = { paused?: boolean; reason?: string; intended?: boolean | null; label?: string; color?: string };
+/* what pauseInfo reads off a paused slot or era */
+export type PauseSubject = { paused?: boolean; label?: string; color?: string };
 export function pauseInfo(x: PauseSubject | null | undefined): { label: string; classes: string[]; color?: string } {
-  // a pause from a state query (#126) says what it is and how it looks
-  if (x && x.label) {
-    return { label: x.label, classes: x.color ? ['paused', 'tinted'] : ['paused'], ...(x.color ? { color: x.color } : {}) };
-  }
-  const r = x && x.reason;
-  const unintended = !!x && x.intended === false;
-  const label =
-    r === 'screen-sleep' ? (unintended ? 'SCREEN DARK (UNEXPECTED)' : 'SCREEN ASLEEP') :
-    r === 'system-down'  ? 'SYSTEM DOWN (PLANNED)' :
-    r === 'app-stopped'  ? 'APP STOPPED' :
-    r === 'quiet'        ? 'QUIET HOURS' :
-    // the API's retention cutoff: frames this old have been deleted
-    r === 'expired'      ? 'NO DATA' : 'PAUSED';
-  const classes = ['paused'];
-  if (r) {classes.push('r-' + String(r).replace(/[^\w-]/g, ''));}
-  if (unintended) {classes.push('unintended');}
-  return { label, classes };
+  const label = (x && x.label) || 'PAUSED';
+  const color = x && x.color;
+  return { label, classes: color ? ['paused', 'tinted'] : ['paused'], ...(color ? { color } : {}) };
 }

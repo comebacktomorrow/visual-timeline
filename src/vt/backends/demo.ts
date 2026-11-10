@@ -1,3 +1,4 @@
+import { labelPauses } from './reasons';
 import { fmtTime } from '../time/zones';
 import { zoneLabel } from '../zones/source';
 import type { Backend, Frame, RawAnnotation, SourceDecl, TimeWindow } from '../types';
@@ -86,7 +87,7 @@ export function makeBackend(P: TimeWindow, SPAN: number, tz: string): DemoBacken
               { since: P.from + SPAN * 0.2, variant: 'lo', paused: true, reason: 'screen-sleep', intended: false },
             ];
           }
-          return decl;
+          return labelPauses(decl);
         }));
     },
     frames(site, kiosk, from, to, step) {

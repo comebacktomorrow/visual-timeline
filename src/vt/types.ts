@@ -34,7 +34,6 @@ export interface SourceDecl {
   location?: string;
   tags?: Record<string, string>;
   cadence: number;
-  hiCadence?: number;
   history?: HistoryEvent[];
   timezone?: string; // only when the source declared one (X-Timezone)
 }
@@ -214,7 +213,10 @@ export interface MountConfig {
   onCursor?: (t: number) => void;              // timeline: every cursor move (host chrome)
   onZoom?: (from: number, to: number) => void; // timeline: drag-select released
   onShown?: (t: number | null) => void;        // grid: shown time changed (null = latest)
-  onFilter?: (key: string, value: string) => void; // a header chip was clicked: host, site or a tag key
+  onFilter?: (key: string, value: string, host?: string) => void; // a header chip was clicked: its key (host, site, location or a tag key), value, and the host whose header it is
+  /* which header chips, in order: "site", "location" or tag keys; unset: the
+   * site (with the location) and every tag */
+  chips?: string[];
 }
 
 /* What both mounts return. The timeline has isHovering, the grid

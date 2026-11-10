@@ -22,10 +22,6 @@ export const KTL_VAR_DEFAULTS: Record<string, string> = {
   '--ktl-shadow': '0 8px 32px rgba(0,0,0,.7)', '--ktl-pending': '#232830', '--ktl-scrim': 'rgba(0,0,0,.6)',
   '--ktl-gap-a': '#1b1215', '--ktl-gap-b': '#2a171b',
   '--ktl-pause-a': '#15171a', '--ktl-pause-b': '#232830', '--ktl-tpause-a': '#17191c', '--ktl-tpause-b': '#1d2024',
-  '--ktl-sleep-a': '#182a4e', '--ktl-sleep-b': '#223c6e', '--ktl-sleep': '#8fb0e8',
-  '--ktl-down-a': '#28204a', '--ktl-down-b': '#372c66', '--ktl-down': '#a897e0',
-  '--ktl-stopped-a': '#123832', '--ktl-stopped-b': '#1a4c44', '--ktl-stopped': '#6fc4b4',
-  '--ktl-unint-a': '#4a350e', '--ktl-unint-b': '#614614', '--ktl-unint': '#e8b155',
   '--ktl-ann': '#5794F2', '--ktl-ann-edge': '#0b0c0e',
   '--ktl-ann-region': 'rgba(87,148,242,.12)', '--ktl-ann-region-edge': 'rgba(87,148,242,.55)',
 };
@@ -128,21 +124,11 @@ const CSS = `
 .ktl .slot.gap.nodata { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 5px,var(--ktl-pause-b) 5px,var(--ktl-pause-b) 10px); }
 .ktl .slot.held img { opacity:.55; }
 .ktl .slot.paused { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 7px,var(--ktl-pause-b) 7px,var(--ktl-pause-b) 14px); }
-/* pause REASONS: one color grammar with the dashboards — planned = distinct
- * cool hues (indigo = screen asleep, violet-slate = system down, teal = app
- * stopped), unintended = amber, undeclared silence stays the red .gap.
- * Reason classes replace the hatch; .unintended overrides them all. */
-.ktl .slot.paused.r-screen-sleep { background:repeating-linear-gradient(45deg,var(--ktl-sleep-a),var(--ktl-sleep-a) 7px,var(--ktl-sleep-b) 7px,var(--ktl-sleep-b) 14px); }
-.ktl .slot.paused.r-system-down { background:repeating-linear-gradient(45deg,var(--ktl-down-a),var(--ktl-down-a) 7px,var(--ktl-down-b) 7px,var(--ktl-down-b) 14px); }
-.ktl .slot.paused.r-app-stopped { background:repeating-linear-gradient(45deg,var(--ktl-stopped-a),var(--ktl-stopped-a) 7px,var(--ktl-stopped-b) 7px,var(--ktl-stopped-b) 14px); }
-/* past the API's retention: nothing to show, and no state to hatch */
 .ktl.filterable [data-fk] { cursor:pointer; }
 .ktl.filterable [data-fk]:hover { text-decoration:underline; text-underline-offset:2px; }
 .ktl.filterable [data-fk]:focus-visible { outline:2px solid var(--ktl-accent); outline-offset:1px; }
 /* an inline header lets hover through to the image, but not its filters */
 .ktl.filterable .inline-head [data-fk] { pointer-events:auto; }
-.ktl .slot.paused.r-expired { background:var(--ktl-bg2); }
-.ktl .slot.paused.unintended { background:repeating-linear-gradient(45deg,var(--ktl-unint-a),var(--ktl-unint-a) 7px,var(--ktl-unint-b) 7px,var(--ktl-unint-b) 14px); }
 /* a pause from a state query brings its own colour (its value mapping) */
 .ktl .slot.paused.tinted { background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--ktl-band) 30%,transparent),color-mix(in srgb,var(--ktl-band) 30%,transparent) 7px,color-mix(in srgb,var(--ktl-band) 12%,transparent) 7px,color-mix(in srgb,var(--ktl-band) 12%,transparent) 14px); }
 /* hatch continuity: each slot is its own element, so a per-element gradient
@@ -157,10 +143,6 @@ const CSS = `
 .ktl .slot .band-label { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   font-size:10px; font-weight:700; letter-spacing:.06em; color:var(--ktl-dim);
   white-space:nowrap; overflow:hidden; pointer-events:none; }
-.ktl .slot.r-screen-sleep .band-label { color:var(--ktl-sleep); }
-.ktl .slot.r-system-down .band-label { color:var(--ktl-down); }
-.ktl .slot.r-app-stopped .band-label { color:var(--ktl-stopped); }
-.ktl .slot.unintended .band-label { color:var(--ktl-unint); }
 .ktl .slot.tinted .band-label { color:var(--ktl-band); }
 /* the ONE pending slot (its tick passed, frame in flight) pulses gently —
  * in limbo, not offline. Everything further ahead is one inert .beyond
@@ -191,10 +173,6 @@ const CSS = `
                  color:var(--ktl-off); font-size:12px; text-align:center; padding:14px; }
 .ktl .mag.future { border-color:var(--ktl-dim); }
 .ktl .mag.future img { display:none; }
-.ktl .card-head .ft.paused.r-screen-sleep, .ktl .tile.paused.r-screen-sleep .t-off { color:var(--ktl-sleep); }
-.ktl .card-head .ft.paused.r-system-down, .ktl .tile.paused.r-system-down .t-off { color:var(--ktl-down); }
-.ktl .card-head .ft.paused.r-app-stopped, .ktl .tile.paused.r-app-stopped .t-off { color:var(--ktl-stopped); }
-.ktl .card-head .ft.paused.unintended, .ktl .tile.paused.unintended .t-off { color:var(--ktl-unint); }
 .ktl .card-head .ft.paused.tinted, .ktl .tile.paused.tinted .t-off { color:var(--ktl-band); }
 .ktl .mag.paused { border-color:var(--ktl-dim); }
 .ktl .mag.paused img { display:none; }

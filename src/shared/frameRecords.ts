@@ -185,14 +185,59 @@ export function inferCadence(ts: number[]): number {
   return Math.max(1000, Math.round(median / 1000) * 1000);
 }
 
+/* An image column of a wide table: its first value is plainly an image
+ * (an http(s), data:image or blob URL, or Base64 image data), not just any
+ * string. */
+function looksLikeImages(f: Field): boolean {
+  if (f.type !== FieldType.string) {return false;}
+  const v = f.values.find((x) => typeof x === 'string' && x.trim());
+  if (typeof v !== 'string') {return false;}
+  const s = v.trim();
+  return /^(https?:\/\/|data:image\/|blob:)/i.test(s) || BASE64_TYPES.some(([magic]) => s.startsWith(magic));
+}
+
+/* A wide table (#126): one time field and an image column per host, as a
+ * SQL pivot returns them, with no image or host field. Each column is a
+ * host, named by its host label or its display name. Our "Per host" last
+ * frame table has a time field per host, so it isn't one. */
+function wideColumns(frame: DataFrame, roles: FieldRoles): Field[] {
+  if (roles.image || fieldNamed(frame, roles.host, ROLE_NAMES.host)) {return [];}
+  if (frame.fields.filter((f) => f.type === FieldType.time).length !== 1) {return [];}
+  return frame.fields.filter(looksLikeImages);
+}
+
 /** The frame records in a query result, one entry per host, or null when no
- * frame in it has an image field. */
+ * frame in it has an image field (or image columns, in a wide table). */
 export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldRoles = {}): HostRecords[] | null {
   const byHost = new Map<string, { id: string; site: string; frames: Map<number, Frame>; cadence?: number; meta: HostMeta }>();
   let found = false;
+  const recFor = (id: string, siteId: string) => {
+    const key = siteId + '/' + id;
+    let rec = byHost.get(key);
+    if (!rec) {
+      rec = { id, site: siteId, frames: new Map(), meta: {} };
+      byHost.set(key, rec);
+    }
+    return rec;
+  };
   for (const frame of series || []) {
     const image = fieldNamed(frame, roles.image, ROLE_NAMES.image);
     const time = timeField(frame, roles.time);
+    if (!image && time) {
+      // a wide table: a column per host
+      const cols = wideColumns(frame, roles);
+      if (cols.length) {found = true;}
+      for (const col of cols) {
+        const rec = recFor(col.labels?.host ?? getFieldDisplayName(col, frame), col.labels?.site ?? '');
+        addMeta(rec.meta, labelMeta(col.labels));
+        for (let i = 0; i < frame.length; i++) {
+          const ts = toMillis(time.values[i]);
+          const url = imageLocator(col.values[i]);
+          if (ts != null && url) {rec.frames.set(ts, { ts, url, source: rec.id });}
+        }
+      }
+      continue;
+    }
     if (!image || !time || image === time) {continue;}
     found = true;
     const host = fieldNamed(frame, roles.host, ROLE_NAMES.host);

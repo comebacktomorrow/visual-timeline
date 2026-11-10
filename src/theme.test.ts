@@ -32,7 +32,7 @@ describe('themeVars', () => {
 
   test('dark leaves the hand-tuned hatches and bands to the defaults', () => {
     const vars = themeVars(dark);
-    for (const k of ['--ktl-gap-a', '--ktl-pause-a', '--ktl-sleep-a', '--ktl-unint', '--ktl-pending', '--ktl-scrim']) {
+    for (const k of ['--ktl-gap-a', '--ktl-pause-a', '--ktl-pending', '--ktl-scrim']) {
       expect(vars).not.toHaveProperty(k);
     }
   });
@@ -57,9 +57,5 @@ describe('themeVars', () => {
     expect(ratio(vars['--ktl-text'], vars['--ktl-bg2'])).toBeGreaterThanOrEqual(4.5);
     expect(ratio(vars['--ktl-dim'], vars['--ktl-bg2'])).toBeGreaterThanOrEqual(4.5);
     expect(ratio(vars['--ktl-off'], vars['--ktl-bg'])).toBeGreaterThanOrEqual(4.5);
-    // pause-band labels and tile captions sit on the media background
-    for (const k of ['--ktl-sleep', '--ktl-down', '--ktl-stopped', '--ktl-unint']) {
-      expect(ratio(vars[k], vars['--ktl-media'])).toBeGreaterThanOrEqual(4.5);
-    }
   });
 });

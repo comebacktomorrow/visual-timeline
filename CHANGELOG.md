@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Header chips and what a click does** (#126). **Header chips** chooses
+  which chips follow a host's name, in order (`site`, `location`, tag keys);
+  **Chip click** chooses Filter (the ad hoc filter, as before), a **Chip
+  link** (with the chip's key, value and host, and dashboard variables), or
+  None.
+- **Wide tables** (#126): one time column and an image column per host, as a
+  SQL pivot returns them, draw a strip per column.
+- **The panel knows no pause reasons** (#126). A pause is drawn from its
+  label and colour alone; the reference worker's reasons (quiet hours,
+  screen asleep, and so on) are translated at the edges, by the standalone
+  viewer's API backend and our data source, in the colours they had. A CI
+  check keeps the worker's conventions out of the core and the panel.
 - **Missing frames options** (#126). Not every feed sends a frame on every
   tick, and the panel no longer has to assume it does. **Hold last frame**
   (Never, Always, or Up to a duration) shows a slot with no frame as the last
