@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../src/index.js';
 import { DatabaseSync } from 'node:sqlite';
+import { presignUrl } from '../src/presign.js';
 
 const MIN = 60e3;
 const NOW = Math.floor(Date.now() / MIN) * MIN;
@@ -589,4 +590,70 @@ test('retention removes pruned frames from the index too', async () => {
   assert.equal(DB.count("site = 'idx-r'"), 3);
   assert.equal((await uploadTo(env, 'idx-r', 'cam')).status, 200);
   assert.equal(DB.count("site = 'idx-r'"), 2, 'the two old frames gone from the index; the recent one and the upload kept');
+});
+
+/* ---------------- presigned R2 links and url_hi (#129) ---------------- */
+
+test('presignUrl reproduces AWS\'s own presigned URL example', async () => {
+  // "Authenticating Requests: Using Query Parameters (AWS Signature Version 4)", example GET Object
+  const url = await presignUrl(
+    { id: 'AKIAIOSFODNN7EXAMPLE', secret: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', region: 'us-east-1' },
+    'examplebucket.s3.amazonaws.com', '/test.txt', Date.UTC(2013, 4, 24), 86400);
+  assert.equal(new URL(url).searchParams.get('X-Amz-Signature'), 'aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404');
+});
+
+const presignEnv = (extra = {}) => ({
+  IMG_DELIVERY: 'presigned', R2_ACCESS_KEY_ID: 'akid', R2_SECRET_ACCESS_KEY: 'secret',
+  R2_S3_ENDPOINT: 'https://acct.r2.cloudflarestorage.com/', R2_BUCKET: 'frames-bucket', ...extra,
+});
+
+test('with IMG_DELIVERY=presigned, /frames hands out R2 links that stay the same within a 6-hour block', async () => {
+  const FRAMES = indexedR2(keysFor('site-a', 'cam-1', MIN, 1), { 'site-a': { 'cam-1': { cadence: MIN, hiCadence: 5 * MIN } } });
+  const env = { FRAMES, ...presignEnv() };
+  const path = `/frames?site=site-a&source=cam-1&from=${NOW - 3600e3}&to=${NOW}&step=${MIN}`;
+  const a = await (await call(path, env)).json();
+  const b = await (await call(path, env)).json();
+  assert.deepEqual(a, b);
+  const u = new URL(a[0].url);
+  assert.equal(u.host, 'acct.r2.cloudflarestorage.com');
+  assert.equal(u.pathname, `/frames-bucket/lo/site-a/cam-1/${a[0].ts}.jpg`);
+  assert.equal(u.searchParams.get('X-Amz-Expires'), String(30 * 3600));
+  assert.match(u.searchParams.get('X-Amz-Credential'), /^akid\/\d{8}\/auto\/s3\/aws4_request$/);
+  // signed as of the block's start, so the URL holds for the whole block
+  const block = Math.floor(Date.now() / (6 * 3600e3)) * 6 * 3600e3;
+  assert.equal(u.searchParams.get('X-Amz-Date'), new Date(block).toISOString().replace(/[-:]|\.\d{3}/g, ''));
+  // the hi frame's link is signed for its own key
+  const hi = new URL(a[0].url_hi);
+  assert.equal(hi.pathname, `/frames-bucket/hi/site-a/cam-1/${Math.round(a[0].ts / (5 * MIN)) * 5 * MIN}.jpg`);
+  assert.notEqual(hi.searchParams.get('X-Amz-Signature'), u.searchParams.get('X-Amz-Signature'));
+});
+
+test('presigned links in the all-sources /frames, and only for sources with a hi variant get url_hi', async () => {
+  const FRAMES = indexedR2([...keysFor('site-a', 'cam-1', MIN, 1), ...keysFor('site-a', 'cam-2', MIN, 1)],
+    { 'site-a': { 'cam-1': { cadence: MIN, hiCadence: 5 * MIN }, 'cam-2': { cadence: MIN } } });
+  const rows = await (await call(`/frames?from=${NOW - 3600e3}&to=${NOW}&step=${MIN}`, { FRAMES, ...presignEnv() })).json();
+  assert.ok(rows.every((r) => r.url.startsWith('https://acct.r2.cloudflarestorage.com/frames-bucket/lo/')));
+  assert.ok(rows.filter((r) => r.source === 'cam-1').every((r) => r.url_hi));
+  assert.ok(rows.filter((r) => r.source === 'cam-2').every((r) => !('url_hi' in r)));
+});
+
+test('worker-served URLs also carry url_hi, under the same signature as the frame', async () => {
+  const FRAMES = indexedR2(keysFor('site-a', 'cam-1', MIN, 1), { 'site-a': { 'cam-1': { cadence: MIN, hiCadence: 5 * MIN } } });
+  const rows = await (await call(`/frames?site=site-a&source=cam-1&from=${NOW - 3600e3}&to=${NOW}&step=${MIN}`, { FRAMES, IMG_SIGN_KEY: 'k' })).json();
+  const lo = new URL(rows[0].url), hi = new URL(rows[0].url_hi);
+  assert.equal(hi.pathname, `/frame/hi/site-a/cam-1/${Math.round(rows[0].ts / (5 * MIN)) * 5 * MIN}.jpg`);
+  assert.equal(hi.search, lo.search);
+});
+
+test('presigned delivery falls back to worker URLs, and says so, without its settings; IMG_BASE wins over it', async () => {
+  const FRAMES = indexedR2(keysFor('site-a', 'cam-1', MIN, 1), { 'site-a': { 'cam-1': { cadence: MIN } } });
+  const path = `/frames?site=site-a&source=cam-1&from=${NOW - 3600e3}&to=${NOW}&step=${MIN}`;
+  const errs = [];
+  const orig = console.error; console.error = (m) => errs.push(m);
+  let rows;
+  try { rows = await (await call(path, { FRAMES, ...presignEnv({ R2_SECRET_ACCESS_KEY: '' }) })).json(); } finally { console.error = orig; }
+  assert.ok(rows[0].url.startsWith('https://w.example/frame/lo/'));
+  assert.ok(errs.some((e) => e.includes('IMG_DELIVERY=presigned needs')), 'says what is missing (once per isolate)');
+  const pub = await (await call(path, { FRAMES, ...presignEnv({ IMG_BASE: 'https://img.example' }) })).json();
+  assert.ok(pub[0].url.startsWith('https://img.example/frame/lo/'));
 });

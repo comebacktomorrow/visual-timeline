@@ -131,8 +131,15 @@ its URLs should keep the signature stable over a block of hours, as the
 reference worker does (see `IMG_SIGN_KEY` below).
 
 ```json
-[{"site":"site-a","source":"source-1","ts":1783488360000,"url":"https://…/frame/lo/site-a/source-1/1783488360000.jpg"}]
+[{"site":"site-a","source":"source-1","ts":1783488360000,"url":"https://…/frame/lo/site-a/source-1/1783488360000.jpg",
+  "url_hi":"https://…/frame/hi/site-a/source-1/1783488300000.jpg"}]
 ```
+
+`url_hi`, present when the source uploads a hi variant, is the hi-res frame
+nearest this one on the source's `hiCadence`, for a larger preview. It isn't
+guaranteed to exist (a hi upload can fail), so clients fall back to `url`
+when it doesn't load. Clients that predate it build the same URL themselves
+(below).
 
 Clients load each `url` exactly as returned, with one exception: a client
 holding a viewer key appends `?k=<key>` to a bare URL (no query string) on
@@ -208,19 +215,30 @@ frames and answers
 Call again with that `cursor` until `done` is `true`. Indexing a frame twice
 is harmless. Without `DB` it's a 400.
 
+### Presigned R2 links (reference worker, optional)
+
+With `IMG_DELIVERY=presigned`, `/frames` hands out R2 presigned links
+(`https://<account>.r2.cloudflarestorage.com/<bucket>/<key>?X-Amz-…`) for
+`url` and `url_hi`, so browsers load images straight from R2: one R2 read per
+image view and no worker request. Each link is signed for its own object as of
+the start of the current 6-hour block and lasts 30 hours, so the same frame
+has the same URL for a whole block (browsers cache by URL) and every link
+stays valid for at least a day. `IMG_BASE`, when set, wins: public URLs need
+no signing. Setup is in [worker/README.md](../worker/README.md).
+
 ### `GET /frame/{variant}/{site}/{source}/{ts}.jpg`
 
 The frame image. Served with `Cache-Control: public, max-age=31536000,
 immutable` + ETag. Missing frame → 404 (that's a gap, render it as one).
 
-Clients build **hi-variant URLs** themselves for the click-in preview, from
-the lo frame URL that `/frames` returned. They keep everything before
-`/frame/`, swap in `/frame/hi/{site}/{source}/{ts}.jpg` (site and source
-URL-encoded, `ts` snapped to the source's `hiCadence`) and keep the lo URL's
-query string. Only when a lo URL has no `/frame/` path do they fall back to
-the API's base URL (adding `?k=` for a viewer key). So a backend that wants
-hi previews, including behind the Grafana data source where clients have no
-base URL, must:
+**Preview URLs.** A backend should return each frame's preview as `url_hi`
+(above). The standalone viewer uses it as given. For a backend that doesn't,
+it builds the **hi-variant URL** itself from the lo frame URL: it keeps
+everything before `/frame/`, swaps in `/frame/hi/{site}/{source}/{ts}.jpg`
+(site and source URL-encoded, `ts` snapped to the source's `hiCadence`) and
+keeps the lo URL's query string. Only when a lo URL has no `/frame/` path does
+it fall back to the API's base URL (adding `?k=` for a viewer key). So a
+backend without `url_hi` that wants hi previews must:
 
 - return image URLs whose path ends in `/frame/{variant}/{site}/{source}/{ts}.jpg`;
 - serve the hi variant under the same base;

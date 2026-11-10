@@ -179,6 +179,11 @@
               "selector": "url",
               "text": "image",
               "type": "string"
+            },
+            {
+              "selector": "url_hi",
+              "text": "image_hi",
+              "type": "string"
             }
           ],
           "filters": [],
@@ -240,6 +245,11 @@
             {
               "selector": "url",
               "text": "image",
+              "type": "string"
+            },
+            {
+              "selector": "url_hi",
+              "text": "image_hi",
               "type": "string"
             }
           ],

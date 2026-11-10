@@ -42,15 +42,15 @@ calls, or `PUBLIC_URL`) must be one the browsers can reach.
 One query per panel, for every host of the selected sites. In a **Visual
 Timeline** panel's Query tab, choose the Infinity data source and set:
 
-| Setting | Value                                                                                                                           |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Type    | JSON                                                                                                                            |
-| Parser  | Backend                                                                                                                         |
-| Source  | URL                                                                                                                             |
-| Format  | Table                                                                                                                           |
-| Method  | GET                                                                                                                             |
-| URL     | `https://frames.example.com/frames?site=${site:csv}&sources=${host:csv}&from=${__from}&to=${__to}&step=${__interval_ms}`        |
-| Columns | `ts` as **time** (Timestamp, epoch ms); `source` as **host** (String); `site` as **site** (String); `url` as **image** (String) |
+| Setting | Value                                                                                                                                                                                      |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Type    | JSON                                                                                                                                                                                       |
+| Parser  | Backend                                                                                                                                                                                    |
+| Source  | URL                                                                                                                                                                                        |
+| Format  | Table                                                                                                                                                                                      |
+| Method  | GET                                                                                                                                                                                        |
+| URL     | `https://frames.example.com/frames?site=${site:csv}&sources=${host:csv}&from=${__from}&to=${__to}&step=${__interval_ms}`                                                                   |
+| Columns | `ts` as **time** (Timestamp, epoch ms); `source` as **host** (String); `site` as **site** (String); `url` as **image** (String); `url_hi` as **image_hi** (String), for the larger preview |
 
 Without Site and Host variables, leave out `site=` and `sources=`: the worker
 then answers for every source the token may read. The worker answers each

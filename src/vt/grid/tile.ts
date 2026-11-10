@@ -1,6 +1,5 @@
 import { clearPauseClasses, pauseInfo } from '../model/eras';
 import { ghostFor } from '../model/slots';
-import { hiUrlFor } from '../backends/api';
 import { esc, filterAttrs, headTitle, tagChips } from '../dom/html';
 import { q } from '../ui/wrapper';
 import { attachZoneChip, dressZoneChip, zoneChip } from '../zones/chip';
@@ -38,7 +37,7 @@ export function buildTile(s: GridState, decl: SourceDecl, model: SourceModel): T
   };
   el.addEventListener('click', e => {
     if (rec.shown && rec.shownExpected) {s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, null, rec.shownExpected, rec.tt);}
-    else if (rec.shown) {s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, s.cfg.apiUrl, s.cfg.apiKey), null, rec.tt);}
+    else if (rec.shown) {s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, rec.shown.hi ?? null, null, rec.tt);}
   });
   q(s.wrap, '.grid').appendChild(el);
   return rec;

@@ -830,24 +830,37 @@ var VTCore = (() => {
       signal: typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(15e3) : void 0
     });
     const get = apiFetch ? (path) => apiFetch(path) : (path) => fetch(base + path, opts());
+    const image = (u) => apiFetch ? resolveFrameUrl(u, base) : imageUrlWithKey(u, base, key);
+    const decls = /* @__PURE__ */ new Map();
     return {
       async kiosks(sites) {
         const r = await get(sourcesPath(sites));
         if (!r.ok) {
           throw await apiError("sources", r, !!apiFetch);
         }
-        return r.json();
+        const list = await r.json();
+        for (const d of list) {
+          decls.set(d.site + "/" + d.id, d);
+        }
+        return list;
       },
       async frames(site, kiosk, from, to, step) {
         const r = await get(framesPath(site, kiosk, from, to, step));
         if (!r.ok) {
           throw await apiError("frames", r, !!apiFetch);
         }
-        const frames = await r.json();
-        for (const f of frames) {
-          f.url = apiFetch ? resolveFrameUrl(f.url, base) : imageUrlWithKey(f.url, base, key);
+        const rows = await r.json();
+        const decl = decls.get(site + "/" + kiosk);
+        for (const f of rows) {
+          f.url = image(f.url);
+          if (f.url_hi) {
+            f.hi = image(f.url_hi);
+          } else if (decl) {
+            f.hi = hiUrlFor(f, decl, base, key) ?? void 0;
+          }
+          delete f.url_hi;
         }
-        return frames;
+        return rows;
       }
     };
   }
@@ -2081,7 +2094,7 @@ var VTCore = (() => {
       const f = sl && sl.frame;
       const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
       if (f) {
-        s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, hiUrlFor(f, decl, s.cfg.apiUrl, s.cfg.apiKey), null, tt);
+        s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt);
       } else if (g) {
         s.pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl.ts, tt);
       }
@@ -2522,7 +2535,7 @@ var VTCore = (() => {
       if (rec.shown && rec.shownExpected) {
         s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, null, rec.shownExpected, rec.tt);
       } else if (rec.shown) {
-        s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, hiUrlFor(rec.shown, decl, s.cfg.apiUrl, s.cfg.apiKey), null, rec.tt);
+        s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, rec.shown.hi ?? null, null, rec.tt);
       }
     });
     q(s.wrap, ".grid").appendChild(el);

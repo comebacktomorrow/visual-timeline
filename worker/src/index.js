@@ -34,11 +34,20 @@
  * every zoom level and viewer share. POST /reindex (a site's upload token)
  * fills the table from what R2 already holds. Without DB, /frames lists R2.
  *
+ * Image delivery: /frames hands out image URLs on this worker (/frame/…,
+ * signed when IMG_SIGN_KEY is set), on IMG_BASE (a public bucket domain), or,
+ * with IMG_DELIVERY=presigned and an R2 API token, as R2 presigned links
+ * that browsers load straight from R2 without a worker request (#129).
+ * Rows carry url_hi, the hi-res frame nearest each one, when the source
+ * uploads a hi variant.
+ *
  * R2 layout: {variant}/{site}/{source}/{epoch-ms}.jpg  (epoch cadence-aligned),
  *            index.json — source registry {sites: {site: {source: {cadence,
  *            hiCadence, location, timezone, history: [{since, variant, cadence}]}}}},
  *            updated only when a declaration changes (etag-conditional, verified).
  */
+
+import { presignUrl, rfc3986 } from './presign.js';
 
 const FRAME_CACHE = 'public, max-age=31536000, immutable';
 // signed image URLs change only when their expiry block does (handleFrames)
@@ -184,6 +193,50 @@ async function signScope(env, site, source, exp) {
   let hex = '';
   for (const b of new Uint8Array(mac)) {hex += b.toString(16).padStart(2, '0');}
   return hex;
+}
+
+/* ---------------- R2 presigned links (optional, #129) ---------------- */
+
+/* IMG_DELIVERY=presigned hands out SigV4 query-signed GET links to R2's S3
+ * endpoint, so each image view is one R2 read and no worker request. Needs
+ * an R2 API token with read access to the bucket (R2_ACCESS_KEY_ID,
+ * R2_SECRET_ACCESS_KEY), the account's S3 endpoint (R2_S3_ENDPOINT,
+ * https://<account>.r2.cloudflarestorage.com) and the bucket's name
+ * (R2_BUCKET). A link is signed as of the start of its 6-hour block and
+ * lasts 30 hours, so every response within a block hands out the same URL
+ * (browsers cache by URL) and each stays valid for at least a day. */
+const PRESIGN_SECONDS = 30 * 3600;
+/* signed URLs are kept per block, so a refresh signs only frames it hasn't seen */
+const presigned = new Map();
+const PRESIGNED_MAX = 50000;
+let presignWarned = false;
+function presignConfig(env) {
+  if ((env.IMG_DELIVERY || '').toLowerCase() !== 'presigned' || env.IMG_BASE) {return null;}
+  const { R2_ACCESS_KEY_ID: id, R2_SECRET_ACCESS_KEY: secret, R2_S3_ENDPOINT: endpoint, R2_BUCKET: bucket } = env;
+  if (!id || !secret || !endpoint || !bucket) {
+    if (!presignWarned) {
+      presignWarned = true;
+      console.error(JSON.stringify({ msg: 'IMG_DELIVERY=presigned needs R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_S3_ENDPOINT and R2_BUCKET; serving images from the worker' }));
+    }
+    return null;
+  }
+  let base = endpoint;
+  while (base.endsWith('/')) {base = base.slice(0, -1);}   // a loop, not a regex: see imageBase
+  return { id, secret, endpoint: base, bucket, region: 'auto' };
+}
+
+/* An R2 object's presigned link, path-style on the S3 endpoint. */
+async function presignedFrameUrl(cfg, key) {
+  const at = Math.floor(Date.now() / SIG_BLOCK_MS) * SIG_BLOCK_MS;
+  const memo = `${at}|${cfg.bucket}|${key}`;
+  const hit = presigned.get(memo);
+  if (hit) {return hit;}
+  const u = new URL(cfg.endpoint);
+  const path = '/' + [cfg.bucket, ...key.split('/')].map(rfc3986).join('/');
+  const url = await presignUrl(cfg, u.host, path, at, PRESIGN_SECONDS);
+  if (presigned.size >= PRESIGNED_MAX) {presigned.clear();}
+  presigned.set(memo, url);
+  return url;
 }
 
 /* A key's value only if the object itself has it. Parsed JSON inherits from
@@ -715,6 +768,32 @@ function imageBase(env, url) {
   return env.IMG_BASE || publicUrl || url.origin;
 }
 
+/* Makes a source's image URLs for one response: presigned R2 links, or
+ * URLs on this worker or IMG_BASE (with the source's signature, if any). */
+async function imageUrls(env, url, site, source) {
+  const cfg = presignConfig(env);
+  if (cfg) {return (variant, ts) => presignedFrameUrl(cfg, `${variant}/${site}/${source}/${ts}.jpg`);}
+  const base = imageBase(env, url);
+  const auth = await imageAuth(env, site, source);   // one signature covers both variants
+  return async (variant, ts) => `${base}/frame/${variant}/${site}/${source}/${ts}.jpg${auth}`;
+}
+
+/* The rows for a source's frames. A lo row carries url_hi, the hi frame
+ * nearest it on the source's hi cadence, when it uploads a hi variant: that
+ * frame isn't guaranteed to exist (an upload can fail), so viewers fall back
+ * to the lo image when it doesn't load. */
+async function frameRows(env, url, variant, site, source, times, hiCadence) {
+  if (!times.length) {return [];}
+  const make = await imageUrls(env, url, site, source);
+  const rows = [];
+  for (const ts of times) {
+    const row = { site, source, ts, url: await make(variant, ts) };
+    if (variant === 'lo' && hiCadence >= 1000) {row.url_hi = await make('hi', Math.round(ts / hiCadence) * hiCadence);}
+    rows.push(row);
+  }
+  return rows;
+}
+
 async function handleFrames(url, env, ctx, viewer) {
   const source = (url.searchParams.get('source') || url.searchParams.get('kiosk') || '').toLowerCase();
   if (!source) {return handleFramesAll(url, env, ctx, viewer);}
@@ -748,9 +827,8 @@ async function handleFrames(url, env, ctx, viewer) {
   if (truncatedAfter !== null) {
     console.warn(JSON.stringify({ msg: 'frames scan truncated', site, source, variant, from, to, step, truncatedAfter }));
   }
-  const base = imageBase(env, url);
-  const auth = await imageAuth(env, site, source);
-  const frames = ts.map((t) => ({ site, source, ts: t, url: `${base}/frame/${variant}/${site}/${source}/${t}.jpg${auth}` }));
+  const meta = own(own((await readIndex(url, env, ctx)).sites, site), source);
+  const frames = await frameRows(env, url, variant, site, source, ts, Number(meta && meta.hiCadence));
 
   const live = to > Date.now() - step;
   const res = json(frames, 200, {
@@ -797,7 +875,7 @@ async function handleFramesAll(url, env, ctx, viewer) {
       // still if the window would need more than MAX_BUCKETS of them
       const per = Math.max(step, (to - from) / MAX_BUCKETS);
       const s = Math.ceil(per / cadence) * cadence;
-      jobs.push({ site, source, step: s, from: Math.floor(from / s) * s, to: Math.ceil(to / s) * s });
+      jobs.push({ site, source, step: s, from: Math.floor(from / s) * s, to: Math.ceil(to / s) * s, hiCadence: Number(meta.hiCadence) });
     }
   }
 
@@ -814,7 +892,6 @@ async function handleFramesAll(url, env, ctx, viewer) {
   if (hit) {return hit;}
 
   const budget = { pages: MAX_LIST_PAGES_ALL };
-  const base = imageBase(env, url);
   const results = new Array(jobs.length);
   let next = 0;
   const drain = async () => {
@@ -822,8 +899,7 @@ async function handleFramesAll(url, env, ctx, viewer) {
       const i = next++;
       const j = jobs[i];
       const scan = await framesOf(env, ctx, url.origin, variant, j.site, j.source, j.from, j.to, j.step, budget);
-      const auth = scan.ts.length ? await imageAuth(env, j.site, j.source) : '';
-      results[i] = { ...scan, rows: scan.ts.map((t) => ({ site: j.site, source: j.source, ts: t, url: `${base}/frame/${variant}/${j.site}/${j.source}/${t}.jpg${auth}` })) };
+      results[i] = { ...scan, rows: await frameRows(env, url, variant, j.site, j.source, scan.ts, j.hiCadence) };
     }
   };
   await Promise.all(Array.from({ length: Math.min(SCAN_CONCURRENCY, jobs.length) }, drain));

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Reference worker: optional presigned R2 links** (#129). With
+  `IMG_DELIVERY=presigned` and a read-only R2 API token, `/frames` hands out
+  R2 presigned links, so browsers load images straight from R2: no worker
+  request per image view. Links are signed per 6-hour block, so they stay
+  cacheable. Setup is in worker/README.md.
+- **Preview links are given, not guessed.** `/frames` rows carry `url_hi`, the
+  hi-res frame nearest each one, when the source uploads a hi variant. The
+  timeline and grid now use only a frame's own preview link (a preview field,
+  or `url_hi`); rewriting `/frame/lo/` into `/frame/hi/` moved into the
+  standalone viewer's API backend, for older workers. The Infinity recipe and
+  the self-hosted dashboard read `url_hi` as `image_hi`.
 - **Reference worker: an optional frame index in D1** (#44). With a D1
   database bound as `DB`, uploads also record each frame in a table, and
   `/frames` reads it instead of listing R2: no scan budget or truncation, and
