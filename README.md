@@ -34,9 +34,12 @@ The app is enabled on install and has no pages of its own.
 
 ## What it shows
 
-Every host declares how often it promises a frame (its _cadence_).
-The panel treats that promise as a heartbeat, so the _absence_ of a frame
-carries meaning:
+Each host is a strip of its frames over time. By default the panel treats a
+host's typical spacing between frames (its _cadence_, from a cadence field or
+the frames themselves) as a heartbeat, so the _absence_ of a frame carries
+meaning. For feeds that don't send a frame on every tick, the **Missing
+frames** options hold the last frame instead, or draw gaps as neutral "no
+data" rather than offline.
 
 - **Offline gaps at their true width.** A missing frame is drawn as a hatched
   gap on the timeline, as wide as the outage really was, and as an offline
@@ -45,9 +48,12 @@ carries meaning:
 - **Eras.** When a host changes its cadence (slowing down for quiet hours,
   say), the timeline renders each era on its own grid, so a slow stretch isn't
   a wall of false gaps.
-- **Declared pauses.** A host that goes quiet on purpose says so before it
-  stops, and the pause shows as neutral silence. A host that crashes without
-  saying anything still renders as offline.
+- **Pauses.** A host that goes quiet on purpose (from a state query whose
+  field is set to **Pauses frames**) shows the pause as a band, labelled and
+  coloured by its value mappings, instead of as missing frames. A host that
+  stops without anything saying so still renders as offline.
+- **States.** Other states from a state query, ones that don't stop the
+  frames, are drawn on the host's strip like region annotations.
 - **The pending slot.** When a frame's expected time has passed but it hasn't
   arrived yet, the slot shows the last known frame as a pulsing ghost rather
   than a fault. A missed heartbeat still turns red on schedule.
@@ -173,6 +179,10 @@ or Base64 image data. The panel never signs or proxies images itself.
 | Cadence       | `cadence` (milliseconds)                                           | optional; otherwise the typical gap between frames |
 | Host details  | `timezone`, `location`, `tags`; or labels on the image field       | optional, shown in the host's header               |
 
+A **wide table** works too, as a SQL pivot returns it: one time column and an
+image column per host, each column named for its host (or carrying a `host`
+label).
+
 When your fields have other names, set them under **Frame fields** in the
 panel options. Two more kinds of query can join the frames in a panel: **host
 state** (rows of time, host and a `state` field, labelled and coloured by its
@@ -266,19 +276,21 @@ Which hosts a panel shows is set in its Query tab (see
 [Filter by site, host and tag](#filter-by-site-host-and-tag)). These options
 set how it draws them.
 
-| Option                      | What it does                                                                                                                                                                                                    |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Display mode**            | Timeline or Multiview grid.                                                                                                                                                                                     |
-| **Follow shared crosshair** | Grid mode only. Show the frame at the crosshair time from other panels; off shows the most recent frame in range.                                                                                               |
-| **Show annotations**        | Timeline mode only. Draw the dashboard's annotations on the timeline (on by default).                                                                                                                           |
-| **Annotation lanes**        | Timeline mode, with annotations on. A single shared lane above the axis, or one lane per host carrying its own events plus the global ones.                                                                     |
-| **Hide hosts with no data** | Omit hosts with no frames in the current time range instead of showing them as offline.                                                                                                                         |
-| **Hold last frame**         | For feeds that don't send a frame on every tick (motion-triggered cameras, irregular uploads): a slot with no frame shows the last one, dimmed. Never (the default), Always, or Up to a duration such as `10m`. |
-| **Gaps mean**               | Offline (the default): a host should send a frame every tick, so a missing one is red. No data: nothing says it should, so a gap is neutral.                                                                    |
-| **Show cadence details**    | Show each host's capture cadence and display resolution (for tuning).                                                                                                                                           |
-| **Header**                  | Bar (a header row per host), Inline (the header floats over the image), or Inline with a gradient behind them for busy frames.                                                                                  |
-| **Thumbnail times**         | Dashboard time, or Host local time: a host that declares a time zone shows its frame times in that zone, marked with the offset, e.g. `07:31:00 (+3h)`. The axis and crosshair stay in dashboard time.          |
-| **Image fit**               | Fit letterboxes the whole frame; Fill crops to cover. Never stretches.                                                                                                                                          |
+| Option                      | What it does                                                                                                                                                                                                                |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Display mode**            | Timeline or Multiview grid.                                                                                                                                                                                                 |
+| **Follow shared crosshair** | Grid mode only. Show the frame at the crosshair time from other panels; off shows the most recent frame in range.                                                                                                           |
+| **Show annotations**        | Timeline mode only. Draw the dashboard's annotations on the timeline (on by default).                                                                                                                                       |
+| **Annotation lanes**        | Timeline mode, with annotations on. A single shared lane above the axis, or one lane per host carrying its own events plus the global ones.                                                                                 |
+| **Hide hosts with no data** | Omit hosts with no frames in the current time range instead of showing them as offline.                                                                                                                                     |
+| **Header chips**            | Which chips follow each host's name, in order: `site`, `location`, or tag keys (for example `site, env`). Empty: the site and location, and every tag.                                                                      |
+| **Chip click**              | What clicking a host or chip does: add an ad hoc filter (where the data source supports one), follow a **Chip link** (a URL with `${__chip.key}`, `${__chip.value}` and `${__host}`, plus dashboard variables), or nothing. |
+| **Hold last frame**         | For feeds that don't send a frame on every tick (motion-triggered cameras, irregular uploads): a slot with no frame shows the last one, dimmed. Never (the default), Always, or Up to a duration such as `10m`.             |
+| **Gaps mean**               | Offline (the default): a host should send a frame every tick, so a missing one is red. No data: nothing says it should, so a gap is neutral.                                                                                |
+| **Show cadence details**    | Show each host's capture cadence and display resolution (for tuning).                                                                                                                                                       |
+| **Header**                  | Bar (a header row per host), Inline (the header floats over the image), or Inline with a gradient behind them for busy frames.                                                                                              |
+| **Thumbnail times**         | Dashboard time, or Host local time: a host that declares a time zone shows its frame times in that zone, marked with the offset, e.g. `07:31:00 (+3h)`. The axis and crosshair stay in dashboard time.                      |
+| **Image fit**               | Fit letterboxes the whole frame; Fill crops to cover. Never stretches.                                                                                                                                                      |
 
 ## Self-hosting (experimental)
 
