@@ -3,7 +3,8 @@
 Visual Timeline 2.0 panels read frames from any data source: rows with a time,
 an image and a host. The Visual Timeline data source's **API mode** (an API
 URL and a viewer token, read through a proxy route) is gone; the data source
-now offers Demo data, with folder and bucket listings to follow (#125).
+now reads a web folder or a public bucket of timestamped images (the HTTP
+folder connection, [FOLDERS.md](FOLDERS.md)), or offers Demo data.
 
 Dashboards whose panels query a 1.x **Visual Timeline API** data source
 (an API URL set, Demo data off) need moving. Dashboards on Demo data keep

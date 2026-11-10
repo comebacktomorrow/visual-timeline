@@ -113,8 +113,8 @@ option can show its frame times in its own local time.
 ## Try it with no backend
 
 1. Add a **Visual Timeline** data source (**Connections → Data sources →
-   Add new data source**), turn on its **Demo data** switch and click **Save &
-   test**.
+   Add new data source**), choose **Demo data** as its **Connection** and
+   click **Save & test**.
 2. On the data source's **Dashboards** tab, import the **Visual Timeline**
    dashboard: a timeline, two multiview grids and a table of each host's
    last frame, with Site and Host dropdowns and a filter bar.
