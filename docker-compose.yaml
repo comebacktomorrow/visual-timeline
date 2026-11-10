@@ -29,6 +29,10 @@ services:
         condition: service_completed_successfully
       vt-folder:
         condition: service_started
+      vt-postgres:
+        condition: service_started
+      vt-loki-seed:
+        condition: service_completed_successfully
 
   # The HTTP folder fixture (#125): seeded frames with nginx's JSON and HTML
   # listings, for the provisioned "Visual Timeline (folder, …)" data sources
@@ -41,3 +45,32 @@ services:
     volumes:
       - ./tests/folder-fixture/frames:/srv/frames:ro
       - ./tests/folder-fixture/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+  # Existing data sources holding the same frames (M5): rows in PostgreSQL and
+  # log lines in Loki, each pointing at the folder's images above. Generated
+  # with the folder by tests/folder-fixture/generate.mjs. Throwaway test
+  # credentials; nothing is published.
+  vt-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: grafana
+      POSTGRES_PASSWORD: grafana
+      POSTGRES_DB: frames
+    volumes:
+      - ./tests/folder-fixture/postgres.sql:/docker-entrypoint-initdb.d/frames.sql:ro
+
+  vt-loki:
+    image: grafana/loki:3.4.2
+    command: -config.file=/etc/loki/local.yaml
+    volumes:
+      - ./tests/folder-fixture/loki.yaml:/etc/loki/local.yaml:ro
+
+  # pushes the fixture's log lines, as the last half hour's, once Loki is
+  # ready (tests/folder-fixture/seed-loki.mjs), then exits
+  vt-loki-seed:
+    image: node:24-alpine
+    depends_on:
+      - vt-loki
+    volumes:
+      - ./tests/folder-fixture:/fixture:ro
+    command: node /fixture/seed-loki.mjs

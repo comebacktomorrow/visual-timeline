@@ -1,0 +1,92 @@
+{
+ "streams": [
+  {
+   "stream": {
+    "job": "cameras",
+    "host": "cam-a"
+   },
+   "values": [
+    [
+     "1767261600000000000",
+     "http://localhost:8098/html/cam-a/2026-01-01/100000_lo.svg"
+    ],
+    [
+     "1767261787000000000",
+     "http://localhost:8098/html/cam-a/2026-01-01/100307_lo.svg"
+    ],
+    [
+     "1767261973000000000",
+     "http://localhost:8098/html/cam-a/2026-01-01/100613_lo.svg"
+    ],
+    [
+     "1767262144000000000",
+     "http://localhost:8098/html/cam-a/2026-01-01/100904_lo.svg"
+    ],
+    [
+     "1767262331000000000",
+     "http://localhost:8098/html/cam-a/2026-01-01/101211_lo.svg"
+    ],
+    [
+     "1767262502000000000",
+     "http://localhost:8098/html/cam-a/2026-01-01/101502_lo.svg"
+    ],
+    [
+     "1767262689000000000",
+     "http://localhost:8098/html/cam-a/2026-01-01/101809_lo.svg"
+    ],
+    [
+     "1767262875000000000",
+     "http://localhost:8098/html/cam-a/2026-01-01/102115_lo.svg"
+    ],
+    [
+     "1767263046000000000",
+     "http://localhost:8098/html/cam-a/2026-01-01/102406_lo.svg"
+    ],
+    [
+     "1767263221000000000",
+     "http://localhost:8098/html/cam-a/2026-01-01/102701_lo.svg"
+    ]
+   ]
+  },
+  {
+   "stream": {
+    "job": "cameras",
+    "host": "cam-b"
+   },
+   "values": [
+    [
+     "1767261600000000000",
+     "http://localhost:8098/html/cam-b/2026-01-01/100000_lo.svg"
+    ],
+    [
+     "1767261787000000000",
+     "http://localhost:8098/html/cam-b/2026-01-01/100307_lo.svg"
+    ],
+    [
+     "1767261973000000000",
+     "http://localhost:8098/html/cam-b/2026-01-01/100613_lo.svg"
+    ],
+    [
+     "1767262144000000000",
+     "http://localhost:8098/html/cam-b/2026-01-01/100904_lo.svg"
+    ],
+    [
+     "1767262689000000000",
+     "http://localhost:8098/html/cam-b/2026-01-01/101809_lo.svg"
+    ],
+    [
+     "1767262875000000000",
+     "http://localhost:8098/html/cam-b/2026-01-01/102115_lo.svg"
+    ],
+    [
+     "1767263046000000000",
+     "http://localhost:8098/html/cam-b/2026-01-01/102406_lo.svg"
+    ],
+    [
+     "1767263221000000000",
+     "http://localhost:8098/html/cam-b/2026-01-01/102701_lo.svg"
+    ]
+   ]
+  }
+ ]
+}

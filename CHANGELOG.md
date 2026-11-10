@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Tested with existing data sources** (M5). The dev stack and e2e now
+  include PostgreSQL (a table of frames and one of states, read with plain
+  SQL) and Loki (log lines that are image URLs, with the Extract fields
+  transformation), alongside TestData and the HTTP folder.
+  [docs/DATA-SOURCES.md](docs/DATA-SOURCES.md) has a recipe for each, and
+  says what is tested, checked by hand, or only expected to work.
+- The panel finds the image field by its content when no field is named
+  for it: the one text field whose values are plainly images, in a frame with
+  a host (a Loki log line, say).
+- Hosts are drawn in a stable order, by site and then name, whatever order
+  the rows came in.
 - **Frames from a web folder or a public bucket** (#125). The Visual Timeline
   data source's new **HTTP folder** connection reads timestamped images where
   they already land: a web server's folder (HTML or JSON listings: Apache,

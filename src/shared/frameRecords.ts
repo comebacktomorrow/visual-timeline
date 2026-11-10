@@ -210,6 +210,16 @@ function wideColumns(frame: DataFrame, roles: FieldRoles): Field[] {
   return frame.fields.filter(looksLikeImages);
 }
 
+/* With no field named for the image: the one text field whose values are
+ * plainly images, in a frame that names its host (a Loki log line that is an
+ * image's URL, with the host extracted from its labels). Not when several
+ * fields could be the image (that's a wide table, or ambiguous). */
+function imageByContent(frame: DataFrame, roles: FieldRoles): Field | undefined {
+  if (roles.image || !fieldNamed(frame, roles.host, ROLE_NAMES.host)) {return undefined;}
+  const candidates = frame.fields.filter(looksLikeImages);
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
 /** The frame records in a query result, one entry per host, or null when no
  * frame in it has an image field (or image columns, in a wide table). */
 export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldRoles = {}): HostRecords[] | null {
@@ -225,7 +235,7 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
     return rec;
   };
   for (const frame of series || []) {
-    const image = fieldNamed(frame, roles.image, ROLE_NAMES.image);
+    const image = fieldNamed(frame, roles.image, ROLE_NAMES.image) ?? imageByContent(frame, roles);
     const time = timeField(frame, roles.time);
     if (!image && time) {
       // a wide table: a column per host
@@ -277,7 +287,10 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
     }
   }
   if (!found) {return null;}
-  return [...byHost.values()].map((r) => {
+  // hosts in a stable order, whatever order the rows came in (two hosts' frames
+  // at the same time can come either way round)
+  const hosts = [...byHost.values()].sort((a, b) => a.site.localeCompare(b.site) || a.id.localeCompare(b.id));
+  return hosts.map((r) => {
     const frames = [...r.frames.values()].sort((a, b) => a.ts - b.ts);
     const history = paceHistory(r.paces);
     // the pace in force at the end of the window
