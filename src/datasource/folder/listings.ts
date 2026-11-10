@@ -37,9 +37,10 @@ export function parseJsonListing(text: string): Listing {
   return out;
 }
 
-/* entity decoding for the few that appear in hrefs */
-const unescapeHtml = (s: string) =>
-  s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+/* entity decoding for the few that appear in hrefs and S3 keys, in one pass:
+ * decoding &amp; first would turn "&amp;lt;" into "<", not "&lt;" */
+const ENTITIES: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&apos;': "'" };
+const unescapeHtml = (s: string) => s.replace(/&(?:amp|lt|gt|quot|#39|apos);/g, (e) => ENTITIES[e]);
 
 /** A folder's HTML listing: its links into the same folder. Sort links
  * ("?C=N;O=D"), the parent ("../"), absolute links and other sites' are
@@ -64,8 +65,7 @@ export function parseHtmlListing(text: string): Listing {
   return out;
 }
 
-const xmlText = (s: string) =>
-  s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+const xmlText = unescapeHtml;
 
 /** One page of ListObjectsV2 (list-type=2, delimiter "/") for `prefix`:
  * CommonPrefixes are folders and Contents keys files, both relative to the

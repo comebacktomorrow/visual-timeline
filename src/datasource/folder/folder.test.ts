@@ -64,6 +64,8 @@ describe('listings', () => {
     const nginx = '<a href="../">../</a>\n<a href="cam-1/">cam-1/</a>  10-Nov-2026 10:00 -\n<a href="https://elsewhere/x.jpg">x</a>';
     expect(parseHtmlListing(nginx)).toEqual({ dirs: ['cam-1'], files: [] });
     expect(parseHtmlListing('<li><a href="a%20b.jpg">a b.jpg</a></li><li><a href=\'./c.jpg\'>c</a></li>')).toEqual({ dirs: [], files: ['a b.jpg', 'c.jpg'] });
+    // entities decode once: "&amp;lt;" is the text "&lt;", not "<"
+    expect(parseHtmlListing('<a href="x&amp;lt;1.jpg">x</a><a href="a&amp;b.jpg">a</a>')).toEqual({ dirs: [], files: ['x&lt;1.jpg', 'a&b.jpg'] });
   });
 
   test('S3 ListObjectsV2: prefixes are folders, keys files, and a truncated page has a token', () => {
