@@ -195,7 +195,7 @@ export function lastFramesByHost(sources: SourceDecl[], last: Array<LastFrame | 
 
 /** Frame records as rows the panel reads like any source's (#126): one row
  * per frame, with its time, host, site and image locator. */
-export function recordsToFrame(rows: Array<{ ts: number; host: string; site: string; url: string; cadence?: number }>, refId: string): DataFrame {
+export function recordsToFrame(rows: Array<{ ts: number; host: string; site: string; url: string; hi?: string; cadence?: number }>, refId: string): DataFrame {
   return createDataFrame({
     refId,
     name: 'frames',
@@ -204,6 +204,8 @@ export function recordsToFrame(rows: Array<{ ts: number; host: string; site: str
       { name: 'host', type: FieldType.string, values: rows.map((r) => r.host) },
       { name: 'site', type: FieldType.string, values: rows.map((r) => r.site) },
       { name: 'image', type: FieldType.string, values: rows.map((r) => r.url) },
+      // the larger image for the click-in preview, when there is one
+      ...(rows.some((r) => r.hi) ? [{ name: 'image_hi', type: FieldType.string, values: rows.map((r) => r.hi ?? null) }] : []),
       // the pace in force at each frame: where it changes, the panel draws eras
       ...(rows.some((r) => r.cadence) ? [{ name: 'cadence', type: FieldType.number, values: rows.map((r) => r.cadence ?? null), config: { unit: 'ms' } }] : []),
     ],

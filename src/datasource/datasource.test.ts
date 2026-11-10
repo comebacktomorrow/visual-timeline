@@ -24,10 +24,10 @@ describe('testDatasource', () => {
     });
   });
 
-  test('without Demo data there is nothing to read yet, and it says how panels read frames', async () => {
+  test('without a connection there is nothing to read, and it says how panels read frames', async () => {
     const r = await new VisualTimelineDataSource(settings(false)).testDatasource();
     expect(r.status).toBe('error');
-    expect(r.message).toMatch(/turn on Demo data/);
+    expect(r.message).toMatch(/Choose a connection/);
     expect(r.message).toMatch(/time, image and host/);
   });
 });
@@ -216,5 +216,71 @@ describe('variables and ad hoc filters', () => {
       ],
     });
     expect(values.map((v: any) => v.text)).toEqual(['prod', 'test']);
+  });
+});
+
+/* ---------------- the HTTP folder connection (#125) ---------------- */
+
+describe('HTTP folder', () => {
+  const MIN = 60_000;
+  const T0 = Date.UTC(2026, 0, 1, 10);
+  const name = (ts: number, v: string) => new Date(ts).toISOString().replace(/[-:]/g, '').slice(9, 15) + '_' + v + '.svg';
+  // two hosts, a frame a minute for 10 minutes in lo and hi; cam-b misses 10:04
+  const files = (host: string) => Array.from({ length: 10 }, (_, k) => T0 + k * MIN)
+    .filter((ts) => !(host === 'cam-b' && ts === T0 + 4 * MIN))
+    .flatMap((ts) => [name(ts, 'lo'), name(ts, 'hi')]);
+  const tree: Record<string, string[]> = {
+    '/': ['cam-a/', 'cam-b/'],
+    '/cam-a/2026-01-01/': files('cam-a'),
+    '/cam-b/2026-01-01/': files('cam-b'),
+  };
+  const html = (names: string[]) => names.map((n) => `<a href="${n}">${n}</a>`).join('\n');
+  const fetchText = jest.fn(async (path: string) => (tree[path] ? { status: 200, text: html(tree[path]) } : { status: 404, text: '' }));
+  const folderSettings = (extra: Record<string, unknown> = {}) => ({
+    ...settings(false),
+    jsonData: { connection: 'folder', folderUrl: 'http://folder.internal/frames/', imageUrl: 'https://img.example/frames', listing: 'html',
+      template: '{host}/{YYYY}-{MM}-{DD}/{HH}{mm}{ss}_{variant}.svg', smallVariant: 'lo', largeVariant: 'hi', ...extra },
+  }) as any;
+  const win = { from: { valueOf: () => T0 }, to: { valueOf: () => T0 + 9 * MIN } };
+
+  test('answers with its hosts and their frames as rows, small images with the large as preview', async () => {
+    const ds = new VisualTimelineDataSource(folderSettings(), (v) => v, fetchText);
+    const res = await ds.query({ targets: [{ refId: 'A' }], range: win, scopedVars: {}, maxDataPoints: 1000 } as any);
+    expect(res.data).toHaveLength(2);
+    expect(hostsOf(res.data[0])).toEqual(['cam-a', 'cam-b']);
+    const rows = res.data[1];
+    const col = (n: string) => rows.fields.find((f: any) => f.name === n).values;
+    expect(col('host').filter((h: string) => h === 'cam-b')).toHaveLength(9);
+    expect(col('image')[0]).toBe('https://img.example/frames/cam-a/2026-01-01/100000_lo.svg');
+    expect(col('image_hi')[0]).toBe('https://img.example/frames/cam-a/2026-01-01/100000_hi.svg');
+    // only the day folders the range touches were listed, through the proxy route's paths
+    expect([...new Set(fetchText.mock.calls.map((c) => c[0]))].sort()).toEqual(['/', '/cam-a/2026-01-01/', '/cam-b/2026-01-01/']);
+  });
+
+  test('variables and the host filter use the hosts it finds', async () => {
+    const ds = new VisualTimelineDataSource(folderSettings(), (v) => v, fetchText);
+    // a variable lists the hosts with frames in the dashboard's range
+    expect((await ds.metricFindQuery('hosts', { range: win as any })).map((v) => v.text)).toEqual(['cam-a', 'cam-b']);
+    const res = await ds.query({ targets: [{ refId: 'A', hosts: 'cam-b' }], range: win, scopedVars: {} } as any);
+    expect(hostsOf(res.data[0])).toEqual(['cam-b']);
+  });
+
+  test('Save & test reads the last day and says what it found, or why not', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(T0 + 9 * MIN);
+    try {
+      const ok = await new VisualTimelineDataSource(folderSettings(), (v) => v, fetchText).testDatasource();
+      expect(ok).toEqual({ status: 'success', message: 'Found 19 frames from 2 hosts in the last 24 hours.' });
+      const none = await new VisualTimelineDataSource(folderSettings({ template: '{host}/{epoch}.jpg' }), (v) => v, fetchText).testDatasource();
+      expect(none.status).toBe('error');
+      expect(none.message).toMatch(/no file in the last 24 hours matched/);
+      const bad = await new VisualTimelineDataSource(folderSettings({ template: '{YYYY}.jpg' }), (v) => v, fetchText).testDatasource();
+      expect(bad).toEqual({ status: 'error', message: 'The path template needs {host}' });
+      const down = await new VisualTimelineDataSource(folderSettings(), (v) => v, async () => ({ status: 502, text: '' })).testDatasource();
+      expect(down.message).toMatch(/HTTP 502 through Grafana's proxy/);
+      const unset = await new VisualTimelineDataSource(folderSettings({ folderUrl: '' }), (v) => v, fetchText).testDatasource();
+      expect(unset.message).toBe('Set the folder URL');
+    } finally {
+      jest.restoreAllMocks();
+    }
   });
 });

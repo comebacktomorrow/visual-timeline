@@ -19,8 +19,10 @@ The plugin is a Grafana app that installs two plugins:
 
 - the **Visual Timeline panel**, which draws the timeline and the multiview
   grid;
-- the **Visual Timeline data source**, whose **Demo data** runs everything on
-  built-in demo hosts and frames. It supplies the Site and Host dashboard
+- the **Visual Timeline data source**, which reads timestamped images from a
+  web folder or a public bucket (the **HTTP folder** connection:
+  [docs/FOLDERS.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/FOLDERS.md)),
+  or runs everything on built-in **Demo data**. It supplies the Site and Host dashboard
   variables, the ad hoc filter bar and annotations, and can answer with each
   host's last frame and status, for a stock Table, Canvas or Stat panel.
 

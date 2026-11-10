@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Frames from a web folder or a public bucket** (#125). The Visual Timeline
+  data source's new **HTTP folder** connection reads timestamped images where
+  they already land: a web server's folder (HTML or JSON listings: Apache,
+  nginx, Caddy, lighttpd, Python, IIS) or a public S3-compatible bucket. A
+  path template says where frames live, with time, host, site and size
+  placeholders anywhere in the path (file names included); date folders are
+  built for the time range rather than listed. Listings go through Grafana's
+  server with an optional bearer token; images load straight from the folder,
+  small ones in the strips and large ones in the preview. Variables and the
+  filter bar list the hosts with frames in the dashboard's range. Settings
+  and examples (NASA SDO, NOAA GOES, USGS river cameras) are in
+  [docs/FOLDERS.md](docs/FOLDERS.md).
 - **Eras from any query, and no special path for our data source** (#126).
   A `cadence` field whose value changes over time now draws each pace on its
   own grid, as declared pace changes did, for anyone's data. The panel no
