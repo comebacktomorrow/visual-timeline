@@ -31,12 +31,13 @@ The worker itself needs no change beyond deploying a version with the
 every-source `/frames` (2.0's): uploaders, tokens, signing and the standalone
 viewer stay as they were. On 1.x workers, `/frames` without `source=` is a 400.
 
-## What 2.0 doesn't carry over yet
+## Pauses and host details
 
 Declared pauses come back through a second Infinity query, for the worker's
-`/states`, with a field override: INFINITY.md, "Pauses". A host's own time
-zone, tags and location aren't shown yet: INFINITY.md, "What it doesn't
-carry yet".
+`/states`, with a field override (INFINITY.md, "Pauses"), and each host's
+time zone, location and tags through a third, for `/sources` (INFINITY.md,
+"Host details"). The ad hoc filter bar doesn't carry over: Infinity doesn't
+offer one.
 
 ## The self-hosted stack
 

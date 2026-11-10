@@ -103,11 +103,28 @@ normal state). Leave **Pauses frames** off for a state that runs alongside
 the frames: it's drawn as a region annotation on the host's strip, labelled
 and coloured by its mapping.
 
-## What it doesn't carry yet
+## Host details
 
-- A host's own time zone, tags and location aren't read from Infinity.
-- There is no ad hoc filter bar (Infinity doesn't offer one); the Site and
-  Host variables filter instead.
+A third, optional query for the worker's `/sources` is a **host table**: rows
+naming each host with what the worker knows about it. The panel then shows
+each host's own time zone, location and tags in its header, and draws hosts
+that sent no frames in the window, instead of leaving them out.
+
+| Setting | Value                                                                                                                                                                                            |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| URL     | `https://frames.example.com/sources?site=${site:csv}`                                                                                                                                            |
+| Columns | `id` as **host** (String); `site` as **site** (String); `timezone` as **timezone** (String); `location` as **location** (String); `tags` as **tags** (String); `cadence` as **cadence** (Number) |
+
+Any data source can be a host table: rows with a host (`host` or `id`) and any
+of `timezone`, `location`, `tags` (an object, its JSON, or `k=v, k=v`) and
+`cadence` (milliseconds), with no image or state. Frame rows can carry the
+same fields themselves, and labels on the image field (Loki's or
+Prometheus's, say) become tags.
+
+## What it doesn't carry
+
+There is no ad hoc filter bar (Infinity doesn't offer one); the Site and Host
+variables filter instead.
 
 ## Limits
 

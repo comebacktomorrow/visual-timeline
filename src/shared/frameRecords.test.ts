@@ -1,6 +1,6 @@
 import { createDataFrame, FieldType } from '@grafana/data';
 
-import { framesPerStep, imageLocator, inferCadence, recordsBackend, recordsFromSeries } from './frameRecords';
+import { framesPerStep, hostTableFromSeries, imageLocator, inferCadence, recordsBackend, recordsFromSeries } from './frameRecords';
 
 const MIN = 60_000;
 const T0 = Date.UTC(2026, 10, 10, 10);
@@ -178,5 +178,66 @@ describe('recordsBackend', () => {
     expect(decl).toMatchObject({ id: 'cam-1', site: 'home', timezone: 'Australia/Brisbane', tags: { env: 'prod' } });
     expect(decl.history).toHaveLength(1);
     expect((await b.frames('home', 'cam-1', T0, T0, MIN)).map((f) => f.url)).toEqual(['https://img/1.jpg']);
+  });
+});
+
+describe('host metadata from any query (M4c)', () => {
+  test('time zone, location and tags from fields on the frame rows; labels as tags', () => {
+    const f = createDataFrame({
+      fields: [
+        { name: 'time', type: FieldType.time, values: [T0, T0 + MIN] },
+        { name: 'image', type: FieldType.string, values: ['https://img/1.jpg', 'https://img/2.jpg'],
+          labels: { host: 'lobby', site: 'hq', job: 'cams', __name__: 'x' } },
+        { name: 'timezone', type: FieldType.string, values: ['', 'Australia/Sydney'] },
+        { name: 'location', type: FieldType.string, values: ['level 2', 'level 2'] },
+        { name: 'tags', type: FieldType.string, values: ['env=prod, room=lobby', '{"room":"foyer"}'] },
+      ],
+    });
+    const [h] = recordsFromSeries([f])!;
+    expect(h).toMatchObject({ id: 'lobby', site: 'hq', timezone: 'Australia/Sydney', location: 'level 2',
+      tags: { job: 'cams', env: 'prod', room: 'foyer' } });
+  });
+
+  test('a host table names hosts and what is known about them, and its hosts are drawn without frames', async () => {
+    const hostTable = createDataFrame({
+      fields: [
+        { name: 'id', type: FieldType.string, values: ['cam-1', 'cam-9'] },
+        { name: 'site', type: FieldType.string, values: ['home', 'home'] },
+        { name: 'timezone', type: FieldType.string, values: ['Asia/Tokyo', ''] },
+        { name: 'cadence', type: FieldType.number, values: [300000, null] },
+        { name: 'tags', type: FieldType.other, values: [{ env: 'prod' }, null] },
+      ],
+    });
+    const known = hostTableFromSeries([hostTable]);
+    expect(known).toEqual([
+      { id: 'cam-1', site: 'home', cadence: 300000, timezone: 'Asia/Tokyo', tags: { env: 'prod' } },
+      { id: 'cam-9', site: 'home' },
+    ]);
+    const rows = recordsFromSeries([table([[T0, 'cam-1', 'https://img/1.jpg', 'home']], { location: ['porch'] })])!;
+    const b = recordsBackend(rows, known);
+    const decls = await b.kiosks(null);
+    // the table wins on what it says; the rows fill in the rest
+    expect(decls[0]).toMatchObject({ id: 'cam-1', timezone: 'Asia/Tokyo', cadence: 300000, tags: { env: 'prod' } });
+    // a host only the table knows of: drawn, at the default cadence
+    expect(decls[1]).toMatchObject({ id: 'cam-9', site: 'home', cadence: 60_000 });
+  });
+
+  test('frames of images, state queries and our own source list are not host tables', () => {
+    const images = table([[T0, 'cam', 'https://img/1.jpg']], { timezone: ['UTC'] });
+    const state = createDataFrame({ fields: [
+      { name: 'host', type: FieldType.string, values: ['cam'] },
+      { name: 'state', type: FieldType.string, values: ['down'] },
+      { name: 'location', type: FieldType.string, values: ['x'] },
+    ] });
+    const ours = createDataFrame({ meta: { custom: { visualTimeline: { uid: 'x' } } }, fields: [
+      { name: 'host', type: FieldType.string, values: ['cam'] },
+      { name: 'timezone', type: FieldType.string, values: ['UTC'] },
+    ] });
+    expect(hostTableFromSeries([images, state, ours])).toEqual([]);
+  });
+
+  test('a host two lists name is drawn once, the first list winning', async () => {
+    const b = recordsBackend([], [{ id: 'a', site: 's', cadence: MIN, timezone: 'UTC' }, { id: 'a', site: 's', cadence: 2 * MIN }]);
+    expect(await b.kiosks(null)).toEqual([{ id: 'a', site: 's', cadence: MIN, timezone: 'UTC' }]);
   });
 });

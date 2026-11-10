@@ -171,9 +171,16 @@ or Base64 image data. The panel never signs or proxies images itself.
 | Site          | `site`, or a `site` label                                          | optional                                           |
 | Preview image | `image_hi`, `preview`                                              | optional, for the click-in preview                 |
 | Cadence       | `cadence` (milliseconds)                                           | optional; otherwise the typical gap between frames |
+| Host details  | `timezone`, `location`, `tags`; or labels on the image field       | optional, shown in the host's header               |
 
 When your fields have other names, set them under **Frame fields** in the
-panel options. The provisioned dashboard **Visual Timeline — any data
+panel options. Two more kinds of query can join the frames in a panel: **host
+state** (rows of time, host and a `state` field, labelled and coloured by its
+value mappings; set **Pauses frames** on the field for states during which a
+host sends nothing), and a **host table** (rows of host and its details, with
+no image or state, so hosts that sent no frames still show). The details are in
+[docs/INFINITY.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/INFINITY.md),
+whose recipes work for any data source. The provisioned dashboard **Visual Timeline — any data
 source** shows a timeline and a grid drawn from TestData CSV rows.
 
 ## Show the last frame in a table
