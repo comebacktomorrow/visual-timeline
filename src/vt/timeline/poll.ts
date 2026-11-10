@@ -1,4 +1,4 @@
-import { missedHeartbeat } from '../model/slots';
+import { gapClass, holdFrames, missedHeartbeat } from '../model/slots';
 import { dressGhost } from '../ui/ghost';
 import type { TickSlot } from '../types';
 import { ruleBeyond } from './axis';
@@ -75,7 +75,9 @@ async function pollOnce(s: TimelineState): Promise<void> {
     if (!la) {continue;}                    // tail era is a declared pause
     let lastTs = s.P.from;
     for (let i = c.model.slots.length - 1; i >= 0; i--) {
-      if (c.model.slots[i].frame) { lastTs = c.model.slots[i].ts; break; }
+      // a held slot shows an earlier frame: ask from that frame's own time
+      const fr = c.model.slots[i].frame;
+      if (fr) { lastTs = c.model.slots[i].held ? fr.ts : c.model.slots[i].ts; break; }
     }
     let fresh;
     try {
@@ -95,8 +97,9 @@ async function pollOnce(s: TimelineState): Promise<void> {
       if (slot.frame && f.ts <= slot.frame.ts) {continue;}
       slot.frame = f;
       slot.future = false;
+      slot.held = false;
       // every model slot has its element (buildCard, or carved above)
-      slot.el!.classList.remove('gap', 'future');
+      slot.el!.classList.remove('gap', 'nodata', 'future', 'held');
       // the real frame replaces the ghost in place: a snap, no fade
       let img = slot.el!.querySelector('img');
       if (!img) { img = document.createElement('img'); slot.el!.appendChild(img); }
@@ -109,8 +112,18 @@ async function pollOnce(s: TimelineState): Promise<void> {
     for (const sl of c.model.slots) {
       if (missedHeartbeat(sl, overdue)) {
         (sl as TickSlot).future = false;   // only a pending tick slot misses a heartbeat
-        if (sl.el) { sl.el.classList.remove('future'); sl.el.classList.add('gap'); }
+        if (sl.el) { sl.el.classList.remove('future'); sl.el.classList.add(...gapClass(s.cfg.missingFrames).trim().split(' ')); }
       }
+    }
+    // a slot that missed its frame shows the last one, when the panel holds frames
+    for (const sl of holdFrames(c.model.slots, s.cfg.holdFrames ?? 0)) {
+      if (!sl.el || !sl.frame) {continue;}
+      sl.el.classList.remove('gap', 'nodata');
+      sl.el.classList.add('held');
+      let img = sl.el.querySelector('img');
+      if (!img) { img = document.createElement('img'); sl.el.appendChild(img); }
+      img.classList.remove('ghost');
+      img.src = sl.frame.url; img.alt = k.id + ' ' + c.tt.time(sl.frame.ts) + c.tt.sfx(sl.frame.ts);
     }
     // one pass covers every path above: newly carved pending slots
     // pick up a ghost, a missed heartbeat drops it

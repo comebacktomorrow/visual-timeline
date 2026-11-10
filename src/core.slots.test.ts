@@ -1,4 +1,5 @@
 import { buildSourceModel, ghostFor, missedHeartbeat, slotClass } from './core';
+import { holdFrames } from './vt/model/slots';
 
 /* How a source's window becomes slots, and how each slot is classified:
  * frame, offline ("gap"), pending ("future"), declared pause, or the
@@ -567,3 +568,42 @@ describe('a long pause that is still open', () => {
   });
 });
 
+
+describe('missing frames: holding the last frame and neutral gaps (#126)', () => {
+  // frames at minutes 0, 1, 2, then nothing until 9, then 10: an irregular feed
+  const have = [0, 1, 2, 9, 10].map((m) => T0 + m * MIN);
+  const P = { from: T0, to: T0 + 10 * MIN };
+
+  test('without a hold, every missing minute is a gap', async () => {
+    now = T0 + 60 * MIN;
+    const m = await build(decl(), P, backendWith(have), BUDGET);
+    expect(view(m.slots).filter(([, c]) => c === 'gap').map(([t]) => t)).toEqual([3, 4, 5, 6, 7, 8]);
+  });
+
+  test('held up to 4 minutes: the last frame fills the slots after it, then gaps', async () => {
+    now = T0 + 60 * MIN;
+    const m = await buildSourceModel(decl() as any, P, backendWith(have) as any, BUDGET, 4 * MIN);
+    expect(view(m.slots).map(([t, c]) => `${t}:${c || 'frame'}`)).toEqual([
+      '0:frame', '1:frame', '2:frame', '3:held', '4:held', '5:held', '6:held', '7:gap', '8:gap', '9:frame', '10:frame',
+    ]);
+    // a held slot shows the frame it holds, with that frame's own time
+    expect(m.slotAt(T0 + 5 * MIN)!.frame!.ts).toBe(T0 + 2 * MIN);
+  });
+
+  test('held always: no gaps after the first frame; a pause band ends the hold', () => {
+    const slots: any[] = [
+      { ts: 0, span: 1, frame: { ts: 0, url: 'a' }, future: false },
+      { ts: 1, span: 1, frame: null, future: false },
+      { ts: 2, span: 1, paused: true },
+      { ts: 3, span: 1, frame: null, future: false },
+      { ts: 4, span: 1, frame: null, future: true },
+    ];
+    expect(holdFrames(slots, Infinity)).toHaveLength(1);
+    expect(slots.map((sl) => slotClass(sl).trim())).toEqual(['', 'held', 'paused', 'gap', 'future']);
+  });
+
+  test("'nodata' gaps are the neutral kind", () => {
+    expect(slotClass({ frame: null, future: false }, 'nodata')).toBe(' gap nodata');
+    expect(slotClass({ frame: null, future: false })).toBe(' gap');
+  });
+});

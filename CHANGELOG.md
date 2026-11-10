@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Missing frames options** (#126). Not every feed sends a frame on every
+  tick, and the panel no longer has to assume it does. **Hold last frame**
+  (Never, Always, or Up to a duration) shows a slot with no frame as the last
+  frame before it, dimmed, as Grafana's "Connect null values" does for
+  lines. **Gaps mean** (Offline or No data) chooses whether a gap is the red
+  offline hatch or a neutral "no frame" one, in the strip, magnifier, header
+  and grid tile. The defaults keep the heartbeat behaviour.
 - **Host details from any query** (#126, M4c). Each host's time zone,
   location and tags come from fields on its frame rows (`timezone`,
   `location`, `tags`), from labels on the image field (as tags), or from a

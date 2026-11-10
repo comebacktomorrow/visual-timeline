@@ -106,6 +106,7 @@ const CSS = `
 .ktl .st.tz .tzo { flex:0 0 auto; white-space:pre; }
 .ktl .card-head .ft { font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex-shrink:1; }
 .ktl .card-head .ft.stale { color:var(--ktl-off); }
+.ktl .card-head .ft.stale.nodata { color:var(--ktl-dim); }
 .ktl .card-head .cad { margin-left:auto; font-size:10px; color:var(--ktl-dim); }
 .ktl .strip { flex:1 1 auto; min-height:0; position:relative; display:flex; align-items:stretch;
               cursor:crosshair; background:var(--ktl-media); }
@@ -122,6 +123,10 @@ const CSS = `
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
 .ktl .slot img:not([src]) { visibility:hidden; }   /* queued (ui/imageQueue.ts): no alt text or broken-image icon meanwhile */
 .ktl .slot.gap { background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px); }
+/* a gap that only means "no frame" (missingFrames: nodata): the neutral
+ * hatch, not the red one; a held slot shows the last frame, dimmed */
+.ktl .slot.gap.nodata { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 5px,var(--ktl-pause-b) 5px,var(--ktl-pause-b) 10px); }
+.ktl .slot.held img { opacity:.55; }
 .ktl .slot.paused { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 7px,var(--ktl-pause-b) 7px,var(--ktl-pause-b) 14px); }
 /* pause REASONS: one color grammar with the dashboards — planned = distinct
  * cool hues (indigo = screen asleep, violet-slate = system down, teal = app
@@ -214,6 +219,8 @@ const CSS = `
 .ktl.fill .tile .t-img img { object-fit:cover; }
 .ktl .mag.gap { border-color:var(--ktl-off);
                 background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px), var(--ktl-mag-bg); }
+.ktl .mag.gap.nodata { border-color:var(--ktl-dim);
+                background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 5px,var(--ktl-pause-b) 5px,var(--ktl-pause-b) 10px), var(--ktl-mag-bg); }
 .ktl .mag.gap img { display:none; }
 /* The caption spans the magnifier, centred on it. A narrow magnifier (a
  * portrait source's is ~30px wide) wrapped and clipped even a time with a
@@ -288,6 +295,8 @@ const CSS = `
                     flex-direction:column; gap:2px; color:var(--ktl-off); font-weight:700; text-align:center;
                     background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px); }
 .ktl .tile.offline { border-color:var(--ktl-off); }
+.ktl .tile.offline.nodata { border-color:var(--ktl-border); }
+.ktl .tile.offline.nodata .t-off { color:var(--ktl-dim); }
 .ktl .tile.offline .t-off { display:flex; }
 .ktl .tile.offline img, .ktl .tile.offline .t-ts { display:none; }
 .ktl-pop { position:fixed; z-index:1060; background:var(--ktl-float-bg); border:1px solid var(--ktl-accent);

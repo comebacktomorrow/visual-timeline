@@ -75,3 +75,20 @@ test('a host table gives hosts their time zone, location and tags, and draws a h
   await expect(card('cam-c')).toHaveCount(1);
   await expect(card('cam-c').locator('.slot img')).toHaveCount(0);
 });
+
+test('an irregular feed holds its last frame, and a longer silence is a neutral gap, not offline', async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
+  await page.setViewportSize({ width: 1280, height: 1700 });
+  const dashboard = await readProvisionedDashboard({ fileName: 'any-source.json' });
+  const dashboardPage = await gotoDashboardPage(dashboard);
+  const panel = dashboardPage.getPanelByTitle('Irregular feed from TestData');
+  const strip = panel.locator.locator('.ktl .card .strip');
+  // frames held over the slots between them (10:07 is held until 10:12)
+  await expect(strip.locator('.slot.held').first()).toBeAttached({ timeout: 20000 });
+  // the silence past the hold (10:12 to 10:19) is "no data", never the red
+  // offline hatch: a gap with frames on both sides of it
+  const classes = await strip.locator('.slot').evaluateAll((els) => els.map((e) => e.className));
+  const mid = classes.findIndex((c, i) => /\bnodata\b/.test(c) && classes.slice(0, i).some((x) => !/gap|beyond/.test(x)));
+  expect(mid).toBeGreaterThan(0);
+  expect(classes.slice(mid).some((x) => x === 'slot')).toBe(true);
+  await expect(strip.locator('.slot.gap:not(.nodata)')).toHaveCount(0);
+});

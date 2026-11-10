@@ -471,7 +471,7 @@ var VTCore = (() => {
 
   // src/vt/model/slots.ts
   var PROBE_BUCKETS = 400;
-  async function buildSourceModel(decl, P, backend, budgetSlots) {
+  async function buildSourceModel(decl, P, backend, budgetSlots, holdMs = 0) {
     const eras = erasFor(decl, P);
     const slots = [];
     const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
@@ -604,8 +604,38 @@ var VTCore = (() => {
       }
       return slots[slots.length - 1] || null;
     }
+    holdFrames(slots, holdMs);
     const lastActive = [...slots].reverse().find((sl) => !sl.paused && !sl.beyond) || null;
     return { eras, slots, slotAt, lastActive };
+  }
+  function holdFrames(slots, holdMs) {
+    const filled = [];
+    if (!(holdMs > 0)) {
+      return filled;
+    }
+    let last = null;
+    for (const sl of slots) {
+      if (sl.paused) {
+        last = null;
+        continue;
+      }
+      if (sl.beyond) {
+        continue;
+      }
+      if (sl.frame && !sl.held) {
+        last = sl.frame;
+        continue;
+      }
+      if (sl.held || sl.future) {
+        continue;
+      }
+      if (last && sl.ts - last.ts <= holdMs) {
+        sl.frame = last;
+        sl.held = true;
+        filled.push(sl);
+      }
+    }
+    return filled;
   }
   function ghostFor(slots, sl) {
     for (let j = slots.indexOf(sl) - 1; j >= 0; j--) {
@@ -618,8 +648,11 @@ var VTCore = (() => {
     }
     return null;
   }
-  function slotClass(sl) {
-    return sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? "" : sl.future ? " future" : " gap";
+  function slotClass(sl, missing = "offline") {
+    return sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? sl.held ? " held" : "" : sl.future ? " future" : gapClass(missing);
+  }
+  function gapClass(missing = "offline") {
+    return missing === "nodata" ? " gap nodata" : " gap";
   }
   function missedHeartbeat(sl, now) {
     return sl.future === true && !sl.frame && sl.ts + sl.step < now;
@@ -1082,6 +1115,7 @@ var VTCore = (() => {
 .ktl .st.tz .tzo { flex:0 0 auto; white-space:pre; }
 .ktl .card-head .ft { font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex-shrink:1; }
 .ktl .card-head .ft.stale { color:var(--ktl-off); }
+.ktl .card-head .ft.stale.nodata { color:var(--ktl-dim); }
 .ktl .card-head .cad { margin-left:auto; font-size:10px; color:var(--ktl-dim); }
 .ktl .strip { flex:1 1 auto; min-height:0; position:relative; display:flex; align-items:stretch;
               cursor:crosshair; background:var(--ktl-media); }
@@ -1098,6 +1132,10 @@ var VTCore = (() => {
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
 .ktl .slot img:not([src]) { visibility:hidden; }   /* queued (ui/imageQueue.ts): no alt text or broken-image icon meanwhile */
 .ktl .slot.gap { background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px); }
+/* a gap that only means "no frame" (missingFrames: nodata): the neutral
+ * hatch, not the red one; a held slot shows the last frame, dimmed */
+.ktl .slot.gap.nodata { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 5px,var(--ktl-pause-b) 5px,var(--ktl-pause-b) 10px); }
+.ktl .slot.held img { opacity:.55; }
 .ktl .slot.paused { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 7px,var(--ktl-pause-b) 7px,var(--ktl-pause-b) 14px); }
 /* pause REASONS: one color grammar with the dashboards \u2014 planned = distinct
  * cool hues (indigo = screen asleep, violet-slate = system down, teal = app
@@ -1190,6 +1228,8 @@ var VTCore = (() => {
 .ktl.fill .tile .t-img img { object-fit:cover; }
 .ktl .mag.gap { border-color:var(--ktl-off);
                 background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px), var(--ktl-mag-bg); }
+.ktl .mag.gap.nodata { border-color:var(--ktl-dim);
+                background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 5px,var(--ktl-pause-b) 5px,var(--ktl-pause-b) 10px), var(--ktl-mag-bg); }
 .ktl .mag.gap img { display:none; }
 /* The caption spans the magnifier, centred on it. A narrow magnifier (a
  * portrait source's is ~30px wide) wrapped and clipped even a time with a
@@ -1264,6 +1304,8 @@ var VTCore = (() => {
                     flex-direction:column; gap:2px; color:var(--ktl-off); font-weight:700; text-align:center;
                     background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px); }
 .ktl .tile.offline { border-color:var(--ktl-off); }
+.ktl .tile.offline.nodata { border-color:var(--ktl-border); }
+.ktl .tile.offline.nodata .t-off { color:var(--ktl-dim); }
 .ktl .tile.offline .t-off { display:flex; }
 .ktl .tile.offline img, .ktl .tile.offline .t-ts { display:none; }
 .ktl-pop { position:fixed; z-index:1060; background:var(--ktl-float-bg); border:1px solid var(--ktl-accent);
@@ -1888,10 +1930,13 @@ var VTCore = (() => {
             break;
           }
         }
-        const msg = last ? "offline \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : "no data in window";
+        const nodata = s.cfg.missingFrames === "nodata";
+        const msg = last ? (nodata ? "no frame \u2014 last seen " : "offline \u2014 last seen ") + tt.time(last.ts) + tt.sfx(last.ts) : "no data in window";
         setText(c.mag.querySelector(".cap"), msg);
         setText(c.head, msg);
         c.head.classList.add("stale");
+        c.mag.classList.toggle("nodata", nodata);
+        c.head.classList.toggle("nodata", nodata);
         clearPauseClasses(c.head);
       }
     }
@@ -2070,7 +2115,7 @@ var VTCore = (() => {
     const slots = model.slots;
     for (const sl of slots) {
       const el = document.createElement("div");
-      el.className = "slot" + slotClass(sl);
+      el.className = "slot" + slotClass(sl, s.cfg.missingFrames);
       if (sl.paused) {
         const pi = pauseInfo(sl);
         el.title = pi.label.toLowerCase();
@@ -2378,8 +2423,9 @@ var VTCore = (() => {
       }
       let lastTs = s.P.from;
       for (let i = c.model.slots.length - 1; i >= 0; i--) {
-        if (c.model.slots[i].frame) {
-          lastTs = c.model.slots[i].ts;
+        const fr = c.model.slots[i].frame;
+        if (fr) {
+          lastTs = c.model.slots[i].held ? fr.ts : c.model.slots[i].ts;
           break;
         }
       }
@@ -2403,7 +2449,8 @@ var VTCore = (() => {
         }
         slot.frame = f;
         slot.future = false;
-        slot.el.classList.remove("gap", "future");
+        slot.held = false;
+        slot.el.classList.remove("gap", "nodata", "future", "held");
         let img = slot.el.querySelector("img");
         if (!img) {
           img = document.createElement("img");
@@ -2419,9 +2466,24 @@ var VTCore = (() => {
           sl.future = false;
           if (sl.el) {
             sl.el.classList.remove("future");
-            sl.el.classList.add("gap");
+            sl.el.classList.add(...gapClass(s.cfg.missingFrames).trim().split(" "));
           }
         }
+      }
+      for (const sl of holdFrames(c.model.slots, s.cfg.holdFrames ?? 0)) {
+        if (!sl.el || !sl.frame) {
+          continue;
+        }
+        sl.el.classList.remove("gap", "nodata");
+        sl.el.classList.add("held");
+        let img = sl.el.querySelector("img");
+        if (!img) {
+          img = document.createElement("img");
+          sl.el.appendChild(img);
+        }
+        img.classList.remove("ghost");
+        img.src = sl.frame.url;
+        img.alt = k.id + " " + c.tt.time(sl.frame.ts) + c.tt.sfx(sl.frame.ts);
       }
       for (const sl of c.model.slots) {
         dressGhost(c.model.slots, sl);
@@ -2483,7 +2545,7 @@ var VTCore = (() => {
         await revealWrapper(root, wrap);
         return;
       }
-      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget).catch((e) => {
+      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget, s.cfg.holdFrames ?? 0).catch((e) => {
         console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
         return null;
       }));
@@ -2594,6 +2656,7 @@ var VTCore = (() => {
       const tt = rec.tt;
       let frame = null, offMsg = null, pausedMsg = null, pausedSlot = null, expectedTs = null;
       const la = rec.model.lastActive;
+      const nodata = s.cfg.missingFrames === "nodata";
       if (t == null) {
         const tail = rec.model.slots.length ? rec.model.slots[rec.model.slots.length - 1] : null;
         const tailPaused = tail && tail.paused;
@@ -2603,8 +2666,8 @@ var VTCore = (() => {
           pausedMsg = pauseInfo(tail).label + (frame ? " \u2014 last frame " + tt.time(frame.ts) + tt.sfx(frame.ts) : "");
         } else if (!frame) {
           offMsg = "no data in window";
-        } else if (s.LIVE && la && Date.now() - frame.ts > 2 * la.step) {
-          offMsg = "OFFLINE \u2014 last seen " + tt.time(frame.ts) + tt.sfx(frame.ts);
+        } else if (s.LIVE && la && Date.now() - frame.ts > Math.max(2 * la.step, s.cfg.holdFrames ?? 0)) {
+          offMsg = (nodata ? "NO FRAME" : "OFFLINE") + " \u2014 last seen " + tt.time(frame.ts) + tt.sfx(frame.ts);
         }
       } else {
         const slot = rec.model.slotAt(t);
@@ -2632,12 +2695,13 @@ var VTCore = (() => {
                   break;
                 }
               }
-              offMsg = last ? "OFFLINE \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : "no data";
+              offMsg = last ? (nodata ? "NO FRAME" : "OFFLINE") + " \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : "no data";
             }
           }
         }
       }
       rec.el.classList.toggle("offline", !!offMsg);
+      rec.el.classList.toggle("nodata", !!offMsg && nodata);
       clearPauseClasses(rec.el);
       if (pausedMsg && !offMsg) {
         addPauseClasses(rec.el, pausedSlot);
@@ -2746,7 +2810,7 @@ var VTCore = (() => {
         await revealWrapper(root, wrap);
         return;
       }
-      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget).catch((e) => {
+      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget, s.cfg.holdFrames ?? 0).catch((e) => {
         console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
         return null;
       }));

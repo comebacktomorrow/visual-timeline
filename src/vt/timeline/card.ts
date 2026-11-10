@@ -73,7 +73,7 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   const slots = model.slots;
   for (const sl of slots) {
     const el = document.createElement('div');
-    el.className = 'slot' + slotClass(sl);
+    el.className = 'slot' + slotClass(sl, s.cfg.missingFrames);
     if (sl.paused) {
       const pi = pauseInfo(sl);
       el.title = pi.label.toLowerCase();

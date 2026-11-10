@@ -64,6 +64,7 @@ export function setShown(s: GridState, t: number | null): void {
     let frame: Frame | null | undefined = null, offMsg: string | null = null, pausedMsg: string | null = null,
       pausedSlot: Slot | null = null, expectedTs: number | null = null;
     const la = rec.model.lastActive;
+    const nodata = s.cfg.missingFrames === 'nodata';
     if (t == null) {
       const tail = rec.model.slots.length ? rec.model.slots[rec.model.slots.length - 1] : null;
       const tailPaused = tail && tail.paused;
@@ -73,8 +74,9 @@ export function setShown(s: GridState, t: number | null): void {
         pausedMsg = pauseInfo(tail).label + (frame ? ' — last frame ' + tt.time(frame.ts) + tt.sfx(frame.ts) : '');
       }
       else if (!frame) {offMsg = 'no data in window';}
-      else if (s.LIVE && la && Date.now() - frame.ts > 2 * la.step)
-        {offMsg = 'OFFLINE — last seen ' + tt.time(frame.ts) + tt.sfx(frame.ts);}
+      // a held frame keeps the tile live for as long as the hold lasts
+      else if (s.LIVE && la && Date.now() - frame.ts > Math.max(2 * la.step, s.cfg.holdFrames ?? 0))
+        {offMsg = (nodata ? 'NO FRAME' : 'OFFLINE') + ' — last seen ' + tt.time(frame.ts) + tt.sfx(frame.ts);}
     } else {
       const slot = rec.model.slotAt(t);
       if (slot && slot.paused) {
@@ -95,12 +97,13 @@ export function setShown(s: GridState, t: number | null): void {
             const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
             let last: Frame | null | undefined = null;
             for (let j = i; j >= 0; j--) {if (rec.model.slots[j].frame) { last = rec.model.slots[j].frame; break; }}
-            offMsg = last ? 'OFFLINE — last seen ' + tt.time(last.ts) + tt.sfx(last.ts) : 'no data';
+            offMsg = last ? (nodata ? 'NO FRAME' : 'OFFLINE') + ' — last seen ' + tt.time(last.ts) + tt.sfx(last.ts) : 'no data';
           }
         }
       }
     }
     rec.el.classList.toggle('offline', !!offMsg);
+    rec.el.classList.toggle('nodata', !!offMsg && nodata);
     clearPauseClasses(rec.el);
     if (pausedMsg && !offMsg) {addPauseClasses(rec.el, pausedSlot);}
     rec.off.textContent = offMsg || pausedMsg || '';
