@@ -1,7 +1,7 @@
 import { createDataFrame, createTheme, FieldType, MappingType, ValueMapping } from '@grafana/data';
 
 import { recordsBackend } from './frameRecords';
-import { statesFromSeries, withPauseStates } from './hostState';
+import { stateAnnotations, statesFromSeries, withPauseStates } from './hostState';
 
 const theme = createTheme();
 const MIN = 60_000;
@@ -127,5 +127,20 @@ describe('a state field set to pause frames', () => {
     const b = recordsBackend([], [], states);
     const [decl] = await b.kiosks(null);
     expect(decl).toMatchObject({ id: 'cam-9', history: [{ since: T0, paused: true, label: 'Down' }] });
+  });
+});
+
+describe('stateAnnotations', () => {
+  const hosts = [{ id: 'cam', site: 'home', spans: [
+    { from: T0, to: T0 + 5 * MIN, label: 'Cleaning', color: 'rgb(87, 148, 242)' },
+    { from: T0 + 10 * MIN, label: 'Night' },                       // still open
+    { from: T0 + 20 * MIN, to: T0 + 25 * MIN, label: 'Asleep', pauses: true },   // drawn as a pause instead
+    { from: T0 - 60 * MIN, to: T0 - 30 * MIN, label: 'Old' },      // before the window
+  ] }];
+  test('states that run alongside frames become region annotations pinned to their host', () => {
+    expect(stateAnnotations(hosts, T0 - 5 * MIN, T0 + 60 * MIN)).toEqual([
+      { ts: T0, timeEnd: T0 + 5 * MIN, title: 'Cleaning', text: '', tags: ['host:cam', 'site:home', 'state'], color: '#5794f2' },
+      { ts: T0 + 10 * MIN, timeEnd: T0 + 60 * MIN, title: 'Night', text: '', tags: ['host:cam', 'site:home', 'state'] },
+    ]);
   });
 });

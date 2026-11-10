@@ -13,8 +13,11 @@
   offline. The Visual Timeline data source now sends its demo pauses this
   way, with default mappings in the colours they had, and the reference
   worker answers its pauses at `GET /states` for Infinity; the self-hosted
-  dashboard reads them. States that don't pause frames are read but not yet
-  drawn: a state lane comes next.
+  dashboard reads them. States that don't pause frames run alongside them:
+  they're drawn as region annotations on their host's strip (and in its lane
+  with **Annotation lanes: Per host**), labelled and coloured by their
+  mappings, so a span from a state query reads like one from an annotation
+  query. **Show annotations** shows and hides them too.
 - **Reference worker: optional presigned R2 links** (#129). With
   `IMG_DELIVERY=presigned` and a read-only R2 API token, `/frames` hands out
   R2 presigned links, so browsers load images straight from R2: no worker

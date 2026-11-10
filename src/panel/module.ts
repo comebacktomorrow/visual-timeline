@@ -19,7 +19,7 @@ import { coreTimeZone } from '../timezone';
 import { DATASOURCE_ID } from '../shared/ids';
 import { sourcesFromFrames } from '../shared/sources';
 import { FieldRoles, recordsBackend, recordsFromSeries } from '../shared/frameRecords';
-import { statesFromSeries } from '../shared/hostState';
+import { stateAnnotations, statesFromSeries } from '../shared/hostState';
 import { needsRebuild } from './resize';
 
 interface VisualTimelineOptions {
@@ -132,7 +132,17 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const showDetails = options.showDetails === true;
   const hideEmpty = options.hideEmpty === true;
   const showAnnotations = options.showAnnotations !== false;
-  const annotations = showAnnotations ? extractAnnotations(props.data?.annotations as any[]) : [];
+  /* Host state (#126, M4): rows with a time, a host and a state value, from
+   * any query; labels and colours from the field's value mappings. A state
+   * field set to "Pauses frames" explains the frames a host doesn't send;
+   * the others ride along as annotations on their host (M4b). */
+  const states = statesFromSeries(props.data?.series, theme, { time: options.timeField, host: options.hostField, site: options.siteField, state: options.stateField });
+  const statesKey = states ? JSON.stringify(states) : '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const statesMemo = useMemo(() => states, [statesKey]);
+  const annotations = showAnnotations
+    ? [...extractAnnotations(props.data?.annotations as any[]), ...stateAnnotations(statesMemo ?? [], from, to)]
+    : [];
   // remount only when annotation CONTENT changes, not on every data-object identity flip
   const annKey = JSON.stringify(annotations);
   const timeZone = coreTimeZone(props.timeZone);
@@ -170,13 +180,6 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const recordsMemo = useMemo(() => records, [recordsKey]);
-  /* Host state (#126, M4): rows with a time, a host and a state value, from
-   * any query; labels and colours from the field's value mappings. A state
-   * field set to "Pauses frames" explains the frames a host doesn't send. */
-  const states = statesFromSeries(props.data?.series, theme, { time: options.timeField, host: options.hostField, site: options.siteField, state: options.stateField });
-  const statesKey = states ? JSON.stringify(states) : '';
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const statesMemo = useMemo(() => states, [statesKey]);
   // a source list without records (no frames in the window) still draws its
   // hosts: a host that was silent the whole time is information
   const backend = useMemo(

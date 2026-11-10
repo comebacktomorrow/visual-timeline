@@ -6,9 +6,9 @@
  * colour "transparent", which is how a mapping says "this is the normal
  * state, draw nothing" (up, running, 1 ...). An end-time field closes a span
  * on its own row. */
-import { DataFrame, Field, FieldColorModeId, getDisplayProcessor, GrafanaTheme2 } from '@grafana/data';
+import { colorManipulator, DataFrame, Field, FieldColorModeId, getDisplayProcessor, GrafanaTheme2 } from '@grafana/data';
 
-import type { HistoryEvent } from '../vt/types';
+import type { HistoryEvent, RawAnnotation } from '../vt/types';
 import { fieldNamed, timeField, toMillis, ROLE_NAMES } from './frameRecords';
 
 /** Which field plays which role in a state query. Empty: the usual names. */
@@ -139,4 +139,32 @@ export function withPauseStates<T extends { history?: HistoryEvent[] }>(decl: T,
   }
   history.sort((a, b) => a.since - b.since);
   return { ...decl, history };
+}
+
+/** States that run alongside the frames (not "Pauses frames"), as region
+ * annotations pinned to their host (host:<id>, and site:<id> when there is
+ * one): the timeline draws them where it draws annotations, on the host's
+ * strip and in its lane, so an interesting span from a state query reads
+ * like one from an annotation query (#126, M4b). A state still open runs to
+ * `until` (now, or the window's end). Spans outside [from, until] are left
+ * out. */
+export function stateAnnotations(hosts: HostStates[], from: number, until: number): RawAnnotation[] {
+  const out: RawAnnotation[] = [];
+  for (const h of hosts) {
+    for (const sp of h.spans) {
+      if (sp.pauses) {continue;}
+      const end = sp.to ?? until;
+      if (end < from || sp.from > until || end <= sp.from) {continue;}
+      out.push({
+        ts: sp.from,
+        timeEnd: end,
+        title: sp.label,
+        text: '',
+        tags: ['host:' + h.id, ...(h.site ? ['site:' + h.site] : []), 'state'],
+        // regions tint with the colour plus an alpha suffix: it must be hex
+        ...(sp.color ? { color: colorManipulator.asHexString(sp.color) } : {}),
+      });
+    }
+  }
+  return out;
 }

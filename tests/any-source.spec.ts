@@ -46,3 +46,18 @@ test('a state query set to pause frames explains a host\'s missing frames, in it
   const camA = panel.locator.locator('.ktl .card').filter({ has: panel.locator.page().locator('.nm', { hasText: 'cam-a' }) });
   await expect(camA.locator('.slot.paused')).toHaveCount(0);
 });
+
+test('a state that runs alongside the frames is drawn on its host like a region annotation', async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
+  await page.setViewportSize({ width: 1280, height: 1400 });
+  const dashboard = await readProvisionedDashboard({ fileName: 'any-source.json' });
+  const dashboardPage = await gotoDashboardPage(dashboard);
+  const panel = dashboardPage.getPanelByTitle('Pauses from TestData');
+  const camA = panel.locator.locator('.ktl .card').filter({ has: panel.locator.page().locator('.nm', { hasText: 'cam-a' }) });
+  await expect(camA.locator('.strip .ann-region')).toHaveCount(1, { timeout: 20000 });
+  // its frames still show: a state that doesn't pause them leaves them be
+  await expect(camA.locator('.slot.paused')).toHaveCount(0);
+  await expect(camA.locator('.slot img')).not.toHaveCount(0);
+  // the marker's tooltip names the state as its mapping shows it
+  await camA.locator('.strip .ann').first().hover();
+  await expect(page.locator('.ktl-ann-tip')).toContainText('Cleaning');
+});

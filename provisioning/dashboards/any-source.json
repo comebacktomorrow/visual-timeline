@@ -105,12 +105,21 @@
           },
           "scenarioId": "csv_content",
           "csvContent": "time,host,state\n2026-01-01T10:10:30Z,cam-b,maintenance\n2026-01-01T10:16:30Z,cam-b,up\n"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "trlxrdZVk"
+          },
+          "scenarioId": "csv_content",
+          "csvContent": "time,host,status\n2026-01-01T10:19:30Z,cam-a,cleaning\n2026-01-01T10:25:30Z,cam-a,\n"
         }
       ],
       "options": {
         "mode": "timeline"
       },
-      "description": "Frames as above, plus a state query (refId B): cam-b is in maintenance while it sends no frames. The state field is set to Pauses frames, with value mappings for its label and colour, by a field override.",
+      "description": "Frames as above, plus a state query (refId B): cam-b is in maintenance while it sends no frames. The state field is set to Pauses frames, with value mappings for its label and colour, by a field override. A third query (refId C) has a status that runs alongside the frames: cam-a is cleaned while it keeps sending frames, drawn as a region on its strip like an annotation.",
       "fieldConfig": {
         "defaults": {},
         "overrides": [
@@ -138,6 +147,29 @@
                       "up": {
                         "color": "transparent",
                         "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "cleaning": {
+                        "text": "Cleaning",
+                        "color": "yellow",
+                        "index": 0
                       }
                     }
                   }

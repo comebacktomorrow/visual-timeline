@@ -99,8 +99,9 @@ properties:
 
 Any data source's states work the same way: rows with a time, a host and a
 state field. Map a state to the colour **Transparent** to draw nothing (the
-normal state), and leave **Pauses frames** off for a state that runs
-alongside the frames.
+normal state). Leave **Pauses frames** off for a state that runs alongside
+the frames: it's drawn as a region annotation on the host's strip, labelled
+and coloured by its mapping.
 
 ## What it doesn't carry yet
 
