@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Host details from any query** (#126, M4c). Each host's time zone,
+  location and tags come from fields on its frame rows (`timezone`,
+  `location`, `tags`), from labels on the image field (as tags), or from a
+  **host table**: rows naming a host (`host` or `id`) with those details and
+  `cadence`, and no image or state. A host the table names is drawn even
+  with no frames in the window. Our data source's source list still wins
+  where it speaks. The Infinity recipe and the self-hosted dashboard read
+  the worker's `/sources` as a host table.
 - **Host state from any data source** (#126, M4). A query of rows with a
   time, a host and a state (`state` or `status`, or the new **State** field
   option) gives each host state spans, labelled and coloured by the field's

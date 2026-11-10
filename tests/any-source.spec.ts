@@ -61,3 +61,17 @@ test('a state that runs alongside the frames is drawn on its host like a region 
   await camA.locator('.strip .ann').first().hover();
   await expect(page.locator('.ktl-ann-tip')).toContainText('Cleaning');
 });
+
+test('a host table gives hosts their time zone, location and tags, and draws a host with no frames', async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
+  await page.setViewportSize({ width: 1280, height: 1400 });
+  const dashboard = await readProvisionedDashboard({ fileName: 'any-source.json' });
+  const dashboardPage = await gotoDashboardPage(dashboard);
+  const panel = dashboardPage.getPanelByTitle('Pauses from TestData');
+  const card = (host: string) => panel.locator.locator('.ktl .card').filter({ has: page.locator('.nm', { hasText: host }) });
+  await expect(card('cam-a').locator('.card-head .tzc')).toContainText('Sydney', { timeout: 20000 });
+  await expect(card('cam-a').locator('.card-head > .st:not(.tz)')).toHaveText('lobby');
+  await expect(card('cam-a').locator('.card-head .tags')).toContainText('env=prod');
+  // only the table knows cam-c: drawn, with nothing but gaps
+  await expect(card('cam-c')).toHaveCount(1);
+  await expect(card('cam-c').locator('.slot img')).toHaveCount(0);
+});

@@ -231,6 +231,56 @@
               "type": "string"
             }
           ]
+        },
+        {
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "",
+          "filters": [],
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-worker"
+          },
+          "refId": "C",
+          "url": "http://backend:8787/sources?site=${site:csv}",
+          "columns": [
+            {
+              "selector": "id",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "site",
+              "text": "site",
+              "type": "string"
+            },
+            {
+              "selector": "timezone",
+              "text": "timezone",
+              "type": "string"
+            },
+            {
+              "selector": "location",
+              "text": "location",
+              "type": "string"
+            },
+            {
+              "selector": "tags",
+              "text": "tags",
+              "type": "string"
+            },
+            {
+              "selector": "cadence",
+              "text": "cadence",
+              "type": "number"
+            }
+          ]
         }
       ],
       "description": "Hover to scrub through the frames; drag across a strip to zoom in.",
@@ -406,6 +456,56 @@
               "selector": "state",
               "text": "state",
               "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "",
+          "filters": [],
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-worker"
+          },
+          "refId": "C",
+          "url": "http://backend:8787/sources?site=${site:csv}",
+          "columns": [
+            {
+              "selector": "id",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "site",
+              "text": "site",
+              "type": "string"
+            },
+            {
+              "selector": "timezone",
+              "text": "timezone",
+              "type": "string"
+            },
+            {
+              "selector": "location",
+              "text": "location",
+              "type": "string"
+            },
+            {
+              "selector": "tags",
+              "text": "tags",
+              "type": "string"
+            },
+            {
+              "selector": "cadence",
+              "text": "cadence",
+              "type": "number"
             }
           ]
         }

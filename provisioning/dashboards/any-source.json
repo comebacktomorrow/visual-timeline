@@ -114,12 +114,21 @@
           },
           "scenarioId": "csv_content",
           "csvContent": "time,host,status\n2026-01-01T10:19:30Z,cam-a,cleaning\n2026-01-01T10:25:30Z,cam-a,\n"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "trlxrdZVk"
+          },
+          "scenarioId": "csv_content",
+          "csvContent": "host,timezone,location,tags\ncam-a,Australia/Sydney,lobby,env=prod\ncam-c,,,\n"
         }
       ],
       "options": {
         "mode": "timeline"
       },
-      "description": "Frames as above, plus a state query (refId B): cam-b is in maintenance while it sends no frames. The state field is set to Pauses frames, with value mappings for its label and colour, by a field override. A third query (refId C) has a status that runs alongside the frames: cam-a is cleaned while it keeps sending frames, drawn as a region on its strip like an annotation.",
+      "description": "Frames as above, plus a state query (refId B): cam-b is in maintenance while it sends no frames. The state field is set to Pauses frames, with value mappings for its label and colour, by a field override. A third query (refId C) has a status that runs alongside the frames: cam-a is cleaned while it keeps sending frames, drawn as a region on its strip like an annotation. A fourth query (refId D) is a host table: cam-a's time zone, location and tags, and cam-c, which sends no frames at all but is still drawn.",
       "fieldConfig": {
         "defaults": {},
         "overrides": [

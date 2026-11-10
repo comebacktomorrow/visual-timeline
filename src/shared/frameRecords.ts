@@ -22,8 +22,15 @@ export interface FieldRoles {
   cadence?: string;
 }
 
+/** What a query may say about a host besides its frames (M4c). */
+export interface HostMeta {
+  timezone?: string;
+  location?: string;
+  tags?: Record<string, string>;
+}
+
 /** One host's frames, sorted by time, one per timestamp. */
-export interface HostRecords {
+export interface HostRecords extends HostMeta {
   id: string;
   site: string;
   frames: Frame[];
@@ -39,7 +46,74 @@ export const ROLE_NAMES = {
   site: ['site'],
   preview: ['image_hi', 'url_hi', 'preview', 'preview_url', 'image_large'],
   cadence: ['cadence', 'cadence_ms'],
+  timezone: ['timezone', 'tz', 'time_zone'],
+  location: ['location'],
+  tags: ['tags'],
 };
+
+/* labels that name the row's place, not a property of the host */
+const NOT_TAGS = new Set(['host', 'site', 'source', 'camera', 'kiosk', 'device', 'timezone', 'tz', 'location', '__name__']);
+
+/** Tags from a tags field's value: an object, JSON of one, or "k=v, k=v". */
+export function parseTags(v: unknown): Record<string, string> | undefined {
+  let o: unknown = v;
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (!s) {return undefined;}
+    if (s.startsWith('{')) {
+      try { o = JSON.parse(s); } catch { return undefined; }
+    } else {
+      const out: Record<string, string> = {};
+      for (const part of s.split(',')) {
+        const i = part.indexOf('=');
+        if (i > 0) {out[part.slice(0, i).trim()] = part.slice(i + 1).trim();}
+      }
+      return Object.keys(out).length ? out : undefined;
+    }
+  }
+  if (!o || typeof o !== 'object' || Array.isArray(o)) {return undefined;}
+  const out: Record<string, string> = {};
+  for (const [k, val] of Object.entries(o as Record<string, unknown>)) {
+    if (val != null && val !== '') {out[k] = String(val);}
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/* A frame's labels as metadata: time zone and location by name, the rest
+ * (all but the ones that place the row) as tags. */
+function labelMeta(labels: Record<string, string> | undefined): HostMeta {
+  if (!labels) {return {};}
+  const tags: Record<string, string> = {};
+  for (const [k, v] of Object.entries(labels)) {if (!NOT_TAGS.has(k) && v) {tags[k] = v;}}
+  return {
+    ...(labels.timezone || labels.tz ? { timezone: labels.timezone || labels.tz } : {}),
+    ...(labels.location ? { location: labels.location } : {}),
+    ...(Object.keys(tags).length ? { tags } : {}),
+  };
+}
+
+/* fields over labels, the later row over the earlier */
+function addMeta(into: HostMeta, from: HostMeta): void {
+  if (from.timezone) {into.timezone = from.timezone;}
+  if (from.location) {into.location = from.location;}
+  if (from.tags) {into.tags = { ...(into.tags || {}), ...from.tags };}
+}
+
+/* the metadata fields of a frame, read row by row */
+function metaFields(frame: DataFrame) {
+  const tz = fieldNamed(frame, undefined, ROLE_NAMES.timezone);
+  const loc = fieldNamed(frame, undefined, ROLE_NAMES.location);
+  const tags = fieldNamed(frame, undefined, ROLE_NAMES.tags);
+  return {
+    any: !!(tz || loc || tags),
+    row(i: number): HostMeta {
+      const t = tz ? String(tz.values[i] ?? '').trim() : '';
+      const l = loc ? String(loc.values[i] ?? '').trim() : '';
+      const g = tags ? parseTags(tags.values[i]) : undefined;
+      return { ...(t ? { timezone: t } : {}), ...(l ? { location: l } : {}), ...(g ? { tags: g } : {}) };
+    },
+  };
+}
 
 /** Without a cadence field and with fewer than two frames, a host's cadence. */
 export const DEFAULT_CADENCE = 60_000;
@@ -114,7 +188,7 @@ export function inferCadence(ts: number[]): number {
 /** The frame records in a query result, one entry per host, or null when no
  * frame in it has an image field. */
 export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldRoles = {}): HostRecords[] | null {
-  const byHost = new Map<string, { id: string; site: string; frames: Map<number, Frame>; cadence?: number }>();
+  const byHost = new Map<string, { id: string; site: string; frames: Map<number, Frame>; cadence?: number; meta: HostMeta }>();
   let found = false;
   for (const frame of series || []) {
     const image = fieldNamed(frame, roles.image, ROLE_NAMES.image);
@@ -128,6 +202,8 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
     // a frame without a host field: one host, from a label or the query
     const fallbackHost = image.labels?.host ?? frame.name ?? frame.refId ?? 'host';
     const fallbackSite = image.labels?.site ?? '';
+    const fromLabels = labelMeta(image.labels);
+    const meta = metaFields(frame);
     for (let i = 0; i < frame.length; i++) {
       const ts = toMillis(time.values[i]);
       const url = imageLocator(image.values[i]);
@@ -138,9 +214,11 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
       const key = siteId + '/' + id;
       let rec = byHost.get(key);
       if (!rec) {
-        rec = { id, site: siteId, frames: new Map() };
+        rec = { id, site: siteId, frames: new Map(), meta: {} };
+        addMeta(rec.meta, fromLabels);
         byHost.set(key, rec);
       }
+      if (meta.any) {addMeta(rec.meta, meta.row(i));}
       const f: Frame = { ts, url, source: id };
       const hi = preview ? imageLocator(preview.values[i]) : null;
       if (hi) {f.hi = hi;}
@@ -152,8 +230,36 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
   if (!found) {return null;}
   return [...byHost.values()].map((r) => {
     const frames = [...r.frames.values()].sort((a, b) => a.ts - b.ts);
-    return { id: r.id, site: r.site, frames, cadence: r.cadence ?? inferCadence(frames.map((f) => f.ts)) };
+    return { ...r.meta, id: r.id, site: r.site, frames, cadence: r.cadence ?? inferCadence(frames.map((f) => f.ts)) };
   });
+}
+
+/** A host table from any query (M4c): rows naming a host (a host field, or
+ * id) with what's known about it (time zone, location, tags, cadence), and
+ * no image or state. The reference worker's /sources read through Infinity
+ * is one. Its hosts are drawn even with no frames in the window. */
+export function hostTableFromSeries(series: DataFrame[] | undefined, roles: FieldRoles = {}): SourceDecl[] {
+  const out = new Map<string, SourceDecl>();
+  for (const frame of series || []) {
+    if (fieldNamed(frame, roles.image, ROLE_NAMES.image) || fieldNamed(frame, undefined, ['state', 'status'])) {continue;}
+    // the Visual Timeline data source's own source list is read in full elsewhere
+    if (frame.meta?.custom?.visualTimeline) {continue;}
+    const host = fieldNamed(frame, roles.host, [...ROLE_NAMES.host, 'id']);
+    const meta = metaFields(frame);
+    const cadence = fieldNamed(frame, roles.cadence, ROLE_NAMES.cadence);
+    if (!host || !(meta.any || cadence)) {continue;}
+    const site = fieldNamed(frame, roles.site, ROLE_NAMES.site);
+    for (let i = 0; i < frame.length; i++) {
+      const id = String(host.values[i] ?? '');
+      if (!id) {continue;}
+      const siteId = String(site ? site.values[i] ?? '' : '');
+      const c = cadence ? Number(cadence.values[i]) : NaN;
+      const d: SourceDecl = { id, site: siteId, ...(Number.isFinite(c) && c > 0 ? { cadence: c } : {}) } as SourceDecl;
+      addMeta(d, meta.row(i));
+      out.set(siteId + '/' + id, d);
+    }
+  }
+  return [...out.values()];
 }
 
 /** At most one frame per step, the one nearest each step's tick, from a
@@ -186,12 +292,20 @@ export function recordsBackend(hosts: HostRecords[], known: SourceDecl[] = [], s
   const decls: SourceDecl[] = hosts.map((h) => {
     const k = known.find((d) => d.id === h.id && (d.site === h.site || !h.site));
     if (k) {matched.add(k);}
-    return k ? { ...k, site: h.site || k.site } : { id: h.id, site: h.site, cadence: h.cadence };
+    const own: SourceDecl = {
+      id: h.id, site: h.site, cadence: h.cadence,
+      ...(h.timezone ? { timezone: h.timezone } : {}), ...(h.location ? { location: h.location } : {}), ...(h.tags ? { tags: h.tags } : {}),
+    };
+    // what a source list or host table says wins; the rows fill in the rest
+    return k ? { ...own, ...k, site: h.site || k.site, cadence: k.cadence || h.cadence, tags: k.tags || h.tags } : own;
   });
   // keyed the way the core asks: by the declared site, which a source list may fill in
   const byKey = new Map(decls.map((d, i) => [d.site + '/' + d.id, hosts[i]]));
+  // the first word on a host wins (a source list before a host table), so a
+  // host two lists name is drawn once
   for (const k of known) {
-    if (!matched.has(k)) {decls.push(k);}
+    if (matched.has(k) || decls.some((d) => d.id === k.id && d.site === k.site)) {continue;}
+    decls.push({ ...k, cadence: k.cadence || DEFAULT_CADENCE });
   }
   // a host's states (#126): pause states take the place of its declared
   // pauses; a host only a state query knows of is drawn too

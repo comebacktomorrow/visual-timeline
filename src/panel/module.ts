@@ -18,7 +18,7 @@ import { themeVars } from '../theme';
 import { coreTimeZone } from '../timezone';
 import { DATASOURCE_ID } from '../shared/ids';
 import { sourcesFromFrames } from '../shared/sources';
-import { FieldRoles, recordsBackend, recordsFromSeries } from '../shared/frameRecords';
+import { FieldRoles, hostTableFromSeries, recordsBackend, recordsFromSeries } from '../shared/frameRecords';
 import { stateAnnotations, statesFromSeries } from '../shared/hostState';
 import { needsRebuild } from './resize';
 
@@ -182,9 +182,18 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const recordsMemo = useMemo(() => records, [recordsKey]);
   // a source list without records (no frames in the window) still draws its
   // hosts: a host that was silent the whole time is information
+  /* A host table (M4c): rows of a host and what's known about it (time
+   * zone, location, tags, cadence) from any query, such as the worker's
+   * /sources through Infinity. Its hosts are drawn even without frames. */
+  const table = hostTableFromSeries(props.data?.series, roles);
+  const tableKey = table.length ? JSON.stringify(table) : '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const tableMemo = useMemo(() => table, [tableKey]);
   const backend = useMemo(
-    () => (recordsMemo || result || statesMemo ? recordsBackend(recordsMemo ?? [], result?.sources, statesMemo ?? []) : null),
-    [recordsMemo, result, statesMemo]
+    () => (recordsMemo || result || statesMemo || tableMemo.length
+      ? recordsBackend(recordsMemo ?? [], [...(result?.sources ?? []), ...tableMemo], statesMemo ?? [])
+      : null),
+    [recordsMemo, result, statesMemo, tableMemo]
   );
   /* Clicking a host, site or tag chip adds that filter to the dashboard's ad
    * hoc filter for this data source, as a table cell's "filter for value"
