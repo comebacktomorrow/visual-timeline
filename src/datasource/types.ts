@@ -36,6 +36,9 @@ export interface VisualTimelineQuery extends DataQuery {
    * fields named by host (host: `<id>`, `<id> status`, `<id> time`, …), which
    * a Canvas element or a Stat panel binds to by name. */
   lastFrameFormat?: 'table' | 'host';
+  /** An annotation query: the data source's events (Demo data's demo events)
+   * as dashboard annotations. */
+  kind?: 'annotations';
 }
 
 /** A dashboard variable query: the sites, or the hosts (optionally only

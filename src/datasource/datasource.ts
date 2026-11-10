@@ -1,4 +1,5 @@
 import {
+  DataFrame,
   DataQueryRequest,
   DataQueryResponse,
   DataSourceApi,
@@ -17,14 +18,18 @@ import { ApiFetch, makeProxyFetch, ProxyRequest } from '../shared/proxy';
 import {
   applySourceFilter,
   interpolatedList,
+  annotationsToFrame,
   lastFramesByHost,
+  recordsToFrame,
   sourcesToFrame,
   tagKeys,
   tagValues,
 } from '../shared/sources';
 // the text Grafana's proxy answers instead of the API's own 401
 import { makeApiBackend, PROXY_AUTH_FAILED } from '../vt/backends/api';
-import { makeBackend as makeDemoBackend } from '../vt/backends/demo';
+import { DemoBackend, makeBackend as makeDemoBackend } from '../vt/backends/demo';
+import { resolveTimeZone } from '../vt/time/zones';
+import { coreTimeZone } from '../timezone';
 import { limited, MODEL_CONCURRENCY } from '../vt/model/pool';
 import type { Backend, Frame, SourceDecl } from '../vt/types';
 import type { VisualTimelineOptions, VisualTimelineQuery, VisualTimelineVariableQuery } from './types';
@@ -92,6 +97,8 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
     this.api = makeProxyFetch(instanceSettings.uid, request);
     this.backend = makeApiBackend(this.apiUrl, undefined, this.api);
     this.variables = new VisualTimelineVariableSupport(this);
+    // annotation queries: Demo data's demo events, as dashboard annotations
+    this.annotations = { getDefaultQuery: () => ({ kind: 'annotations' }) };
   }
 
   /** Every source, or only those in `sites`. Demo sources depend on the time
@@ -120,10 +127,10 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
 
   /** The built-in demo hosts and frames for a time window (an hour to now
    * without one). */
-  private demoBackend(window?: { from: number; to: number }): Backend {
+  private demoBackend(window?: { from: number; to: number }, timeZone = 'UTC'): DemoBackend {
     const to = window?.to ?? Date.now();
     const from = window?.from ?? to - 3600e3;
-    return makeDemoBackend({ from, to }, Math.max(1, to - from), 'UTC');
+    return makeDemoBackend({ from, to }, Math.max(1, to - from), timeZone);
   }
 
   /** One source's frames in a window, at most one per step. The panel calls
@@ -142,7 +149,10 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
     const data = await Promise.all(
       request.targets
         .filter((t) => !t.hide)
-        .map(async (t) => {
+        .map(async (t): Promise<DataFrame | DataFrame[]> => {
+          if (t.kind === 'annotations') {
+            return annotationsToFrame(this.demo ? this.demoBackend(window).annotations() : [], t.refId);
+          }
           const sites = interpolatedList(this.field(t.sites, request.scopedVars));
           const hosts = interpolatedList(this.field(t.hosts, request.scopedVars));
           const tags = this.field(t.tags, request.scopedVars);
@@ -153,7 +163,13 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
             adhoc: request.filters,
           });
           const meta = { uid: this.uid, demo: this.demo };
-          if (!t.lastFrame) {return sourcesToFrame(sources, t.refId, meta);}
+          if (!t.lastFrame) {
+            const list = sourcesToFrame(sources, t.refId, meta);
+            // Demo data answers with its frames as rows, as any source would (#126)
+            // the demo frames draw a clock: in the dashboard's time zone, so they agree with the captions
+            const tz = resolveTimeZone(coreTimeZone(request.timezone));
+            return this.demo ? [list, await this.demoRecords(sources, window, request.maxDataPoints, t.refId, tz)] : list;
+          }
           // the last frame at the range's end, or now if the range runs past it
           const end = Math.min(window.to, Date.now());
           const backend = this.demo ? this.demoBackend(window) : this.backend;
@@ -168,7 +184,28 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
             : sourcesToFrame(sources, t.refId, meta, last);
         })
     );
-    return { data };
+    return { data: data.flat() };
+  }
+
+  /* Demo frames for these sources as rows. Each source's rows come at the
+   * finest cadence it has in the window (source-3 changes pace mid-window),
+   * or coarser for a long window, so there are never more rows per source
+   * than the panel has pixels. */
+  private async demoRecords(
+    sources: SourceDecl[], window: { from: number; to: number }, maxDataPoints: number | undefined, refId: string, timeZone: string
+  ) {
+    const demo = this.demoBackend(window, timeZone);
+    const span = Math.max(1, window.to - window.from);
+    const rows: Array<{ ts: number; host: string; site: string; url: string }> = [];
+    for (const s of sources) {
+      const cadences = [s.cadence, ...(s.history || []).map((h) => h.cadence)].filter((c): c is number => !!c && c > 0);
+      const finest = Math.min(...cadences);
+      const step = finest * Math.max(1, Math.ceil(span / (maxDataPoints || 1000) / finest));
+      for (const f of await demo.frames(s.site, s.id, window.from, window.to, step)) {
+        rows.push({ ts: f.ts, host: s.id, site: s.site, url: f.url });
+      }
+    }
+    return recordsToFrame(rows, refId);
   }
 
   /** Values for a Site or Host dashboard variable. A plain-text query

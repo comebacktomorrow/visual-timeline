@@ -1,7 +1,8 @@
 import { test, expect } from '@grafana/plugin-e2e';
 
-// The panel ships a built-in demo backend (no API URL configured), so these
-// smoke tests assert the real render path with zero external dependencies.
+// The demo data source answers with frame rows (SVG data URLs)
+// and its events as an annotation query, so these smoke tests assert the
+// real render path with zero external dependencies.
 
 test('timeline mode renders source cards with frames from demo data', async ({
   gotoPanelEditPage,
@@ -15,6 +16,20 @@ test('timeline mode renders source cards with frames from demo data', async ({
   await expect(page.locator('.ktl .card').first()).toBeVisible({ timeout: 20000 });
   await expect(page.locator('.ktl .slot img').first()).toBeVisible();
   await expect(page.locator('.ktl .axis .tick').first()).toBeVisible();
+});
+
+test('the demo arrives as rows: SVG frames, the outage as a gap, its events as annotations', async ({
+  gotoDashboardPage,
+  readProvisionedDashboard,
+  page,
+}) => {
+  const dashboard = await readProvisionedDashboard({ fileName: 'dashboard.json' });
+  await gotoDashboardPage(dashboard);
+  await expect(page.locator('.ktl .card .strip img[src^="data:image/svg+xml"]').first()).toBeAttached({ timeout: 20000 });
+  await expect(page.locator('.ktl .card .slot.gap').first()).toBeAttached();
+  await expect(page.locator('.ktl .card .slot.paused').first()).toBeAttached();
+  // the dashboard's "Host events" annotation query on the demo data source
+  await expect(page.locator('.ktl .ann').first()).toBeAttached();
 });
 
 test('multiview grid mode renders tiles from demo data', async ({

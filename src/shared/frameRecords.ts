@@ -177,14 +177,21 @@ export function framesPerStep(frames: Frame[], from: number, to: number, step: n
 
 /** The core's data layer over frame records. `known` adds what a source list
  * says about a host (Visual Timeline data source: history, time zone, tags,
- * location); records alone give id, site and cadence. */
+ * location); records alone give id, site and cadence. A known host with no
+ * records in the window is still drawn: a host that was paused or silent the
+ * whole time is information, not something to hide. */
 export function recordsBackend(hosts: HostRecords[], known: SourceDecl[] = []): Backend {
+  const matched = new Set<SourceDecl>();
   const decls: SourceDecl[] = hosts.map((h) => {
     const k = known.find((d) => d.id === h.id && (d.site === h.site || !h.site));
+    if (k) {matched.add(k);}
     return k ? { ...k, site: h.site || k.site } : { id: h.id, site: h.site, cadence: h.cadence };
   });
   // keyed the way the core asks: by the declared site, which a source list may fill in
   const byKey = new Map(decls.map((d, i) => [d.site + '/' + d.id, hosts[i]]));
+  for (const k of known) {
+    if (!matched.has(k)) {decls.push(k);}
+  }
   return {
     kiosks: (sites) => (sites ? decls.filter((d) => sites.includes(d.site)) : decls),
     frames: async (site, id, from, to, step) => framesPerStep(byKey.get(site + '/' + id)?.frames ?? [], from, to, step),

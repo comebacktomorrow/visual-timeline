@@ -154,6 +154,55 @@ describe('query', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  test('Demo data also answers with its frames as rows, at each source\'s finest cadence', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(3_601_000);
+    try {
+      const ds = new VisualTimelineDataSource(settings(undefined, true), ok([]), interpolate);
+      const res = await ds.query({ targets: [{ refId: 'A' }], range, scopedVars: {}, maxDataPoints: 1000 } as any);
+      expect(res.data).toHaveLength(2);
+      const rows = res.data[1];
+      const col = (n: string) => rows.fields.find((f: any) => f.name === n).values;
+      expect(rows.fields.map((f: any) => f.name)).toEqual(['time', 'host', 'site', 'image']);
+      expect(col('image').every((u: string) => u.startsWith('data:image/svg+xml,'))).toBe(true);
+      // source-3 runs at 120 s for the first half of the window, then 240 s: rows come every 120 s
+      const s3 = col('time').filter((_: number, i: number) => col('host')[i] === 'source-3');
+      expect(s3[1] - s3[0]).toBe(120_000);
+      // source-2's outage leaves out its rows from 35% to 55% of the hour
+      const s2 = col('time').filter((_: number, i: number) => col('host')[i] === 'source-2');
+      expect(s2.some((t: number) => t > 1_000 + 0.36 * 3_600_000 && t < 1_000 + 0.54 * 3_600_000)).toBe(false);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  test('demo frames draw their clock in the dashboard\'s time zone', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(3_601_000);
+    try {
+      const ds = new VisualTimelineDataSource(settings(undefined, true), ok([]), interpolate);
+      const res = await ds.query({ targets: [{ refId: 'A' }], range, scopedVars: {}, timezone: 'Asia/Tokyo', maxDataPoints: 1000 } as any);
+      const rows = res.data[1];
+      const i = rows.fields.find((f: any) => f.name === 'host').values.indexOf('source-1');
+      const ts = rows.fields.find((f: any) => f.name === 'time').values[i];
+      const svg = decodeURIComponent(rows.fields.find((f: any) => f.name === 'image').values[i]);
+      const hh = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tokyo', hour: '2-digit', hourCycle: 'h23' }).format(ts);
+      expect(svg).toContain(`>${hh}:`);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  test('an annotation query answers with Demo data\'s events, and with none otherwise', async () => {
+    const demo = new VisualTimelineDataSource(settings(undefined, true), ok([]), interpolate);
+    const res = await demo.query({ targets: [{ refId: 'Anno', kind: 'annotations' }], range, scopedVars: {} } as any);
+    const f = res.data[0];
+    expect(f.fields.map((x: any) => x.name)).toEqual(['time', 'timeEnd', 'title', 'text', 'tags', 'color']);
+    expect(f.length).toBeGreaterThan(0);
+    expect(f.fields.find((x: any) => x.name === 'tags').values).toContainEqual(['source:source-1']);
+    const api = new VisualTimelineDataSource(settings('https://frames.example.com'), ok(SOURCES), interpolate);
+    expect((await api.query({ targets: [{ refId: 'Anno', kind: 'annotations' }], range, scopedVars: {} } as any)).data[0].length).toBe(0);
+    expect(demo.annotations?.getDefaultQuery?.()).toEqual({ kind: 'annotations' });
+  });
+
   test('an API failure is thrown, so Grafana shows it in the panel', async () => {
     const ds = new VisualTimelineDataSource(settings('https://frames.example.com'), fail(502), interpolate);
     await expect(ds.query({ targets: [{ refId: 'A' }], range, scopedVars: {} } as any)).rejects.toThrow();
