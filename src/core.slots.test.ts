@@ -1,9 +1,8 @@
-import { buildSourceModel, ghostFor, missedHeartbeat, slotClass } from './core';
-import { holdFrames } from './vt/model/slots';
+import { buildSourceModel, ghostFor, slotClass } from './core';
 
-/* How a source's window becomes slots, and how each slot is classified:
- * frame, offline ("gap"), pending ("future"), declared pause, or the
- * beyond-now spacer. Pins CURRENT behaviour (safety net for #64). */
+/* How a source's window becomes slots (docs/TIMELINE-MODEL.md), and how
+ * each slot is classified: frame, dropped ("gap": offline), no data ("gap
+ * nodata"), pending ("future"), a pause, or the beyond-now spacer. */
 
 const MIN = 60e3;
 const DAY = 864e5;
@@ -56,10 +55,10 @@ function every(step: number, a: number, b: number, except: (ts: number) => boole
 const view = (slots: any[]) => slots.map((sl) => [(sl.ts - T0) / MIN, slotClass(sl).trim()]);
 
 /* the decls and backends here are partial stand-ins; read the model loosely */
-type Model = { eras: any[]; slots: any[]; slotAt: (t: number) => any; lastActive: any };
+type Model = { eras: any[]; slots: any[]; drops: any[]; step: number; slotAt: (t: number) => any; lastActive: any; refresh: (f: any[], now: number) => void };
 type BuildArgs = Parameters<typeof buildSourceModel>;
-const build = (d: object, P: { from: number; to: number }, backend: object, budget: number): Promise<Model> =>
-  buildSourceModel(d as BuildArgs[0], P, backend as BuildArgs[2], budget);
+const build = (d: object, P: { from: number; to: number }, backend: object, budget: number, opts: BuildArgs[4] = {}): Promise<Model> =>
+  buildSourceModel(d as BuildArgs[0], P, backend as BuildArgs[2], budget, opts) as unknown as Promise<Model>;
 
 const decl = (extra: Record<string, unknown> = {}) => ({ id: 'source-1', site: 'site-a', cadence: 60e3, ...extra });
 
@@ -71,10 +70,12 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+
 describe('slotClass', () => {
   test.each([
     [{ ts: 0, span: 1, frame: { ts: 0, url: 'u' }, future: false }, ''],
     [{ ts: 0, span: 1, frame: null, future: false }, ' gap'],
+    [{ ts: 0, span: 1, frame: null, future: false, nodata: true }, ' gap nodata'],
     [{ ts: 0, span: 1, frame: null, future: true }, ' future'],
     [{ ts: 0, span: 1, frame: { ts: 0, url: 'u' }, future: true }, ''],
     [{ ts: 0, span: 1, beyond: true }, ' beyond'],
@@ -87,525 +88,192 @@ describe('slotClass', () => {
   });
 });
 
-describe('missedHeartbeat (live poll: pending → offline)', () => {
-  const sl = { ts: T0, span: MIN, step: MIN, cadence: MIN, frame: null, future: true };
-  test('stays pending up to and including one full step past its tick', () => {
-    expect(missedHeartbeat(sl, T0)).toBe(false);
-    expect(missedHeartbeat(sl, T0 + MIN - 1)).toBe(false);
-    expect(missedHeartbeat(sl, T0 + MIN)).toBe(false);
-  });
-  test('turns offline once more than a full step has passed', () => {
-    expect(missedHeartbeat(sl, T0 + MIN + 1)).toBe(true);
-  });
-  test('a slot with a frame, or one that is not pending, never misses', () => {
-    expect(missedHeartbeat({ ...sl, frame: { ts: T0, url: 'u' } }, T0 + DAY)).toBeFalsy();
-    expect(missedHeartbeat({ ...sl, future: false }, T0 + DAY)).toBeFalsy();
-  });
-  test('always a boolean: false, not undefined, for slots that are not ticks (#77)', () => {
-    expect(missedHeartbeat({ ts: T0, span: MIN, paused: true }, T0 + DAY)).toBe(false);
-    expect(missedHeartbeat({ ts: T0, span: MIN, beyond: true }, T0 + DAY)).toBe(false);
-    expect(missedHeartbeat({ ...sl, frame: { ts: T0, url: 'u' } }, T0 + DAY)).toBe(false);
-    expect(missedHeartbeat({ ...sl, future: false }, T0 + DAY)).toBe(false);
-  });
-});
-
 describe('ghostFor (the pending slot’s "last known" frame)', () => {
   const f = (ts: number) => ({ ts, url: `frame/${ts}` });
   const s = (ts: number, extra: Record<string, unknown>): any => ({ ts, span: MIN, step: MIN, ...extra });
 
   test('carries the nearest earlier frame across other pending slots', () => {
-    const slots = [
-      s(0, { frame: f(0) }),
-      s(1, { frame: f(1) }),
-      s(2, { future: true, frame: null }),
-      s(3, { future: true, frame: null }),
-    ];
+    const slots = [s(0, { frame: f(0) }), s(1, { frame: f(1) }), s(2, { future: true, frame: null }), s(3, { future: true, frame: null })];
     expect(ghostFor(slots, slots[3])).toBe(slots[1].frame);
     expect(ghostFor(slots, slots[2])).toBe(slots[1].frame);
   });
-
   test('a gap in between means nothing to carry', () => {
     const slots = [s(0, { frame: f(0) }), s(1, { frame: null, future: false }), s(2, { future: true, frame: null })];
     expect(ghostFor(slots, slots[2])).toBeNull();
   });
-
   test('a pause band in between means nothing to carry', () => {
     const slots = [s(0, { frame: f(0) }), { ts: 1, span: 5 * MIN, paused: true }, s(6, { future: true, frame: null })];
     expect(ghostFor(slots, slots[2])).toBeNull();
   });
-
   test('the window start means nothing to carry', () => {
     const slots = [s(0, { future: true, frame: null }), s(1, { future: true, frame: null })];
     expect(ghostFor(slots, slots[0])).toBeNull();
     expect(ghostFor(slots, slots[1])).toBeNull();
   });
-
-  test('a slot not in the list has no ghost', () => {
-    const slots = [s(0, { frame: f(0) })];
-    expect(ghostFor(slots, s(1, { future: true, frame: null }))).toBeNull();
-  });
 });
 
-describe('buildSourceModel', () => {
-  test('a closed window with every frame present: one slot per cadence tick, both ends inclusive', async () => {
-    now = T0 + DAY;
-    const P = { from: T0, to: T0 + 10 * MIN };
-    const backend = backendWith(every(MIN, T0, T0 + 10 * MIN));
-    const m = await build(decl(), P, backend, BUDGET);
-    expect(backend.calls).toEqual([{ from: P.from, to: P.to, step: MIN }]);
-    expect(m.slots).toHaveLength(11);
-    expect(m.slots.every((sl: any) => sl.frame && !sl.future && sl.span === MIN && sl.step === MIN)).toBe(true);
-    expect(m.lastActive).toBe(m.slots[10]);
-    // no beyond-now spacer for a window that ended in the past
-    expect(m.slots.some((sl: any) => sl.beyond)).toBe(false);
+/* the slots tile the window: in order, contiguous, start to end */
+function tiles(m: Model, P: { from: number; to: number }) {
+  expect(m.slots[0].x0).toBe(P.from);
+  for (let i = 1; i < m.slots.length; i++) {expect(m.slots[i].x0).toBeCloseTo(m.slots[i - 1].x0 + m.slots[i - 1].span, 6);}
+  const end = m.slots[m.slots.length - 1];
+  expect(end.x0 + end.span).toBeCloseTo(P.to, 6);
+}
+
+describe('buildSourceModel: a source that promises its cadence', () => {
+  const P = { from: T0, to: T0 + 10 * MIN };
+  beforeEach(() => { now = T0 + DAY; });
+
+  test('every frame present: one slot per tick, both ends inclusive, tiling the window', async () => {
+    const m = await build(decl(), P, backendWith(every(MIN, P.from, P.to)), BUDGET);
+    expect(view(m.slots)).toEqual(every(MIN, P.from, P.to).map((ts) => [(ts - T0) / MIN, '']));
+    tiles(m, P);
   });
 
-  test('the step downsamples to the pixel budget in whole cadences (min 4 slots per era)', async () => {
-    now = T0 + DAY;
-    const P = { from: T0, to: T0 + 60 * MIN };
-    const steps: number[] = [];
-    for (const budget of [1000, 20, 7, 1]) {
-      const backend = backendWith([]);
-      const m = await build(decl(), P, backend, budget);
-      steps.push(backend.calls[0].step);
-      expect(m.slots[0].cadence).toBe(MIN);
-    }
-    // 60 raw slots: share 1000 → 1/1; 20 → 1/3; 7 → 1/9; 1 → clamped to 4 → 1/15
-    expect(steps).toEqual([MIN, 3 * MIN, 9 * MIN, 15 * MIN]);
+  test('the step coarsens to the pixel budget in whole cadences, and sampled frames keep their promise', async () => {
+    const W = { from: T0, to: T0 + 360 * MIN };
+    const m = await build(decl(), W, backendWith(every(MIN, W.from, W.to)), 100);
+    expect(m.step).toBe(4 * MIN);
+    expect(m.slots.every((sl) => sl.frame)).toBe(true);
   });
 
-  test('a cadence change mid-window: each era on its own grid, sparse frames in the slow era are not gaps', async () => {
-    now = T0 + DAY;
-    const P = { from: T0, to: T0 + 60 * MIN };
-    const d = decl({
-      cadence: 240e3,
-      history: [
-        { since: T0 - DAY, variant: 'lo', cadence: 120e3 },
-        { since: T0 + 30 * MIN, variant: 'lo', cadence: 240e3 },
-      ],
-    });
-    // frames at 120 s, then 240 s (uploads snap to epoch multiples of the
-    // cadence, so the first slow frame is 32m); the 44m frame is missing
-    const have = [
-      ...every(2 * MIN, T0, T0 + 30 * MIN),
-      ...every(4 * MIN, T0 + 32 * MIN, T0 + 60 * MIN, (ts) => ts === T0 + 44 * MIN),
-    ];
-    const backend = backendWith(have);
-    const m = await build(d, P, backend, BUDGET);
-
-    expect(backend.calls).toEqual([
-      { from: T0, to: T0 + 30 * MIN, step: 120e3 },
-      { from: T0 + 30 * MIN, to: P.to, step: 240e3 },
-    ]);
-    const slow = m.slots.filter((sl: any) => sl.step === 240e3);
-    const fast = m.slots.filter((sl: any) => sl.step === 120e3);
-    expect(fast.map((sl: any) => (sl.ts - T0) / MIN)).toEqual([
-      0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30,
-    ]);
-    // the slow grid is epoch-aligned, not era-aligned: it starts at 32m
-    expect(slow.map((sl: any) => (sl.ts - T0) / MIN)).toEqual([32, 36, 40, 44, 48, 52, 56, 60]);
-    expect(slow.every((sl: any) => sl.cadence === 240e3 && sl.span === 240e3)).toBe(true);
-    // the only offline slot is the one missing 240 s frame
-    expect(view(m.slots).filter(([, c]) => c === 'gap')).toEqual([[44, 'gap']]);
-    expect(m.lastActive.step).toBe(240e3);
+  test('a missed frame is dropped from when it was due: offline', async () => {
+    const m = await build(decl(), P, backendWith(every(MIN, P.from, P.to, (ts) => ts === T0 + 4 * MIN || ts === T0 + 5 * MIN)), BUDGET);
+    expect(view(m.slots).slice(3, 7)).toEqual([[3, ''], [4, 'gap'], [5, 'gap'], [6, '']]);
   });
 
-  test('era boundary on both grids: the later era owns the boundary tick (#65)', async () => {
-    now = T0 + DAY;
-    const P = { from: T0, to: T0 + 60 * MIN };
-    const d = decl({
-      history: [
-        { since: T0 - DAY, cadence: 120e3 },
-        { since: T0 + 32 * MIN, cadence: 240e3 },
-      ],
-    });
-    const m = await build(d, P, backendWith(every(2 * MIN, T0, T0 + 60 * MIN)), BUDGET);
-    const atBoundary = m.slots.filter((sl: any) => sl.ts === T0 + 32 * MIN);
-    expect(atBoundary.map((sl: any) => sl.step)).toEqual([240e3]);
-    expect(atBoundary[0].frame.ts).toBe(T0 + 32 * MIN);
-    // slots stay in time order with no duplicates
-    const ts = m.slots.map((sl: any) => sl.ts);
-    expect(ts).toEqual([...new Set(ts)].sort((a, b) => a - b));
+  test('drift within the tolerance is not a gap', async () => {
+    // every frame 20 s late, two of them 40 s late
+    const have = every(MIN, P.from, P.to).map((ts, i) => ts + (i === 3 || i === 6 ? 40e3 : 20e3));
+    const m = await build(decl(), P, { frames: () => Promise.resolve(have.map((ts) => ({ ts, url: `f/${ts}` }))) }, BUDGET);
+    expect(m.slots.filter((sl) => !sl.frame && !sl.beyond)).toEqual([]);
   });
 
-  test('a boundary tick off the later grid keeps its frame in the earlier era', async () => {
-    // 30m is on the 120 s grid but not the 240 s one (32, 36, ...): the later
-    // era won't draw it, so the earlier era keeps it rather than lose a frame
-    now = T0 + DAY;
-    const P = { from: T0, to: T0 + 60 * MIN };
-    const d = decl({
-      history: [
-        { since: T0 - DAY, cadence: 120e3 },
-        { since: T0 + 30 * MIN, cadence: 240e3 },
-      ],
-    });
-    const m = await build(d, P, backendWith(every(2 * MIN, T0, T0 + 30 * MIN)), BUDGET);
-    const at30 = m.slots.filter((sl: any) => sl.ts === T0 + 30 * MIN);
-    expect(at30).toHaveLength(1);
-    expect(at30[0]).toMatchObject({ step: 120e3, frame: { ts: T0 + 30 * MIN } });
-  });
-
-  test('an active era with no tick inside gets one slot at its start, spanning it (#65)', async () => {
-    now = T0 + DAY;
-    const P = { from: T0, to: T0 + 60 * MIN };
-    const d = decl({
-      history: [
-        { since: T0 - DAY, paused: true },
-        { since: T0 + 10 * MIN + 10e3 },
-        { since: T0 + 10 * MIN + 50e3, paused: true },
-      ],
-    });
-    const m = await build(d, P, backendWith([]), BUDGET);
-    expect(m.slots.map((sl: any) => [(sl.ts - T0) / 1e3, slotClass(sl).trim()])).toEqual([
-      [0, 'paused'],
-      [610, 'gap'],
-      [650, 'paused'],
-    ]);
-    expect(m.slots[1]).toMatchObject({ span: 40e3, step: 60e3 });
-  });
-
-  test('a short era shows the frame it sent, even snapped just outside it', async () => {
-    // uploads snap to the NEAREST grid point: a frame sent at 10m40s lands on 11m
-    now = T0 + DAY;
-    const P = { from: T0, to: T0 + 60 * MIN };
-    const d = decl({
-      history: [
-        { since: T0 - DAY, paused: true },
-        { since: T0 + 10 * MIN + 10e3 },
-        { since: T0 + 10 * MIN + 50e3, paused: true },
-      ],
-    });
-    const m = await build(d, P, backendWith([T0 + 11 * MIN]), BUDGET);
-    expect(m.slots[1]).toMatchObject({ ts: T0 + 10 * MIN + 10e3, frame: { ts: T0 + 11 * MIN } });
-    expect(slotClass(m.slots[1])).toBe('');
-  });
-
-  test('an era whose only tick is its boundary gets the start slot instead', async () => {
-    // active 10m10s–11m, then a pause: its one tick (11m) is the empty
-    // boundary before the band, so it moves to the era's start
-    now = T0 + DAY;
-    const P = { from: T0, to: T0 + 60 * MIN };
-    const d = decl({
-      history: [
-        { since: T0 - DAY, paused: true },
-        { since: T0 + 10 * MIN + 10e3 },
-        { since: T0 + 11 * MIN, paused: true },
-      ],
-    });
-    const m = await build(d, P, backendWith([]), BUDGET);
-    expect(m.slots.map((sl: any) => [(sl.ts - T0) / 1e3, slotClass(sl).trim()])).toEqual([
-      [0, 'paused'],
-      [610, 'gap'],
-      [660, 'paused'],
-    ]);
-  });
-
-  test('the re-inserted start slot is judged against the build-time now (#77)', async () => {
-    // as above, but now is exactly one cadence past the era start (11m10s),
-    // so its start slot is still pending; the clock moves on while frames
-    // are fetched, and the start slot must not see that later now
-    now = T0 + 11 * MIN + 10e3;
-    const P = { from: T0, to: T0 + 60 * MIN };
-    const d = decl({
-      history: [
-        { since: T0 - DAY, paused: true },
-        { since: T0 + 10 * MIN + 10e3 },
-        { since: T0 + 11 * MIN, paused: true },
-        { since: T0 + 30 * MIN },
-      ],
-    });
-    const inner = backendWith([]);
-    const slow = {
-      frames(...args: Parameters<typeof inner.frames>) {
-        now += 1e3;
-        return inner.frames(...args);
-      },
-    };
-    const m = await build(d, P, slow, BUDGET);
-    expect(inner.calls.length).toBeGreaterThan(0);
-    const real = m.slots.filter((sl: any) => !sl.beyond);
-    expect(real.map((sl: any) => [(sl.ts - T0) / 1e3, slotClass(sl).trim()])).toEqual([
-      [0, 'paused'],
-      [610, 'future'],
-      [660, 'paused'],
-    ]);
-  });
-
-  test('a goodbye frame on a pause’s start tick stays visible', async () => {
-    now = T0 + DAY;
-    const P = { from: T0, to: T0 + 60 * MIN };
-    const d = decl({
-      history: [
-        { since: T0 - DAY, cadence: 60e3 },
-        { since: T0 + 30 * MIN, paused: true, reason: 'quiet' },
-        { since: T0 + 45 * MIN, cadence: 60e3 },
-      ],
-    });
-    const m = await build(d, P, backendWith(every(MIN, T0, T0 + 30 * MIN)), BUDGET);
-    const at30 = m.slots.filter((sl: any) => sl.ts === T0 + 30 * MIN);
-    expect(at30.map((sl: any) => slotClass(sl).trim())).toEqual(['', 'paused']);
+  test('a cadence change mid-window: frames in the slow era keep its promise, so they are not gaps', async () => {
+    const d = decl({ history: [{ since: T0 + 4 * MIN, cadence: 3 * MIN }] });
+    const have = [...every(MIN, T0, T0 + 4 * MIN), ...every(3 * MIN, T0 + 7 * MIN, T0 + 10 * MIN)];
+    const m = await build(d, P, backendWith(have), BUDGET);
+    expect(m.slots.some((sl) => sl.frame === null && !sl.beyond)).toBe(false);
   });
 
   test('a declared (bounded) pause next to an unexpected gap: neutral band vs offline slots', async () => {
-    now = T0 + DAY;
-    const P = { from: T0, to: T0 + 60 * MIN };
-    const d = decl({
-      history: [
-        { since: T0 - DAY, variant: 'lo', cadence: 60e3 },
-        { since: T0 + 30 * MIN, variant: 'lo', paused: true, reason: 'quiet' },
-        { since: T0 + 45 * MIN, variant: 'lo', cadence: 60e3 },
-      ],
-    });
-    // the source went silent UNEXPECTEDLY at 20m, then declared quiet hours
-    // 30m–45m, then resumed; frames 0–19m and 45–60m
-    const have = [...every(MIN, T0, T0 + 19 * MIN), ...every(MIN, T0 + 45 * MIN, T0 + 60 * MIN)];
-    const backend = backendWith(have);
-    const m = await build(d, P, backend, BUDGET);
-
-    // a bounded pause is taken from the registry: no probe request for it
-    expect(backend.calls).toEqual([
-      { from: T0, to: T0 + 30 * MIN, step: MIN },
-      { from: T0 + 45 * MIN, to: P.to, step: MIN },
-    ]);
-    const v = view(m.slots);
-    expect(v.slice(0, 20).every(([, c]) => c === '')).toBe(true);
-    // 20m–29m: unexpected silence → offline. The tick AT the pause start (30m)
-    // belongs to the later era (#65): an empty tick there would be a gap slot
-    // drawn right before the band, so the band owns it.
-    expect(v.slice(20, 30)).toEqual([20, 21, 22, 23, 24, 25, 26, 27, 28, 29].map((t) => [t, 'gap']));
-    // the declared pause: ONE band slot spanning the whole bounded era
-    expect(v[30]).toEqual([30, 'paused']);
-    expect(m.slots[30]).toMatchObject({ ts: T0 + 30 * MIN, span: 15 * MIN, paused: true, reason: 'quiet' });
-    expect(v.slice(31).every(([, c]) => c === '')).toBe(true);
-    expect(v.slice(31)[0]).toEqual([45, '']);
-    expect(m.slots).toHaveLength(31 + 16);
+    const d = decl({ history: [{ since: T0 + 2 * MIN, paused: true, label: 'Quiet', color: '#00f' }, { since: T0 + 5 * MIN }] });
+    const have = every(MIN, P.from, P.to, (ts) => (ts > T0 + 1 * MIN && ts < T0 + 5 * MIN) || ts === T0 + 7 * MIN);
+    const m = await build(d, P, backendWith(have), BUDGET);
+    const band = m.slots.find((sl) => sl.paused);
+    expect([(band.x0 - T0) / MIN, band.span / MIN, band.label]).toEqual([2, 3, 'Quiet']);
+    expect(view(m.slots).filter(([, c]) => c === 'gap').map(([t]) => t)).toEqual([7]);
+    tiles(m, P);
   });
 
-  test('a tail pause with no frames since: band to the window end, no active slots after it', async () => {
-    now = T0 + DAY;
-    const P = { from: T0, to: T0 + 60 * MIN };
-    const d = decl({
-      history: [
-        { since: T0 - DAY, cadence: 60e3 },
-        { since: T0 + 30 * MIN, paused: true, reason: 'screen-sleep', intended: false },
-      ],
-    });
-    const m = await build(d, P, backendWith(every(MIN, T0, T0 + 30 * MIN)), BUDGET);
+  test('a goodbye frame on a pause’s start tick stays visible', async () => {
+    const d = decl({ history: [{ since: T0 + 5 * MIN, paused: true }, { since: T0 + 8 * MIN }] });
+    const m = await build(d, P, backendWith(every(MIN, P.from, P.to, (ts) => ts > T0 + 5 * MIN && ts < T0 + 8 * MIN)), BUDGET);
+    const i = m.slots.findIndex((sl) => sl.paused);
+    expect(m.slots[i - 1].frame.ts).toBe(T0 + 5 * MIN);
+  });
+
+  test('a tail pause with no frames since: one band to the window end', async () => {
+    const d = decl({ history: [{ since: T0 + 6 * MIN, paused: true }] });
+    const m = await build(d, P, backendWith(every(MIN, P.from, T0 + 6 * MIN)), BUDGET);
     const last = m.slots[m.slots.length - 1];
-    expect(last).toMatchObject({
-      ts: T0 + 30 * MIN,
-      span: 30 * MIN,
-      paused: true,
-      reason: 'screen-sleep',
-      intended: false,
-    });
-    expect(slotClass(last)).toBe(' paused');
-    expect(m.lastActive.ts).toBe(T0 + 30 * MIN);
+    expect([last.paused, (last.x0 - T0) / MIN, (last.x0 + last.span - T0) / MIN]).toEqual([true, 6, 10]);
   });
 
-  test('a tail pause infers resume from frames, ignoring a goodbye straggler in its first cadence', async () => {
-    now = T0 + DAY;
-    const P = { from: T0, to: T0 + 60 * MIN };
-    const d = decl({
-      history: [
-        { since: T0 - DAY, cadence: 60e3 },
-        { since: T0 + 30 * MIN, paused: true },
-      ],
-    });
-    // frames to 30m (the straggler snapped onto the pause start), then from 40m
-    const have = [...every(MIN, T0, T0 + 30 * MIN), ...every(MIN, T0 + 40 * MIN, T0 + 60 * MIN)];
-    const backend = backendWith(have);
-    const m = await build(d, P, backend, BUDGET);
-    // the probe at the era's own cadence
-    expect(backend.calls[1]).toEqual({ from: T0 + 30 * MIN, to: P.to, step: MIN });
-    const band = m.slots.find((sl: any) => sl.paused);
-    expect(band).toMatchObject({ ts: T0 + 30 * MIN, span: 10 * MIN });
-    const after = m.slots.slice(m.slots.indexOf(band) + 1);
-    expect(after[0].ts).toBe(T0 + 40 * MIN);
-    expect(after.every((sl: any) => sl.frame && !sl.paused)).toBe(true);
+  test('a tail pause ends at the first frame a cadence into it, not at a goodbye straggler', async () => {
+    const d = decl({ history: [{ since: T0 + 3 * MIN, paused: true }] });
+    const have = [...every(MIN, T0, T0 + 3 * MIN), T0 + 3 * MIN + 20e3, ...every(MIN, T0 + 7 * MIN, P.to)];
+    const m = await build(d, P, { frames: () => Promise.resolve(have.map((ts) => ({ ts, url: `f/${ts}` }))) }, BUDGET);
+    const band = m.slots.find((sl) => sl.paused);
+    expect([(band.x0 - T0) / MIN, (band.x0 + band.span - T0) / MIN]).toEqual([3, 7]);
   });
 
-  describe('the live right edge', () => {
-    const P = { from: T0, to: T0 + 70 * MIN }; // window extends 10 minutes past now
-
-    test('the tick that just passed is pending (one-step grace) and carries the last frame as its ghost', async () => {
-      now = T0 + 60 * MIN + 20e3;
-      // frames through 59m; the 60m frame is still in flight
-      const m = await build(decl(), P, backendWith(every(MIN, T0, T0 + 59 * MIN)), BUDGET);
-      const v = view(m.slots);
-      expect(v.slice(-3)).toEqual([
-        [59, ''],
-        [60, 'future'],
-        [60.5, 'beyond'],
-      ]);
-      const pending = m.slots[m.slots.length - 2];
-      expect(ghostFor(m.slots, pending)).toBe(m.slots[m.slots.length - 3].frame);
-      // the beyond spacer starts at the pending tick's half-step and runs to the window end
-      expect(m.slots[m.slots.length - 1]).toMatchObject({ ts: T0 + 60.5 * MIN, span: 9.5 * MIN, beyond: true });
-      // the live poll keeps it pending for a full step past its tick, then it is offline
-      expect(missedHeartbeat(pending, T0 + 61 * MIN)).toBe(false);
-      expect(missedHeartbeat(pending, T0 + 61 * MIN + 1)).toBe(true);
-      expect(m.lastActive).toBe(pending);
-    });
-
-    test('no slot is drawn past now', async () => {
-      now = T0 + 60 * MIN + 20e3;
-      const m = await build(decl(), P, backendWith([]), BUDGET);
-      const active = m.slots.filter((sl: any) => !sl.beyond);
-      expect(Math.max(...active.map((sl: any) => sl.ts))).toBe(T0 + 60 * MIN);
-    });
-
-    test('a tick more than a step old with no frame is already offline at build', async () => {
-      now = T0 + 60 * MIN + 20e3;
-      const m = await build(decl(), P, backendWith(every(MIN, T0, T0 + 57 * MIN)), BUDGET);
-      expect(view(m.slots).slice(-5)).toEqual([
-        [57, ''],
-        [58, 'gap'],
-        [59, 'gap'],
-        [60, 'future'],
-        [60.5, 'beyond'],
-      ]);
-      // after a gap there is nothing honest to carry
-      expect(ghostFor(m.slots, m.slots[m.slots.length - 2])).toBeNull();
-    });
-
-    test('grace boundary: build and the live poll agree at exactly one step past the tick', async () => {
-      // #65: build used to mark pending only while ts + step > now, while the
-      // live poll (missedHeartbeat) keeps it pending while ts + step >= now,
-      // so at exactly that millisecond a fresh build said offline and the
-      // poll said pending. Both now say pending, and offline one ms later.
-      now = T0 + 61 * MIN;
-      const m = await build(decl(), P, backendWith(every(MIN, T0, T0 + 59 * MIN)), BUDGET);
-      const sixty = m.slots.find((sl: any) => sl.ts === T0 + 60 * MIN);
-      expect(slotClass(sixty)).toBe(' future');
-      expect(missedHeartbeat(sixty, now)).toBe(false);
-
-      now = T0 + 61 * MIN + 1;
-      const later = await build(decl(), P, backendWith(every(MIN, T0, T0 + 59 * MIN)), BUDGET);
-      const sixtyLater = later.slots.find((sl: any) => sl.ts === T0 + 60 * MIN);
-      expect(slotClass(sixtyLater)).toBe(' gap');
-      expect(missedHeartbeat({ ...sixtyLater, future: true }, now)).toBe(true);
-    });
-
-    test('a scheduled future cadence change does not spray pending slots past now', async () => {
-      now = T0 + 60 * MIN + 20e3;
-      const d = decl({
-        history: [
-          { since: T0 - DAY, cadence: 60e3 },
-          { since: T0 + 65 * MIN, cadence: 30e3 },
-        ],
-      });
-      const m = await build(d, P, backendWith(every(MIN, T0, T0 + 60 * MIN)), BUDGET);
-      expect(m.slots.filter((sl: any) => !sl.beyond && sl.ts > now)).toEqual([]);
-      expect(m.slots.some((sl: any) => sl.cadence === 30e3)).toBe(false);
-      // the 60m tick is inside its grace step: flagged pending, but its frame is
-      // already here, so it renders as a frame
-      expect(slotClass(m.slots[m.slots.length - 2])).toBe('');
-      expect(m.slots[m.slots.length - 2]).toMatchObject({ ts: T0 + 60 * MIN, future: true });
-      expect(m.slots[m.slots.length - 1]).toMatchObject({ beyond: true, ts: T0 + 60.5 * MIN, span: 9.5 * MIN });
-    });
-
-    test('a tail pause band stops at now; the spacer covers the rest', async () => {
-      now = T0 + 60 * MIN + 20e3;
-      const d = decl({
-        history: [
-          { since: T0 - DAY, cadence: 60e3 },
-          { since: T0 + 50 * MIN, paused: true, reason: 'quiet' },
-        ],
-      });
-      const m = await build(d, P, backendWith(every(MIN, T0, T0 + 50 * MIN)), BUDGET);
-      const [band, spacer] = m.slots.slice(-2);
-      expect(band).toMatchObject({ paused: true, ts: T0 + 50 * MIN, span: 10 * MIN + 20e3 });
-      expect(spacer).toMatchObject({ beyond: true, ts: now, span: P.to - now });
-    });
-  });
-
-  test('slotAt: ticks are centred, bands and spacer are [ts, ts + span)', async () => {
-    now = T0 + 60 * MIN + 20e3;
-    const P = { from: T0, to: T0 + 70 * MIN };
-    const d = decl({
-      history: [{ since: T0 - DAY, cadence: 60e3 }, { since: T0 + 30 * MIN, paused: true }, { since: T0 + 40 * MIN }],
-    });
-    const m = await build(d, P, backendWith(every(MIN, T0, T0 + 59 * MIN)), BUDGET);
-    expect(m.slotAt(T0 + 10 * MIN + 29e3).ts).toBe(T0 + 10 * MIN);
-    expect(m.slotAt(T0 + 10 * MIN + 30e3).ts).toBe(T0 + 11 * MIN);
-    // before the window: the first slot
+  test('slotAt: the slot whose span holds t; before the window the first, past it the last', async () => {
+    const m = await build(decl(), P, backendWith(every(MIN, P.from, P.to)), BUDGET);
+    expect(m.slotAt(T0 + 3 * MIN + 29e3).ts).toBe(T0 + 3 * MIN);
+    expect(m.slotAt(T0 + 3 * MIN + 31e3).ts).toBe(T0 + 4 * MIN);
     expect(m.slotAt(T0 - DAY)).toBe(m.slots[0]);
-    // inside the pause: the band (the 30m tick of the active era wins its own first half-step)
-    expect(m.slotAt(T0 + 30 * MIN + 10e3).paused).toBeUndefined();
-    expect(m.slotAt(T0 + 30 * MIN + 30e3).paused).toBe(true);
-    expect(m.slotAt(T0 + 39 * MIN).paused).toBe(true);
-    // the spacer's leading half-step resolves to the pending slot, past it the spacer
-    expect(m.slotAt(T0 + 60.5 * MIN + 10e3).ts).toBe(T0 + 60 * MIN);
-    expect(m.slotAt(T0 + 65 * MIN).beyond).toBe(true);
-    // past the window: the last slot
     expect(m.slotAt(T0 + DAY)).toBe(m.slots[m.slots.length - 1]);
   });
-});
 
-describe('a long pause that is still open', () => {
-  // a source paused for days at a 60 s cadence: probing for its resume at the
-  // cadence asked an API for thousands of buckets (the reference worker caps
-  // a /frames request at 800, answers 400, and the source went missing)
-  test('the resume probe stays within the API\'s bucket cap', async () => {
-    now = T0 + 2 * DAY;
-    const P = { from: T0 - 5 * DAY, to: T0 + 2 * DAY };
-    const d = decl({ history: [{ since: T0 - 10 * DAY }, { since: T0, paused: true }] });
-    const backend = backendWith([]);
-    const m = await build(d, P, backend, 200);
-    for (const c of backend.calls) {
-      expect((c.to - c.from) / c.step).toBeLessThanOrEqual(800);
-    }
-    expect(m.slots.some((sl: any) => sl.paused)).toBe(true);
-  });
-
-  test('a resume is still found exactly, not to the coarse step', async () => {
-    now = T0 + 2 * DAY;
-    const P = { from: T0, to: T0 + 2 * DAY };
-    const resumeAt = T0 + DAY + 7 * MIN;
-    const d = decl({ history: [{ since: T0 - DAY }, { since: T0, paused: true }] });
-    const m = await build(d, P, backendWith(every(MIN, resumeAt, T0 + 2 * DAY)), BUDGET);
-    const pause = m.slots.find((sl: any) => sl.paused);
-    expect(pause.ts + pause.span).toBe(resumeAt);
+  test('a drop shorter than a slot, between frames, is marked at its true place', async () => {
+    // 10-second frames, sampled a minute per slot; 30 s missing at 4:00
+    const have = every(10e3, P.from, P.to, (ts) => ts > T0 + 4 * MIN && ts < T0 + 4 * MIN + 40e3);
+    const d = decl({ cadence: 10e3 });
+    const m = await build(d, P, { frames: () => Promise.resolve(have.map((ts) => ({ ts, url: `f/${ts}` }))) }, 10);
+    expect(m.step).toBe(MIN);
+    expect(m.slots.every((sl) => sl.frame || sl.beyond)).toBe(true);
+    expect(m.drops.map((x: { from: number; to: number }) => [(x.from - T0) / 1e3, (x.to - T0) / 1e3])).toEqual([[250, 280]]);
+    // a slot that took several frames says so (M10 plays through them)
+    expect(m.slots[2].count).toBe(6);
   });
 });
 
+describe('the live right edge', () => {
+  const NOW = T0 + 10 * MIN + 10e3;
+  const P = { from: T0, to: T0 + 15 * MIN };
+  beforeEach(() => { now = NOW; });
 
-describe('missing frames: holding the last frame and neutral gaps (#126)', () => {
-  // frames at minutes 0, 1, 2, then nothing until 9, then 10: an irregular feed
-  const have = [0, 1, 2, 9, 10].map((m) => T0 + m * MIN);
-  const P = { from: T0, to: T0 + 10 * MIN };
-
-  test('without a hold, every missing minute is a gap', async () => {
-    now = T0 + 60 * MIN;
-    const m = await build(decl(), P, backendWith(have), BUDGET);
-    expect(view(m.slots).filter(([, c]) => c === 'gap').map(([t]) => t)).toEqual([3, 4, 5, 6, 7, 8]);
+  test('the frame due just now is pending, and carries the last frame as its ghost', async () => {
+    now = T0 + 10 * MIN + 10e3;
+    const m = await build(decl(), P, backendWith(every(MIN, P.from, T0 + 9 * MIN)), BUDGET);
+    const pending = m.slots.filter((sl) => sl.future);
+    expect(pending.map((sl) => (sl.ts - T0) / MIN)).toEqual([10]);
+    expect(ghostFor(m.slots, pending[0])!.ts).toBe(T0 + 9 * MIN);
   });
 
-  test('held up to 4 minutes: the last frame fills the slots after it, then gaps', async () => {
-    now = T0 + 60 * MIN;
-    const m = await buildSourceModel(decl() as any, P, backendWith(have) as any, BUDGET, 4 * MIN);
-    expect(view(m.slots).map(([t, c]) => `${t}:${c || 'frame'}`)).toEqual([
-      '0:frame', '1:frame', '2:frame', '3:held', '4:held', '5:held', '6:held', '7:gap', '8:gap', '9:frame', '10:frame',
-    ]);
-    // a held slot shows the frame it holds, with that frame's own time
-    expect(m.slotAt(T0 + 5 * MIN)!.frame!.ts).toBe(T0 + 2 * MIN);
+  test('still pending most of a cadence after it was due', async () => {
+    now = T0 + 10 * MIN + 50e3;
+    const m = await build(decl(), P, backendWith(every(MIN, P.from, T0 + 9 * MIN)), BUDGET);
+    expect(m.slots.find((sl) => sl.ts === T0 + 10 * MIN && !sl.beyond).future).toBe(true);
   });
 
-  test('held always: no gaps after the first frame; a pause band ends the hold', () => {
-    const slots: any[] = [
-      { ts: 0, span: 1, frame: { ts: 0, url: 'a' }, future: false },
-      { ts: 1, span: 1, frame: null, future: false },
-      { ts: 2, span: 1, paused: true },
-      { ts: 3, span: 1, frame: null, future: false },
-      { ts: 4, span: 1, frame: null, future: true },
-    ];
-    expect(holdFrames(slots, Infinity)).toHaveLength(1);
-    expect(slots.map((sl) => slotClass(sl).trim())).toEqual(['', 'held', 'paused', 'gap', 'future']);
+  test('overdue a full cadence after it was due: dropped, offline', async () => {
+    now = T0 + 11 * MIN + 10e3;
+    const m = await build(decl(), P, backendWith(every(MIN, P.from, T0 + 9 * MIN)), BUDGET);
+    const edge = m.slots.find((sl) => sl.ts === T0 + 11 * MIN && !sl.beyond);
+    expect([edge.frame, edge.future, edge.nodata]).toEqual([null, false, undefined]);
   });
 
-  test("'nodata' gaps are the neutral kind", () => {
-    expect(slotClass({ frame: null, future: false }, 'nodata')).toBe(' gap nodata');
-    expect(slotClass({ frame: null, future: false })).toBe(' gap');
+  test('nothing past now: one spacer covers the rest, and the poll slides it along', async () => {
+    const m = await build(decl(), P, backendWith(every(MIN, P.from, T0 + 10 * MIN)), BUDGET);
+    const tail = m.slots[m.slots.length - 1];
+    expect([tail.beyond, tail.x0, tail.x0 + tail.span]).toEqual([true, NOW, P.to]);
+    tiles(m, P);
+    m.refresh([{ ts: T0 + 11 * MIN, url: 'f/11' }], T0 + 11 * MIN + 5e3);
+    expect(m.slots.find((sl) => sl.ts === T0 + 11 * MIN).frame.url).toBe('f/11');
+    expect(m.slots[m.slots.length - 1].x0).toBe(T0 + 11 * MIN + 5e3);
+    tiles(m, P);
+  });
+});
+
+describe('a source with no promise (its cadence only inferred)', () => {
+  const P = { from: T0, to: T0 + 120 * MIN };
+  beforeEach(() => { now = T0 + DAY; });
+  const kilauea = [-21, -1, 9, 29, 39, 59, 69, 89, 99, 119].map((m) => T0 + m * MIN);
+  const frames = (ts: number[]) => ({ frames: () => Promise.resolve(ts.map((t) => ({ ts: t, url: `f/${t}` }))) });
+
+  test('Kīlauea F1: gaps of 20 and 10 minutes are one continuous strip, never a gap', async () => {
+    const m = await build(decl({ cadence: 10 * MIN, inferred: true }), P, frames(kilauea), BUDGET);
+    expect(m.slots.every((sl) => sl.frame)).toBe(true);
+  });
+
+  test('a long silence runs out into neutral no data, never offline', async () => {
+    const have = [...every(MIN, T0, T0 + 5 * MIN), ...every(MIN, T0 + 60 * MIN, T0 + 120 * MIN)];
+    const m = await build(decl({ inferred: true }), P, frames(have), BUDGET);
+    const cls = view(m.slots).map(([, c]) => c);
+    expect(cls).not.toContain('gap');
+    expect(cls).toContain('gap nodata');
+  });
+
+  test("hold 'none': the last frame until the next, however long", async () => {
+    const m = await build(decl({ inferred: true }), P, frames([T0, T0 + 100 * MIN]), BUDGET, { hold: 'none' });
+    expect(m.slots.every((sl) => sl.frame)).toBe(true);
+  });
+
+  test('a fixed hold limit', async () => {
+    const m = await build(decl({ inferred: true }), P, frames([T0, T0 + 100 * MIN]), BUDGET, { hold: 10 * MIN });
+    expect(m.slots.find((sl) => sl.ts === T0 + 9 * MIN).frame).not.toBeNull();
+    expect(m.slots.find((sl) => sl.ts === T0 + 11 * MIN).nodata).toBe(true);
   });
 });

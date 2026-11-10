@@ -5,8 +5,9 @@ import { esc, filterAttrs, headChips, headTitle } from '../dom/html';
 import { dressGhost } from '../ui/ghost';
 import { q } from '../ui/wrapper';
 import { attachZoneChip, zoneChip } from '../zones/chip';
-import { zoneFor } from '../zones/source';
-import type { SourceDecl, SourceModel } from '../types';
+import { zoneFor, type ZoneTexts } from '../zones/source';
+import type { Slot, SourceDecl, SourceModel } from '../types';
+import { ruleBeyond } from './axis';
 import { hideSelection, setCursor, showSelection } from './cursor';
 import type { Card, TimelineState } from './state';
 
@@ -40,6 +41,79 @@ export function dressAll(s: TimelineState, tries: number): void {
   for (const k of s.kiosks) {if (s.cards[k.id]) {dressStrip(s.cards[k.id].model);}}
 }
 
+/* A strip's slot elements, from its model: built at mount and again by
+ * the live poll after each refresh. Slots showing the same frame side by
+ * side are one cell (a frame that stood for 20 minutes is 20 minutes wide),
+ * and an element whose content is unchanged is reused, so its image
+ * doesn't reload. Dropped time inside cells that show a frame is drawn as
+ * marks at its true place. */
+export function renderStrip(s: TimelineState, model: SourceModel, strip: HTMLElement, kiosk: string, tt: ZoneTexts): void {
+  type Cell = { key: string; slots: Slot[] };
+  const cells: Cell[] = [];
+  for (const sl of model.slots) {
+    const key = sl.frame ? 'f:' + sl.frame.ts + ':' + sl.frame.url
+      : sl.paused ? 'p:' + sl.x0 : sl.beyond ? 'b' : (sl.future ? 'u:' : sl.nodata ? 'n:' : 'g:') + sl.x0;
+    const last = cells[cells.length - 1];
+    if (sl.frame && last && last.key === key) {last.slots.push(sl);}
+    else {cells.push({ key, slots: [sl] });}
+  }
+  const old = ((strip as StripEl).__cells ??= new Map<string, HTMLElement>());
+  const next = new Map<string, HTMLElement>();
+  const before = strip.querySelector('.drops');
+  for (const cell of cells) {
+    const sl = cell.slots[0];
+    let el = old.get(cell.key);
+    const fresh = !el;
+    if (!el) {el = document.createElement('div');}
+    old.delete(cell.key);
+    next.set(cell.key, el);
+    const cls = 'slot' + slotClass(sl) + (cell.slots.some((x) => !x.paused && !x.beyond && x.count > 1) ? ' multi' : '');
+    if (el.className !== cls) {el.className = cls;}
+    // width ∝ time span, so x↔time stays linear
+    const span = cell.slots.reduce((a, x) => a + x.span, 0);
+    el.style.flexGrow = String(span / 1000);
+    if (sl.paused) {
+      const pi = pauseInfo(sl);
+      el.title = pi.label.toLowerCase();
+      if (pi.color) {el.style.setProperty('--ktl-band', pi.color);}
+    }
+    if (sl.frame && fresh) {
+      const img = document.createElement('img');
+      img.alt = kiosk + ' ' + tt.time(sl.frame.ts) + tt.sfx(sl.frame.ts);
+      el.appendChild(img);
+      s.images.add(img, sl.frame.url, sl.frame.ts);   // newest first, across all cards
+    }
+    for (const x of cell.slots) {x.el = el;}
+    strip.insertBefore(el, before);
+  }
+  for (const el of old.values()) {el.remove();}
+  (strip as StripEl).__cells = next;
+  // hairline cell boundaries only when cells are wide enough — below ~12px
+  // they read as zebra noise rather than structure
+  strip.classList.toggle('sep', s.hostWidth / Math.max(1, cells.length) >= 12);
+  for (const sl of model.slots) {if (sl.future) {dressGhost(model.slots, sl);}}
+  // dropped time inside cells that show a frame, at its true place
+  let drops = strip.querySelector<HTMLElement>('.drops');
+  if (model.drops.length && !drops) {
+    drops = document.createElement('div');
+    drops.className = 'drops';
+    strip.appendChild(drops);
+  }
+  if (drops) {
+    drops.textContent = '';
+    for (const d of model.drops) {
+      const m = document.createElement('div');
+      m.className = 'drop';
+      m.style.left = ((d.from - s.P.from) / s.SPAN * 100).toFixed(4) + '%';
+      m.style.width = ((d.to - d.from) / s.SPAN * 100).toFixed(4) + '%';
+      drops.appendChild(m);
+    }
+  }
+  const tail = model.slots[model.slots.length - 1];
+  if (tail && tail.beyond) {ruleBeyond(s, tail);}
+}
+type StripEl = HTMLElement & { __cells?: Map<string, HTMLElement> };
+
 /* One source's card: header, strip (one element per slot), magnifier,
  * crosshair and selection band, with the strip's hover, click-in preview
  * and drag-zoom handlers. Every element queried below (asserted non-null)
@@ -65,28 +139,7 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   const strip = card.querySelector<HTMLElement>('.strip')!;
   // hairline frame boundaries only when slices are wide enough — below
   // ~12px they read as zebra noise rather than structure
-  if (s.hostWidth / model.slots.length >= 12) {strip.classList.add('sep');}
-  const slots = model.slots;
-  for (const sl of slots) {
-    const el = document.createElement('div');
-    el.className = 'slot' + slotClass(sl, s.cfg.missingFrames);
-    if (sl.paused) {
-      const pi = pauseInfo(sl);
-      el.title = pi.label.toLowerCase();
-      if (pi.color) {el.style.setProperty('--ktl-band', pi.color);}
-    }
-    // width ∝ time span, so x↔time stays linear across era boundaries
-    el.style.flexGrow = String(sl.span / 1000);
-    if (sl.frame) {
-      const img = document.createElement('img');
-      img.alt = kiosk + ' ' + tt.time(sl.ts) + tt.sfx(sl.ts);
-      el.appendChild(img);
-      s.images.add(img, sl.frame.url, sl.ts);   // newest first, across all cards
-    }
-    strip.appendChild(el);
-    sl.el = el;
-  }
-  for (const sl of slots) {if (sl.future) {dressGhost(slots, sl);}}
+  renderStrip(s, model, strip, kiosk, tt);
   dressStrip(model);   // hatch alignment + band labels (re-run post-reveal)
   const hoverAt = (e: MouseEvent) => {
     const r = strip.getBoundingClientRect();

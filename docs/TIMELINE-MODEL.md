@@ -27,8 +27,10 @@ A frame that comes with a cadence promises the next one within it: frame
 `f` at `t` with cadence `c` says "the next frame by `t + c`". The promise is
 kept when the next frame arrives within a tolerance, by `t + 1.5c` (the half
 cadence of drift the grid absorbs today). A promise that runs out before the
-next frame arrives is a **dropped** frame. That is the only thing the
-timeline draws as red.
+next frame arrives is a **dropped** frame, from when it was due. That is the
+only thing the timeline draws as red. The tolerance only decides whether a
+promise broke: a 1-minute heartbeat that misses one frame shows that minute
+as dropped, as it does today.
 
 A frame without a cadence makes **no promise**. Nothing it is followed by,
 or not followed by, is ever red.
@@ -56,12 +58,12 @@ For each frame, first match wins:
 A frame is shown from its own time until the next frame replaces it, or
 until it runs out:
 
-| Frame                    | Shown until      | Then, until the next frame           |
-| ------------------------ | ---------------- | ------------------------------------ |
-| Promised, kept           | the next frame   | (nothing: the next frame takes over) |
-| Promised, broken         | `t + 1.5c`       | **dropped** (red)                    |
-| No promise, within limit | the next frame   | (nothing)                            |
-| No promise, past limit   | `t + hold limit` | **no data** (neutral)                |
+| Frame                    | Shown until        | Then, until the next frame           |
+| ------------------------ | ------------------ | ------------------------------------ |
+| Promised, kept           | the next frame     | (nothing: the next frame takes over) |
+| Promised, broken         | `t + c` (when due) | **dropped** (red)                    |
+| No promise, within limit | the next frame     | (nothing)                            |
+| No promise, past limit   | `t + hold limit`   | **no data** (neutral)                |
 
 The **hold limit** for frames without a promise is the panel option that
 replaces today's Hold last frame:
@@ -80,8 +82,10 @@ ends it (the rule today).
 
 At the **live edge** the last frame's "next" is now:
 
-- promised: shown until `t + c`, then **pending** ("expected") until
-  `t + 1.5c`, then dropped ("overdue") until now;
+- promised: shown until `t + c`, then **pending** ("expected") for one more
+  cadence, until `t + 2c` (capture, upload, an API's response cache and the
+  poll all take time: a shorter grace painted a red edge that healed on the
+  next poll, #77), then dropped ("overdue") until now;
 - no promise: shown until its hold limit, then no data until now. It is
   never overdue.
 

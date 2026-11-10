@@ -17,24 +17,18 @@ export function startPoll(s: GridState): void {
 async function pollOnce(s: GridState): Promise<void> {
   for (const k of s.kiosks) {
     const rec = s.tiles[k.id];
-    const la = rec.model.lastActive;
-    if (!la) {continue;}                   // tail era is a declared pause
+    if (!rec) {continue;}
     const last = lastFrame(rec);
     let fresh;
     try {
-      fresh = await s.backend.frames(k.site, k.id, (last ? last.ts : s.P.from) + 1, Date.now(), la.step);
+      fresh = await s.backend.frames(k.site, k.id, Math.max(last ? last.ts : s.P.from, s.P.from) + 1, Math.min(s.P.to, Date.now()), rec.model.step);
     } catch (e) {
       // one source's failure must not stop the others' polls
       console.warn('[visual-timeline] live poll failed for ' + k.id + ':', e);
       continue;
     }
     if (s.destroyed) {return;}
-    for (const f of fresh) {
-      const slot = rec.model.slotAt(f.ts);
-      if (!slot || slot.paused || slot.beyond) {continue;}
-      // newer frames replace the bucket representative so "latest" slides
-      if (!slot.frame || f.ts > slot.frame.ts) {slot.frame = f;}
-    }
+    rec.model.refresh(fresh, Date.now());
   }
-  if (s.shownT == null) {setShown(s, null);}   // keep "latest" tiles fresh
+  setShown(s, s.shownT);   // the latest tiles slide; a crosshair time re-reads its intervals
 }

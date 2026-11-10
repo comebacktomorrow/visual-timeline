@@ -72,10 +72,10 @@ describe('promised frames', () => {
     expect(r.intervals.map((i) => i.kind)).toEqual(['frame', 'frame', 'frame', 'frame']);
   });
 
-  it('a broken promise: shown to the tolerance, then dropped until the next frame', () => {
+  it('a broken promise: dropped from when the frame was due until the next frame', () => {
     const r = build({ frames: [fr(0), fr(1), fr(5), fr(6)], promiseAt: minute, window: { from: at(0), to: at(7) } });
     expect(brief(r.intervals)).toEqual([
-      [0, 1, 'frame', 'f0.jpg'], [1, 2.5, 'frame', 'f1.jpg'], [2.5, 5, 'dropped'], [5, 6, 'frame', 'f5.jpg'], [6, 7, 'frame', 'f6.jpg'],
+      [0, 1, 'frame', 'f0.jpg'], [1, 2, 'frame', 'f1.jpg'], [2, 5, 'dropped'], [5, 6, 'frame', 'f5.jpg'], [6, 7, 'frame', 'f6.jpg'],
     ]);
   });
 
@@ -100,14 +100,14 @@ describe('the live edge', () => {
   const minute = () => M;
   const win = { from: at(0), to: at(10) };
 
-  it('promised: shown until due, then pending within the tolerance', () => {
+  it('promised: shown until due, then pending for a cadence', () => {
     const r = build({ frames: [fr(8)], promiseAt: minute, window: win, now: at(9.2) });
     expect(brief(r.intervals)).toEqual([[0, 8, 'dropped'], [8, 9, 'frame', 'f8.jpg'], [9, 9.2, 'pending', 'f8.jpg'], [9.2, 10, 'beyond']]);
   });
 
   it('promised and overdue: dropped up to now', () => {
     const r = build({ frames: [fr(5)], promiseAt: minute, window: win, now: at(9) });
-    expect(brief(r.intervals).slice(1)).toEqual([[5, 6, 'frame', 'f5.jpg'], [6, 6.5, 'pending', 'f5.jpg'], [6.5, 9, 'dropped'], [9, 10, 'beyond']]);
+    expect(brief(r.intervals).slice(1)).toEqual([[5, 6, 'frame', 'f5.jpg'], [6, 7, 'pending', 'f5.jpg'], [7, 9, 'dropped'], [9, 10, 'beyond']]);
   });
 
   it('no promise: the last frame holds up to now, never overdue', () => {
@@ -135,13 +135,13 @@ describe('the window', () => {
 describe('pauses', () => {
   const minute = () => M;
 
-  it('a pause cuts the frame short; after it, a grace, then the promise breaks', () => {
+  it('a pause cuts the frame short; after it, nothing until a frame is due, then the promise breaks', () => {
     const r = build({
       frames: [fr(0), fr(1), fr(20)], promiseAt: minute, window: { from: at(0), to: at(21) },
       pauses: [{ from: at(2), to: at(10), label: 'Quiet hours' }],
     });
     expect(brief(r.intervals)).toEqual([
-      [0, 1, 'frame', 'f0.jpg'], [1, 2, 'frame', 'f1.jpg'], [2, 10, 'paused'], [10, 11.5, 'nodata'], [11.5, 20, 'dropped'], [20, 21, 'frame', 'f20.jpg'],
+      [0, 1, 'frame', 'f0.jpg'], [1, 2, 'frame', 'f1.jpg'], [2, 10, 'paused'], [10, 11, 'nodata'], [11, 20, 'dropped'], [20, 21, 'frame', 'f20.jpg'],
     ]);
     expect(r.intervals[2].pause!.label).toBe('Quiet hours');
   });

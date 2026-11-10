@@ -28,6 +28,7 @@ var VTCore = (() => {
     alignedStart: () => alignedStart,
     axisTicks: () => axisTicks,
     bootErrorText: () => bootErrorText,
+    buildIntervals: () => buildIntervals,
     buildSourceModel: () => buildSourceModel,
     clearPauseClasses: () => clearPauseClasses,
     erasFor: () => erasFor,
@@ -43,7 +44,6 @@ var VTCore = (() => {
     kindFormat: () => kindFormat,
     makeApiBackend: () => makeApiBackend,
     matchesTags: () => matchesTags,
-    missedHeartbeat: () => missedHeartbeat,
     mountGrid: () => mountGrid,
     mountTimeline: () => mountTimeline,
     nextTick: () => nextTick,
@@ -450,173 +450,374 @@ var VTCore = (() => {
     return { label, classes: color ? ["paused", "tinted"] : ["paused"], ...color ? { color } : {} };
   }
 
-  // src/vt/model/slots.ts
-  var PROBE_BUCKETS = 400;
-  async function buildSourceModel(decl, P, backend, budgetSlots, holdMs = 0) {
-    const eras = erasFor(decl, P);
-    const slots = [];
-    const totalActive = eras.filter((e) => !e.paused).reduce((a, e) => a + (e.to - e.from), 0) || 1;
-    const nowAtBuild = Date.now();
-    function shortEraSlot(era, frame) {
-      return {
-        ts: era.from,
-        span: era.to - era.from,
-        frame,
-        cadence: era.cadence,
-        step: era.cadence,
-        future: era.from + era.cadence >= nowAtBuild
-      };
-    }
-    function resolveBoundary(prev, firstIdx) {
-      if (!prev || firstIdx <= prev.startIdx || firstIdx >= slots.length) {
-        return;
-      }
-      const p = slots[firstIdx - 1];
-      const first = slots[firstIdx];
-      if (p.paused || p.beyond || p.ts !== prev.to) {
-        return;
-      }
-      const laterDrawsIt = !first.paused && !first.beyond && first.ts === p.ts;
-      if (!laterDrawsIt && !(first.paused && !p.frame)) {
-        return;
-      }
-      if (laterDrawsIt && !first.frame && p.frame) {
-        first.frame = p.frame;
-      }
-      slots.splice(firstIdx - 1, 1);
-      if (firstIdx - 1 === prev.startIdx) {
-        slots.splice(prev.startIdx, 0, shortEraSlot(prev, null));
+  // src/vt/model/intervals.ts
+  var AUTO_HOLD_FACTOR = 3;
+  var AUTO_HOLD_FALLBACK = 36e5;
+  var AUTO_HOLD_NEIGHBOURS = 4;
+  function buildIntervals(input) {
+    const { window: W, now } = input;
+    const tol = input.tolerance ?? 0.5;
+    const hold = input.hold ?? "auto";
+    const declared = input.promiseAt ?? (() => null);
+    const promiseAt = (t) => {
+      const p = declared(t);
+      return p && p > 0 ? Math.max(p, input.step ?? 0) : null;
+    };
+    const horizon = Math.max(W.from, Math.min(W.to, now));
+    const byTs = /* @__PURE__ */ new Map();
+    for (const f of input.frames) {
+      if (Number.isFinite(f.ts)) {
+        byTs.set(f.ts, f);
       }
     }
-    async function pushActive(era) {
-      if (era.to - era.from <= 0) {
-        return;
-      }
-      const eraSpan = era.to - era.from;
-      const share = Math.max(4, Math.round(budgetSlots * (eraSpan / totalActive)));
-      const raw = Math.max(1, Math.ceil(eraSpan / era.cadence));
-      const step = Math.ceil(raw / Math.min(share, raw)) * era.cadence;
-      const start = Math.ceil(era.from / step) * step;
-      const n = era.to >= start ? Math.floor((era.to - start) / step) + 1 : 0;
-      if (n === 0) {
-        const half = era.cadence / 2;
-        const near = await backend.frames(decl.site, decl.id, era.from - half, era.to + half, era.cadence);
-        const frame = near.filter((f) => f.ts >= era.from - half && f.ts <= era.to + half).sort((a, b) => Math.abs(a.ts - era.from) - Math.abs(b.ts - era.from))[0] || null;
-        slots.push(shortEraSlot(era, frame));
-        return;
-      }
-      const frames = await backend.frames(decl.site, decl.id, era.from, era.to, step);
-      const by = new Map(frames.map((f) => [Math.round((f.ts - start) / step), f]));
-      for (let i = 0; i < n; i++) {
-        const ts = start + i * step;
-        slots.push({ ts, span: step, frame: by.get(i) || null, cadence: era.cadence, step, future: ts + step >= nowAtBuild });
-      }
+    let frames = [...byTs.values()].sort((a, b) => a.ts - b.ts);
+    const pauses = resolvePauses(input.pauses ?? [], frames, horizon);
+    const inPause = (t) => pauses.some((p) => t > p.from && t < p.to);
+    frames = frames.filter((f) => f.ts <= horizon && !inPause(f.ts));
+    let offset = 0;
+    while (offset + 1 < frames.length && frames[offset + 1].ts <= W.from) {
+      offset++;
     }
-    const horizon = Math.min(P.to, nowAtBuild);
-    let prevActive = null;
-    for (const era of eras) {
-      const eFrom = era.from;
-      const eTo = Math.min(era.to, horizon);
-      const isTail = era === eras[eras.length - 1];
-      const firstIdx = slots.length;
-      const prev = prevActive;
-      prevActive = null;
-      if (!era.paused) {
-        if (eTo > eFrom) {
-          const span = { from: eFrom, to: eTo, cadence: era.cadence };
-          await pushActive(span);
-          resolveBoundary(prev, firstIdx);
-          prevActive = { ...span, startIdx: firstIdx };
+    const shown = frames.slice(offset);
+    const promiseOf = (f) => {
+      const own = f.cadence;
+      return typeof own === "number" && own > 0 ? Math.max(own, input.step ?? 0) : promiseAt(f.ts);
+    };
+    const holdFor = (i) => {
+      if (hold === "none") {
+        return Infinity;
+      }
+      if (typeof hold === "number") {
+        return hold > 0 ? hold : Infinity;
+      }
+      const gaps = [];
+      for (let j = Math.max(1, i - AUTO_HOLD_NEIGHBOURS + 1); j <= Math.min(frames.length - 1, i + AUTO_HOLD_NEIGHBOURS); j++) {
+        gaps.push(frames[j].ts - frames[j - 1].ts);
+      }
+      if (!gaps.length) {
+        return AUTO_HOLD_FALLBACK;
+      }
+      gaps.sort((a, b) => a - b);
+      return AUTO_HOLD_FACTOR * gaps[Math.floor(gaps.length / 2)];
+    };
+    const out = [];
+    const push = (from, to, kind, extra = {}) => {
+      const a = Math.max(from, W.from), b = Math.min(to, horizon);
+      if (b <= a) {
+        return;
+      }
+      const last = out[out.length - 1];
+      if (last && last.kind === kind && last.to === a && !extra.frame && !last.frame && !last.pause && !extra.pause) {
+        last.to = b;
+        return;
+      }
+      out.push({ from: a, to: b, kind, ...extra });
+    };
+    const follow = (f, t, until, promise, holdMs, live) => {
+      if (until <= t) {
+        return;
+      }
+      if (promise) {
+        const due = t + promise, kept = t + (1 + tol) * promise;
+        if (live && f) {
+          const grace = due + promise;
+          push(t, Math.min(due, until), "frame", { frame: f });
+          push(due, Math.min(grace, until), "pending", { frame: f });
+          push(grace, until, "dropped");
+        } else if (until <= kept) {
+          push(t, until, f ? "frame" : "nodata", f ? { frame: f } : {});
+        } else {
+          push(t, due, f ? "frame" : "nodata", f ? { frame: f } : {});
+          push(due, until, "dropped");
         }
-        continue;
+        return;
       }
-      if (!isTail) {
-        if (eTo > eFrom) {
-          slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended, label: era.label, color: era.color });
-          resolveBoundary(prev, firstIdx);
-        }
-        continue;
-      }
-      if (eTo <= eFrom) {
-        continue;
-      }
-      const probeStep = era.cadence * Math.max(1, Math.ceil((eTo - eFrom) / era.cadence / PROBE_BUCKETS));
-      const probe = await backend.frames(decl.site, decl.id, eFrom, eTo, probeStep);
-      const tailIdx = slots.length;
-      let resume = probe.find((f) => f.ts >= eFrom + era.cadence && f.ts < eTo);
-      if (resume && probeStep > era.cadence) {
-        const near = resume;
-        const fine = await backend.frames(decl.site, decl.id, Math.max(eFrom, near.ts - probeStep), near.ts, era.cadence);
-        resume = fine.find((f) => f.ts >= eFrom + era.cadence && f.ts <= near.ts) || near;
-      }
-      if (resume) {
-        const resumeTs = resume.ts;
-        slots.push({ ts: eFrom, span: resumeTs - eFrom, paused: true, reason: era.reason, intended: era.intended, label: era.label, color: era.color });
-        if (eTo > resumeTs) {
-          await pushActive({ from: resumeTs, to: eTo, cadence: era.cadence });
-        }
+      if (f) {
+        push(t, Math.min(t + holdMs, until), "frame", { frame: f });
+        push(t + holdMs, until, "nodata");
       } else {
-        slots.push({ ts: eFrom, span: eTo - eFrom, paused: true, reason: era.reason, intended: era.intended, label: era.label, color: era.color });
+        push(t, until, "nodata");
       }
-      resolveBoundary(prev, tailIdx);
-    }
-    if (P.to > horizon) {
-      const last = slots[slots.length - 1];
-      const covered = !last ? horizon : last.paused || last.beyond ? last.ts + last.span : last.ts + last.step / 2;
-      const fillerFrom = Math.min(Math.max(covered, horizon - 1), P.to);
-      if (P.to - fillerFrom > 0) {
-        slots.push({ ts: fillerFrom, span: P.to - fillerFrom, beyond: true });
+    };
+    let cursor = W.from;
+    const firstTs = shown.length ? shown[0].ts : horizon;
+    if (firstTs > W.from) {
+      const p = promiseAt(W.from);
+      let t = W.from;
+      for (const pz of pauses) {
+        if (pz.to <= t || pz.from >= firstTs) {
+          continue;
+        }
+        push(t, pz.from, p ? "dropped" : "nodata");
+        push(pz.from, Math.min(pz.to, firstTs), "paused", { pause: pz });
+        t = Math.min(pz.to, firstTs);
       }
-    }
-    function slotAt(t) {
-      for (const sl of slots) {
-        const edge = sl.paused || sl.beyond;
-        const to = edge ? sl.ts + sl.span : sl.ts + sl.span / 2;
-        if (t < to) {
-          if (sl.beyond) {
-            const i = slots.indexOf(sl);
-            const prev = i > 0 ? slots[i - 1] : null;
-            if (prev && !prev.beyond && t < sl.ts + (prev.step || 0) / 2) {
-              return prev;
-            }
-          }
-          return sl;
+      if (t < firstTs) {
+        if (t > W.from) {
+          follow(null, t, firstTs, promiseAt(t), 0, false);
+        } else {
+          push(t, firstTs, p ? "dropped" : "nodata");
         }
       }
-      return slots[slots.length - 1] || null;
+      cursor = firstTs;
     }
-    holdFrames(slots, holdMs);
-    const lastActive = [...slots].reverse().find((sl) => !sl.paused && !sl.beyond) || null;
-    return { eras, slots, slotAt, lastActive };
+    for (let k = 0; k < shown.length; k++) {
+      const f = shown[k];
+      const i = offset + k;
+      const next = shown[k + 1];
+      const end = next ? next.ts : horizon;
+      const live = !next;
+      let t = f.ts;
+      let cur = f;
+      let promise = promiseOf(f);
+      let holdMs = holdFor(i);
+      for (const pz of pauses) {
+        if (pz.from < t || pz.from >= end) {
+          continue;
+        }
+        follow(cur, t, pz.from, promise, holdMs, false);
+        push(pz.from, Math.min(pz.to, end), "paused", { pause: pz });
+        t = Math.min(pz.to, end);
+        cur = null;
+        promise = promiseAt(t);
+        holdMs = 0;
+      }
+      follow(cur, t, end, promise, holdMs, live && cur !== null);
+      cursor = end;
+    }
+    if (horizon < W.to) {
+      out.push({ from: Math.max(cursor, horizon), to: W.to, kind: "beyond" });
+    }
+    const inWindow = shown.filter((f) => f.ts <= W.to);
+    return {
+      intervals: out,
+      frames: inWindow,
+      at(t) {
+        if (!out.length) {
+          return null;
+        }
+        const x = Math.max(out[0].from, Math.min(out[out.length - 1].to - 1e-6, t));
+        let lo = 0, hi = out.length - 1;
+        while (lo < hi) {
+          const mid = lo + hi + 1 >> 1;
+          if (out[mid].from <= x) {
+            lo = mid;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        return out[lo];
+      }
+    };
   }
-  function holdFrames(slots, holdMs) {
-    const filled = [];
-    if (!(holdMs > 0)) {
-      return filled;
+  function resolvePauses(pauses, frames, horizon) {
+    return pauses.map((p) => {
+      if (p.to != null) {
+        return p;
+      }
+      const after = p.from + (p.resumeAfter ?? 0);
+      const resume = frames.find((f) => f.ts >= after && f.ts <= horizon);
+      return { ...p, to: resume ? resume.ts : horizon };
+    }).filter((p) => p.to > p.from).sort((a, b) => a.from - b.from);
+  }
+
+  // src/vt/model/slots.ts
+  var LOOKBACK_STEPS = 100;
+  var LOOKBACK_UNPROMISED = 36e5;
+  async function buildSourceModel(decl, P, backend, budgetSlots, opts = {}) {
+    const eras = erasFor(decl, P);
+    const promised = !decl.inferred;
+    const hold = opts.hold ?? "auto";
+    const active = eras.filter((e) => !e.paused);
+    const base = Math.max(1e3, Math.min(...(active.length ? active : eras).map((e) => e.cadence)));
+    const activeSpan = Math.max(1, active.reduce((a, e) => a + (e.to - e.from), 0) || P.to - P.from);
+    const step = base * Math.max(1, Math.ceil(activeSpan / base / Math.max(4, budgetSlots)));
+    const maxCadence = Math.max(...eras.map((e) => e.cadence));
+    const wanted = promised ? 1.5 * maxCadence + step : typeof hold === "number" ? hold : LOOKBACK_UNPROMISED;
+    const lookback = Math.min(wanted, LOOKBACK_STEPS * step);
+    const now0 = opts.now ?? Date.now();
+    const fetched = await backend.frames(decl.site, decl.id, P.from - lookback, Math.min(P.to, now0), step);
+    const promiseAt = (t) => {
+      if (!promised) {
+        return null;
+      }
+      let c = eras[0].cadence;
+      for (const e of eras) {
+        if (e.from <= t) {
+          c = e.cadence;
+        }
+      }
+      return c;
+    };
+    const pauses = [];
+    eras.forEach((e, i) => {
+      if (!e.paused) {
+        return;
+      }
+      const open = i === eras.length - 1;
+      pauses.push({
+        from: e.from,
+        to: open ? null : e.to,
+        resumeAfter: open ? e.cadence : void 0,
+        label: e.label,
+        color: e.color,
+        reason: e.reason,
+        intended: e.intended
+      });
+    });
+    const model = {
+      eras,
+      step,
+      promised,
+      frames: [],
+      intervals: [],
+      slots: [],
+      drops: [],
+      lastActive: null,
+      slotAt: () => null,
+      intervalAt: () => null,
+      refresh(fresh, now) {
+        const byTs = new Map(model.frames.map((f) => [f.ts, f]));
+        for (const f of fresh) {
+          byTs.set(f.ts, f);
+        }
+        model.frames = [...byTs.values()].sort((a, b) => a.ts - b.ts);
+        const buckets = (Math.min(P.to, now) - (P.from - lookback)) / step + 2;
+        const thinned = model.frames.length <= 1.1 * buckets;
+        const built = buildIntervals({
+          frames: model.frames,
+          promiseAt,
+          pauses,
+          hold,
+          window: P,
+          now,
+          step: promised && thinned ? step : void 0
+        });
+        const { slots, drops } = sample(built, step, (t) => promiseAt(t) ?? base);
+        model.intervals = built.intervals;
+        model.intervalAt = built.at;
+        model.slots = slots;
+        model.drops = drops;
+        model.slotAt = (t) => slotAt(slots, t);
+        model.lastActive = [...slots].reverse().find((sl) => !sl.paused && !sl.beyond) || null;
+      }
+    };
+    model.refresh(fetched, now0);
+    return model;
+  }
+  function sample(built, step, cadenceAt) {
+    const ivs = built.intervals;
+    const frames = built.frames;
+    const slots = [];
+    let fi = 0;
+    for (let i = 0; i < ivs.length; ) {
+      const iv = ivs[i];
+      if (iv.kind === "paused") {
+        const p = iv.pause;
+        slots.push({
+          ts: iv.from,
+          x0: iv.from,
+          span: iv.to - iv.from,
+          paused: true,
+          reason: p.reason,
+          intended: p.intended,
+          label: p.label,
+          color: p.color
+        });
+        i++;
+        continue;
+      }
+      if (iv.kind === "beyond") {
+        slots.push({ ts: iv.from, x0: iv.from, span: iv.to - iv.from, beyond: true });
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < ivs.length && ivs[j].kind !== "paused" && ivs[j].kind !== "beyond") {
+        j++;
+      }
+      const a = iv.from, b = ivs[j - 1].to;
+      const ticks = [];
+      for (let t = Math.ceil(a / step) * step; t <= b; t += step) {
+        ticks.push(t);
+      }
+      if (!ticks.length) {
+        ticks.push((a + b) / 2);
+      }
+      for (let k = 0; k < ticks.length; k++) {
+        const t = ticks[k];
+        const x0 = k === 0 ? a : (ticks[k - 1] + t) / 2;
+        const x1 = k === ticks.length - 1 ? b : (t + ticks[k + 1]) / 2;
+        while (fi < frames.length && frames[fi].ts < x0) {
+          fi++;
+        }
+        let count = 0, best = null;
+        const last = k === ticks.length - 1;
+        for (let m = fi; m < frames.length && (frames[m].ts < x1 || last && frames[m].ts === x1); m++) {
+          count++;
+          if (!best || Math.abs(frames[m].ts - t) < Math.abs(best.ts - t)) {
+            best = frames[m];
+          }
+        }
+        const at = best ? null : built.at(last ? b - 1 : Math.min(t, b - 1));
+        const sl = {
+          ts: t,
+          x0,
+          span: x1 - x0,
+          cadence: cadenceAt(t),
+          step,
+          count,
+          frame: best ?? (at && at.kind === "frame" ? at.frame : null),
+          future: !best && !!at && at.kind === "pending"
+        };
+        if (!best && at && at.kind === "nodata") {
+          sl.nodata = true;
+        }
+        slots.push(sl);
+      }
+      i = j;
     }
-    let last = null;
-    for (const sl of slots) {
-      if (sl.paused) {
-        last = null;
+    const drops = [];
+    for (const iv of ivs) {
+      if (iv.kind !== "dropped") {
         continue;
       }
-      if (sl.beyond) {
-        continue;
-      }
-      if (sl.frame && !sl.held) {
-        last = sl.frame;
-        continue;
-      }
-      if (sl.held || sl.future) {
-        continue;
-      }
-      if (last && sl.ts - last.ts <= holdMs) {
-        sl.frame = last;
-        sl.held = true;
-        filled.push(sl);
+      for (const sl of slots) {
+        if (!sl.frame || sl.x0 >= iv.to || sl.x0 + sl.span <= iv.from) {
+          continue;
+        }
+        const from = Math.max(iv.from, sl.x0), to = Math.min(iv.to, sl.x0 + sl.span);
+        const last = drops[drops.length - 1];
+        if (last && last.to === from) {
+          last.to = to;
+        } else {
+          drops.push({ from, to });
+        }
       }
     }
-    return filled;
+    return { slots, drops };
+  }
+  function slotAt(slots, t) {
+    if (!slots.length) {
+      return null;
+    }
+    let lo = 0, hi = slots.length - 1;
+    while (lo < hi) {
+      const mid = lo + hi + 1 >> 1;
+      if (slots[mid].x0 <= t) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    const sl = slots[lo];
+    if (sl.beyond && lo > 0) {
+      const prev = slots[lo - 1];
+      if (!prev.paused && !prev.beyond && t < sl.x0 + prev.step / 2) {
+        return prev;
+      }
+    }
+    return sl;
   }
   function ghostFor(slots, sl) {
     for (let j = slots.indexOf(sl) - 1; j >= 0; j--) {
@@ -629,14 +830,8 @@ var VTCore = (() => {
     }
     return null;
   }
-  function slotClass(sl, missing = "offline") {
-    return sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? sl.held ? " held" : "" : sl.future ? " future" : gapClass(missing);
-  }
-  function gapClass(missing = "offline") {
-    return missing === "nodata" ? " gap nodata" : " gap";
-  }
-  function missedHeartbeat(sl, now) {
-    return sl.future === true && !sl.frame && sl.ts + sl.step < now;
+  function slotClass(sl) {
+    return sl.paused ? " " + pauseInfo(sl).classes.join(" ") : sl.beyond ? " beyond" : sl.frame ? "" : sl.future ? " future" : sl.nodata ? " gap nodata" : " gap";
   }
 
   // src/vt/model/filters.ts
@@ -1148,10 +1343,13 @@ var VTCore = (() => {
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
 .ktl .slot img:not([src]) { visibility:hidden; }   /* queued (ui/imageQueue.ts): no alt text or broken-image icon meanwhile */
 .ktl .slot.gap { background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px); }
-/* a gap that only means "no frame" (missingFrames: nodata): the neutral
- * hatch, not the red one; a held slot shows the last frame, dimmed */
+/* no data (no promise in force, or none kept past its hold limit): the
+ * neutral hatch, not the red one (docs/TIMELINE-MODEL.md) */
 .ktl .slot.gap.nodata { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 5px,var(--ktl-pause-b) 5px,var(--ktl-pause-b) 10px); }
-.ktl .slot.held img { opacity:.55; }
+/* dropped time inside cells that show a frame, at its true place: at least
+ * a pixel, so an outage shorter than a slot still shows */
+.ktl .strip .drops { position:absolute; inset:0; pointer-events:none; z-index:2; }
+.ktl .strip .drop { position:absolute; top:0; bottom:0; min-width:1px; background:var(--ktl-off); opacity:.8; }
 .ktl .slot.paused { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 7px,var(--ktl-pause-b) 7px,var(--ktl-pause-b) 14px); }
 .ktl.filterable [data-fk] { cursor:pointer; }
 .ktl.filterable [data-fk]:hover { text-decoration:underline; text-underline-offset:2px; }
@@ -1913,7 +2111,9 @@ var VTCore = (() => {
           c.mag.classList.add("ghost");
           setSrc(c.mag.querySelector("img"), g.url);
         }
-        setText(c.mag.querySelector(".cap"), (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + tt.short(slot.ts) + (g ? " \xB7 last frame " + tt.time(g.ts) : "") + tt.sfx(slot.ts));
+        const iv = c.model.intervalAt(slot.ts);
+        const due = iv && iv.kind === "pending" ? iv.from : slot.ts;
+        setText(c.mag.querySelector(".cap"), (inFlight ? "expected \u2014 " : "upcoming \u2014 ") + tt.short(due) + (g ? " \xB7 last frame " + tt.time(g.ts) : "") + tt.sfx(due));
         setText(c.head, inFlight ? "expected" : "upcoming");
         c.head.classList.remove("stale");
         clearPauseClasses(c.head);
@@ -1929,7 +2129,7 @@ var VTCore = (() => {
             break;
           }
         }
-        const nodata = s.cfg.missingFrames === "nodata";
+        const nodata = !!(slot && !slot.paused && !slot.beyond && slot.nodata);
         const msg = last ? (nodata ? "no frame \u2014 last seen " : "offline \u2014 last seen ") + tt.time(last.ts) + tt.sfx(last.ts) : "no data in window";
         setText(c.mag.querySelector(".cap"), msg);
         setText(c.head, msg);
@@ -2097,6 +2297,84 @@ var VTCore = (() => {
       }
     }
   }
+  function renderStrip(s, model, strip, kiosk, tt) {
+    const cells = [];
+    for (const sl of model.slots) {
+      const key = sl.frame ? "f:" + sl.frame.ts + ":" + sl.frame.url : sl.paused ? "p:" + sl.x0 : sl.beyond ? "b" : (sl.future ? "u:" : sl.nodata ? "n:" : "g:") + sl.x0;
+      const last = cells[cells.length - 1];
+      if (sl.frame && last && last.key === key) {
+        last.slots.push(sl);
+      } else {
+        cells.push({ key, slots: [sl] });
+      }
+    }
+    const old = strip.__cells ??= /* @__PURE__ */ new Map();
+    const next = /* @__PURE__ */ new Map();
+    const before = strip.querySelector(".drops");
+    for (const cell of cells) {
+      const sl = cell.slots[0];
+      let el = old.get(cell.key);
+      const fresh = !el;
+      if (!el) {
+        el = document.createElement("div");
+      }
+      old.delete(cell.key);
+      next.set(cell.key, el);
+      const cls = "slot" + slotClass(sl) + (cell.slots.some((x) => !x.paused && !x.beyond && x.count > 1) ? " multi" : "");
+      if (el.className !== cls) {
+        el.className = cls;
+      }
+      const span = cell.slots.reduce((a, x) => a + x.span, 0);
+      el.style.flexGrow = String(span / 1e3);
+      if (sl.paused) {
+        const pi = pauseInfo(sl);
+        el.title = pi.label.toLowerCase();
+        if (pi.color) {
+          el.style.setProperty("--ktl-band", pi.color);
+        }
+      }
+      if (sl.frame && fresh) {
+        const img = document.createElement("img");
+        img.alt = kiosk + " " + tt.time(sl.frame.ts) + tt.sfx(sl.frame.ts);
+        el.appendChild(img);
+        s.images.add(img, sl.frame.url, sl.frame.ts);
+      }
+      for (const x of cell.slots) {
+        x.el = el;
+      }
+      strip.insertBefore(el, before);
+    }
+    for (const el of old.values()) {
+      el.remove();
+    }
+    strip.__cells = next;
+    strip.classList.toggle("sep", s.hostWidth / Math.max(1, cells.length) >= 12);
+    for (const sl of model.slots) {
+      if (sl.future) {
+        dressGhost(model.slots, sl);
+      }
+    }
+    let drops = strip.querySelector(".drops");
+    if (model.drops.length && !drops) {
+      drops = document.createElement("div");
+      drops.className = "drops";
+      strip.appendChild(drops);
+    }
+    if (drops) {
+      drops.textContent = "";
+      for (const d of model.drops) {
+        const m = document.createElement("div");
+        m.className = "drop";
+        m.style.left = ((d.from - s.P.from) / s.SPAN * 100).toFixed(4) + "%";
+        m.style.width = ((d.to - d.from) / s.SPAN * 100).toFixed(4) + "%";
+        drops.appendChild(m);
+      }
+    }
+    const tail = model.slots[model.slots.length - 1];
+    if (tail && tail.beyond) {
+      ruleBeyond(s, tail);
+    }
+  }
   function buildCard(s, decl, model) {
     const kiosk = decl.id;
     const zone = zoneFor(decl, s.TZ, s.cfg.thumbTimes, s.PANEL_TT), tt = zone.tt;
@@ -2107,35 +2385,7 @@ var VTCore = (() => {
     const cad = s.cfg.showDetails && la ? '<span class="cad">\u23F1 ' + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + "</span>" : "";
     card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", kiosk, !!s.cfg.onFilter) + ">" + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
     const strip = card.querySelector(".strip");
-    if (s.hostWidth / model.slots.length >= 12) {
-      strip.classList.add("sep");
-    }
-    const slots = model.slots;
-    for (const sl of slots) {
-      const el = document.createElement("div");
-      el.className = "slot" + slotClass(sl, s.cfg.missingFrames);
-      if (sl.paused) {
-        const pi = pauseInfo(sl);
-        el.title = pi.label.toLowerCase();
-        if (pi.color) {
-          el.style.setProperty("--ktl-band", pi.color);
-        }
-      }
-      el.style.flexGrow = String(sl.span / 1e3);
-      if (sl.frame) {
-        const img = document.createElement("img");
-        img.alt = kiosk + " " + tt.time(sl.ts) + tt.sfx(sl.ts);
-        el.appendChild(img);
-        s.images.add(img, sl.frame.url, sl.ts);
-      }
-      strip.appendChild(el);
-      sl.el = el;
-    }
-    for (const sl of slots) {
-      if (sl.future) {
-        dressGhost(slots, sl);
-      }
-    }
+    renderStrip(s, model, strip, kiosk, tt);
     dressStrip(model);
     const hoverAt = (e) => {
       const r = strip.getBoundingClientRect();
@@ -2335,8 +2585,8 @@ var VTCore = (() => {
 
   // src/vt/timeline/poll.ts
   function startPoll(s) {
-    const steps = s.kiosks.map((k) => s.cards[k.id].model.lastActive && s.cards[k.id].model.lastActive.step).filter(Boolean);
-    const minStep = steps.length ? Math.min.apply(null, steps) : 6e4;
+    const steps = s.kiosks.map((k) => s.cards[k.id]?.model.step).filter((x) => !!x);
+    const minStep = steps.length ? Math.min(...steps) : 6e4;
     let busy = false;
     s.pollTimer = setInterval(async () => {
       if (busy) {
@@ -2353,83 +2603,14 @@ var VTCore = (() => {
   async function pollOnce(s) {
     for (const k of s.kiosks) {
       const c = s.cards[k.id];
-      const mSlots = c.model.slots;
-      let reshaped = false;
-      const filler = mSlots.length && mSlots[mSlots.length - 1].beyond ? mSlots[mSlots.length - 1] : null;
-      if (filler) {
-        const nowP = Date.now();
-        const prev = mSlots.length > 1 ? mSlots[mSlots.length - 2] : null;
-        if (prev && prev.paused) {
-          const grow = Math.min(nowP, filler.ts + filler.span) - filler.ts;
-          if (grow > 0) {
-            reshaped = true;
-            prev.span += grow;
-            filler.ts += grow;
-            filler.span -= grow;
-            if (prev.el) {
-              prev.el.style.flexGrow = String(prev.span / 1e3);
-            }
-            if (filler.span <= 0) {
-              if (filler.el) {
-                filler.el.remove();
-              }
-              mSlots.pop();
-            } else {
-              if (filler.el) {
-                filler.el.style.flexGrow = String(filler.span / 1e3);
-              }
-              ruleBeyond(s, filler);
-            }
-          }
-        } else if (prev && prev.step) {
-          let nextTs = prev.ts + prev.step;
-          while (mSlots[mSlots.length - 1] && mSlots[mSlots.length - 1].beyond && nextTs <= nowP) {
-            const f = mSlots[mSlots.length - 1];
-            const sl = { ts: nextTs, span: prev.step, frame: null, cadence: prev.cadence, step: prev.step, future: true };
-            const el = document.createElement("div");
-            el.className = "slot future";
-            el.style.flexGrow = String(sl.span / 1e3);
-            if (f.el && f.el.parentNode) {
-              f.el.parentNode.insertBefore(el, f.el);
-            }
-            sl.el = el;
-            mSlots.splice(mSlots.length - 1, 0, sl);
-            reshaped = true;
-            f.span -= sl.span;
-            f.ts += sl.span;
-            if (f.span <= 0) {
-              if (f.el) {
-                f.el.remove();
-              }
-              mSlots.pop();
-            } else {
-              if (f.el) {
-                f.el.style.flexGrow = String(f.span / 1e3);
-              }
-              ruleBeyond(s, f);
-            }
-            nextTs += prev.step;
-          }
-        }
-      }
-      if (reshaped && c.strip.clientWidth > 0) {
-        dressStrip(c.model);
-      }
-      const la = c.model.lastActive;
-      if (!la) {
+      if (!c) {
         continue;
       }
-      let lastTs = s.P.from;
-      for (let i = c.model.slots.length - 1; i >= 0; i--) {
-        const fr = c.model.slots[i].frame;
-        if (fr) {
-          lastTs = c.model.slots[i].held ? fr.ts : c.model.slots[i].ts;
-          break;
-        }
-      }
+      const m = c.model;
+      const last = m.frames.length ? m.frames[m.frames.length - 1].ts : s.P.from;
       let fresh;
       try {
-        fresh = await s.backend.frames(k.site, k.id, lastTs + 1, Date.now(), la.step);
+        fresh = await s.backend.frames(k.site, k.id, Math.max(last, s.P.from) + 1, Math.min(s.P.to, Date.now()), m.step);
       } catch (e) {
         console.warn("[visual-timeline] live poll failed for " + k.id + ":", e);
         continue;
@@ -2437,55 +2618,12 @@ var VTCore = (() => {
       if (s.destroyed) {
         return;
       }
-      for (const f of fresh) {
-        const slot = c.model.slotAt(f.ts);
-        if (!slot || slot.paused || slot.beyond) {
-          continue;
-        }
-        if (slot.frame && f.ts <= slot.frame.ts) {
-          continue;
-        }
-        slot.frame = f;
-        slot.future = false;
-        slot.held = false;
-        slot.el.classList.remove("gap", "nodata", "future", "held");
-        let img = slot.el.querySelector("img");
-        if (!img) {
-          img = document.createElement("img");
-          slot.el.appendChild(img);
-        }
-        img.classList.remove("ghost");
-        img.src = f.url;
-        img.alt = k.id + " " + c.tt.time(f.ts) + c.tt.sfx(f.ts);
+      m.refresh(fresh, Date.now());
+      renderStrip(s, m, c.strip, k.id, c.tt);
+      if (c.strip.clientWidth > 0) {
+        dressStrip(m);
       }
-      const overdue = Date.now();
-      for (const sl of c.model.slots) {
-        if (missedHeartbeat(sl, overdue)) {
-          sl.future = false;
-          if (sl.el) {
-            sl.el.classList.remove("future");
-            sl.el.classList.add(...gapClass(s.cfg.missingFrames).trim().split(" "));
-          }
-        }
-      }
-      for (const sl of holdFrames(c.model.slots, s.cfg.holdFrames ?? 0)) {
-        if (!sl.el || !sl.frame) {
-          continue;
-        }
-        sl.el.classList.remove("gap", "nodata");
-        sl.el.classList.add("held");
-        let img = sl.el.querySelector("img");
-        if (!img) {
-          img = document.createElement("img");
-          sl.el.appendChild(img);
-        }
-        img.classList.remove("ghost");
-        img.src = sl.frame.url;
-        img.alt = k.id + " " + c.tt.time(sl.frame.ts) + c.tt.sfx(sl.frame.ts);
-      }
-      for (const sl of c.model.slots) {
-        dressGhost(c.model.slots, sl);
-      }
+      c.shown = null;
     }
   }
 
@@ -2543,7 +2681,7 @@ var VTCore = (() => {
         await revealWrapper(root, wrap);
         return;
       }
-      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget, s.cfg.holdFrames ?? 0).catch((e) => {
+      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget, { hold: s.cfg.hold }).catch((e) => {
         console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
         return null;
       }));
@@ -2629,9 +2767,14 @@ var VTCore = (() => {
     return rec;
   }
   function lastFrame(rec) {
-    for (let i = rec.model.slots.length - 1; i >= 0; i--) {
-      if (rec.model.slots[i].frame) {
-        return rec.model.slots[i].frame;
+    const f = rec.model.frames;
+    return f.length ? f[f.length - 1] : null;
+  }
+  function frameBefore(rec, t) {
+    const f = rec.model.frames;
+    for (let i = f.length - 1; i >= 0; i--) {
+      if (f[i].ts <= t) {
+        return f[i];
       }
     }
     return null;
@@ -2641,7 +2784,8 @@ var VTCore = (() => {
     if (s.cfg.onShown) {
       s.cfg.onShown(t);
     }
-    const zoneAt = t == null ? Math.min(s.P.to, Date.now()) : t;
+    const live = Math.min(s.P.to, Date.now());
+    const zoneAt = t == null ? live : t;
     for (const k of s.kiosks) {
       const rec = s.tiles[k.id];
       if (!rec) {
@@ -2651,57 +2795,38 @@ var VTCore = (() => {
         dressZoneChip(rec.zone, zoneAt);
       }
       const tt = rec.tt;
-      let frame = null, offMsg = null, pausedMsg = null, pausedSlot = null, expectedTs = null;
-      const la = rec.model.lastActive;
-      const nodata = s.cfg.missingFrames === "nodata";
-      if (t == null) {
-        const tail = rec.model.slots.length ? rec.model.slots[rec.model.slots.length - 1] : null;
-        const tailPaused = tail && tail.paused;
-        frame = lastFrame(rec);
-        if (tailPaused) {
-          pausedSlot = tail;
-          pausedMsg = pauseInfo(tail).label + (frame ? " \u2014 last frame " + tt.time(frame.ts) + tt.sfx(frame.ts) : "");
-        } else if (!frame) {
-          offMsg = "no data in window";
-        } else if (s.LIVE && la && Date.now() - frame.ts > Math.max(2 * la.step, s.cfg.holdFrames ?? 0)) {
-          offMsg = (nodata ? "NO FRAME" : "OFFLINE") + " \u2014 last seen " + tt.time(frame.ts) + tt.sfx(frame.ts);
-        }
+      let frame = null, offMsg = null, pausedMsg = null, pausedAt = null, expectedTs = null, nodata = false;
+      const at = t == null ? live - 1 : t;
+      const iv = rec.model.intervalAt(at);
+      let kind = iv ? iv.kind : "nodata";
+      const latest = t == null ? lastFrame(rec) : null;
+      if (t == null && !s.LIVE && kind !== "paused") {
+        kind = latest ? "frame" : "nodata";
+      }
+      if (t == null && kind === "frame" && latest) {
+        frame = latest;
+      } else if (kind === "frame") {
+        frame = iv.frame;
+      } else if (kind === "pending") {
+        frame = iv.frame;
+        expectedTs = iv.from;
+      } else if (kind === "paused") {
+        pausedAt = { paused: true, label: iv.pause.label, color: iv.pause.color };
+        const last = t == null ? lastFrame(rec) : null;
+        pausedMsg = pauseInfo(pausedAt).label + (last ? " \u2014 last frame " + tt.time(last.ts) + tt.sfx(last.ts) : "");
+      } else if (kind === "beyond") {
+        offMsg = "\u2014";
+        nodata = true;
       } else {
-        const slot = rec.model.slotAt(t);
-        if (slot && slot.paused) {
-          pausedSlot = slot;
-          pausedMsg = pauseInfo(slot).label;
-        } else {
-          frame = slot && slot.frame;
-          if (!frame) {
-            if (slot && slot.beyond) {
-              offMsg = "\u2014";
-            } else if (slot && slot.future) {
-              frame = ghostFor(rec.model.slots, slot);
-              if (frame) {
-                expectedTs = slot.ts;
-              } else {
-                offMsg = "EXPECTED \u2014 " + tt.short(slot.ts) + tt.sfx(slot.ts);
-              }
-            } else {
-              const i = slot ? rec.model.slots.indexOf(slot) : rec.model.slots.length - 1;
-              let last = null;
-              for (let j = i; j >= 0; j--) {
-                if (rec.model.slots[j].frame) {
-                  last = rec.model.slots[j].frame;
-                  break;
-                }
-              }
-              offMsg = last ? (nodata ? "NO FRAME" : "OFFLINE") + " \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : "no data";
-            }
-          }
-        }
+        nodata = kind === "nodata";
+        const last = frameBefore(rec, at);
+        offMsg = last ? (nodata ? "NO FRAME" : "OFFLINE") + " \u2014 last seen " + tt.time(last.ts) + tt.sfx(last.ts) : t == null ? "no data in window" : "no data";
       }
       rec.el.classList.toggle("offline", !!offMsg);
       rec.el.classList.toggle("nodata", !!offMsg && nodata);
       clearPauseClasses(rec.el);
       if (pausedMsg && !offMsg) {
-        addPauseClasses(rec.el, pausedSlot);
+        addPauseClasses(rec.el, pausedAt);
       }
       rec.off.textContent = offMsg || pausedMsg || "";
       rec.el.classList.toggle("ghost", !!expectedTs);
@@ -2732,14 +2857,13 @@ var VTCore = (() => {
   async function pollOnce2(s) {
     for (const k of s.kiosks) {
       const rec = s.tiles[k.id];
-      const la = rec.model.lastActive;
-      if (!la) {
+      if (!rec) {
         continue;
       }
       const last = lastFrame(rec);
       let fresh;
       try {
-        fresh = await s.backend.frames(k.site, k.id, (last ? last.ts : s.P.from) + 1, Date.now(), la.step);
+        fresh = await s.backend.frames(k.site, k.id, Math.max(last ? last.ts : s.P.from, s.P.from) + 1, Math.min(s.P.to, Date.now()), rec.model.step);
       } catch (e) {
         console.warn("[visual-timeline] live poll failed for " + k.id + ":", e);
         continue;
@@ -2747,19 +2871,9 @@ var VTCore = (() => {
       if (s.destroyed) {
         return;
       }
-      for (const f of fresh) {
-        const slot = rec.model.slotAt(f.ts);
-        if (!slot || slot.paused || slot.beyond) {
-          continue;
-        }
-        if (!slot.frame || f.ts > slot.frame.ts) {
-          slot.frame = f;
-        }
-      }
+      rec.model.refresh(fresh, Date.now());
     }
-    if (s.shownT == null) {
-      setShown(s, null);
-    }
+    setShown(s, s.shownT);
   }
 
   // src/vt/grid/mount.ts
@@ -2807,7 +2921,7 @@ var VTCore = (() => {
         await revealWrapper(root, wrap);
         return;
       }
-      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget, s.cfg.holdFrames ?? 0).catch((e) => {
+      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget, { hold: s.cfg.hold }).catch((e) => {
         console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
         return null;
       }));

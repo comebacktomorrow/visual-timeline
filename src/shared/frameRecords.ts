@@ -36,6 +36,8 @@ export interface HostRecords extends HostMeta {
   frames: Frame[];
   /** From a cadence field (ms), else the median gap between frames. */
   cadence: number;
+  /** No cadence field: the cadence is only the typical gap, not a promise. */
+  inferred?: boolean;
   /** Where a cadence field's value changes over time: a cadence event at the
    * first frame of each new value, so the timeline draws each pace on its own
    * grid (an era) instead of a slow stretch as false gaps. */
@@ -283,7 +285,8 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
       if (hi) {f.hi = hi;}
       rec.frames.set(ts, f); // a repeated timestamp: the later row wins
       const c = cadence ? Number(cadence.values[i]) : NaN;
-      if (Number.isFinite(c) && c > 0) { rec.cadence = c; rec.paces.set(ts, c); }
+      // a frame's cadence is the promise it makes (docs/TIMELINE-MODEL.md)
+      if (Number.isFinite(c) && c > 0) { rec.cadence = c; rec.paces.set(ts, c); f.cadence = c; }
     }
   }
   if (!found) {return null;}
@@ -295,7 +298,7 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
     const history = paceHistory(r.paces);
     // the pace in force at the end of the window
     const cadence = history ? history[history.length - 1].cadence! : r.cadence ?? inferCadence(frames.map((f) => f.ts));
-    return { ...r.meta, id: r.id, site: r.site, frames, cadence, ...(history ? { history } : {}) };
+    return { ...r.meta, id: r.id, site: r.site, frames, cadence, ...(r.cadence ? {} : { inferred: true }), ...(history ? { history } : {}) };
   });
 }
 
@@ -366,11 +369,13 @@ export function recordsBackend(hosts: HostRecords[], known: SourceDecl[] = [], s
     const k = known.find((d) => d.id === h.id && (d.site === h.site || !h.site));
     if (k) {matched.add(k);}
     const own: SourceDecl = {
-      id: h.id, site: h.site, cadence: h.cadence, ...(h.history ? { history: h.history } : {}),
+      id: h.id, site: h.site, cadence: h.cadence, ...(h.inferred ? { inferred: true } : {}), ...(h.history ? { history: h.history } : {}),
       ...(h.timezone ? { timezone: h.timezone } : {}), ...(h.location ? { location: h.location } : {}), ...(h.tags ? { tags: h.tags } : {}),
     };
     // what a source list or host table says wins; the rows fill in the rest
-    return k ? { ...own, ...k, site: h.site || k.site, cadence: k.cadence || h.cadence, tags: k.tags || h.tags } : own;
+    // a cadence the source list or host table declares is a promise
+    return k ? { ...own, ...k, site: h.site || k.site, cadence: k.cadence || h.cadence, tags: k.tags || h.tags,
+      inferred: !k.cadence && !!h.inferred && !k.history } : own;
   });
   // keyed the way the core asks: by the declared site, which a source list may fill in
   const byKey = new Map(decls.map((d, i) => [d.site + '/' + d.id, hosts[i]]));
@@ -378,14 +383,14 @@ export function recordsBackend(hosts: HostRecords[], known: SourceDecl[] = [], s
   // host two lists name is drawn once
   for (const k of known) {
     if (matched.has(k) || decls.some((d) => d.id === k.id && d.site === k.site)) {continue;}
-    decls.push({ ...k, cadence: k.cadence || DEFAULT_CADENCE });
+    decls.push({ ...k, cadence: k.cadence || DEFAULT_CADENCE, ...(k.cadence ? {} : { inferred: true }) });
   }
   // a host's states (#126): pause states take the place of its declared
   // pauses; a host only a state query knows of is drawn too
   for (const st of states) {
     const i = decls.findIndex((d) => d.id === st.id && (d.site === st.site || !st.site));
     if (i >= 0) {decls[i] = withPauseStates(decls[i], st.spans);}
-    else if (st.spans.some((s) => s.pauses)) {decls.push(withPauseStates<SourceDecl>({ id: st.id, site: st.site, cadence: DEFAULT_CADENCE }, st.spans));}
+    else if (st.spans.some((s) => s.pauses)) {decls.push(withPauseStates<SourceDecl>({ id: st.id, site: st.site, cadence: DEFAULT_CADENCE, inferred: true }, st.spans));}
   }
   return {
     kiosks: (sites) => (sites ? decls.filter((d) => sites.includes(d.site)) : decls),

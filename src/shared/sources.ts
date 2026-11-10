@@ -159,7 +159,8 @@ export function sourcesToFrame(
       { name: 'site', type: FieldType.string, values: sources.map((s) => s.site) },
       { name: 'location', type: FieldType.string, values: sources.map((s) => s.location ?? '') },
       { name: 'timezone', type: FieldType.string, values: sources.map((s) => s.timezone ?? '') },
-      { name: 'cadence', type: FieldType.number, values: sources.map((s) => s.cadence), config: { unit: 'ms' } },
+      // a promise (docs/TIMELINE-MODEL.md): none for a source whose cadence was only inferred
+      { name: 'cadence', type: FieldType.number, values: sources.map((s) => (s.inferred ? null : s.cadence)), config: { unit: 'ms' } },
       { name: 'hiCadence', type: FieldType.number, values: sources.map((s) => s.hiCadence ?? null), config: { unit: 'ms' } },
       { name: 'tags', type: FieldType.other, values: sources.map((s) => s.tags ?? {}) },
       // the panel's input, not something to read in a table. Grafana 12.0

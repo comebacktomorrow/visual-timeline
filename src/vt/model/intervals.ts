@@ -57,6 +57,10 @@ export interface IntervalInput {
   now: number;
   /** a promise is kept by a frame up to this fraction of a cadence late */
   tolerance?: number;
+  /** the frames were thinned to one per this many ms (a backend that answers
+   * one frame per step): a promise can't be judged finer than that, so it
+   * counts as at least a step */
+  step?: number;
 }
 
 /** Auto hold: this many times the typical gap around a frame. */
@@ -80,7 +84,12 @@ export function buildIntervals(input: IntervalInput): Intervals {
   const { window: W, now } = input;
   const tol = input.tolerance ?? 0.5;
   const hold = input.hold ?? 'auto';
-  const promiseAt = input.promiseAt ?? (() => null);
+  const declared = input.promiseAt ?? (() => null);
+  // a promise can't be judged finer than the frames were sampled
+  const promiseAt = (t: number): number | null => {
+    const p = declared(t);
+    return p && p > 0 ? Math.max(p, input.step ?? 0) : null;
+  };
   const horizon = Math.max(W.from, Math.min(W.to, now));
 
   // frames in time order, one per instant (the later one wins)
@@ -91,7 +100,8 @@ export function buildIntervals(input: IntervalInput): Intervals {
   // pauses: an open one ends at the first frame that comes after it; a frame
   // inside a pause is not drawn (the pause explains the silence)
   const pauses = resolvePauses(input.pauses ?? [], frames, horizon);
-  const inPause = (t: number) => pauses.some((p) => t >= p.from && t < (p.to as number));
+  // a frame right on a pause's start is its goodbye frame, before it
+  const inPause = (t: number) => pauses.some((p) => t > p.from && t < (p.to as number));
   frames = frames.filter((f) => f.ts <= horizon && !inPause(f.ts));
 
   // from the frame in force at the window's start (the last one at or before
@@ -102,9 +112,7 @@ export function buildIntervals(input: IntervalInput): Intervals {
 
   const promiseOf = (f: Frame): number | null => {
     const own = f.cadence;
-    if (typeof own === 'number' && own > 0) {return own;}
-    const p = promiseAt(f.ts);
-    return p && p > 0 ? p : null;
+    return typeof own === 'number' && own > 0 ? Math.max(own, input.step ?? 0) : promiseAt(f.ts);
   };
   const holdFor = (i: number): number => {
     if (hold === 'none') {return Infinity;}
@@ -134,20 +142,27 @@ export function buildIntervals(input: IntervalInput): Intervals {
   const follow = (f: Frame | null, t: number, until: number, promise: number | null, holdMs: number, live: boolean) => {
     if (until <= t) {return;}
     if (promise) {
+      // the tolerance decides whether the promise broke; once it has, the
+      // drop runs from when the frame was due
       const due = t + promise, kept = t + (1 + tol) * promise;
-      if (f) {
-        if (live) {
-          push(t, Math.min(due, until), 'frame', { frame: f });
-          push(due, Math.min(kept, until), 'pending', { frame: f });
-        } else {
-          push(t, Math.min(kept, until), 'frame', { frame: f });
-        }
+      if (live && f) {
+        // the live edge: due, then pending for a full cadence (capture,
+        // upload, an API's response cache and the poll all take time; a
+        // shorter grace painted a red edge that healed on the next poll,
+        // #77), then overdue
+        const grace = due + promise;
+        push(t, Math.min(due, until), 'frame', { frame: f });
+        push(due, Math.min(grace, until), 'pending', { frame: f });
+        push(grace, until, 'dropped');
+      } else if (until <= kept) {
+        // kept (or cut short by a pause before it came due)
+        push(t, until, f ? 'frame' : 'nodata', f ? { frame: f } : {});
       } else {
-        // after a pause, or a window that starts with no frame in force:
-        // nothing to show; the promise starts its count here
-        push(t, Math.min(kept, until), 'nodata');
+        // after a pause, or a window that starts with no frame in force,
+        // there's nothing to show while the promise counts down
+        push(t, due, f ? 'frame' : 'nodata', f ? { frame: f } : {});
+        push(due, until, 'dropped');
       }
-      push(kept, until, 'dropped');
       return;
     }
     if (f) {

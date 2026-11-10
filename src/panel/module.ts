@@ -16,6 +16,7 @@ import { config, getDataSourceSrv, locationService } from '@grafana/runtime';
 import { usePanelContext, useTheme2 } from '@grafana/ui';
 import { mountTimeline, mountGrid } from '../core';
 import type { AxisFormatter } from '../vt/time/ticks';
+import type { HoldLimit } from '../vt/model/intervals';
 import { themeVars } from '../theme';
 import { coreTimeZone } from '../timezone';
 import { DATASOURCE_ID } from '../shared/ids';
@@ -34,11 +35,11 @@ interface VisualTimelineOptions {
   annotationLanes?: 'shared' | 'per-source';
   headerMode?: 'bar' | 'inline' | 'inline-gradient';
   thumbTimes?: 'panel' | 'source';
-  /** Missing frames (#126): hold the last frame over slots that got none
-   * (never, always, or up to holdFor), and what a gap means. */
-  holdFrames?: 'never' | 'always' | 'threshold';
+  /** Frames without a promise (docs/TIMELINE-MODEL.md): how long one is
+   * shown when no frame follows it soon. Auto, until the next frame, or up
+   * to holdFor. ('never', 'always' and 'threshold' are the pre-M9 values.) */
+  holdFrames?: 'auto' | 'next' | 'limit' | 'never' | 'always' | 'threshold';
   holdFor?: string;
-  missingFrames?: 'offline' | 'nodata';
   /** Header chips (#126): which, in order, and what a click does. */
   chips?: string;
   chipClick?: 'filter' | 'link' | 'none';
@@ -148,9 +149,9 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const showDetails = options.showDetails === true;
   const hideEmpty = options.hideEmpty === true;
   const showAnnotations = options.showAnnotations !== false;
-  // missing frames: how long a frame is held over slots that got none (ms)
-  const holdFrames = options.holdFrames === 'always' ? Infinity
-    : options.holdFrames === 'threshold' ? safeInterval(options.holdFor || '10m') : 0;
+  // frames without a promise: how long one is shown when none follows soon
+  const hold: HoldLimit = options.holdFrames === 'next' || options.holdFrames === 'always' ? 'none'
+    : options.holdFrames === 'limit' || options.holdFrames === 'threshold' ? safeInterval(options.holdFor || '10m') || 'auto' : 'auto';
   /* Host state (#126, M4): rows with a time, a host and a state value, from
    * any query; labels and colours from the field's value mappings. A state
    * field set to "Pauses frames" explains the frames a host doesn't send;
@@ -263,7 +264,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     const common = {
       from, to, width: buildWidth, fit, backend, showDetails, hideEmpty, onFilter,
       annotations, showAnnotations, annotationLanes: options.annotationLanes || 'shared',
-      holdFrames, missingFrames: options.missingFrames || 'offline', chips,
+      hold, chips,
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
       timeZone,
@@ -292,7 +293,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, holdFrames, options.missingFrames, chipsKey]);
+  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, chipsKey]);
 
   useEffect(() => {
     const subs = [
@@ -472,34 +473,23 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
     })
     .addRadio({
       path: 'holdFrames',
-      name: 'Hold last frame',
+      name: 'Hold frames without a promise',
       category: ['Missing frames'],
-      description: 'For feeds that don\'t send a frame on every tick (motion-triggered cameras, irregular uploads): a slot with no frame shows the last one, dimmed. Never: every missing frame is a gap.',
-      defaultValue: 'never',
+      description: 'A frame whose source promises no cadence (no cadence field, Expected cadence or declared pace) is shown until the next one, up to this limit; past it the strip is a neutral "no data", never red. Auto: three times the typical gap around that frame.',
+      defaultValue: 'auto',
       settings: { options: [
-        { value: 'never', label: 'Never' },
-        { value: 'always', label: 'Always' },
-        { value: 'threshold', label: 'Up to' },
+        { value: 'auto', label: 'Auto' },
+        { value: 'next', label: 'Until the next frame' },
+        { value: 'limit', label: 'Up to' },
       ] },
     })
     .addTextInput({
       path: 'holdFor',
       name: 'Hold for',
       category: ['Missing frames'],
-      description: 'How long after a frame it is held: 90s, 10m, 1h. Longer silences are gaps.',
+      description: 'How long after a frame it is shown: 90s, 10m, 1h. Longer silences are no data.',
       defaultValue: '10m',
-      showIf: (o) => o.holdFrames === 'threshold',
-    })
-    .addRadio({
-      path: 'missingFrames',
-      name: 'Gaps mean',
-      category: ['Missing frames'],
-      description: 'Offline: a host should send a frame every tick, so a missing one is drawn red, as offline. No data: nothing says it should, so a gap is drawn neutral.',
-      defaultValue: 'offline',
-      settings: { options: [
-        { value: 'offline', label: 'Offline' },
-        { value: 'nodata', label: 'No data' },
-      ] },
+      showIf: (o) => o.holdFrames === 'limit' || o.holdFrames === 'threshold',
     })
     .addBooleanSwitch({
       path: 'hideEmpty',

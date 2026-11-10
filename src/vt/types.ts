@@ -1,4 +1,5 @@
 import type { AxisFormatter } from './time/ticks';
+import type { HoldLimit, Interval } from './model/intervals';
 /* Shared shapes of the Visual Timeline core: what the frames API (and the
  * built-in demo backend) hands over, and the per-source model the timeline
  * and grid render from. Types only: no runtime code. Field sets follow what
@@ -34,6 +35,10 @@ export interface SourceDecl {
   location?: string;
   tags?: Record<string, string>;
   cadence: number;
+  /* the cadence is only the typical gap between frames, worked out from
+   * them, not one the source declared: its frames make no promise
+   * (docs/TIMELINE-MODEL.md) */
+  inferred?: boolean;
   history?: HistoryEvent[];
   timezone?: string; // only when the source declared one (X-Timezone)
 }
@@ -112,25 +117,33 @@ export interface ApiResponse {
 }
 export type ApiFetch = (path: string) => Promise<ApiResponse>;
 
-/* ---- slots: one flat list across a source's eras (buildSourceModel) ----
- * Every slot has a time span (its width on the strip). The kinds are told
- * apart by `paused` / `beyond`: a tick slot has neither. `el` is the slot's
- * strip element, set by the DOM layer once it renders the slot. */
+/* ---- slots: a host's intervals sampled for the strip (buildSourceModel) ----
+ * The slots tile the window in order: each covers [x0, x0 + span), its
+ * width on the strip. The kinds are told apart by `paused` / `beyond`: a
+ * tick slot has neither. `el` is the slot's strip element, set by the DOM
+ * layer once it renders the slot (slots showing the same frame share one). */
 interface SlotBase {
   ts: number;
+  x0: number;
   span: number;
   el?: HTMLElement;
 }
-/* a grid tick of an active era: centered on ts; its frame, or pending
- * (`future`) until a step past its tick, else offline */
+/* a sample of an active stretch at its tick `ts`: the frame it shows (one
+ * taken within the slot, else the one in force at the tick), or pending
+ * (`future`: the live edge's promise is due), dropped (a broken promise:
+ * offline) or no data (`nodata`: nothing promised) */
 export interface TickSlot extends SlotBase {
   frame: Frame | null;
+  /* the promise in force, or the typical gap for a source with none */
   cadence: number;
   step: number;
   future: boolean;
-  /* the frame is an earlier one, held over a slot that got none
-   * (MountConfig.holdFrames) */
-  held?: boolean;
+  nodata?: boolean;
+  /* how many frames were taken within the slot (more than one: a slot to
+   * play through) */
+  count: number;
+  /* kept so code that tests it still reads; the interval model never holds */
+  held?: undefined;
   paused?: undefined;
   beyond?: undefined;
 }
@@ -146,6 +159,7 @@ export interface PauseSlot extends SlotBase {
   frame?: undefined;
   future?: undefined;
   step?: undefined;
+  nodata?: undefined;
 }
 /* the one inert spacer past now: [ts, ts + span) */
 export interface BeyondSlot extends SlotBase {
@@ -155,15 +169,35 @@ export interface BeyondSlot extends SlotBase {
   future?: undefined;
   step?: undefined;
   held?: undefined;
+  nodata?: undefined;
 }
 export type Slot = TickSlot | PauseSlot | BeyondSlot;
 
-/* what buildSourceModel returns */
+/* a stretch of dropped time inside slots that show a frame: drawn at its
+ * true place, so an outage shorter than a slot still shows */
+export interface DropMark {
+  from: number;
+  to: number;
+}
+
+/* what buildSourceModel returns: rebuilt in place by refresh() as the live
+ * poll brings frames and time passes */
 export interface SourceModel {
   eras: Era[];
+  /* the slot duration: the step frames are fetched and sampled at */
+  step: number;
+  /* whether the source's cadence is a promise (not inferred) */
+  promised: boolean;
+  /* every frame fetched, in time order */
+  frames: Frame[];
+  intervals: Interval[];
   slots: Slot[];
+  drops: DropMark[];
   slotAt(t: number): Slot | null;
+  intervalAt(t: number): Interval | null;
   lastActive: TickSlot | null;
+  /* add frames (the live poll's) and rebuild for `now` */
+  refresh(fresh: Frame[], now: number): void;
 }
 
 /* ---- mounts (mountTimeline, mountGrid) ---- */
@@ -204,13 +238,9 @@ export interface MountConfig {
   annotations?: RawAnnotation[];   // timeline: host annotations (else the demo seam's)
   showAnnotations?: boolean;       // timeline: false hides them
   annotationLanes?: string;        // timeline: 'shared' (default) | 'per-source'
-  /* a slot that got no frame shows the last one for up to this long (ms;
-   * Infinity: always; 0 or unset: never), for feeds that don't send a frame
-   * on every tick */
-  holdFrames?: number;
-  /* what a gap means: 'offline' (default: the red hatch, "offline — last
-   * seen") or 'nodata' (neutral: nothing says the host should have sent one) */
-  missingFrames?: string;
+  /* how long a frame that makes no promise is shown when no frame follows
+   * it soon: 'auto' (default), 'none' (until the next frame) or ms */
+  hold?: HoldLimit;
   onHover?: (t: number) => void;               // timeline: a local hover moved the cursor
   onHoverClear?: () => void;                   // timeline: the mouse left a strip
   onCursor?: (t: number) => void;              // timeline: every cursor move (host chrome)

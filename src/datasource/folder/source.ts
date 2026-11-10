@@ -138,7 +138,8 @@ export class FolderSource {
         const l = h.large[j];
         if (l && Math.abs(l.ts - f.ts) <= cadence) {f.hi = l.url;}
       }
-      records.push({ id: h.id, site: h.site, frames: h.small, cadence });
+      // a folder promises nothing: its cadence is only the typical gap
+      records.push({ id: h.id, site: h.site, frames: h.small, cadence, inferred: true });
     }
     records.sort((a, b) => a.site.localeCompare(b.site) || a.id.localeCompare(b.id));
     return { records, truncated };

@@ -119,10 +119,13 @@ const CSS = `
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
 .ktl .slot img:not([src]) { visibility:hidden; }   /* queued (ui/imageQueue.ts): no alt text or broken-image icon meanwhile */
 .ktl .slot.gap { background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px); }
-/* a gap that only means "no frame" (missingFrames: nodata): the neutral
- * hatch, not the red one; a held slot shows the last frame, dimmed */
+/* no data (no promise in force, or none kept past its hold limit): the
+ * neutral hatch, not the red one (docs/TIMELINE-MODEL.md) */
 .ktl .slot.gap.nodata { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 5px,var(--ktl-pause-b) 5px,var(--ktl-pause-b) 10px); }
-.ktl .slot.held img { opacity:.55; }
+/* dropped time inside cells that show a frame, at its true place: at least
+ * a pixel, so an outage shorter than a slot still shows */
+.ktl .strip .drops { position:absolute; inset:0; pointer-events:none; z-index:2; }
+.ktl .strip .drop { position:absolute; top:0; bottom:0; min-width:1px; background:var(--ktl-off); opacity:.8; }
 .ktl .slot.paused { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 7px,var(--ktl-pause-b) 7px,var(--ktl-pause-b) 14px); }
 .ktl.filterable [data-fk] { cursor:pointer; }
 .ktl.filterable [data-fk]:hover { text-decoration:underline; text-underline-offset:2px; }
