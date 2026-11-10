@@ -36,7 +36,8 @@ datasources:
       largeVariant: '2048'
 
   # Infinity, for the measurements beside the images: USGS water levels and
-  # camera records, NOAA SWPC's X-ray flux and flares. Public APIs, no keys.
+  # camera records, NOAA SWPC's X-ray flux and flares, and the volcano
+  # cameras' images from USGS AshCam. Public APIs, no keys.
   - name: Public APIs
     type: yesoreyeram-infinity-datasource
     uid: vt-public-api

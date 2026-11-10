@@ -6,8 +6,10 @@
   (`docker compose -f demo/docker-compose.yml up`) adds **Rivers** (USGS
   river cameras from a public bucket, with gauge heights) and **The Sun**
   (NASA SDO images from a web folder, with GOES X-ray flux and flares as
-  annotations), read through the HTTP folder connection and Infinity. They
-  need internet access and are not in CI.
+  annotations), read through the HTTP folder connection and Infinity, and
+  **Volcanoes** (six USGS AshCam volcano cameras through Infinity, each at
+  its own pace, with night as a state). They need internet access and are
+  not in CI.
 - A grid tile with no frame under `missingFrames: nodata` is the neutral
   hatch, as the strip's gap is, rather than the offline red.
 
