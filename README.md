@@ -4,6 +4,12 @@
 [![Version](https://img.shields.io/github/package-json/v/comebacktomorrow/visual-timeline)](https://github.com/comebacktomorrow/visual-timeline/blob/main/CHANGELOG.md)
 [![License](https://img.shields.io/github/license/comebacktomorrow/visual-timeline)](https://github.com/comebacktomorrow/visual-timeline/blob/main/LICENSE)
 
+> **`main` is Visual Timeline 2.0, in development.** It reads frames from any
+> data source and drops 1.x's frames API mode
+> ([#126](https://github.com/comebacktomorrow/visual-timeline/issues/126)).
+> The current release is 1.2.3: see its
+> [README](https://github.com/comebacktomorrow/visual-timeline/blob/v1.2.3/README.md).
+
 Scrubbable visual timeline and multiview for image feeds — kiosk screens,
 security cameras, website thumbnails, anything that can post a JPEG on a
 heartbeat. Hover to set a global time cursor across every host; gaps show
