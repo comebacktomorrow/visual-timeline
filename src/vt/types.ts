@@ -42,6 +42,9 @@ export interface Frame {
   url: string;
   source?: string;
   kiosk?: string;
+  /* the larger image for the click-in preview, when the source gives one
+   * per frame (frame records, #126); otherwise hiUrlFor derives it */
+  hi?: string;
 }
 
 /* A span of a source's window on one grid (erasFor). reason and intended

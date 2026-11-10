@@ -161,6 +161,7 @@ export function makeApiBackend(apiUrl?: string, apiKey?: string, apiFetch?: ApiF
 export function hiUrlFor(
   frame: Frame | null, decl: Pick<SourceDecl, 'site' | 'id' | 'hiCadence'>, apiUrl?: string, apiKey?: string
 ): string | null {
+  if (frame?.hi) {return frame.hi;}   // the source gave the preview itself
   if (!decl.hiCadence || !frame) {return null;}
   const url = frame.url || '';
   const qAt = url.indexOf('?');
