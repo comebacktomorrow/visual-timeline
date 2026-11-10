@@ -87,6 +87,9 @@ export function ConfigEditor({ options, onOptionsChange }: Props) {
             <Field label="Time zone" description="The zone the times in names are in: an IANA name such as Australia/Brisbane. Empty: UTC.">
               <Input id="vt-timezone" width={30} value={jsonData.timezone || ''} placeholder="UTC" onChange={text('timezone')} />
             </Field>
+            <Field label="Expected every" description="How often each host takes a frame, as a promise: 1m, 30s. A frame missing past it is drawn red, as offline. Empty: no promise; a missing frame is never offline.">
+              <Input id="vt-expected" width={30} value={jsonData.expectedEvery || ''} placeholder="1m" onChange={text('expectedEvery')} />
+            </Field>
             <Field label="Small images" description="With {variant}: the value for the strips and grids. Empty: every variant.">
               <Input id="vt-small" width={30} value={jsonData.smallVariant || ''} placeholder="lo" onChange={text('smallVariant')} />
             </Field>

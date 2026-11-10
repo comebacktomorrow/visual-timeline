@@ -241,6 +241,9 @@ export interface MountConfig {
   /* how long a frame that makes no promise is shown when no frame follows
    * it soon: 'auto' (default), 'none' (until the next frame) or ms */
   hold?: HoldLimit;
+  /* a promise for every host (ms), whatever its source says: the panel's
+   * Expected cadence (docs/TIMELINE-MODEL.md); unset, the sources decide */
+  expectedCadence?: number;
   onHover?: (t: number) => void;               // timeline: a local hover moved the cursor
   onHoverClear?: () => void;                   // timeline: the mouse left a strip
   onCursor?: (t: number) => void;              // timeline: every cursor move (host chrome)

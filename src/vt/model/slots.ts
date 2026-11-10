@@ -21,13 +21,18 @@ export interface ModelOptions {
   hold?: HoldLimit;
   /** the build's "now" (tests) */
   now?: number;
+  /** a promise for every frame (ms), whatever the source says: the panel's
+   * Expected cadence */
+  expected?: number;
 }
 
 export async function buildSourceModel(
   decl: SourceDecl, P: TimeWindow, backend: Pick<Backend, 'frames'>, budgetSlots: number, opts: ModelOptions = {}
 ): Promise<SourceModel> {
-  const eras = erasFor(decl, P);
-  const promised = !decl.inferred;
+  const expected = opts.expected && opts.expected > 0 ? opts.expected : undefined;
+  // a source with an Expected cadence promises it, whatever it declared
+  const eras = erasFor(expected ? { ...decl, cadence: expected, history: (decl.history || []).filter((h) => h.paused !== undefined || !h.cadence) } : decl, P);
+  const promised = !!expected || !decl.inferred;
   const hold = opts.hold ?? 'auto';
   // one grid per host, at its finest pace in the window (or its typical gap,
   // without a promise), coarsened to the pixel budget in whole paces
@@ -80,6 +85,7 @@ export async function buildSourceModel(
       const thinned = model.frames.length <= 1.1 * buckets;
       const built = buildIntervals({
         frames: model.frames, promiseAt, pauses, hold, window: P, now, step: promised && thinned ? step : undefined,
+        promiseOverride: expected,
       });
       // each slot's cadence: the promise in force at its tick, or the typical gap
       const { slots, drops } = sample(built, step, (t) => promiseAt(t) ?? base);

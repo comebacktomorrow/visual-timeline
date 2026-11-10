@@ -1,8 +1,8 @@
 # The timeline model: frames, promises and intervals (M9)
 
-A design note for 2.0's M9. Status: agreed in outline (2026-11-11), not yet
-built. It replaces the cadence grid that `src/vt/model/slots.ts` builds
-today. Video (M10) and the folder's video files (M11) build on it.
+A design note for 2.0's M9. Status: agreed (2026-11-11) and built (M9a to
+M9c). It replaces the cadence grid that `src/vt/model/slots.ts` built
+before it. Video (M10) and the folder's video files (M11) build on it.
 
 ## Why
 
@@ -140,7 +140,7 @@ step, and the core uses every frame it gets:
 | Frame fields → Cadence                   | Unchanged: names the field whose values are promises.                                      |
 | (none)                                   | **Expected cadence** (panel): a promise for every host in the panel.                       |
 | (none)                                   | **Expected every** (HTTP folder setting): the folder's promise.                            |
-| Show cadence details                     | Shows "promised 1m", or "no promise · typically ~10m".                                     |
+| Show cadence details                     | `⏱ 1m · 1/2m ↓` for a promise; `⏱ ~10m · 1/10m · no promise` for a typical gap.            |
 
 Both removed options are new in 2.0 and were never released, so nothing to
 migrate.

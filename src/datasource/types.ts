@@ -20,6 +20,9 @@ export interface VisualTimelineOptions extends DataSourceJsonData {
   /** HTTP folder: where frames live, relative to the base (#125). */
   template?: string;
   /** HTTP folder: the time zone of the times in names (default UTC). */
+  /** How often each host promises a frame ("1m"): a missing one is
+   * offline. Empty: no promise (docs/TIMELINE-MODEL.md). */
+  expectedEvery?: string;
   timezone?: string;
   /** HTTP folder: the {variant} values of the small images (strips, grids)
    * and the large ones (the click-in preview). Unset: every variant. */

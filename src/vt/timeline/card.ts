@@ -126,8 +126,13 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   card.className = 'card' + (inline ? ' inline-head' : '') +
     (s.cfg.headerMode === 'inline-gradient' ? ' inline-grad' : '');
   const la = model.lastActive;
+  // the promise in force (or, with none, the typical gap) and the slot step
   const cad = s.cfg.showDetails && la
-    ? '<span class="cad">⏱ ' + fmtDur(la.cadence) + ' · 1/' + fmtDur(la.step) + (la.step > la.cadence ? ' ↓' : '') + '</span>'
+    ? '<span class="cad" title="' + esc(model.promised
+        ? 'Promises a frame every ' + fmtDur(la.cadence) + '; one slot per ' + fmtDur(la.step)
+        : 'Promises no cadence: frames are typically ' + fmtDur(la.cadence) + ' apart; one slot per ' + fmtDur(la.step)) + '">⏱ ' +
+      (model.promised ? '' : '~') + fmtDur(la.cadence) + ' · 1/' + fmtDur(la.step) + (la.step > la.cadence ? ' ↓' : '') +
+      (model.promised ? '' : ' · no promise') + '</span>'
     : '';
   card.innerHTML =
     '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs('host', kiosk, !!s.cfg.onFilter) + '>' + esc(kiosk) + '</span>' +

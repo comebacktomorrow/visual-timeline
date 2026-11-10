@@ -118,6 +118,7 @@ const STATUS_CONFIG: FieldConfig = {
       live: { color: 'green', index: 0 },
       offline: { color: 'red', index: 1 },
       paused: { color: 'blue', index: 2 },
+      nodata: { text: 'no data', color: 'text', index: 3 },
     },
   }],
 };

@@ -460,7 +460,7 @@ var VTCore = (() => {
     const hold = input.hold ?? "auto";
     const declared = input.promiseAt ?? (() => null);
     const promiseAt = (t) => {
-      const p = declared(t);
+      const p = input.promiseOverride && input.promiseOverride > 0 ? input.promiseOverride : declared(t);
       return p && p > 0 ? Math.max(p, input.step ?? 0) : null;
     };
     const horizon = Math.max(W.from, Math.min(W.to, now));
@@ -480,7 +480,7 @@ var VTCore = (() => {
     }
     const shown = frames.slice(offset);
     const promiseOf = (f) => {
-      const own = f.cadence;
+      const own = input.promiseOverride && input.promiseOverride > 0 ? input.promiseOverride : f.cadence;
       return typeof own === "number" && own > 0 ? Math.max(own, input.step ?? 0) : promiseAt(f.ts);
     };
     const holdFor = (i) => {
@@ -625,8 +625,9 @@ var VTCore = (() => {
   var LOOKBACK_STEPS = 100;
   var LOOKBACK_UNPROMISED = 36e5;
   async function buildSourceModel(decl, P, backend, budgetSlots, opts = {}) {
-    const eras = erasFor(decl, P);
-    const promised = !decl.inferred;
+    const expected = opts.expected && opts.expected > 0 ? opts.expected : void 0;
+    const eras = erasFor(expected ? { ...decl, cadence: expected, history: (decl.history || []).filter((h) => h.paused !== void 0 || !h.cadence) } : decl, P);
+    const promised = !!expected || !decl.inferred;
     const hold = opts.hold ?? "auto";
     const active = eras.filter((e) => !e.paused);
     const base = Math.max(1e3, Math.min(...(active.length ? active : eras).map((e) => e.cadence)));
@@ -691,7 +692,8 @@ var VTCore = (() => {
           hold,
           window: P,
           now,
-          step: promised && thinned ? step : void 0
+          step: promised && thinned ? step : void 0,
+          promiseOverride: expected
         });
         const { slots, drops } = sample(built, step, (t) => promiseAt(t) ?? base);
         model.intervals = built.intervals;
@@ -2382,7 +2384,7 @@ var VTCore = (() => {
     const inline = s.cfg.headerMode === "inline" || s.cfg.headerMode === "inline-gradient";
     card.className = "card" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
     const la = model.lastActive;
-    const cad = s.cfg.showDetails && la ? '<span class="cad">\u23F1 ' + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + "</span>" : "";
+    const cad = s.cfg.showDetails && la ? '<span class="cad" title="' + esc(model.promised ? "Promises a frame every " + fmtDur(la.cadence) + "; one slot per " + fmtDur(la.step) : "Promises no cadence: frames are typically " + fmtDur(la.cadence) + " apart; one slot per " + fmtDur(la.step)) + '">\u23F1 ' + (model.promised ? "" : "~") + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + (model.promised ? "" : " \xB7 no promise") + "</span>" : "";
     card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", kiosk, !!s.cfg.onFilter) + ">" + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
     const strip = card.querySelector(".strip");
     renderStrip(s, model, strip, kiosk, tt);
@@ -2681,7 +2683,7 @@ var VTCore = (() => {
         await revealWrapper(root, wrap);
         return;
       }
-      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget, { hold: s.cfg.hold }).catch((e) => {
+      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence }).catch((e) => {
         console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
         return null;
       }));
@@ -2921,7 +2923,7 @@ var VTCore = (() => {
         await revealWrapper(root, wrap);
         return;
       }
-      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget, { hold: s.cfg.hold }).catch((e) => {
+      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence }).catch((e) => {
         console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
         return null;
       }));

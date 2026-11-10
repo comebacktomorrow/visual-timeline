@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **A cadence is a promise** (M9, [docs/TIMELINE-MODEL.md](docs/TIMELINE-MODEL.md)).
+  The timeline no longer infers a heartbeat and holds every host to it. A
+  frame is shown until the next one; a host that declares a cadence (a
+  `cadence` field, a host table, its source's declared pace, the panel's new
+  **Expected cadence**, or the HTTP folder's new **Expected every**)
+  promises its next frame within it, and only a broken promise is drawn red,
+  from when the frame was due. A host that declares nothing promises nothing:
+  its frames are shown until the next one, up to **Hold frames without a
+  promise** (Auto: three times the typical gap around it), then a neutral "no
+  data", never offline. A camera with uneven but regular gaps (USGS's
+  Kīlauea F1, 20 and 10 minutes) draws as one continuous strip instead of a
+  false outage every other frame.
+- Slots showing the same frame are one wider cell; dropped time shorter than
+  a slot is marked at its true place; the strip tiles the time range
+  exactly; and the live poll redraws only what changed. The live edge keeps
+  a due frame "expected" for a cadence before calling it dropped.
+- The last-frame status gains `nodata`: a host with no promise is never
+  `offline`.
+- **Hold last frame** and **Gaps mean**, new in 2.0, are replaced by **Hold
+  frames without a promise** and **Expected cadence**; dashboards saved with
+  the old values still read.
+
 - **Public demo dashboards** (M6). The demo stack
   (`docker compose -f demo/docker-compose.yml up`) adds **Rivers** (USGS
   river cameras from a public bucket, with gauge heights) and **The Sun**
@@ -55,13 +77,6 @@
   screen asleep, and so on) are translated at the edges, by the standalone
   viewer's API backend and our data source, in the colours they had. A CI
   check keeps the worker's conventions out of the core and the panel.
-- **Missing frames options** (#126). Not every feed sends a frame on every
-  tick, and the panel no longer has to assume it does. **Hold last frame**
-  (Never, Always, or Up to a duration) shows a slot with no frame as the last
-  frame before it, dimmed, as Grafana's "Connect null values" does for
-  lines. **Gaps mean** (Offline or No data) chooses whether a gap is the red
-  offline hatch or a neutral "no frame" one, in the strip, magnifier, header
-  and grid tile. The defaults keep the heartbeat behaviour.
 - **Host details from any query** (#126, M4c). Each host's time zone,
   location and tags come from fields on its frame rows (`timezone`,
   `location`, `tags`), from labels on the image field (as tags), or from a

@@ -40,6 +40,9 @@ interface VisualTimelineOptions {
    * to holdFor. ('never', 'always' and 'threshold' are the pre-M9 values.) */
   holdFrames?: 'auto' | 'next' | 'limit' | 'never' | 'always' | 'threshold';
   holdFor?: string;
+  /** A promise for every host in the panel ("1m"): a frame missing past it
+   * is offline. Empty: what the data says. */
+  expectedCadence?: string;
   /** Header chips (#126): which, in order, and what a click does. */
   chips?: string;
   chipClick?: 'filter' | 'link' | 'none';
@@ -149,6 +152,8 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const showDetails = options.showDetails === true;
   const hideEmpty = options.hideEmpty === true;
   const showAnnotations = options.showAnnotations !== false;
+  // a promise for every host, whatever its data says (ms; 0: none)
+  const expectedCadence = options.expectedCadence ? safeInterval(options.expectedCadence) : 0;
   // frames without a promise: how long one is shown when none follows soon
   const hold: HoldLimit = options.holdFrames === 'next' || options.holdFrames === 'always' ? 'none'
     : options.holdFrames === 'limit' || options.holdFrames === 'threshold' ? safeInterval(options.holdFor || '10m') || 'auto' : 'auto';
@@ -264,7 +269,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     const common = {
       from, to, width: buildWidth, fit, backend, showDetails, hideEmpty, onFilter,
       annotations, showAnnotations, annotationLanes: options.annotationLanes || 'shared',
-      hold, chips,
+      hold, chips, ...(expectedCadence > 0 ? { expectedCadence } : {}),
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
       timeZone,
@@ -293,7 +298,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, chipsKey]);
+  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, chipsKey]);
 
   useEffect(() => {
     const subs = [
@@ -470,6 +475,13 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       description: 'The URL a click opens. ${__chip.key}, ${__chip.value} and ${__host} are the clicked chip\'s; dashboard variables work too. For example: /d/abc?var-host=${__host}',
       defaultValue: '',
       showIf: (o) => o.chipClick === 'link',
+    })
+    .addTextInput({
+      path: 'expectedCadence',
+      name: 'Expected cadence',
+      category: ['Missing frames'],
+      description: 'How often every host promises a frame: 1m, 30s, 15m. A frame missing past it is drawn red, as offline. Empty: each host\'s own cadence field or declared pace, if any; a host with none promises nothing and is never red.',
+      defaultValue: '',
     })
     .addRadio({
       path: 'holdFrames',

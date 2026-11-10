@@ -23,6 +23,19 @@ for (const title of ['Folder with an HTML listing', 'Folder with a JSON listing'
   });
 }
 
+test('a folder with Expected every promises it: a missing frame is offline', async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
+  await page.setViewportSize({ width: 1280, height: 1400 });
+  const dashboard = await readProvisionedDashboard({ fileName: 'folder.json' });
+  const dashboardPage = await gotoDashboardPage(dashboard);
+  const panel = dashboardPage.getPanelByTitle('Folder that expects a frame every 3 minutes');
+  await expect(panel.locator.locator('.ktl .card .card-head .nm')).toHaveText(['cam-a', 'cam-b'], { timeout: 20000 });
+  const card = (h: string) => panel.locator.locator('.ktl .card').filter({ has: page.locator('.nm', { hasText: h }) });
+  await expect(card('cam-b').locator('.slot.gap:not(.nodata)').first()).toBeAttached();
+  // cam-a keeps its promise (its seconds drift within the tolerance): red
+  // only before its first frame, when the window starts before it
+  expect(await card('cam-a').locator('.slot.gap:not(.nodata)').count()).toBeLessThanOrEqual(1);
+});
+
 test('Save & test on a folder says what it found', async ({ readProvisionedDataSource, gotoDataSourceConfigPage, selectors }) => {
   // the fixture's frames are on 2026-01-01, outside the last 24 hours that
   // Save & test reads: the folder and template work, and it says nothing matched

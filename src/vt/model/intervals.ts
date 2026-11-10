@@ -61,6 +61,9 @@ export interface IntervalInput {
    * one frame per step): a promise can't be judged finer than that, so it
    * counts as at least a step */
   step?: number;
+  /** a promise for every frame, ahead of their own and the source's (the
+   * panel's Expected cadence) */
+  promiseOverride?: number;
 }
 
 /** Auto hold: this many times the typical gap around a frame. */
@@ -87,7 +90,7 @@ export function buildIntervals(input: IntervalInput): Intervals {
   const declared = input.promiseAt ?? (() => null);
   // a promise can't be judged finer than the frames were sampled
   const promiseAt = (t: number): number | null => {
-    const p = declared(t);
+    const p = input.promiseOverride && input.promiseOverride > 0 ? input.promiseOverride : declared(t);
     return p && p > 0 ? Math.max(p, input.step ?? 0) : null;
   };
   const horizon = Math.max(W.from, Math.min(W.to, now));
@@ -111,7 +114,7 @@ export function buildIntervals(input: IntervalInput): Intervals {
   const shown = frames.slice(offset);
 
   const promiseOf = (f: Frame): number | null => {
-    const own = f.cadence;
+    const own = input.promiseOverride && input.promiseOverride > 0 ? input.promiseOverride : f.cadence;
     return typeof own === 'number' && own > 0 ? Math.max(own, input.step ?? 0) : promiseAt(f.ts);
   };
   const holdFor = (i: number): number => {

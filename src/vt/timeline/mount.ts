@@ -84,7 +84,7 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
     }
     // a few at a time; cards still go in declared order
     const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) =>
-      s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget, { hold: s.cfg.hold }).catch((e) => {
+      s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence }).catch((e) => {
         // one source's backend hiccup must not black out the whole panel;
         // the next refresh retries it
         console.warn('[visual-timeline] model build failed for ' + k.id + ':', e);

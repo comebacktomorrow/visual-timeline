@@ -277,3 +277,25 @@ describe('a source with no promise (its cadence only inferred)', () => {
     expect(m.slots.find((sl) => sl.ts === T0 + 11 * MIN).nodata).toBe(true);
   });
 });
+
+describe("the panel's Expected cadence", () => {
+  const P = { from: T0, to: T0 + 30 * MIN };
+  beforeEach(() => { now = T0 + DAY; });
+  const have = every(MIN, P.from, P.to, (ts) => ts > T0 + 10 * MIN && ts < T0 + 20 * MIN);
+
+  test('a source that promises nothing is never red without it', async () => {
+    const m = await build(decl({ inferred: true }), P, backendWith(have), BUDGET);
+    expect(view(m.slots).map(([, c]) => c)).not.toContain('gap');
+  });
+
+  test('with it, every host promises it: a missing frame is offline', async () => {
+    const m = await build(decl({ inferred: true }), P, backendWith(have), BUDGET, { expected: MIN });
+    expect(view(m.slots).filter(([, c]) => c === 'gap').map(([t]) => t)).toEqual([11, 12, 13, 14, 15, 16, 17, 18, 19]);
+  });
+
+  test("it wins over the source's own pace", async () => {
+    // the source says 10 minutes; the panel expects one a minute
+    const m = await build(decl({ cadence: 10 * MIN }), P, backendWith(have), BUDGET, { expected: MIN });
+    expect(view(m.slots).filter(([, c]) => c === 'gap')).not.toHaveLength(0);
+  });
+});
