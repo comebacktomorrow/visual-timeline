@@ -1,0 +1,28 @@
+# A minimal single-process Loki for the dev stack and e2e (M5): it holds the
+# fixture frames as log lines, pushed at startup as the last half hour's
+# (seed-loki.mjs), as a live camera's upload log would be.
+auth_enabled: false
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: warn
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /tmp/loki
+  storage:
+    filesystem:
+      chunks_directory: /tmp/loki/chunks
+      rules_directory: /tmp/loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h

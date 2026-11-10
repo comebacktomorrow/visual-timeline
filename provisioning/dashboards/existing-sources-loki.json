@@ -1,0 +1,56 @@
+{
+  "uid": "vt-existing-sources-loki",
+  "title": "Visual Timeline — Loki",
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "tags": [
+    "visual-timeline"
+  ],
+  "description": "The fixture frames as Loki holds them (M5). They're seeded relative to when the stack started (tests/folder-fixture/seed-loki.mjs), so this dashboard looks at the last 6 hours.",
+  "panels": [
+    {
+      "id": 2,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "From Loki",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "vt-loki"
+      },
+      "description": "Log lines that are image URLs, one stream per host; Extract fields turns the labels into a host column.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "vt-loki"
+          },
+          "expr": "{job=\"cameras\"}",
+          "queryType": "range",
+          "maxLines": 1000
+        }
+      ],
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "labels"
+          }
+        }
+      ],
+      "options": {
+        "mode": "timeline"
+      }
+    }
+  ]
+}

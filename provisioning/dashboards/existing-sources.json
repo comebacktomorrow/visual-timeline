@@ -1,0 +1,93 @@
+{
+  "uid": "vt-existing-sources",
+  "title": "Visual Timeline — existing data sources",
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "2026-01-01T09:58:00.000Z",
+    "to": "2026-01-01T10:30:00.000Z"
+  },
+  "timezone": "utc",
+  "tags": [
+    "visual-timeline"
+  ],
+  "description": "The same fixture frames as PostgreSQL holds them (M5): rows of frames and of states. No Visual Timeline data source is involved. Loki: existing-sources-loki.json.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "From PostgreSQL",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "vt-postgres"
+      },
+      "description": "Two SQL queries: a table of frames (time, host, image, image_hi) and a table of states, whose state field pauses frames.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "vt-postgres"
+          },
+          "rawSql": "SELECT time, host, image, image_hi FROM frames WHERE $__timeFilter(time) ORDER BY time",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "vt-postgres"
+          },
+          "rawSql": "SELECT time, host, state FROM states ORDER BY time",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "state"
+            },
+            "properties": [
+              {
+                "id": "custom.pausesFrames",
+                "value": true
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "maintenance": {
+                        "text": "Maintenance",
+                        "color": "purple",
+                        "index": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "mode": "timeline"
+      }
+    }
+  ]
+}

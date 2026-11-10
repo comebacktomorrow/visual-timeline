@@ -185,6 +185,12 @@ A **wide table** works too, as a SQL pivot returns it: one time column and an
 image column per host, each column named for its host (or carrying a `host`
 label).
 
+**Tested** on every pull request, against the dev stack: PostgreSQL (and so
+SQL generally), Loki, TestData and the Visual Timeline data source; Infinity
+is checked by hand. InfluxDB and Elasticsearch should work but aren't tested.
+Recipes for each are in
+[docs/DATA-SOURCES.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/DATA-SOURCES.md).
+
 When your fields have other names, set them under **Frame fields** in the
 panel options. Two more kinds of query can join the frames in a panel: **host
 state** (rows of time, host and a `state` field, labelled and coloured by its

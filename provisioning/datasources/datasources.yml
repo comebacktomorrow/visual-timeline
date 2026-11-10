@@ -46,3 +46,22 @@ datasources:
       template: '{host}/{YYYY}-{MM}-{DD}/{HH}{mm}{ss}_{variant}.svg'
       smallVariant: lo
       largeVariant: hi
+
+  # Existing data sources holding the same frames (M5): see docker-compose.yaml.
+  # Throwaway test credentials for a database that holds only the fixture.
+  - name: PostgreSQL (frames)
+    type: grafana-postgresql-datasource
+    uid: vt-postgres
+    url: vt-postgres:5432
+    user: grafana
+    jsonData:
+      database: frames
+      sslmode: disable
+      postgresVersion: 1600
+    secureJsonData:
+      password: grafana
+
+  - name: Loki (frames)
+    type: loki
+    uid: vt-loki
+    url: http://vt-loki:3100

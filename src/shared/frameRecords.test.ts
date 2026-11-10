@@ -77,7 +77,8 @@ describe('recordsFromSeries', () => {
       ],
     });
     const hosts = recordsFromSeries([labelled, bare])!;
-    expect(hosts.map((h) => [h.site, h.id])).toEqual([['hq', 'lobby'], ['', 'B']]);
+    // sorted by site, then host, whatever order the frames came in
+    expect(hosts.map((h) => [h.site, h.id])).toEqual([['', 'B'], ['hq', 'lobby']]);
   });
 
   test('times as epoch numbers or date strings, rows without a time or image skipped', () => {
@@ -253,7 +254,7 @@ describe('wide tables (#126)', () => {
     ]);
   });
 
-  test('not a wide table: our per-host last frame table (a time field per host), or one with a host field', () => {
+  test('not a wide table: our per-host last frame table (a time field per host), or one with a host field (rows)', () => {
     const perHost = createDataFrame({ fields: [
       { name: 'cam-1', type: FieldType.string, values: ['https://img/1.jpg'] },
       { name: 'cam-1 time', type: FieldType.time, values: [T0] },
@@ -266,7 +267,8 @@ describe('wide tables (#126)', () => {
       { name: 'host', type: FieldType.string, values: ['a'] },
       { name: 'pic', type: FieldType.string, values: ['https://img/1.jpg'] },
     ] });
-    expect(recordsFromSeries([withHost])).toBeNull();
+    // a host field makes it rows, its one image column found by content: host "a", not a host "pic"
+    expect(recordsFromSeries([withHost])!.map((h) => h.id)).toEqual(['a']);
   });
 });
 
@@ -285,5 +287,26 @@ describe('cadence that changes over time (eras from any query)', () => {
   test('one pace throughout: no history', () => {
     const [h] = recordsFromSeries([table([[T0, 'cam', 'https://img/1.jpg'], [T0 + MIN, 'cam', 'https://img/2.jpg']], { cadence: [60000, 60000] })])!;
     expect(h.history).toBeUndefined();
+  });
+});
+
+describe('an image field found by its content', () => {
+  test('a log line that is an image URL, with a host field (Loki, labels extracted)', () => {
+    const logs = createDataFrame({ fields: [
+      { name: 'Time', type: FieldType.time, values: [T0, T0 + MIN] },
+      { name: 'Line', type: FieldType.string, values: ['https://img/1.jpg', 'https://img/2.jpg'] },
+      { name: 'host', type: FieldType.string, values: ['cam', 'cam'] },
+      { name: 'job', type: FieldType.string, values: ['cameras', 'cameras'] },
+    ] });
+    expect(recordsFromSeries([logs])!.map((h) => [h.id, h.frames.length])).toEqual([['cam', 2]]);
+  });
+  test('not when two fields could be the image, or without a host', () => {
+    const two = createDataFrame({ fields: [
+      { name: 'Time', type: FieldType.time, values: [T0] },
+      { name: 'a', type: FieldType.string, values: ['https://img/1.jpg'] },
+      { name: 'b', type: FieldType.string, values: ['https://img/2.jpg'] },
+      { name: 'host', type: FieldType.string, values: ['cam'] },
+    ] });
+    expect(recordsFromSeries([two])).toBeNull();
   });
 });
