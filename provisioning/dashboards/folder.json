@@ -1,0 +1,72 @@
+{
+  "uid": "vt-folder",
+  "title": "Visual Timeline — HTTP folder",
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "2026-01-01T09:58:00.000Z",
+    "to": "2026-01-01T10:30:00.000Z"
+  },
+  "timezone": "utc",
+  "tags": [
+    "visual-timeline"
+  ],
+  "description": "Frames from a web folder (#125): the seeded fixture nginx serves in the dev stack, through each listing format.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Folder with an HTML listing",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "vt-folder-html"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "vt-folder-html"
+          }
+        }
+      ],
+      "options": {
+        "mode": "timeline"
+      }
+    },
+    {
+      "id": 2,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Folder with a JSON listing",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "vt-folder-json"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "vt-folder-json"
+          }
+        }
+      ],
+      "options": {
+        "mode": "timeline"
+      }
+    }
+  ]
+}

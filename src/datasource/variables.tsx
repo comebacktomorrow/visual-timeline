@@ -71,7 +71,7 @@ export class VisualTimelineVariableSupport extends CustomVariableSupport<
 
   query(request: DataQueryRequest<VisualTimelineVariableQuery>): Observable<DataQueryResponse> {
     const [target] = request.targets;
-    return from(this.datasource.metricFindQuery(target, { scopedVars: request.scopedVars })).pipe(
+    return from(this.datasource.metricFindQuery(target, { scopedVars: request.scopedVars, range: request.range })).pipe(
       map((values) => ({ data: values }))
     );
   }

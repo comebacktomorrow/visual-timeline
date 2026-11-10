@@ -6,6 +6,31 @@ export interface VisualTimelineOptions extends DataSourceJsonData {
   /** Demo data: queries answer with built-in demo hosts and their frames,
    * so the plugin can be tried with nothing else set up. */
   demo?: boolean;
+  /** Where frames come from: the demo, or a web folder or public bucket
+   * (#125). Unset: the demo when demo is on. */
+  connection?: 'demo' | 'folder';
+  /** HTTP folder: the folder's base URL as Grafana's server reaches it
+   * (listings go through the data source's proxy route). */
+  folderUrl?: string;
+  /** HTTP folder: the base URL viewers' browsers load images from, when it
+   * differs (an internal address for Grafana, a public one for browsers). */
+  imageUrl?: string;
+  /** HTTP folder: how the folder lists itself. */
+  listing?: 'json' | 'html' | 's3';
+  /** HTTP folder: where frames live, relative to the base (#125). */
+  template?: string;
+  /** HTTP folder: the time zone of the times in names (default UTC). */
+  timezone?: string;
+  /** HTTP folder: the {variant} values of the small images (strips, grids)
+   * and the large ones (the click-in preview). Unset: every variant. */
+  smallVariant?: string;
+  largeVariant?: string;
+}
+
+/** Secret settings: encrypted by Grafana, never sent back to the browser.
+ * The folder proxy route reads them server-side. */
+export interface VisualTimelineSecureOptions {
+  bearerToken?: string;
 }
 
 /** A panel query: which sources to show. Each field takes ids or dashboard

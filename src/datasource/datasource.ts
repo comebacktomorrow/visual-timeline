@@ -9,10 +9,13 @@ import {
   MetricFindValue,
   ScopedVars,
   TestDataSourceResponse,
+  TimeRange,
 } from '@grafana/data';
 import { getTemplateSrv } from '@grafana/runtime';
 
+import { HostRecords, framesPerStep, recordsBackend } from '../shared/frameRecords';
 import { lastFrameIn } from '../shared/lastFrame';
+import { FolderSource, proxyTextFetch, TextFetch } from './folder/source';
 import {
   applySourceFilter,
   interpolatedList,
@@ -37,22 +40,34 @@ import { VisualTimelineVariableSupport } from './variables';
 export type Interpolate = (value: string, scopedVars?: ScopedVars) => string;
 const grafanaInterpolate: Interpolate = (value, scopedVars) => getTemplateSrv().replace(value, scopedVars, 'csv');
 
-/* The frontend-only data source. With Demo data on, it answers panel
- * queries with built-in demo hosts and their frames as rows (time, host,
- * site, image), the way any data source can (#126), feeds the Site and Host
- * variables and the ad hoc filter bar, and answers annotation queries with
- * the demo events. Without it there is nothing to read yet: the folder and
- * bucket listings (#125) come before 2.0. The frames API mode of 1.x is gone
- * (#126); its worker is read through a stock data source such as Infinity. */
+/* The frontend-only data source. It answers panel queries with hosts and
+ * their frames as rows (time, host, site, image), the way any data source
+ * can (#126), feeds the Site and Host variables and the ad hoc filter bar,
+ * from one of two connections:
+ * - Demo data: built-in demo hosts, their pauses as state rows, and demo
+ *   events for annotation queries;
+ * - HTTP folder (#125): a web folder or public bucket of timestamped images,
+ *   listed through the data source's proxy route.
+ * The frames API mode of 1.x is gone (#126); its worker is read through a
+ * stock data source such as Infinity. */
 export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery, VisualTimelineOptions> {
   readonly demo: boolean;
+  /** the HTTP folder connection, or null; folderError when its settings can't work */
+  readonly folder: FolderSource | null = null;
+  readonly folderError: string | null = null;
 
   constructor(
     instanceSettings: DataSourceInstanceSettings<VisualTimelineOptions>,
-    private readonly interpolate: Interpolate = grafanaInterpolate
+    private readonly interpolate: Interpolate = grafanaInterpolate,
+    fetchText: TextFetch = proxyTextFetch(instanceSettings.uid)
   ) {
     super(instanceSettings);
-    this.demo = instanceSettings.jsonData?.demo === true;
+    const o = instanceSettings.jsonData || {};
+    const connection = o.connection ?? (o.demo === true ? 'demo' : undefined);
+    this.demo = connection === 'demo';
+    if (connection === 'folder') {
+      try { this.folder = new FolderSource(o, fetchText); } catch (e) { this.folderError = (e as Error).message; }
+    }
     this.variables = new VisualTimelineVariableSupport(this);
     // annotation queries: Demo data's demo events, as dashboard annotations
     this.annotations = { getDefaultQuery: () => ({ kind: 'annotations' }) };
@@ -62,7 +77,19 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
    * window (their outages and eras sit inside it), so the window is passed
    * when there is one. Without Demo data there are none yet. */
   async sources(sites?: string[] | null, window?: { from: number; to: number }): Promise<SourceDecl[]> {
-    return this.demo ? (this.demoBackend(window).kiosks(sites ?? null) as SourceDecl[]) : [];
+    if (this.demo) {return this.demoBackend(window).kiosks(sites ?? null) as SourceDecl[];}
+    if (this.folder || this.folderError) {
+      // a folder's hosts are the ones it holds frames for: in the window, or the last day
+      const to = window?.to ?? Date.now();
+      const { records } = await this.folderHosts(window?.from ?? to - 864e5, to, { sites: sites ?? null });
+      return records.map(declOf);
+    }
+    return [];
+  }
+
+  private folderHosts(from: number, to: number, filters: { hosts?: string[] | null; sites?: string[] | null }) {
+    if (!this.folder) {return Promise.reject(new Error(this.folderError || 'Set up the HTTP folder connection'));}
+    return this.folder.hosts(from, to, filters);
   }
 
   /** The built-in demo hosts and frames for a time window (an hour to now
@@ -89,6 +116,9 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
           const sites = interpolatedList(this.field(t.sites, request.scopedVars));
           const hosts = interpolatedList(this.field(t.hosts, request.scopedVars));
           const tags = this.field(t.tags, request.scopedVars);
+          if (!this.demo && (this.folder || this.folderError)) {
+            return this.folderQuery(t, window, request, { sites, hosts, tags });
+          }
           const sources = applySourceFilter(await this.sources(sites, window), {
             sites,
             hosts,
@@ -122,6 +152,33 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
     return { data: data.flat() };
   }
 
+  /* An HTTP folder's answer: its hosts (a host table, for variables and
+   * Table panels) and their frames as rows, one per step, with the large
+   * image as each one's preview; or each host's last frame. A walk cut short
+   * by its listing cap says so as a notice on the panel. */
+  private async folderQuery(
+    t: VisualTimelineQuery, window: { from: number; to: number }, request: DataQueryRequest<VisualTimelineQuery>,
+    f: { sites: string[] | null; hosts: string[] | null; tags: string }
+  ): Promise<DataFrame[]> {
+    const { records, truncated } = await this.folderHosts(window.from, window.to, { sites: f.sites, hosts: f.hosts });
+    const sources = applySourceFilter(records.map(declOf), {
+      sites: f.sites, hosts: f.hosts, tags: /\$[{a-zA-Z_]/.test(f.tags) ? '' : f.tags, adhoc: request.filters,
+    });
+    const keep = new Set(sources.map((s) => s.site + '/' + s.id));
+    const mine = records.filter((r) => keep.has(r.site + '/' + r.id));
+    const notice = truncated
+      ? [{ severity: 'warning' as const, text: 'The folder holds more than one query lists: some hosts or times weren\'t read. Narrow the time range or the hosts.' }]
+      : [];
+    if (t.lastFrame) {
+      const backend = recordsBackend(mine);
+      const end = Math.min(window.to, Date.now());
+      const last = await Promise.all(limited(sources, MODEL_CONCURRENCY, (s) => lastFrameIn(s, window.from, end, backend).catch(() => null)));
+      const frame = t.lastFrameFormat === 'host' ? lastFramesByHost(sources, last, t.refId) : sourcesToFrame(sources, t.refId, last);
+      return [withNotices(frame, notice)];
+    }
+    return [withNotices(sourcesToFrame(sources, t.refId), notice), recordsToFrame(folderRows(mine, window, request.maxDataPoints), t.refId)];
+  }
+
   /* Demo frames for these sources as rows. Each source's rows come at the
    * finest cadence it has in the window (source-3 changes pace mid-window),
    * or coarser for a long window, so there are never more rows per source
@@ -151,30 +208,31 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
    * ("sites" or "hosts") works too, for dashboards written by hand. */
   async metricFindQuery(
     query: VisualTimelineVariableQuery | string,
-    options?: { scopedVars?: ScopedVars }
+    options?: { scopedVars?: ScopedVars; range?: TimeRange }
   ): Promise<MetricFindValue[]> {
     const q: Partial<VisualTimelineVariableQuery> =
       typeof query === 'string' ? { type: query.trim().toLowerCase() === 'hosts' ? 'hosts' : 'sites' } : query;
+    // a folder's hosts are the ones with frames in the dashboard's range
+    const window = windowOf(options?.range);
     if (q.type === 'hosts') {
       const sites = interpolatedList(this.field(q.sites, options?.scopedVars));
-      // the API filters by site too, but checking here keeps any API honest
-      const sources = applySourceFilter(await this.sources(sites), { sites });
+      const sources = applySourceFilter(await this.sources(sites, window), { sites });
       return tagValues(sources, 'host').map((text) => ({ text, value: text }));
     }
-    return tagValues(await this.sources(), 'site').map((text) => ({ text, value: text }));
+    return tagValues(await this.sources(null, window), 'site').map((text) => ({ text, value: text }));
   }
 
   /** Keys for the ad hoc filter bar: site, host and every tag key among the
    * sources the other filters leave. */
   async getTagKeys(options?: DataSourceGetTagKeysOptions<VisualTimelineQuery>): Promise<MetricFindValue[]> {
-    const sources = applySourceFilter(await this.sources(), { adhoc: options?.filters });
+    const sources = applySourceFilter(await this.sources(null, windowOf(options?.timeRange)), { adhoc: options?.filters });
     return tagKeys(sources).map((text) => ({ text }));
   }
 
   /** Values for one ad hoc key, among the sources the other filters leave. */
   async getTagValues(options: DataSourceGetTagValuesOptions<VisualTimelineQuery>): Promise<MetricFindValue[]> {
     const others = (options.filters || []).filter((f) => f.key !== options.key);
-    const sources = applySourceFilter(await this.sources(), { adhoc: others });
+    const sources = applySourceFilter(await this.sources(null, windowOf(options.timeRange)), { adhoc: others });
     return tagValues(sources, options.key).map((text) => ({ text }));
   }
 
@@ -192,10 +250,48 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
     if (this.demo) {
       return { status: 'success', message: 'Demo data is on: queries return built-in demo hosts and frames.' };
     }
+    if (this.folder || this.folderError) {
+      // read the last day, as a panel would: the settings, the proxy, the listing and the template at once
+      try {
+        const to = Date.now();
+        const { records, truncated } = await this.folderHosts(to - 864e5, to, {});
+        const frames = records.reduce((n, r) => n + r.frames.length, 0);
+        if (!frames) {
+          return { status: 'error', message: 'The folder answered, but no file in the last 24 hours matched the path template. Check the template, the listing format and the time zone.' };
+        }
+        const hosts = records.length;
+        return { status: 'success', message: `Found ${frames} frame${frames === 1 ? '' : 's'} from ${hosts} host${hosts === 1 ? '' : 's'} in the last 24 hours` + (truncated ? ' (and more than one query lists).' : '.') };
+      } catch (e) {
+        return { status: 'error', message: (e as Error).message };
+      }
+    }
     return {
       status: 'error',
-      message:
-        'Nothing to read yet: turn on Demo data. Panels read your own frames from any data source that returns rows of time, image and host.',
+      message: 'Choose a connection: Demo data, or an HTTP folder. Panels can also read frames from any data source that returns rows of time, image and host.',
     };
   }
+
 }
+
+/* a folder host as a source declaration */
+const declOf = (r: HostRecords): SourceDecl => ({ id: r.id, site: r.site, cadence: r.cadence });
+
+/* a folder's frames as rows: one per step for each host, at its own cadence
+ * or coarser, so no more rows than the panel has pixels */
+function folderRows(records: HostRecords[], window: { from: number; to: number }, maxDataPoints: number | undefined) {
+  const span = Math.max(1, window.to - window.from);
+  const rows: Array<{ ts: number; host: string; site: string; url: string; hi?: string }> = [];
+  for (const r of records) {
+    const step = r.cadence * Math.max(1, Math.ceil(span / (maxDataPoints || 1000) / r.cadence));
+    for (const f of framesPerStep(r.frames, window.from, window.to, step)) {
+      rows.push({ ts: f.ts, host: r.id, site: r.site, url: f.url, ...(f.hi ? { hi: f.hi } : {}) });
+    }
+  }
+  return rows;
+}
+
+const withNotices = (frame: DataFrame, notices: Array<{ severity: 'warning'; text: string }>): DataFrame =>
+  notices.length ? { ...frame, meta: { ...(frame.meta || {}), notices } } : frame;
+
+/* a dashboard time range as a window, when there is one */
+const windowOf = (r?: TimeRange) => (r ? { from: r.from.valueOf(), to: r.to.valueOf() } : undefined);

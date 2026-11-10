@@ -15,3 +15,34 @@ datasources:
     editable: true
     jsonData:
       demo: true
+
+  # HTTP folders (#125): the seeded fixture that docker-compose.yaml serves
+  # with nginx, once with each listing format. Grafana lists it on the compose
+  # network; browsers load the images from the published port.
+  - name: Visual Timeline (folder, HTML)
+    type: savvycocoa1919-visualtimeline-datasource
+    uid: vt-folder-html
+    access: proxy
+    editable: true
+    jsonData:
+      connection: folder
+      folderUrl: http://vt-folder/html
+      imageUrl: http://localhost:8098/html
+      listing: html
+      template: '{host}/{YYYY}-{MM}-{DD}/{HH}{mm}{ss}_{variant}.svg'
+      smallVariant: lo
+      largeVariant: hi
+
+  - name: Visual Timeline (folder, JSON)
+    type: savvycocoa1919-visualtimeline-datasource
+    uid: vt-folder-json
+    access: proxy
+    editable: true
+    jsonData:
+      connection: folder
+      folderUrl: http://vt-folder/json
+      imageUrl: http://localhost:8098/json
+      listing: json
+      template: '{host}/{YYYY}-{MM}-{DD}/{HH}{mm}{ss}_{variant}.svg'
+      smallVariant: lo
+      largeVariant: hi

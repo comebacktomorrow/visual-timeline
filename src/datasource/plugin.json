@@ -6,7 +6,7 @@
   "metrics": true,
   "info": {
     "keywords": ["timeline", "screenshot", "camera", "kiosk", "frames", "demo"],
-    "description": "Demo data for Visual Timeline panels, with site and host variables, ad hoc filters, annotations, and each host's last frame for Table and Canvas panels",
+    "description": "Frames from a web folder or public bucket of timestamped images, or demo data, for Visual Timeline panels, with site and host variables, ad hoc filters, and each host's last frame for Table and Canvas panels",
     "author": {
       "name": "Xzibit"
     },
@@ -36,6 +36,19 @@
       "type": "dashboard",
       "name": "Visual Timeline",
       "path": "dashboards/visual-timeline.json"
+    }
+  ],
+  "routes": [
+    {
+      "path": "folder",
+      "method": "GET",
+      "url": "{{ .JsonData.folderUrl }}",
+      "headers": [
+        {
+          "name": "Authorization",
+          "content": "{{ if .SecureJsonData.bearerToken }}Bearer {{ .SecureJsonData.bearerToken }}{{ end }}"
+        }
+      ]
     }
   ],
   "dependencies": {
