@@ -118,7 +118,7 @@ function emptyStateText(hasSources: boolean, dataSourceCount: number, canCreate:
   return canCreate
     ? {
         lines: ["This panel's query returned nothing.", needs],
-        link: { text: 'Add a Visual Timeline data source', after: ' and turn on its Demo data to try the panel.' },
+        link: { text: 'Add a Visual Timeline data source', after: ' and choose Demo data as its connection to try the panel.' },
       }
     : { lines: ["This panel's query returned nothing.", needs, 'A Grafana admin can add a Visual Timeline data source with Demo data to try it.'] };
 }

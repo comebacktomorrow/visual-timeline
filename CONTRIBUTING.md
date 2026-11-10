@@ -13,12 +13,13 @@ Three frontends, one small HTTP contract ([docs/API.md](docs/API.md)):
 - `src/` — the **Grafana app plugin**, which bundles two nested plugins:
   - the **panel**, which draws the timeline and multiview grid;
   - the **Visual Timeline data source**, frontend-only, which answers panel
-    queries with Demo data's hosts (`src/shared/sources.ts` does the
-    filtering and the data frames) and their frames as rows, feeds the
-    Site/Host variables and the ad hoc filter bar
-    (`src/datasource/variables.tsx`), and answers annotation queries. It
-    calls no API. It also bundles the starter dashboard
-    (`src/datasource/dashboards/`).
+    queries with hosts and their frames as rows (`src/shared/sources.ts` does
+    the filtering and the data frames), feeds the Site/Host variables and the
+    ad hoc filter bar (`src/datasource/variables.tsx`), and answers annotation
+    queries. Its connections: **HTTP folder** (`src/datasource/folder/`: path
+    templates, listings and the walker, reading a web folder or public bucket
+    through its one proxy route, #125) and **Demo data**. It also bundles the
+    starter dashboard (`src/datasource/dashboards/`).
 
   The panel reads frames from any data source whose rows have a time, an
   image and a host (`src/shared/frameRecords.ts`, #126).
@@ -42,24 +43,26 @@ the source of truth: it is also the plugin's page in the Grafana catalog.
 
 ## Repository layout
 
-| Path                                                    | What                                                                                                                                                                                                                                |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/`                                                  | Grafana app plugin source (create-plugin scaffold; `npm run build` → `dist/`): `plugin.json` + `module.tsx` are the app                                                                                                             |
-| `src/panel/`                                            | the nested panel (`savvycocoa1919-visualtimeline-panel`, an id dashboards depend on: never change it)                                                                                                                               |
-| `src/datasource/`                                       | the nested data source (`savvycocoa1919-visualtimeline-datasource`): demo data, config page, health check, variables                                                                                                                |
-| `src/core.ts`, `src/vt/`, `src/theme.ts`, `src/shared/` | shared code: the framework-free timeline core (`src/vt/`, typed modules with no React or Grafana imports; `src/core.ts` is its entry point and only re-exports, also built into `web/vt-core.js`), the theme mapping, frame records |
-| `webpack.config.ts`                                     | extends the scaffold's webpack config (copies the nested plugins' logos)                                                                                                                                                            |
-| `tests/`                                                | Playwright e2e specs                                                                                                                                                                                                                |
-| `web/`                                                  | standalone app, embeddable viewer, fleet simulator                                                                                                                                                                                  |
-| `worker/`                                               | Cloudflare Worker + R2 reference backend ([worker/README.md](worker/README.md))                                                                                                                                                     |
-| `selfhost/`                                             | self-hosted stack: Docker Compose for the backend (the worker on workerd) and Grafana, plus a camera snapshot uploader ([selfhost/README.md](selfhost/README.md))                                                                   |
-| `demo/`                                                 | zero-setup Grafana demo (`docker compose -f demo/docker-compose.yml up`)                                                                                                                                                            |
-| `grafana/`                                              | provisioning for the Grafana demo                                                                                                                                                                                                   |
-| `docs/API.md`                                           | the frames API contract + curl examples                                                                                                                                                                                             |
-| `docs/VIEWER.md`                                        | the standalone app and embed, and their URL parameters                                                                                                                                                                              |
-| `docs/SUBMISSION.md`                                    | the Grafana catalog submission checklist                                                                                                                                                                                            |
-| `docs/UPSTREAM-UPDATES.md`                              | runbook for Dependabot, scaffold and security updates                                                                                                                                                                               |
-| `docs/TIME_AXIS_PROPOSAL.md`                            | design record for the Grafana-matching time axis                                                                                                                                                                                    |
+| Path                                                          | What                                                                                                                                                                                                                                |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/`                                                        | Grafana app plugin source (create-plugin scaffold; `npm run build` → `dist/`): `plugin.json` + `module.tsx` are the app                                                                                                             |
+| `src/panel/`                                                  | the nested panel (`savvycocoa1919-visualtimeline-panel`, an id dashboards depend on: never change it)                                                                                                                               |
+| `src/datasource/`                                             | the nested data source (`savvycocoa1919-visualtimeline-datasource`): its connections (`folder/`: HTTP folder; demo data), config page, health check, variables                                                                      |
+| `src/core.ts`, `src/vt/`, `src/theme.ts`, `src/shared/`       | shared code: the framework-free timeline core (`src/vt/`, typed modules with no React or Grafana imports; `src/core.ts` is its entry point and only re-exports, also built into `web/vt-core.js`), the theme mapping, frame records |
+| `webpack.config.ts`                                           | extends the scaffold's webpack config (copies the nested plugins' logos)                                                                                                                                                            |
+| `tests/`                                                      | Playwright e2e specs; `tests/folder-fixture/` is the frames the dev stack serves (nginx, PostgreSQL, Loki)                                                                                                                          |
+| `web/`                                                        | standalone app, embeddable viewer, fleet simulator                                                                                                                                                                                  |
+| `worker/`                                                     | Cloudflare Worker + R2 reference backend ([worker/README.md](worker/README.md))                                                                                                                                                     |
+| `selfhost/`                                                   | self-hosted stack: Docker Compose for the backend (the worker on workerd) and Grafana, plus a camera snapshot uploader ([selfhost/README.md](selfhost/README.md))                                                                   |
+| `demo/`                                                       | zero-setup Grafana demo (`docker compose -f demo/docker-compose.yml up`)                                                                                                                                                            |
+| `grafana/`                                                    | provisioning for the Grafana demo                                                                                                                                                                                                   |
+| `docs/API.md`                                                 | the reference worker's API + curl examples                                                                                                                                                                                          |
+| `docs/FOLDERS.md`, `docs/DATA-SOURCES.md`, `docs/INFINITY.md` | reading frames: from a web folder or bucket, from existing data sources, and from the worker through Infinity                                                                                                                       |
+| `docs/MIGRATING-2.0.md`                                       | moving 1.x dashboards                                                                                                                                                                                                               |
+| `docs/VIEWER.md`                                              | the standalone app and embed, and their URL parameters                                                                                                                                                                              |
+| `docs/SUBMISSION.md`                                          | the Grafana catalog submission checklist                                                                                                                                                                                            |
+| `docs/UPSTREAM-UPDATES.md`                                    | runbook for Dependabot, scaffold and security updates                                                                                                                                                                               |
+| `docs/TIME_AXIS_PROPOSAL.md`                                  | design record for the Grafana-matching time axis                                                                                                                                                                                    |
 
 ## Development
 
@@ -73,6 +76,12 @@ the source of truth: it is also the plugin's page in the Grafana catalog.
   With no `dist/` yet (a fresh clone), its `build-plugin` service builds the
   plugin first, so `docker compose up` alone works; once `dist/` exists it
   does nothing.
+- The dev stack (`docker compose up`) also runs what the e2e tests read
+  frames from: nginx serving the folder fixture with JSON and HTML listings
+  (`vt-folder`, port 8098), PostgreSQL holding the same frames as rows
+  (`vt-postgres`), and Loki holding them as log lines (`vt-loki`, seeded by
+  `vt-loki-seed`). All come from `tests/folder-fixture/`;
+  `node tests/folder-fixture/generate.mjs` regenerates it.
 - `npm run e2e` runs the Playwright suite against the dev Grafana.
 - `npm run test:ci` runs the unit tests, `npm run typecheck` and
   `npm run lint` check types and style.

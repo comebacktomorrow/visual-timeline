@@ -13,7 +13,7 @@
       "multiview",
       "visual monitoring"
     ],
-    "description": "Scrubbable visual timeline and multiview for image feeds (kiosk screens, security cameras, website thumbnails), with crosshair sync, honest offline gaps, and site, host and tag filters",
+    "description": "Scrubbable visual timeline and multiview for image feeds (kiosk screens, security cameras, website thumbnails) from any data source, a web folder or a bucket, with crosshair sync, honest offline gaps, and site, host and tag filters",
     "author": {
       "name": "Xzibit"
     },
