@@ -76,7 +76,12 @@ test("a data source whose token the API rejects shows the error in Grafana's pan
   gotoPanelEditPage,
   readProvisionedDashboard,
   page,
+  grafanaVersion,
 }) => {
+  // Grafana 13.3 no longer shows the error indicator's text as a tooltip;
+  // the frames API mode, and this test, go in 2.0 (#126)
+  const [major, minor] = grafanaVersion.split('.').map(Number);
+  test.skip(major > 13 || (major === 13 && minor >= 3), "the error indicator's text isn't a tooltip from Grafana 13.3");
   const dashboard = await readProvisionedDashboard({ fileName: 'datasource-mode.json' });
   const editPage = await gotoPanelEditPage({ dashboard, id: '2' });
   // the API's 401 arrives as Grafana's 400 ("Authentication to data source
