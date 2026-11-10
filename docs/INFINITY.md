@@ -73,6 +73,24 @@ Two **Query** variables on the Infinity data source, each with the query type
 Turn on **Multi-value** and **Include All option**, with the custom all value
 `All`, which the worker reads as "every one".
 
+### Which sites a viewer can see
+
+The Site variable is a filter, not access control. Grafana fills in variables
+(and `${__user.login}`) in the browser before it sends a query, so any viewer
+who can open a dashboard can send the same data source a query of their own,
+for any site. A worker URL such as `/sources?user=${__user.login}` can show
+each person their own sites by default, but it can't stop them asking for
+others.
+
+To keep sites apart, give each group of viewers its own credentials:
+
+- **One Grafana organization per customer** (or group of sites), each with its
+  own Infinity data source and its own worker viewer token, limited to those
+  sites (`VIEWER_TOKEN`'s named consumers with `sites`:
+  [API.md](API.md)). Works in every edition of Grafana.
+- **Data source permissions** (Grafana Enterprise and Grafana Cloud): one
+  data source per group, each queryable only by its team.
+
 ## Pauses
 
 A host that declares a pause (a screen asleep, quiet hours) sends no frames
