@@ -101,6 +101,10 @@ the API returns one frame per slot.
   thumbnails load from the live edge backwards, a few at a time, so on a
   slow connection the most recent frames appear first. Browsers keep the
   frames cached, so a dashboard refresh doesn't download them again.
+- **The live edge follows the dashboard's refresh.** New frames arrive with
+  each refresh; between refreshes the panel slides the strip along on its
+  own and turns slots that are overdue into gaps. A short auto-refresh keeps
+  it near live. It doesn't use Grafana Live streaming.
 - **The time axis matches Grafana's own time series panel:** the same tick
   spacing, steps and label formats.
 
