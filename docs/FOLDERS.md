@@ -58,6 +58,10 @@ listed, unless the query already names them.
 | NOAA GOES-19 Band 13, `https://cdn.star.nesdis.noaa.gov/GOES19/ABI/CONUS` | HTML      | `{host}/{YYYY}{DDD}{HH}{mm}_GOES19-ABI-CONUS-13-{variant}.jpg` (host `13`: set the query's Hosts to `13`, so only that band's folder is read; small `625x375`, large `2500x1500`) |
 | USGS river cameras, `https://usgs-nims-images.s3.amazonaws.com`           | S3 bucket | `{variant}/{host}/{host}___{YYYY}-{MM}-{DD}T{HH}-{mm}-{ss}Z.jpg` (small `thumbnail`, large `720`)                                                                                 |
 
+The SDO and USGS rows run as the demo stack's **The Sun** and **Rivers**
+dashboards (README: Demo), provisioned in
+`grafana/provisioning/datasources/public-feeds.yaml`.
+
 Credit public sources on any dashboard that shows them: "Courtesy of NASA/SDO
 and the AIA, EVE, and HMI science teams"; "NOAA/NESDIS/STAR"; "USGS".
 

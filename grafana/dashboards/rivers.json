@@ -1,0 +1,532 @@
+{
+  "uid": "vt-rivers",
+  "title": "Rivers — USGS cameras and water levels",
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-2d",
+    "to": "now"
+  },
+  "refresh": "15m",
+  "tags": ["visual-timeline", "public-feeds"],
+  "description": "Live public data: four USGS river cameras through the HTTP folder connection (a public S3 bucket), and each river's gauge height through Infinity.",
+  "panels": [
+    {
+      "id": 1,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "River cameras",
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "description": "Query A: the cameras' frames (USGS's public bucket). Queries B to E: each camera's name and time zone from USGS's camera API, as a host table.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "vt-usgs-cameras"
+          },
+          "hosts": "AZ_Colorado_River_at_Lees_Ferry,CA_Merced_River_at_Happy_Isles_Bridge_Yosemite,MN_Mississippi_River_at_St_Paul,KY_OHIO_R_US_OF_MCALPINE_DAM_AT_RRB_AT_LOUISVILLE"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://api.waterdata.usgs.gov/nims/v0/cameras?camId=AZ_Colorado_River_at_Lees_Ferry",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "camId",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "camName",
+              "text": "location",
+              "type": "string"
+            },
+            {
+              "selector": "tz",
+              "text": "timezone",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://api.waterdata.usgs.gov/nims/v0/cameras?camId=CA_Merced_River_at_Happy_Isles_Bridge_Yosemite",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "camId",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "camName",
+              "text": "location",
+              "type": "string"
+            },
+            {
+              "selector": "tz",
+              "text": "timezone",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://api.waterdata.usgs.gov/nims/v0/cameras?camId=MN_Mississippi_River_at_St_Paul",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "camId",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "camName",
+              "text": "location",
+              "type": "string"
+            },
+            {
+              "selector": "tz",
+              "text": "timezone",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://api.waterdata.usgs.gov/nims/v0/cameras?camId=KY_OHIO_R_US_OF_MCALPINE_DAM_AT_RRB_AT_LOUISVILLE",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "camId",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "camName",
+              "text": "location",
+              "type": "string"
+            },
+            {
+              "selector": "tz",
+              "text": "timezone",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        }
+      ],
+      "options": {
+        "mode": "timeline",
+        "missingFrames": "nodata",
+        "thumbTimes": "source",
+        "chips": "location"
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Gauge height (ft)",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "vt-public-api"
+      },
+      "description": "Each camera's stream gauge, every 15 minutes (provisional data). Hover the camera strips and this follows, and the other way round.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://api.waterdata.usgs.gov/ogcapi/v0/collections/continuous/items?f=json&monitoring_location_id=USGS-09380000&parameter_code=00065&time=${__from:date:iso}/${__to:date:iso}&limit=10000",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "features",
+          "columns": [
+            {
+              "selector": "properties.time",
+              "text": "time",
+              "type": "timestamp"
+            },
+            {
+              "selector": "properties.value",
+              "text": "Colorado River at Lees Ferry",
+              "type": "number"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://api.waterdata.usgs.gov/ogcapi/v0/collections/continuous/items?f=json&monitoring_location_id=USGS-11264500&parameter_code=00065&time=${__from:date:iso}/${__to:date:iso}&limit=10000",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "features",
+          "columns": [
+            {
+              "selector": "properties.time",
+              "text": "time",
+              "type": "timestamp"
+            },
+            {
+              "selector": "properties.value",
+              "text": "Merced River at Happy Isles, Yosemite",
+              "type": "number"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://api.waterdata.usgs.gov/ogcapi/v0/collections/continuous/items?f=json&monitoring_location_id=USGS-05331000&parameter_code=00065&time=${__from:date:iso}/${__to:date:iso}&limit=10000",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "features",
+          "columns": [
+            {
+              "selector": "properties.time",
+              "text": "time",
+              "type": "timestamp"
+            },
+            {
+              "selector": "properties.value",
+              "text": "Mississippi River at St Paul",
+              "type": "number"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://api.waterdata.usgs.gov/ogcapi/v0/collections/continuous/items?f=json&monitoring_location_id=USGS-03293551&parameter_code=00065&time=${__from:date:iso}/${__to:date:iso}&limit=10000",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "features",
+          "columns": [
+            {
+              "selector": "properties.time",
+              "text": "time",
+              "type": "timestamp"
+            },
+            {
+              "selector": "properties.value",
+              "text": "Ohio River at Louisville",
+              "type": "number"
+            }
+          ],
+          "filters": []
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "lengthft",
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": 3600000
+          },
+          "displayName": "${__field.name}"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Each river now (follows the crosshair)",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "vt-usgs-cameras"
+          },
+          "hosts": "AZ_Colorado_River_at_Lees_Ferry,CA_Merced_River_at_Happy_Isles_Bridge_Yosemite,MN_Mississippi_River_at_St_Paul,KY_OHIO_R_US_OF_MCALPINE_DAM_AT_RRB_AT_LOUISVILLE"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://api.waterdata.usgs.gov/nims/v0/cameras?camId=AZ_Colorado_River_at_Lees_Ferry",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "camId",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "camName",
+              "text": "location",
+              "type": "string"
+            },
+            {
+              "selector": "tz",
+              "text": "timezone",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://api.waterdata.usgs.gov/nims/v0/cameras?camId=CA_Merced_River_at_Happy_Isles_Bridge_Yosemite",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "camId",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "camName",
+              "text": "location",
+              "type": "string"
+            },
+            {
+              "selector": "tz",
+              "text": "timezone",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://api.waterdata.usgs.gov/nims/v0/cameras?camId=MN_Mississippi_River_at_St_Paul",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "camId",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "camName",
+              "text": "location",
+              "type": "string"
+            },
+            {
+              "selector": "tz",
+              "text": "timezone",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://api.waterdata.usgs.gov/nims/v0/cameras?camId=KY_OHIO_R_US_OF_MCALPINE_DAM_AT_RRB_AT_LOUISVILLE",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "camId",
+              "text": "host",
+              "type": "string"
+            },
+            {
+              "selector": "camName",
+              "text": "location",
+              "type": "string"
+            },
+            {
+              "selector": "tz",
+              "text": "timezone",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        }
+      ],
+      "options": {
+        "mode": "grid",
+        "followCrosshair": true,
+        "missingFrames": "nodata",
+        "chips": "location"
+      }
+    },
+    {
+      "id": 4,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Images and water levels: **U.S. Geological Survey** (public domain), from its [HIVIS](https://apps.usgs.gov/hivis/) river cameras and [Water Data for the Nation](https://waterdata.usgs.gov/). Cameras: Colorado River at Lees Ferry (gauge 09380000), Merced River at Happy Isles Bridge in Yosemite (11264500), Mississippi River at St Paul (05331000), Ohio River at the McAlpine Dam, Louisville (03293551). Most cameras need daylight, so each night is a gap in its own time zone."
+      }
+    }
+  ]
+}

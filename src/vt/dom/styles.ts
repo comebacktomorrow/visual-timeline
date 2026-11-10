@@ -274,7 +274,8 @@ const CSS = `
                     background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px); }
 .ktl .tile.offline { border-color:var(--ktl-off); }
 .ktl .tile.offline.nodata { border-color:var(--ktl-border); }
-.ktl .tile.offline.nodata .t-off { color:var(--ktl-dim); }
+.ktl .tile.offline.nodata .t-off { color:var(--ktl-dim);
+  background:repeating-linear-gradient(45deg,var(--ktl-tpause-a),var(--ktl-tpause-a) 7px,var(--ktl-tpause-b) 7px,var(--ktl-tpause-b) 14px); }
 .ktl .tile.offline .t-off { display:flex; }
 .ktl .tile.offline img, .ktl .tile.offline .t-ts { display:none; }
 .ktl-pop { position:fixed; z-index:1060; background:var(--ktl-float-bg); border:1px solid var(--ktl-accent);

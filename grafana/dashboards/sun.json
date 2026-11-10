@@ -1,0 +1,260 @@
+{
+  "uid": "vt-sun",
+  "title": "The Sun — NASA SDO and NOAA X-ray flux",
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "30m",
+  "tags": ["visual-timeline", "public-feeds"],
+  "description": "Live public data: four NASA SDO channels through the HTTP folder connection (NASA's daily browse folders), with NOAA's X-ray flux and its flare list through Infinity.",
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "name": "Solar flares",
+        "datasource": {
+          "type": "yesoreyeram-infinity-datasource",
+          "uid": "vt-public-api"
+        },
+        "enable": true,
+        "iconColor": "rgba(255, 152, 48, 1)",
+        "target": {
+          "refId": "Anno",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://services.swpc.noaa.gov/json/goes/primary/xray-flares-7-day.json",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "begin_time",
+              "text": "time",
+              "type": "timestamp"
+            },
+            {
+              "selector": "end_time",
+              "text": "timeEnd",
+              "type": "timestamp"
+            },
+            {
+              "selector": "max_class",
+              "text": "title",
+              "type": "string"
+            },
+            {
+              "selector": "max_time",
+              "text": "text",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "The Sun, four ways",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "vt-nasa-sdo"
+      },
+      "description": "NASA SDO's browse images, a channel per strip. Click a frame for the 2048 px image. Flares are the orange regions.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "vt-nasa-sdo"
+          },
+          "hosts": "0171,0304,0193,HMIIC"
+        }
+      ],
+      "options": {
+        "mode": "timeline",
+        "holdFrames": "threshold",
+        "holdFor": "30m",
+        "missingFrames": "nodata",
+        "annotationLanes": "shared"
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Solar X-ray flux (GOES)",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "vt-public-api"
+      },
+      "description": "The 0.1–0.8 nm band, every minute; the lines mark the C, M and X flare classes.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "vt-public-api"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "parser": "backend",
+          "url": "https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "time_tag",
+              "text": "time",
+              "type": "timestamp"
+            },
+            {
+              "selector": "flux",
+              "text": "X-ray flux (0.1–0.8 nm)",
+              "type": "number"
+            },
+            {
+              "selector": "energy",
+              "text": "energy",
+              "type": "string"
+            }
+          ],
+          "filters": []
+        }
+      ],
+      "transformations": [
+        {
+          "id": "filterByValue",
+          "options": {
+            "type": "include",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "energy",
+                "config": {
+                  "id": "equal",
+                  "options": {
+                    "value": "0.1-0.8nm"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "energy": true
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "si:W/m²",
+          "custom": {
+            "scaleDistribution": {
+              "type": "log",
+              "log": 10
+            },
+            "lineWidth": 1,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1e-6
+              },
+              {
+                "color": "orange",
+                "value": 1e-5
+              },
+              {
+                "color": "red",
+                "value": 0.0001
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Images: **Courtesy of NASA/SDO and the AIA, EVE, and HMI science teams.** X-ray flux and flares: **NOAA Space Weather Prediction Center** (GOES, public domain). Channels: 0171 (the corona, 171 Å), 0304 (the chromosphere, 304 Å), 0193 (the corona, 193 Å), HMIIC (the visible surface). A flare's class is the peak of the 0.1–0.8 nm flux: C from 1 µW/m², M from 10 µW/m², X from 100 µW/m² (the yellow, orange and red lines)."
+      }
+    }
+  ]
+}

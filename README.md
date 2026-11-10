@@ -139,6 +139,20 @@ a timeline, two multiview grids and a time series panel to show the shared
 crosshair, all on the built-in demo data. Port 3300 taken? Prefix the command
 with `DEMO_PORT=3301`.
 
+Two more dashboards there read real, public feeds (they need internet access):
+
+- **Rivers** (`/d/vt-rivers`): four USGS river cameras, each a day's light
+  and night gap in its own time zone, beside the rivers' gauge heights. The
+  frames come straight from the USGS's public bucket through the
+  [HTTP folder](docs/FOLDERS.md) connection; the camera details and water
+  levels come from USGS APIs through Infinity.
+- **The Sun** (`/d/vt-sun`): NASA SDO's images of the Sun in four channels,
+  read from its web folder, above GOES X-ray flux, with solar flares as
+  annotations across both.
+
+Both are examples of the panel on data it knows nothing about: a folder, a
+bucket and two JSON APIs, none of them made for it.
+
 ## Filter by site, host and tag
 
 Every host has an id, a site and optional `key=value` tags, and

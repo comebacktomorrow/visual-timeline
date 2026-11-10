@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Public demo dashboards** (M6). The demo stack
+  (`docker compose -f demo/docker-compose.yml up`) adds **Rivers** (USGS
+  river cameras from a public bucket, with gauge heights) and **The Sun**
+  (NASA SDO images from a web folder, with GOES X-ray flux and flares as
+  annotations), read through the HTTP folder connection and Infinity. They
+  need internet access and are not in CI.
+- A grid tile with no frame under `missingFrames: nodata` is the neutral
+  hatch, as the strip's gap is, rather than the offline red.
+
 - **Tested with existing data sources** (M5). The dev stack and e2e now
   include PostgreSQL (a table of frames and one of states, read with plain
   SQL) and Loki (log lines that are image URLs, with the Extract fields
