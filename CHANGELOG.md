@@ -13,6 +13,16 @@
 - A panel whose query returns data but no frames says so, and points at the
   Frame fields options.
 - Hosts without a site no longer show an empty site chip.
+- **Demo data answers with frame rows.** The data source's Demo data now
+  returns its frames in the query result like any other source, instead of
+  the panel drawing them itself, so the demo exercises the same path as real
+  data. Demo frames are small SVG images (a few hundred bytes) drawn in the
+  dashboard's time zone, and a host with no frames in the window (paused all
+  along, say) still shows.
+- **Annotation queries.** The Visual Timeline data source can be used for
+  dashboard annotations: with Demo data it returns the demo's events. The
+  starter dashboard and the demo dashboards have a **Host events**
+  annotation query.
 
 ## 1.2.3 (2026-10-16)
 

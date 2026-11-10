@@ -163,6 +163,13 @@ describe('recordsBackend', () => {
     expect(await b.frames('home', 'nobody', T0, T0 + MIN, MIN)).toEqual([]);
   });
 
+  test('a known host with no records in the window is still drawn', async () => {
+    const known = [{ id: 'paused-all-day', site: 'home', cadence: MIN, history: [{ since: T0 - MIN, paused: true }] }];
+    const b = recordsBackend(hosts, known);
+    expect((await b.kiosks(null)).map((d) => d.id)).toEqual(['cam-1', 'kiosk', 'paused-all-day']);
+    expect(await b.frames('home', 'paused-all-day', T0, T0 + MIN, MIN)).toEqual([]);
+  });
+
   test('a known source list adds history, time zone and tags, and fills a missing site', async () => {
     const siteless = recordsFromSeries([table([[T0, 'cam-1', 'https://img/1.jpg']])])!;
     const known = [{ id: 'cam-1', site: 'home', cadence: MIN, timezone: 'Australia/Brisbane', tags: { env: 'prod' }, history: [{ since: T0 - MIN, paused: true }] }];

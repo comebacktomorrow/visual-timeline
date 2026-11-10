@@ -71,6 +71,15 @@ describe('rendered DOM (demo data)', () => {
     document.body.innerHTML = '';
   });
 
+  /* Demo frames are SVG data URLs with the time drawn in: the snapshots keep
+   * just their size, as data:stub/WxH (what the canvas stub gave before). */
+  const stub = (html: string) =>
+    html.replace(/data:image\/svg\+xml,[^"]*/g, (url) => {
+      const svg = decodeURIComponent(url.slice('data:image/svg+xml,'.length));
+      const m = /width='(\d+)' height='(\d+)'/.exec(svg);
+      return m ? `data:stub/${m[1]}x${m[2]}` : 'data:stub/unknown';
+    });
+
   // wait until the mount has built everything and two reads agree
   async function settled(sel: string, count: number) {
     let prev = '';
@@ -79,7 +88,7 @@ describe('rendered DOM (demo data)', () => {
       if (root.querySelectorAll(sel).length >= count) {
         const html = root.innerHTML;
         if (html === prev) {
-          return html;
+          return stub(html);
         }
         prev = html;
       }
@@ -93,7 +102,7 @@ describe('rendered DOM (demo data)', () => {
     const inst = core.mountTimeline(root, { ...P, width: 800, headerMode, timeZone: 'UTC', showDetails: true });
     expect(await settled('.card', 5)).toMatchSnapshot('at rest');
     inst.setExternalCursor(P.from + 50 * 60e3);
-    expect(root.innerHTML).toMatchSnapshot('cursor at +50m');
+    expect(stub(root.innerHTML)).toMatchSnapshot('cursor at +50m');
     inst.destroy();
   });
 
@@ -101,7 +110,7 @@ describe('rendered DOM (demo data)', () => {
     const inst = core.mountTimeline(root, { ...P, width: 800, timeZone: 'UTC', thumbTimes: 'source' });
     await settled('.card', 5);
     inst.setExternalCursor(P.from + 50 * 60e3);
-    expect(root.innerHTML).toMatchSnapshot();
+    expect(stub(root.innerHTML)).toMatchSnapshot();
     inst.destroy();
   });
 
@@ -109,7 +118,7 @@ describe('rendered DOM (demo data)', () => {
     const inst = core.mountGrid(root, { ...P, width: 800, headerMode, timeZone: 'UTC' });
     expect(await settled('.tile', 5)).toMatchSnapshot('at rest');
     inst.setExternalCursor(P.from + 50 * 60e3);
-    expect(root.innerHTML).toMatchSnapshot('cursor at +50m');
+    expect(stub(root.innerHTML)).toMatchSnapshot('cursor at +50m');
     inst.destroy();
   });
 });

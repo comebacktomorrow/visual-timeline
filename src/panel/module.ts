@@ -11,9 +11,8 @@ import {
 } from '@grafana/data';
 import { config, getDataSourceSrv } from '@grafana/runtime';
 import { usePanelContext, useTheme2 } from '@grafana/ui';
-import { mountTimeline, mountGrid, resolveTimeZone } from '../core';
+import { mountTimeline, mountGrid } from '../core';
 import type { AxisFormatter } from '../vt/time/ticks';
-import { makeBackend as makeDemoBackend } from '../vt/backends/demo';
 import type { Backend, Frame, SourceDecl } from '../vt/types';
 import { themeVars } from '../theme';
 import { coreTimeZone } from '../timezone';
@@ -89,15 +88,12 @@ interface FramesSource {
   frames(site: string, id: string, from: number, to: number, step: number): Promise<Frame[]>;
 }
 
-/* The core's data layer for one query result. The sources come from the
- * data source's answer, already filtered by the panel's query, the dashboard
- * variables and the ad hoc filters. Frames come through the same data
- * source; with Demo data on, from the core's built-in demo for this window. */
-function panelBackend(sources: SourceDecl[], meta: SourcesFrameMeta, from: number, to: number, tz: string): Backend {
-  if (meta.demo) {
-    const demo = makeDemoBackend({ from, to }, Math.max(1, to - from), tz);
-    return { kiosks: () => sources, frames: demo.frames, annotations: demo.annotations };
-  }
+/* The core's data layer for a Visual Timeline source list without frame
+ * records (the frames API mode): the sources come from the data source's
+ * answer, already filtered by the panel's query, the dashboard variables and
+ * the ad hoc filters, and frames through the same data source. Demo data
+ * answers with frame records instead (#126). */
+function panelBackend(sources: SourceDecl[], meta: SourcesFrameMeta): Backend {
   let ds: Promise<FramesSource> | null = null;
   return {
     kiosks: () => sources,
@@ -193,8 +189,8 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const recordsMemo = useMemo(() => records, [recordsKey]);
   const backend = useMemo(() => {
     if (recordsMemo) {return recordsBackend(recordsMemo, result?.sources);}
-    return result ? panelBackend(result.sources, result.meta, from, to, resolveTimeZone(timeZone)) : null;
-  }, [recordsMemo, result, from, to, timeZone]);
+    return result ? panelBackend(result.sources, result.meta) : null;
+  }, [recordsMemo, result]);
   /* Clicking a host, site or tag chip adds that filter to the dashboard's ad
    * hoc filter for this data source, as a table cell's "filter for value"
    * does. Grafana leaves onAddAdHocFilter unset where it can't do that. */
