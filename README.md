@@ -178,7 +178,7 @@ panel options. Two more kinds of query can join the frames in a panel: **host
 state** (rows of time, host and a `state` field, labelled and coloured by its
 value mappings; set **Pauses frames** on the field for states during which a
 host sends nothing), and a **host table** (rows of host and its details, with
-no time or image, so hosts that sent no frames still show). The details are in
+no image or state, so hosts that sent no frames still show). The details are in
 [docs/INFINITY.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/INFINITY.md),
 whose recipes work for any data source. The provisioned dashboard **Visual Timeline — any data
 source** shows a timeline and a grid drawn from TestData CSV rows.
