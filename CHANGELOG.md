@@ -1,6 +1,28 @@
 # Changelog
 
-## Unreleased
+## 2.0.0 (2026-11-11)
+
+### Highlights
+
+- **Frames from any data source.** The panel draws rows with a time, an
+  image and a host from whatever answered its query: SQL, Loki, Infinity
+  over an API, TestData. Tested against PostgreSQL, Loki and TestData on
+  every pull request ([docs/DATA-SOURCES.md](docs/DATA-SOURCES.md)).
+- **Frames from a web folder or a public bucket.** The Visual Timeline data
+  source reads timestamped images where they already land, from a path
+  template, with no database or API of its own
+  ([docs/FOLDERS.md](docs/FOLDERS.md)). Private buckets are planned for 2.1.
+- **Host state and details from any query,** labelled and coloured by value
+  mappings: states that pause frames as bands, others as annotations.
+- **Fewer assumptions about feeds:** Hold last frame, Gaps mean, eras from a
+  changing cadence, wide tables, and header chips you choose.
+- **Two live demo dashboards** on public data: USGS river cameras and NASA's
+  Sun.
+- **Breaking:** the data source's frames API mode is gone. Read the reference
+  worker (or any frames API) through Infinity:
+  [docs/MIGRATING-2.0.md](docs/MIGRATING-2.0.md).
+
+### Changes
 
 - **Public demo dashboards** (M6). The demo stack
   (`docker compose -f demo/docker-compose.yml up`) adds **Rivers** (USGS
@@ -117,8 +139,8 @@
   start.
 - **Breaking: the data source's frames API mode is removed** (#126). The
   Visual Timeline data source no longer has an API URL or a viewer token, no
-  longer declares a proxy route, and calls no API: it is Demo data (and,
-  before 2.0 ships, folder and bucket listings, #125). To keep reading the
+  longer declares a proxy route, and calls no API: it is Demo data and
+  folder and bucket listings (#125). To keep reading the
   reference worker, or any frames API, in Grafana, read it through a stock
   data source that keeps the token on Grafana's server, such as Infinity with
   Bearer token authentication; the panel draws the rows it returns. The

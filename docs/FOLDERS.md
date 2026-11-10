@@ -72,7 +72,7 @@ and the AIA, EVE, and HMI science teams"; "NOAA/NESDIS/STAR"; "USGS".
 - **Apache:** `Options +Indexes` on the folder.
 - **Caddy:** `file_server browse`.
 - **A bucket:** a public bucket answers `ListObjectsV2` without credentials.
-  Private buckets aren't supported yet.
+  Private buckets aren't supported yet (planned for 2.1, below).
 
 A listing is reused for a minute, so a dashboard's panels and variables share
 it. A query lists at most 200 folders; past that, the panel shows a notice and
@@ -87,3 +87,21 @@ bucket event can trigger a small resize job, or an on-the-fly resizer (imgproxy,
 imagor, thumbor, nginx `image_filter`, Cloudflare Image Transformations) can sit
 in front of the folder. Full-size images work, but cost bandwidth and browser
 decoding with many hosts.
+
+## Private buckets
+
+A private bucket needs something on a server to hold its key: listing it
+takes signed requests, which Grafana's proxy can't make, and viewers'
+browsers need a signed link for each image, since an `<img>` tag can't carry
+credentials. The data source can't do either yet; 2.1 is planned to, for any
+S3-compatible store (AWS, R2, MinIO, B2). Until then:
+
+- **Keep the listing private, the images public:** let viewers' browsers read
+  the bucket's objects but not list them. Serve the listing from a web
+  server that has the files (the bucket mounted, or a synced copy) and
+  requires the connection's **Bearer token**, and set **Image URL** to the
+  bucket's public address. Anyone with an image's exact URL can load it;
+  nobody can list the bucket without the token.
+- **Return signed links from another data source:** any query whose rows have
+  a time, a host and a signed URL works (README: "Frames from any data
+  source"). The reference worker does this for R2.

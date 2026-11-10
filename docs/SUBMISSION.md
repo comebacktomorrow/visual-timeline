@@ -1,30 +1,18 @@
 # Submitting to the Grafana plugin catalog
 
-The remaining steps to get Visual Timeline 1.0 into the catalog, written for
-whoever (person or agent session) picks this up. Tick items off in the PR that
+The steps to get Visual Timeline 2.0 into the catalog, written for whoever
+(person or agent session) picks this up. Tick items off in the PR that
 completes them, and delete this file once the plugin is published and signed.
+Submitting is the maintainer's call: an agent prepares, the maintainer
+submits.
 
-**State as of 2026-10-02:** all code work for submission is merged (#58–#64,
-#65, #66, #68). The plugin is an app, `savvycocoa1919-visualtimeline-app`,
-with the panel (`savvycocoa1919-visualtimeline-panel`, unchanged) and the
-Visual Timeline API data source nested inside. CI is green on `main`.
-
-**Checked on a local machine, 2026-10-06** (the parts a cloud container
-can't run):
-
-- **Plugin validator (latest), with network:** clean apart from the expected
-  "unsigned plugin" warning, once the two osv-scanner highs were handled
-  (#80).
-- **`docker compose up` (the reviewers' provisioned environment)** on
-  Grafana 13.0.2: the app and both nested plugins load; the data source
-  dashboard reads through the proxy; Save & test reports "Connected: the API
-  lists 1 source"; the token shows only as "configured" and is absent from
-  the dashboard JSON; the panel follows the light theme.
-- **`docker compose -f demo/docker-compose.yml up`:** builds from a clean
-  tree and renders the demo dashboard.
-- **Found:** the wrong-token panel's message is unhelpful (#81). Worth
-  fixing before submission, since the testing guidance points reviewers at
-  that panel.
+**State as of 2026-11-11:** 2.0's code and docs are merged (#130 to #151).
+Grafana's review declined 1.2.3 because using it meant running this
+project's backend or building one to its API; 2.0 removes that: the panel
+reads frames from any data source, and the Visual Timeline data source reads
+web folders and public buckets, with no API of its own. Private buckets are
+planned for 2.1 (a small Go backend in the data source), so 2.0 is still
+frontend-only.
 
 ## Facts to keep straight
 
@@ -33,155 +21,131 @@ can't run):
 - **The grafana.com org is `savvycocoa1919`** (the id prefix). Publishing and
   signing must happen from that org; you need to be an admin of it.
 - **Every `plugin.json` change needs a Grafana server restart** wherever it's
-  deployed.
+  deployed. 2.0 changes the data source's `plugin.json` (the `folder` route
+  replaces the API route).
 - **grafana.com is blocked in Claude Code cloud containers.** The validator's
   network checks (org lookup, link checks, the Angular-pattern list) fail
   there. Use the release workflow's validator run (below) or a local machine.
-- **Accepted:** 4 moderate advisories in the react-router chain under
-  `@grafana/ui` (fixing them needs an `@grafana` major). CI's advisory gate is
-  high/critical only, matching the catalog validator.
-- **No high or critical advisories** in the lockfile since 1.2.1
-  (create-plugin 7.13.0 dropped `braces`). The latest validator ignores
-  `osv-scanner.toml`, so nothing can be accepted for the catalog. New
-  advisories land in osv before `npm audit`, so re-run the latest validator
-  right before submitting (see `docs/UPSTREAM-UPDATES.md`, "Security
-  gate").
+- **Accepted:** moderate advisories in the react-router chain under
+  `@grafana/ui` (fixing them needs an `@grafana` major), and two dev-tooling
+  Dependabot alerts dismissed as "tolerable risk, dev tooling only". CI's
+  advisory gate is high/critical only, matching the catalog validator.
+- **The latest validator ignores `osv-scanner.toml`,** so nothing can be
+  accepted for the catalog. New advisories land in osv before `npm audit`,
+  so re-run the latest validator right before submitting (see
+  `docs/UPSTREAM-UPDATES.md`, "Security gate").
+- **The Grafana API compatibility check is report-only** (since 2.0's M4):
+  `useFieldConfig` changed its type in Grafana 13.3.0, which the check flags
+  against the 12.0 minimum. The plugin still runs on 12.0 and later: e2e
+  runs on 12.0, 12.2, 12.4, 13.1, 13.3 and nightly.
 
 ## 1. Before the release
 
-- [x] Merge any open PRs that should be in 1.0 (check
+- [ ] Merge any open PRs that should be in 2.0 (check
       [open PRs](https://github.com/comebacktomorrow/visual-timeline/pulls)).
-      #77 (small quirks) is optional for 1.0.
-- [x] **Screenshots, taken in a real Grafana** (`npm run server`, which
-      needs Docker, then http://localhost:3000). The catalog shows
-      `info.screenshots` from `src/plugin.json`; there is a dark and a light
-      dashboard shot (the light one taken 2026-10-06 from `a934719`).
-  - [x] Add a light-theme dashboard shot. Reviewers check both themes.
-  - [ ] Optionally add the data source config page and the grid with source
-        time zones.
-  - [x] Save them as PNGs in `src/img/` and list them in
-        `src/plugin.json` `info.screenshots`.
-  - [x] Compress them (`pngquant --quality=80-95`): light 219 KB, dark
-        225 KB, both under webpack's 244 KB warning.
-- [x] Optional: a sponsor link (`info.links` entry named `sponsor`). The
-      validator suggests one; it isn't required. Decided against
-      (2026-10-06).
-- [x] Branch protection: if it requires a check called `compatibilitycheck`,
-      switch it to the three per-plugin checks
-      (`compatibilitycheck (./src/module.tsx)`,
-      `(./src/panel/module.ts)`, `(./src/datasource/module.ts)`).
-      Checked 2026-10-06: `main` has no branch protection, only a no-delete
-      ruleset with no required checks, so there is nothing to change.
+      Dependabot #117 waits for sign-plugin 4's Node 24.5 requirement.
+- [ ] **Screenshots.** The catalog shows `info.screenshots` from
+      `src/plugin.json`: a dark and a light dashboard shot from 1.x's demo.
+      Optionally replace or add shots of 2.0: the demo stack's Rivers and
+      The Sun dashboards (`docker compose -f demo/docker-compose.yml up`,
+      then `/d/vt-rivers` and `/d/vt-sun`) show it on real data, credits
+      included. Save as PNGs in `src/img/`, compress
+      (`pngquant --quality=80-95`, under webpack's 244 KB warning), and list
+      them in `info.screenshots`. Reviewers check both themes.
+- [ ] Run `docker compose up` from a clean clone and open each provisioned
+      dashboard (the list is in the testing guidance below).
 
 ## 2. Cut the release
 
-> 1.0.0 was tagged and built (2026-10-06) but never published or submitted,
-> and 1.0.1 was never released. 1.1.0 (the data source owns the data; filter
-> by site, host and tag; Grafana 12+) was tagged and its release drafted on
-> 2026-10-15 but not published. 1.1.0 and 1.2.0 (1.1.0 plus each host's last
-> frame for Table, Canvas and Stat panels) were both published on GitHub on
-> 2026-10-15, but the latest validator fails 1.2.0 on the `braces` advisory.
-> 1.2.1 (1.2.0 on create-plugin 7.13.0, which drops it) passes it, but its
-> `docker compose up` needed a built `dist/`, so reviewers couldn't run the
-> provisioned environment from a clone. 1.2.2 fixes that; 1.2.3 adds build
-> provenance (an attestation for the zip) and is the release to submit. The
-> steps below use it; for a later version substitute its
-> number.
+The release PR (version 2.0.0 in `package.json` and `package-lock.json`, and
+the `## 2.0.0` CHANGELOG section with its Highlights) is merged before
+tagging. For a later version, substitute its number.
 
-- [ ] In `CHANGELOG.md`, rename `## Unreleased` to `## 1.2.3 (<date>)`. The
-      release workflow uses the **first** `## ` section as the release notes,
-      and the catalog shows the changelog. Keep its short "Highlights" list at
-      the top.
-- [ ] `npm version 1.2.3 --no-git-tag-version` (updates `package.json` and
-      `package-lock.json`; `plugin.json`'s `%VERSION%` is filled in at build).
-- [ ] Open a PR with both, wait for green CI, merge.
 - [ ] Tag the merge commit on `main`:
-      `git tag v1.2.3 && git push origin v1.2.3`. The tag must match `package.json` or the workflow fails.
+      `git tag v2.0.0 && git push origin v2.0.0`. The tag must match
+      `package.json` or the workflow fails.
 - [ ] Watch the **Release** workflow (`.github/workflows/release.yml`). It
-      builds, runs `@grafana/plugin-validator` (0.49.13, pinned by the action)
-      on `savvycocoa1919-visualtimeline-app-1.2.3.zip`, attests the zip's
-      build provenance, and creates a **draft** GitHub release with the zip
-      and `.zip.sha1`.
-  - [ ] Read the validator step's output. Expect no errors. The only
-        expected warning is "unsigned plugin". This validator (0.49.13,
-        pinned by the action) still honours `osv-scanner.toml`; the latest
-        doesn't, so also run the latest (next step) before submitting.
+      builds, runs `@grafana/plugin-validator` (pinned by the action) on
+      `savvycocoa1919-visualtimeline-app-2.0.0.zip`, attests the zip's build
+      provenance, and creates a **draft** GitHub release with the zip and
+      `.zip.sha1`.
+  - [ ] Read the validator step's output. Expect no errors; the only
+        expected warning is "unsigned plugin".
   - [ ] Run the latest validator too, from a machine that can reach
         grafana.com:
-        `npx -y @grafana/plugin-validator@latest -sourceCodeUri https://github.com/comebacktomorrow/visual-timeline/tree/v1.2.3 savvycocoa1919-visualtimeline-app-1.2.3.zip`
+        `npx -y @grafana/plugin-validator@latest -sourceCodeUri https://github.com/comebacktomorrow/visual-timeline/tree/v2.0.0 savvycocoa1919-visualtimeline-app-2.0.0.zip`
         Expect no errors and the warnings "unsigned plugin" and
-        "osv-scanner.toml is ignored". 0.49.16, run on the create-plugin
-        7.13.0 branch on 2026-10-16, gave exactly that. (With
-        `--cache .cache/npm` the React 19 check fails to start; use npm's
-        default cache.)
+        "osv-scanner.toml is ignored". (With `--cache .cache/npm` the React
+        19 check fails to start; use npm's default cache.)
 - [ ] Check the attestation:
-      `gh release download v1.2.3 --pattern '*.zip' && gh attestation verify savvycocoa1919-visualtimeline-app-1.2.3.zip --repo comebacktomorrow/visual-timeline`.
-      Without one, the catalog validator recommends "No provenance
-      attestation" for a zip on GitHub.
+      `gh release download v2.0.0 --pattern '*.zip' && gh attestation verify savvycocoa1919-visualtimeline-app-2.0.0.zip --repo comebacktomorrow/visual-timeline`.
 - [ ] **Replace the draft's release notes**, then **publish** it. The build
-      action writes its own boilerplate (submission instructions, a stray
-      `false`, GitHub's list of every PR), not the changelog: paste the
+      action writes its own boilerplate, not the changelog: paste the
       version's CHANGELOG section instead, e.g.
-      `git show v1.2.3:CHANGELOG.md | awk '/^## / {s++} s == 1' | sed 1d`.
+      `git show v2.0.0:CHANGELOG.md | awk '/^## / {s++} s == 1' | sed 1d`.
       The zip and sha1 links only work once it's published.
 
 ## 3. Submit on grafana.com
 
 Sign in as an admin of the `savvycocoa1919` org, open **My Plugins**, then
-**Submit New Plugin**:
+**Submit New Plugin** (or the declined submission's update, if the form
+offers one):
 
 - **OS & Architecture:** Single. The plugin is frontend-only, with no
   backend binaries.
 - **URL:** the published release's `.zip` asset link.
-- **Source code URL:** `https://github.com/comebacktomorrow/visual-timeline/tree/v1.2.3`
+- **Source code URL:** `https://github.com/comebacktomorrow/visual-timeline/tree/v2.0.0`
 - **SHA1:** the contents of the `.zip.sha1` asset.
 - **Provisioning provided for test environment:** yes (see below).
 - **Signature level questions:** a community plugin (free, open source,
   Apache-2.0).
-- **Testing guidance:** paste as is (it follows the form's "steps to
-  install, configure, and use", and leads with the provisioned environment,
-  as [Help us test your plugin](https://grafana.com/developers/plugin-tools/publish-a-plugin/provide-test-environment)
+- **Testing guidance** (a draft for the maintainer to review; it follows the
+  form's "steps to install, configure, and use", and leads with the
+  provisioned environment, as
+  [Help us test your plugin](https://grafana.com/developers/plugin-tools/publish-a-plugin/provide-test-environment)
   asks):
 
   ```text
   Visual Timeline is an app plugin with two nested plugins: a panel (savvycocoa1919-visualtimeline-panel) and a data source (savvycocoa1919-visualtimeline-datasource). Frontend only, no backend binary. Requires Grafana 12.0 or later.
 
+  Since the 1.x review: the panel now reads frames (rows of time, image URL and host) from any data source, and the data source reads timestamped images from a web folder or a public S3 bucket. Neither needs a backend or API of this project's.
+
   1. QUICK START: PROVISIONED TEST ENVIRONMENT
      git clone https://github.com/comebacktomorrow/visual-timeline
-     cd visual-timeline && git checkout v1.2.3
+     cd visual-timeline && git checkout v2.0.0
      docker compose up
-     The first run compiles the plugin inside a Node container (a few minutes); no other commands or configuration are needed. Grafana then runs at http://localhost:3000 with anonymous admin access, alongside a mock frames API.
+     The first run compiles the plugin inside a Node container (a few minutes); no other commands or configuration are needed. Grafana then runs at http://localhost:3000 with anonymous admin access, alongside an nginx folder of test images, PostgreSQL and Loki, each holding the same test frames.
 
      Provisioned data sources:
-     - Visual Timeline (demo): Demo data on, no API.
-     - Visual Timeline API (mock): API URL http://vt-mock-api; viewer token stored in secureJsonData and added server-side by the plugin.json proxy route.
-     - Visual Timeline API (mock, wrong token): the same API with a token it rejects.
+     - Visual Timeline (demo): Demo data.
+     - Visual Timeline (folder, HTML) and (folder, JSON): the HTTP folder connection on the nginx folder, one per listing format.
+     - PostgreSQL (frames), Loki (frames), TestData DB: stock data sources holding frames.
 
      Provisioned dashboards:
      - Provisioned Visual Timeline dashboard: a timeline and a multiview grid on demo data.
+     - Visual Timeline — any data source: timelines and grids from TestData CSV rows, including host states that pause frames, an irregular feed, header chips and a wide table.
+     - Visual Timeline — HTTP folder: the same frames through each listing format.
+     - Visual Timeline — existing data sources (PostgreSQL) and Visual Timeline — Loki: frames from stock data sources.
      - Visual Timeline — filters: Site and Host variables and an ad hoc filter bar.
-     - Visual Timeline — data source mode: one panel reads through the mock API data source; the other uses the wrong-token one and shows the error in Grafana's panel error indicator.
-     - Visual Timeline — last frame table: a stock Table and a stock Canvas fed by the data source's Last frame query option.
-     - Visual Timeline — empty states: a panel with no Visual Timeline data source, and one whose data source was deleted.
+     - Visual Timeline — last frame table: a stock Table and a stock Canvas fed by the data source's Last frame option.
+     - Visual Timeline — empty states: a panel with no data source, and one whose data source was deleted.
 
   2. INSTALL ON ANOTHER GRAFANA
      Install the release zip. While the plugin is unsigned, allow all three ids in allow_loading_unsigned_plugins: savvycocoa1919-visualtimeline-app, savvycocoa1919-visualtimeline-panel, savvycocoa1919-visualtimeline-datasource. The app enables itself and has no pages of its own.
 
   3. CONFIGURE
-     - Connections > Data sources > Add new data source > Visual Timeline API.
-     - To test without a backend, turn on Demo data and click Save & test. Expected: "Demo data is on: queries return built-in demo sources. No API is called."
-     - For a real API, turn Demo data off and enter the API URL (and a viewer token if the API requires one). Save & test checks both. Inside the provisioned environment the mock is at http://vt-mock-api.
-     - On the data source's Dashboards tab, import the "Visual Timeline" starter dashboard.
+     - Connections > Data sources > Add new data source > Visual Timeline.
+     - Demo data: choose Demo data as the Connection and click Save & test. Expected: "Demo data is on: queries return built-in demo hosts and frames." On the data source's Dashboards tab, import the "Visual Timeline" starter dashboard.
+     - HTTP folder: choose HTTP folder, set the folder URL, listing format and path template (docs/FOLDERS.md), and click Save & test, which reports the frames and hosts found in the last 24 hours. A public example: folder URL https://sdo.gsfc.nasa.gov/assets/img/browse, listing HTML links, template {YYYY}/{MM}/{DD}/{YYYY}{MM}{DD}_{HH}{mm}{ss}_{variant}_{host}.jpg, small images 512, large 2048 (NASA's Sun images).
+     - Any other data source: add a Visual Timeline panel and query a data source whose rows have a time, an image URL and a host (docs/DATA-SOURCES.md).
 
-  4. USE (on the starter dashboard, Demo data)
-     - Timeline: hover a strip to scrub its frames (the crosshair is shared across panels), drag across a strip to zoom the dashboard's time range, click a frame for a larger preview. Demo data includes an outage on source-2 (red hatched gap), a declared pause on source-4 (SCREEN DARK (UNEXPECTED)), hosts in other time zones (chips on source-3 and source-5) and annotations.
+  4. USE
+     - Timeline: hover a strip to scrub its frames (the crosshair is shared across panels), drag across a strip to zoom the dashboard's time range, click a frame for a larger preview. Gaps show missing frames at their true width; host states draw as bands or annotations, labelled and coloured by their value mappings.
      - Multiview grids: "follows crosshair" shows each host's frame at the hovered time; "latest only" shows the newest frames.
-     - Last frame per host: a stock Table with each host's last frame, status (live/offline/paused, coloured) and time. Pick a past time range and it shows the frames at the end of that range.
-     - Filtering: the Site and Host dropdowns, the Filters bar (keys site, host and tag keys such as env), or a click on a host, site or tag chip in a panel header (also reachable with Tab and Enter).
-     - Query tab (edit a panel): Sites, Hosts and Tags fields (dashboard variables such as ${site:csv} work); the Last frame switch and its Per host format, for Table, Canvas and Stat panels.
-     - Panel options: Display mode (Timeline or Multiview grid), Header, Thumbnail times (dashboard or host local time), Image fit, Hide hosts with no data, Show annotations.
+     - Filtering: the Site and Host dropdowns, the Filters bar, or a click on a host, site or tag chip in a panel header (also reachable with Tab and Enter).
+     - Panel options: Display mode, Frame fields (which fields are the time, image, host and so on), Hold last frame, Gaps mean, Header chips and Chip click, Thumbnail times, Image fit.
 
-  The frames API is documented in docs/API.md. worker/ in the repository is a reference implementation.
+  docs/DATA-SOURCES.md, docs/FOLDERS.md and docs/INFINITY.md in the repository have the recipes. The repository's demo/ stack also has two dashboards on live public data (USGS river cameras, NASA's Sun); they need internet access and aren't part of the provisioned test environment.
   ```
 
 ## 4. After approval
@@ -194,8 +158,8 @@ work before that: `npm run sign` fails with "Field is required: rootUrls".
       Policies).
 - [ ] Add it as the repository secret `GRAFANA_ACCESS_POLICY_TOKEN`. `ci.yml`
       then signs on every run. Not before approval: until the plugin has a
-      signature level, `npm run sign` fails ("Field is required: rootUrls")
-      and the secret would turn CI's main job red.
+      signature level, `npm run sign` fails and the secret would turn CI's
+      main job red.
 - [ ] In `.github/workflows/release.yml`, add
       `policy_token: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}` under the
       build step's `with:`, next to `attestation: true` (the comment there
@@ -206,8 +170,13 @@ work before that: `npm run sign` fails with "Field is required: rootUrls".
 
 ## Later, not blocking
 
+- **2.1: private buckets** (#125): a small Go backend in the data source that
+  lists with signed requests and returns signed image links, stamped to the
+  hour so they stay cacheable. It makes the plugin a backend plugin: Go and
+  mage builds, per-platform binaries, and **OS & Architecture** changes when
+  it's submitted.
+- Loading folder images through Grafana's proxy (#128, deferred).
 - The scaffold-managed `.config/docker-compose-base.yaml` still names the dev
   container and mount after the panel id. It switches to the app id on the
   next create-plugin update (`docs/UPSTREAM-UPDATES.md`).
-- Open issues: #81 (wrong-token message; see above) and #44 (worker
-  key-list caching). #77 and #26 are closed.
+- Open issues: #44 (worker key-list caching), #112 (1.1/1.2 follow-ups).
