@@ -48,6 +48,9 @@ export interface Frame {
   /* the larger image for the click-in preview, when the source gives one:
    * a preview field in frame records (#126), or the API's url_hi (#129) */
   hi?: string;
+  /* the promise this frame makes: the next frame within this many ms
+   * (docs/TIMELINE-MODEL.md); unset, the source's declaration decides */
+  cadence?: number;
 }
 
 /* A span of a source's window on one grid (erasFor). reason and intended
