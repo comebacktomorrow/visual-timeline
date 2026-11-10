@@ -7,6 +7,7 @@ import { AdHocVariableFilter, createDataFrame, DataFrame, FieldConfig, FieldType
 
 import { matchesTags, parseTagFilter, parseVar } from '../vt/model/filters';
 import type { RawAnnotation, SourceDecl } from '../vt/types';
+import { REASON_STYLES, UNEXPECTED_COLOR, unexpectedLabel } from '../vt/backends/reasons';
 import type { ApiSourceDecl } from '../vt/backends/api';
 import type { LastFrame } from './lastFrame';
 
@@ -210,24 +211,24 @@ export function recordsToFrame(rows: Array<{ ts: number; host: string; site: str
 }
 
 /* How our own pause states look: value mappings like any state query's
- * (#126, M4), in the colours the core used for these reasons before. A
- * dashboard can override them like any mapping. */
-export const PAUSE_STATE_MAPPINGS: ValueMapping[] = [
-  {
-    type: MappingType.ValueToText,
-    options: {
-      paused: { text: 'PAUSED', index: 0 },
-      quiet: { text: 'QUIET HOURS', index: 1 },
-      'screen-sleep': { text: 'SCREEN ASLEEP', color: 'blue', index: 2 },
-      'screen-sleep:unexpected': { text: 'SCREEN DARK (UNEXPECTED)', color: 'orange', index: 3 },
-      'system-down': { text: 'SYSTEM DOWN (PLANNED)', color: 'purple', index: 4 },
-      'app-stopped': { text: 'APP STOPPED', color: '#2ba08c', index: 5 },
-      expired: { text: 'NO DATA', index: 6 },
-    },
-  },
-  // any other reason nobody asked for: amber, as before
-  { type: MappingType.RegexToText, options: { pattern: '^(.*):unexpected$', result: { text: '$1 (UNEXPECTED)', color: 'orange', index: 7 } } },
-];
+ * (#126, M4), built from the one table of our reasons (REASON_STYLES), so
+ * Grafana and the standalone viewer can't drift apart. Each reason, then the
+ * same reason with ":unexpected" (amber); any other unexpected one is an amber
+ * PAUSED, and any other reason a plain PAUSED. A dashboard can override them
+ * like any mapping. */
+export function pauseStateMappings(): ValueMapping[] {
+  const options: Record<string, { text: string; color?: string; index: number }> = {};
+  let index = 0;
+  for (const [reason, st] of Object.entries(REASON_STYLES)) {
+    options[reason] = { text: st.label, ...(st.color ? { color: st.color } : {}), index: index++ };
+    options[reason + ':unexpected'] = { text: unexpectedLabel(reason), color: UNEXPECTED_COLOR, index: index++ };
+  }
+  return [
+    { type: MappingType.ValueToText, options },
+    { type: MappingType.RegexToText, options: { pattern: '^.+:unexpected$', result: { text: unexpectedLabel(undefined), color: UNEXPECTED_COLOR, index: index++ } } },
+    { type: MappingType.RegexToText, options: { pattern: '^.+$', result: { text: REASON_STYLES.paused.label, index: index++ } } },
+  ];
+}
 
 /** Each source's declared pauses as a state query's answer (#126, M4): a
  * row when a pause starts (its reason, ":unexpected" when nobody intended
@@ -255,7 +256,7 @@ export function pauseStatesToFrame(sources: SourceDecl[], refId: string): DataFr
       { name: 'host', type: FieldType.string, values: rows.map((r) => r.host) },
       { name: 'site', type: FieldType.string, values: rows.map((r) => r.site) },
       { name: 'state', type: FieldType.string, values: rows.map((r) => r.state),
-        config: { mappings: PAUSE_STATE_MAPPINGS, custom: { pausesFrames: true } } },
+        config: { mappings: pauseStateMappings(), custom: { pausesFrames: true } } },
     ],
   });
 }

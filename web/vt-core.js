@@ -748,22 +748,27 @@ var VTCore = (() => {
   }
 
   // src/vt/backends/reasons.ts
-  var REASONS = {
+  var REASON_STYLES = {
+    paused: { label: "PAUSED" },
     quiet: { label: "QUIET HOURS" },
-    "screen-sleep": { label: "SCREEN ASLEEP", color: "#5794F2" },
-    "system-down": { label: "SYSTEM DOWN (PLANNED)", color: "#B877D9" },
+    "screen-sleep": { label: "SCREEN ASLEEP", color: "blue" },
+    "system-down": { label: "SYSTEM DOWN (PLANNED)", color: "purple" },
     "app-stopped": { label: "APP STOPPED", color: "#2BA08C" },
     // the retention cutoff: frames this old have been deleted
     expired: { label: "NO DATA" }
   };
-  var UNEXPECTED = "#FF9830";
+  var UNEXPECTED_COLOR = "orange";
+  function unexpectedLabel(reason) {
+    return reason === "screen-sleep" ? "SCREEN DARK (UNEXPECTED)" : reason && REASON_STYLES[reason]?.label || "PAUSED";
+  }
+  var NAMED = { blue: "#5794F2", purple: "#B877D9", orange: "#FF9830" };
+  var resolve = (c) => NAMED[c] ?? c;
   function reasonDisplay(reason, intended) {
-    const known = reason ? REASONS[reason] : void 0;
-    const label = known?.label ?? "PAUSED";
     if (intended === false) {
-      return { label: reason === "screen-sleep" ? "SCREEN DARK (UNEXPECTED)" : label, color: UNEXPECTED };
+      return { label: unexpectedLabel(reason), color: resolve(UNEXPECTED_COLOR) };
     }
-    return known?.color ? { label, color: known.color } : { label };
+    const known = reason && REASON_STYLES[reason] || REASON_STYLES.paused;
+    return known.color ? { label: known.label, color: resolve(known.color) } : { label: known.label };
   }
   function labelPauses(decl) {
     if (!decl.history?.some((h) => h.paused && !h.label)) {
@@ -1330,10 +1335,10 @@ var VTCore = (() => {
       running--;
       waiting.shift()?.();
     };
-    return items.map((item) => new Promise((resolve, reject) => {
+    return items.map((item) => new Promise((resolve2, reject) => {
       const run = () => {
         running++;
-        Promise.resolve().then(() => fn(item)).then(resolve, reject).finally(next);
+        Promise.resolve().then(() => fn(item)).then(resolve2, reject).finally(next);
       };
       if (running < limit) {
         run();
@@ -1643,7 +1648,7 @@ var VTCore = (() => {
         if (stopped || active === 0 && pending.length === 0 && !scheduled) {
           return Promise.resolve();
         }
-        return new Promise((resolve) => idleWaiters.push(resolve));
+        return new Promise((resolve2) => idleWaiters.push(resolve2));
       },
       stop() {
         stopped = true;

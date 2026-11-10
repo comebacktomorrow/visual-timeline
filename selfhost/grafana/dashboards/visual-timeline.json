@@ -307,44 +307,79 @@
                         "text": "PAUSED",
                         "index": 0
                       },
+                      "paused:unexpected": {
+                        "text": "PAUSED",
+                        "color": "orange",
+                        "index": 1
+                      },
                       "quiet": {
                         "text": "QUIET HOURS",
-                        "index": 1
+                        "index": 2
+                      },
+                      "quiet:unexpected": {
+                        "text": "QUIET HOURS",
+                        "color": "orange",
+                        "index": 3
                       },
                       "screen-sleep": {
                         "text": "SCREEN ASLEEP",
                         "color": "blue",
-                        "index": 2
+                        "index": 4
                       },
                       "screen-sleep:unexpected": {
                         "text": "SCREEN DARK (UNEXPECTED)",
                         "color": "orange",
-                        "index": 3
+                        "index": 5
                       },
                       "system-down": {
                         "text": "SYSTEM DOWN (PLANNED)",
                         "color": "purple",
-                        "index": 4
+                        "index": 6
+                      },
+                      "system-down:unexpected": {
+                        "text": "SYSTEM DOWN (PLANNED)",
+                        "color": "orange",
+                        "index": 7
                       },
                       "app-stopped": {
                         "text": "APP STOPPED",
-                        "color": "#2ba08c",
-                        "index": 5
+                        "color": "#2BA08C",
+                        "index": 8
+                      },
+                      "app-stopped:unexpected": {
+                        "text": "APP STOPPED",
+                        "color": "orange",
+                        "index": 9
                       },
                       "expired": {
                         "text": "NO DATA",
-                        "index": 6
+                        "index": 10
+                      },
+                      "expired:unexpected": {
+                        "text": "NO DATA",
+                        "color": "orange",
+                        "index": 11
                       }
                     }
                   },
                   {
                     "type": "regex",
                     "options": {
-                      "pattern": "^(.*):unexpected$",
+                      "pattern": "^.+:unexpected$",
                       "result": {
-                        "text": "$1 (UNEXPECTED)",
+                        "text": "PAUSED",
                         "color": "orange",
-                        "index": 7
+                        "index": 12
+                      }
+                    }
+                  },
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": "^.+$",
+                      "result": {
+                        "text": "PAUSED",
+                        "index": 13
                       }
                     }
                   }
@@ -533,44 +568,79 @@
                         "text": "PAUSED",
                         "index": 0
                       },
+                      "paused:unexpected": {
+                        "text": "PAUSED",
+                        "color": "orange",
+                        "index": 1
+                      },
                       "quiet": {
                         "text": "QUIET HOURS",
-                        "index": 1
+                        "index": 2
+                      },
+                      "quiet:unexpected": {
+                        "text": "QUIET HOURS",
+                        "color": "orange",
+                        "index": 3
                       },
                       "screen-sleep": {
                         "text": "SCREEN ASLEEP",
                         "color": "blue",
-                        "index": 2
+                        "index": 4
                       },
                       "screen-sleep:unexpected": {
                         "text": "SCREEN DARK (UNEXPECTED)",
                         "color": "orange",
-                        "index": 3
+                        "index": 5
                       },
                       "system-down": {
                         "text": "SYSTEM DOWN (PLANNED)",
                         "color": "purple",
-                        "index": 4
+                        "index": 6
+                      },
+                      "system-down:unexpected": {
+                        "text": "SYSTEM DOWN (PLANNED)",
+                        "color": "orange",
+                        "index": 7
                       },
                       "app-stopped": {
                         "text": "APP STOPPED",
-                        "color": "#2ba08c",
-                        "index": 5
+                        "color": "#2BA08C",
+                        "index": 8
+                      },
+                      "app-stopped:unexpected": {
+                        "text": "APP STOPPED",
+                        "color": "orange",
+                        "index": 9
                       },
                       "expired": {
                         "text": "NO DATA",
-                        "index": 6
+                        "index": 10
+                      },
+                      "expired:unexpected": {
+                        "text": "NO DATA",
+                        "color": "orange",
+                        "index": 11
                       }
                     }
                   },
                   {
                     "type": "regex",
                     "options": {
-                      "pattern": "^(.*):unexpected$",
+                      "pattern": "^.+:unexpected$",
                       "result": {
-                        "text": "$1 (UNEXPECTED)",
+                        "text": "PAUSED",
                         "color": "orange",
-                        "index": 7
+                        "index": 12
+                      }
+                    }
+                  },
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": "^.+$",
+                      "result": {
+                        "text": "PAUSED",
+                        "index": 13
                       }
                     }
                   }
