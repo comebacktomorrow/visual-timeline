@@ -6,21 +6,10 @@
 import { AdHocVariableFilter, createDataFrame, DataFrame, FieldConfig, FieldType, MappingType, ValueMapping } from '@grafana/data';
 
 import { matchesTags, parseTagFilter, parseVar } from '../vt/model/filters';
-import { labelPauses } from '../vt/backends/reasons';
-import type { HistoryEvent, RawAnnotation, SourceDecl } from '../vt/types';
+import type { RawAnnotation, SourceDecl } from '../vt/types';
 import type { ApiSourceDecl } from '../vt/backends/api';
 import type { LastFrame } from './lastFrame';
 
-/** Marks the frames a Visual Timeline data source returns: meta.custom[FRAME_MARKER]. */
-export const FRAME_MARKER = 'visualTimeline';
-
-/** What the panel needs to know about the data source that answered. */
-export interface SourcesFrameMeta {
-  /** The data source's uid, to fetch frames through it. */
-  uid: string;
-  /** Demo data: the panel draws the core's built-in demo frames. */
-  demo: boolean;
-}
 
 /** Ad hoc filter keys that aren't tags. A tag with the same key is shadowed. */
 export const SITE_KEY = 'site';
@@ -138,7 +127,7 @@ const IMAGE_CELL = { cellOptions: { type: 'image' } };
  * host's last frame in the range: its image, already set to show as one in
  * a Table, its time, and the host's status at the range's end. */
 export function sourcesToFrame(
-  sources: ApiSourceDecl[], refId: string, meta: SourcesFrameMeta, last?: Array<LastFrame | null>
+  sources: ApiSourceDecl[], refId: string, last?: Array<LastFrame | null>
 ): DataFrame {
   const lastFields = last
     ? [
@@ -162,7 +151,6 @@ export function sourcesToFrame(
     : [];
   return createDataFrame({
     refId,
-    meta: { custom: { [FRAME_MARKER]: meta } },
     fields: [
       { name: 'host', type: FieldType.string, values: sources.map((s) => s.id) },
       // with the last frame, a table reads host, image, status, time first
@@ -206,7 +194,7 @@ export function lastFramesByHost(sources: SourceDecl[], last: Array<LastFrame | 
 
 /** Frame records as rows the panel reads like any source's (#126): one row
  * per frame, with its time, host, site and image locator. */
-export function recordsToFrame(rows: Array<{ ts: number; host: string; site: string; url: string }>, refId: string): DataFrame {
+export function recordsToFrame(rows: Array<{ ts: number; host: string; site: string; url: string; cadence?: number }>, refId: string): DataFrame {
   return createDataFrame({
     refId,
     name: 'frames',
@@ -215,6 +203,8 @@ export function recordsToFrame(rows: Array<{ ts: number; host: string; site: str
       { name: 'host', type: FieldType.string, values: rows.map((r) => r.host) },
       { name: 'site', type: FieldType.string, values: rows.map((r) => r.site) },
       { name: 'image', type: FieldType.string, values: rows.map((r) => r.url) },
+      // the pace in force at each frame: where it changes, the panel draws eras
+      ...(rows.some((r) => r.cadence) ? [{ name: 'cadence', type: FieldType.number, values: rows.map((r) => r.cadence ?? null), config: { unit: 'ms' } }] : []),
     ],
   });
 }
@@ -286,34 +276,4 @@ export function annotationsToFrame(events: RawAnnotation[], refId: string): Data
       { name: 'color', type: FieldType.string, values: events.map((a) => a.color ?? '') },
     ],
   });
-}
-
-/** The sources and their data source, from a panel's query result: every
- * Visual Timeline frame, merged (a panel may have several queries), or null
- * when the result holds none. */
-export function sourcesFromFrames(series: DataFrame[] | undefined): { sources: ApiSourceDecl[]; meta: SourcesFrameMeta } | null {
-  const ours = (series || []).filter((f) => f.meta?.custom?.[FRAME_MARKER]);
-  if (!ours.length) {return null;}
-  const seen = new Set<string>();
-  const sources: ApiSourceDecl[] = [];
-  for (const frame of ours) {
-    const col = (name: string) => frame.fields.find((f) => f.name === name)?.values;
-    const host = col('host') || [];
-    for (let i = 0; i < host.length; i++) {
-      const at = (name: string) => col(name)?.[i];
-      const id = String(host[i]);
-      const site = String(at('site'));
-      if (seen.has(site + '/' + id)) {continue;}
-      seen.add(site + '/' + id);
-      const s: ApiSourceDecl = { id, site, cadence: Number(at('cadence')) };
-      if (at('location')) {s.location = String(at('location'));}
-      if (at('timezone')) {s.timezone = String(at('timezone'));}
-      if (at('hiCadence') != null) {s.hiCadence = Number(at('hiCadence'));}
-      const tags = at('tags') as Record<string, string> | undefined;
-      if (tags && Object.keys(tags).length) {s.tags = tags;}
-      s.history = (at('history') as HistoryEvent[] | undefined) || [];
-      sources.push(labelPauses(s));
-    }
-  }
-  return { sources, meta: ours[0].meta!.custom![FRAME_MARKER] as SourcesFrameMeta };
 }

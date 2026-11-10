@@ -95,9 +95,8 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
             tags: /\$[{a-zA-Z_]/.test(tags) ? '' : tags,
             adhoc: request.filters,
           });
-          const meta = { uid: this.uid, demo: this.demo };
           if (!t.lastFrame) {
-            const list = sourcesToFrame(sources, t.refId, meta);
+            const list = sourcesToFrame(sources, t.refId);
             // Demo data answers with its frames as rows, as any source would (#126)
             // the demo frames draw a clock: in the dashboard's time zone, so they agree with the captions
             const tz = resolveTimeZone(coreTimeZone(request.timezone));
@@ -117,7 +116,7 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
             })));
           return t.lastFrameFormat === 'host'
             ? lastFramesByHost(sources, last, t.refId)
-            : sourcesToFrame(sources, t.refId, meta, last);
+            : sourcesToFrame(sources, t.refId, last);
         })
     );
     return { data: data.flat() };
@@ -132,13 +131,17 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
   ) {
     const demo = this.demoBackend(window, timeZone);
     const span = Math.max(1, window.to - window.from);
-    const rows: Array<{ ts: number; host: string; site: string; url: string }> = [];
+    const rows: Array<{ ts: number; host: string; site: string; url: string; cadence: number }> = [];
     for (const s of sources) {
       const cadences = [s.cadence, ...(s.history || []).map((h) => h.cadence)].filter((c): c is number => !!c && c > 0);
       const finest = Math.min(...cadences);
       const step = finest * Math.max(1, Math.ceil(span / (maxDataPoints || 1000) / finest));
+      // each row carries the pace in force at its time, so a change of pace
+      // reaches the panel as any query's would: as a cadence field that changes
+      const paces = (s.history || []).filter((h) => h.cadence && (h.variant || 'lo') === 'lo').sort((a, b) => a.since - b.since);
+      const paceAt = (ts: number) => paces.filter((h) => h.since <= ts).pop()?.cadence ?? s.cadence;
       for (const f of await demo.frames(s.site, s.id, window.from, window.to, step)) {
-        rows.push({ ts: f.ts, host: s.id, site: s.site, url: f.url });
+        rows.push({ ts: f.ts, host: s.id, site: s.site, url: f.url, cadence: paceAt(f.ts) });
       }
     }
     return recordsToFrame(rows, refId);

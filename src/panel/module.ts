@@ -19,7 +19,6 @@ import type { AxisFormatter } from '../vt/time/ticks';
 import { themeVars } from '../theme';
 import { coreTimeZone } from '../timezone';
 import { DATASOURCE_ID } from '../shared/ids';
-import { sourcesFromFrames } from '../shared/sources';
 import { FieldRoles, hostTableFromSeries, recordsBackend, recordsFromSeries } from '../shared/frameRecords';
 import { stateAnnotations, statesFromSeries } from '../shared/hostState';
 import { needsRebuild } from './resize';
@@ -173,17 +172,6 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     [props.timeZone]
   );
 
-  /* The sources, from this panel's query result (see shared/sources.ts).
-   * The core remounts, fetching frames again, when the sources change (a
-   * variable or filter change) or the time window moves (every refresh of a
-   * relative range). A refresh that changes neither keeps the view: frames
-   * are immutable, and the core polls the live edge itself. */
-  // keyed on content: Grafana can hand over a new copy of the same result
-  // (the panel editor does), and only a real change should remount the core
-  const parsed = sourcesFromFrames(props.data?.series);
-  const resultKey = parsed ? JSON.stringify(parsed) : '';
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const result = useMemo(() => parsed, [resultKey]);
   /* Frame records: rows with a time, an image and a host, from any data
    * source (#126). When the query returns any, they are what the panel
    * draws; a Visual Timeline source list in the same result adds what it
@@ -210,10 +198,10 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const tableMemo = useMemo(() => table, [tableKey]);
   const backend = useMemo(
-    () => (recordsMemo || result || statesMemo || tableMemo.length
-      ? recordsBackend(recordsMemo ?? [], [...(result?.sources ?? []), ...tableMemo], statesMemo ?? [])
+    () => (recordsMemo || statesMemo || tableMemo.length
+      ? recordsBackend(recordsMemo ?? [], tableMemo, statesMemo ?? [])
       : null),
-    [recordsMemo, result, statesMemo, tableMemo]
+    [recordsMemo, statesMemo, tableMemo]
   );
   /* Clicking a host, site or tag chip adds that filter to the dashboard's ad
    * hoc filter for this data source, as a table cell's "filter for value"
@@ -265,8 +253,8 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const failed = props.data?.state === LoadingState.Error;
   // anything that names a host: frame rows, a source list, a host table, or
   // a pause state (a host paused all window has nothing else)
-  const showFrames = !!backend && ((recordsMemo?.length ?? 0) > 0 || (result?.sources.length ?? 0) > 0 ||
-    tableMemo.length > 0 || !!statesMemo?.some((h) => h.spans.some((sp) => sp.pauses)));
+  const showFrames = !!backend && ((recordsMemo?.length ?? 0) > 0 || tableMemo.length > 0 ||
+    !!statesMemo?.some((h) => h.spans.some((sp) => sp.pauses)));
 
   useEffect(() => {
     if (!ref.current || !showFrames || !backend) {
@@ -345,7 +333,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     const canCreate = !!user && (user.orgRole === 'Admin' || user.isGrafanaAdmin === true);
     const count = getDataSourceSrv().getList({ pluginId: DATASOURCE_ID }).length;
     const hasData = (props.data?.series || []).some((f) => f.length > 0);
-    const text = emptyStateText(!!result || !!recordsMemo, count, canCreate, hasData);
+    const text = emptyStateText(tableMemo.length > 0 || !!recordsMemo, count, canCreate, hasData);
     const link = text.link
       ? React.createElement(
           'div',

@@ -51,11 +51,10 @@ const range = { from: { valueOf: () => 1_000 }, to: { valueOf: () => 3_601_000 }
 const hostsOf = (frame: any) => frame.fields.find((f: any) => f.name === 'host').values;
 
 describe('query', () => {
-  test('answers with the source list, one row per source, marked for the panel', async () => {
+  test('answers with the source list, one row per source', async () => {
     const res = await withSources().query({ targets: [{ refId: 'A' }], range, scopedVars: {} } as any);
     expect(res.data).toHaveLength(1);
     expect(hostsOf(res.data[0])).toEqual(['cam-1', 'cam-2', 'kiosk-a']);
-    expect(res.data[0].meta.custom.visualTimeline).toEqual({ uid: 'vt-ds', demo: false });
   });
 
   test('applies the query fields, dashboard variables and ad hoc filters', async () => {
@@ -79,7 +78,6 @@ describe('query', () => {
     const ds = new VisualTimelineDataSource(settings(true), interpolate);
     const res = await ds.query({ targets: [{ refId: 'A' }], range, scopedVars: {} } as any);
     expect(hostsOf(res.data[0]).length).toBeGreaterThan(0);
-    expect(res.data[0].meta.custom.visualTimeline.demo).toBe(true);
   });
 
   test('without Demo data: no sources and no rows', async () => {
@@ -103,7 +101,10 @@ describe('query', () => {
       expect(sf('state').config.custom).toEqual({ pausesFrames: true });
       const rows = res.data[1];
       const col = (n: string) => rows.fields.find((f: any) => f.name === n).values;
-      expect(rows.fields.map((f: any) => f.name)).toEqual(['time', 'host', 'site', 'image']);
+      expect(rows.fields.map((f: any) => f.name)).toEqual(['time', 'host', 'site', 'image', 'cadence']);
+      // the pace in force at each frame: source-3 slows from 120 s to 240 s halfway
+      const s3c = col('cadence').filter((_: number, i: number) => col('host')[i] === 'source-3');
+      expect([s3c[0], s3c[s3c.length - 1]]).toEqual([120000, 240000]);
       expect(col('image').every((u: string) => u.startsWith('data:image/svg+xml,'))).toBe(true);
       // source-3 runs at 120 s for the first half of the window, then 240 s: rows come every 120 s
       const s3 = col('time').filter((_: number, i: number) => col('host')[i] === 'source-3');
