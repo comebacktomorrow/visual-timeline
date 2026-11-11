@@ -147,6 +147,11 @@ stretches the strip draws.
   tick per Frame width) shows as many as fit, says so in the title
   ("showing 57 of 456"), and highlights Zoom.
 - The large image loads once the playhead settles; Esc or ✕ closes.
+- **Video** (below): where a clip covers the slot, it plays over the
+  frames. Its part of the timeline is a plain bar to hover or drag through,
+  ▶ plays it (round again at the slot's end), and the bar gains sound
+  (muted by default) and HD/SD (when the clip has a larger version). Both
+  choices are remembered.
 
 The player asks for one slot's frames when it needs them, by running the
 panel's own query again for just that slot, no finer than it can draw.
@@ -248,6 +253,7 @@ or Base64 image data. The panel never signs or proxies images itself.
 | Preview image | `image_hi`, `preview`                                              | optional, for the click-in preview                                                                                           |
 | Cadence       | `cadence` (milliseconds)                                           | optional; otherwise the typical gap between frames. A value that changes over time draws each pace on its own grid (an era). |
 | Host details  | `timezone`, `location`, `tags`; or labels on the image field       | optional, shown in the host's header                                                                                         |
+| Video         | `video`, with `video_hi`, `video_end` or `video_duration` (ms)     | optional: a clip from the row's time, played in the preview (below)                                                          |
 
 A **wide table** works too, as a SQL pivot returns it: one time column and an
 image column per host, each column named for its host (or carrying a `host`
@@ -268,6 +274,29 @@ no image or state, so hosts that sent no frames still show). The details are in
 [docs/INFINITY.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/INFINITY.md),
 whose recipes work for any data source. The provisioned dashboard **Visual Timeline — any data
 source** shows a timeline and a grid drawn from TestData CSV rows.
+
+### Video clips
+
+A row can carry a **video** as well as, or instead of, an image: a clip
+that starts at the row's time and runs to its `video_end` (a time), or for
+`video_duration` milliseconds; with neither, as long as the host's clips
+typically last, never past the next one. `video_hi` is a larger version for
+the preview player. A clip of real time and a timelapse (a whole day in
+seconds) work alike: a time within the clip is found by its fraction of the
+way through it.
+
+- **The strip doesn't change**: frames still fill it, with a thin line along
+  its foot where the host has video. A host with only clips draws them as
+  plain bands with ▶, and no data where it has neither.
+- **The preview player plays the clip over the frames** (above). The hover
+  flipbook plays the smaller version in the magnifier, muted.
+- **Formats:** whatever the viewer's browser plays: MP4 (H.264) or WebM
+  (VP9) are safe. Serve them with range requests, and for MP4 put the index
+  at the front (`ffmpeg -movflags +faststart`): a file with it at the end
+  can't seek until the browser has fetched its tail.
+- A clip that began before the dashboard's range is only found if the query
+  returns it: include the clip in force at the range's start, as you would
+  the frame before it.
 
 ## Show the last frame in a table
 

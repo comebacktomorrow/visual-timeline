@@ -61,6 +61,18 @@ export interface Frame {
   count?: number;
 }
 
+/* A video clip (M10c): a stretch of a host's time recorded as one video,
+ * from a video field in frame records. It runs from its start to its end,
+ * however long it plays: a clip of real time or a timelapse (a day in
+ * seconds) alike, a time within it found by its fraction of the way
+ * through. `hi`: a larger version for the preview player. */
+export interface Clip {
+  from: number;
+  to: number;
+  url: string;
+  hi?: string;
+}
+
 /* A span of a source's window on one grid (erasFor). reason and intended
  * are always present, undefined when the event that opened the era carried
  * none. */
@@ -88,6 +100,9 @@ export interface Backend {
    * flipbook play (M10). At most maxPoints, as a source thins them (each
    * kept frame's count says how many it stands for); unset, all of them */
   detail?(site: string, id: string, from: number, to: number, maxPoints?: number): Promise<Frame[]>;
+  /* the host's video clips that overlap [from, to] (M10c), in time order:
+   * a backend whose source has a video field offers it */
+  clips?(site: string, id: string, from: number, to: number): Promise<Clip[]>;
   /* demo seam only; raw annotations, normalized by normAnnotations */
   annotations?(): RawAnnotation[];
 }
@@ -153,6 +168,9 @@ export interface TickSlot extends SlotBase {
   /* how many frames were taken within the slot (more than one: a slot to
    * play through) */
   count: number;
+  /* the video clip in force, for a slot with no frame that a clip covers
+   * (M10c): drawn as a clip band, and played by the preview */
+  clip?: Clip;
   /* kept so code that tests it still reads; the interval model never holds */
   held?: undefined;
   paused?: undefined;
@@ -171,6 +189,7 @@ export interface PauseSlot extends SlotBase {
   future?: undefined;
   step?: undefined;
   nodata?: undefined;
+  clip?: undefined;
 }
 /* the one inert spacer past now: [ts, ts + span) */
 export interface BeyondSlot extends SlotBase {
@@ -181,6 +200,7 @@ export interface BeyondSlot extends SlotBase {
   step?: undefined;
   held?: undefined;
   nodata?: undefined;
+  clip?: undefined;
 }
 export type Slot = TickSlot | PauseSlot | BeyondSlot;
 
@@ -201,17 +221,20 @@ export interface SourceModel {
   promised: boolean;
   /* every frame fetched, in time order */
   frames: Frame[];
+  /* the host's video clips over the window, in time order (M10c) */
+  clips: Clip[];
   intervals: Interval[];
   slots: Slot[];
   drops: DropMark[];
   slotAt(t: number): Slot | null;
   intervalAt(t: number): Interval | null;
   lastActive: TickSlot | null;
-  /* add frames (the live poll's) and rebuild for `now` */
-  refresh(fresh: Frame[], now: number): void;
-  /* intervals for other frames over another range, by this host's promise,
-   * pauses and hold (the preview player's scrubber) */
-  intervalsFor(frames: Frame[], window: TimeWindow, now: number, sample?: number): Interval[];
+  /* add frames (the live poll's), and clips when it brings any, and
+   * rebuild for `now` */
+  refresh(fresh: Frame[], now: number, clips?: Clip[]): void;
+  /* intervals for other frames (and clips) over another range, by this
+   * host's promise, pauses and hold (the preview player's scrubber) */
+  intervalsFor(frames: Frame[], window: TimeWindow, now: number, sample?: number, clips?: Clip[]): Interval[];
 }
 
 /* ---- mounts (mountTimeline, mountGrid) ---- */

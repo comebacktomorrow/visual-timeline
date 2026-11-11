@@ -1,8 +1,8 @@
 import { pauseInfo } from '../model/eras';
-import { Reel, type ReelSlot, type ReelSource } from '../model/reel';
+import { clipTime, playVideo, Reel, videoTime, type ClipSpan, type ReelSlot, type ReelSource } from '../model/reel';
 import { FRAME_WIDTH } from './frameWidth';
 import type { ZoneTexts } from '../zones/source';
-import type { Frame, TimeWindow } from '../types';
+import type { Clip, Frame, TimeWindow } from '../types';
 
 /* The preview player (M10): the click-in preview, with the slot's own
  * timeline under it. A slot of the strip can show one frame; the player shows
@@ -15,7 +15,11 @@ import type { Frame, TimeWindow } from '../types';
  * showing its reason. Only ‹‹ ›› (Shift+←/→) move to the neighbouring slot,
  * and the crosshair with it; Zoom sets the dashboard's range to the slot.
  * Only the frame under the playhead loads, and the slot's frames while it
- * plays. */
+ * plays.
+ * A video clip over the slot (M10c) plays over its stills: its part of the
+ * slot is a plain bar on the scrubber, hovering it seeks the video, and Play
+ * plays it (round again at the slot's end), muted unless unmuted. HD plays
+ * the clip's larger version when it has one. */
 
 export type ScrubStyle = 'ticks' | 'thumbs';
 
@@ -42,16 +46,18 @@ export interface PlayerContext extends ReelSource {
   frameWidth?: number;
 }
 
-interface Prefs { style: ScrubStyle; fps: number }
+interface Prefs { style: ScrubStyle; fps: number; hd: boolean; muted: boolean }
 const PREFS_KEY = 'ktl-player';
 const FPS = [1, 2, 4, 8, 16];
 function loadPrefs(ctx: PlayerContext): Prefs {
-  const base: Prefs = { style: ctx.scrubber ?? 'ticks', fps: 4 };
+  const base: Prefs = { style: ctx.scrubber ?? 'ticks', fps: 4, hd: true, muted: true };
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
     return {
       style: p.style === 'thumbs' || p.style === 'ticks' ? p.style : base.style,
       fps: FPS.includes(p.fps) ? p.fps : base.fps,
+      hd: typeof p.hd === 'boolean' ? p.hd : base.hd,
+      muted: typeof p.muted === 'boolean' ? p.muted : base.muted,
     };
   } catch { return base; }
 }
@@ -65,6 +71,8 @@ function savePrefs(p: Prefs): void {
  * steps and plays through, and what it fetches (no finer). As thumbnails, a
  * picture per THUMB_PX of them. Zoom shows them all. */
 const THUMB_PX = 48;
+/* a clip's part of a slot shorter than this (s of video) isn't played */
+const MIN_CLIP_S = 0.25;
 /* the popup's size (size() in mountPlayer) */
 const STAGE_H = 405;
 const MIN_W = 400;
@@ -73,14 +81,20 @@ const MAX_W = 960;
 /* icons: the scrubber's two styles, and Zoom */
 const ICON_TICKS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><path d="M2 2v8M5 4v6M8 1v9M11 5v5M14 3v7" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>';
 const ICON_THUMBS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><rect x="1" y="1" width="14" height="10" rx="1" stroke="currentColor" stroke-width="1.2" fill="none"/><circle cx="11" cy="4" r="1.3" fill="currentColor"/><path d="M2.5 9.5l3.5-4 2.5 2.5 1.5-1.5 3 3z" fill="currentColor"/></svg>';
+const ICON_MUTED = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path d="M11 6l4 4M15 6l-4 4" stroke="currentColor" stroke-width="1.5"/></svg>';
+const ICON_SOUND = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path d="M11 5.5c1.2 1.2 1.2 3.8 0 5M13 3.5c2.2 2.4 2.2 6.6 0 9" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>';
 const ICON_ZOOM = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10 10l4.5 4.5M4.5 6.5h4M6.5 4.5v4" stroke="currentColor" stroke-width="1.5"/></svg>';
 
 const btn = (a: string, label: string, title: string) =>
   `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
 
-/** Builds the player into `el` (the popup) for a frame at `start`; returns
- * its teardown. `place` re-positions the popup once the image has a size. */
-export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, place: () => void, close: () => void = () => {}): () => void {
+/** Builds the player into `el` (the popup) at `startTs`, showing `start`
+ * (the frame clicked; null for a clip's slot, M10c) until the slot loads;
+ * returns its teardown. `place` re-positions the popup once the image or
+ * video has a size. */
+export function mountPlayer(
+  el: HTMLElement, start: Frame | null, ctx: PlayerContext, place: () => void, close: () => void = () => {}, startTs = start?.ts ?? 0
+): () => void {
   const prefs = loadPrefs(ctx);
   el.classList.add('player');
   // the static on top (what this is, Zoom, close); the playback below (the
@@ -102,6 +116,7 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     btn('next-slot', '››', 'Next slot (Shift+→)') +
     '</span>' +
     '<span class="opts">' +
+    btn('mute', '', 'Sound') + btn('hd', 'HD', 'Video quality') +
     btn('style-ticks', ICON_TICKS, 'Scrubber: a tick per frame') + btn('style-thumbs', ICON_THUMBS, 'Scrubber: the frames as pictures') +
     btn('fps', '', 'Speed') +
     '</span>' +
@@ -109,8 +124,13 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   // the image goes in with its source already set
   const img = document.createElement('img');
   img.alt = 'frame';
-  img.src = start.url;
-  el.querySelector('.stage')!.prepend(img);
+  if (start) {img.src = start.url;}
+  // a clip plays here, over the image (M10c)
+  const video = document.createElement('video');
+  video.muted = prefs.muted;
+  video.playsInline = true;
+  video.preload = 'metadata';
+  el.querySelector('.stage')!.prepend(img, video);
   const stateEl = el.querySelector<HTMLElement>('.stage .state')!;
   const scrub = el.querySelector<HTMLElement>('.scrub')!;
   const lanes = el.querySelector<HTMLElement>('.lanes')!;
@@ -122,11 +142,18 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   const b = (a: string) => el.querySelector<HTMLButtonElement>(`button[data-a="${a}"]`)!;
 
   /* the slot the player is in, as a reel; the playhead */
-  const firstSlot: PlayerSlot = ctx.slotAt(start.ts) ?? { from: start.ts - ctx.step / 2, to: start.ts + ctx.step / 2, ts: start.ts };
-  let reel = new Reel(ctx, firstSlot, start);
-  let t = start.ts;
+  const firstSlot: PlayerSlot = ctx.slotAt(startTs) ?? { from: startTs - ctx.step / 2, to: startTs + ctx.step / 2, ts: startTs };
+  let reel = new Reel(ctx, firstSlot, start ?? undefined);
+  let t = startTs;
   let playing = false;
-  let timer: ReturnType<typeof setInterval> | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  /* the clip in the video element, and where to seek it once it can */
+  let vidClip: Clip | null = null;
+  let vidSrc = '';
+  let pendingT: number | null = null;
+  /* the video is playing, and moves the playhead (not the other way round) */
+  let driving = false;
+  let raf = 0;
   let hiTimer: ReturnType<typeof setTimeout> | null = null;
   let gone = false;
 
@@ -144,10 +171,20 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     b('style-thumbs').setAttribute('aria-pressed', String(prefs.style === 'thumbs'));
     b('play').textContent = playing ? '❚❚' : '▶';
     const n = reel.stops(most()).length;
-    b('play').disabled = n < 2;
-    b('play').title = n < 2 ? 'One frame in this slot: nothing to play' : playing ? 'Pause (Space)' : 'Play this slot (Space)';
+    const can = reel.playable(most());
+    b('play').disabled = !can;
+    b('play').title = !can ? 'One frame in this slot: nothing to play' : playing ? 'Pause (Space)' : 'Play this slot (Space)';
     b('prev').disabled = b('next').disabled = n < 2;
     el.classList.toggle('thumbs', prefs.style === 'thumbs');
+    // the video's own controls, while the slot has a clip
+    const clips = reel.clipSpans();
+    el.classList.toggle('has-clip', clips.length > 0);
+    el.classList.toggle('has-hi', clips.some((c) => !!c.clip.hi));
+    b('mute').innerHTML = prefs.muted ? ICON_MUTED : ICON_SOUND;
+    b('mute').title = prefs.muted ? 'Unmute the video' : 'Mute the video';
+    b('mute').setAttribute('aria-label', b('mute').title);
+    b('hd').setAttribute('aria-pressed', String(prefs.hd));
+    b('hd').title = prefs.hd ? 'Playing the larger video: switch to the smaller' : 'Playing the smaller video: switch to the larger';
   }
 
   /* the slot's timeline: its stretches, a tick per frame shown, and (as
@@ -166,6 +203,15 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
       d.style.width = Math.max(0, Math.min(100, xOf(iv.to)) - Math.max(0, xOf(iv.from))) + '%';
       lanes.appendChild(d);
     }
+    // a clip's part: a plain bar, the video's own timeline
+    for (const c of reel.clipSpans()) {
+      const d = document.createElement('div');
+      d.className = 'lane clip';
+      d.title = 'video';
+      d.style.left = Math.max(0, xOf(c.from)) + '%';
+      d.style.width = Math.max(0, Math.min(100, xOf(c.to)) - Math.max(0, xOf(c.from))) + '%';
+      lanes.appendChild(d);
+    }
     ticks.textContent = '';
     for (const f of reel.shown(most())) {
       const k = document.createElement('div');
@@ -176,7 +222,8 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     thumbs.textContent = '';
     if (prefs.style !== 'thumbs') {return;}
     const fs = reel.shown(Math.max(4, Math.floor(width() / THUMB_PX)));
-    const gaps = reel.gaps();
+    // where a picture stops: a gap or a clip
+    const gaps = [...reel.gaps(), ...reel.clipSpans()].sort((a, z) => a.from - z.from);
     const cell = (f: Frame, from: number, to: number, prior = false) => {
       const c = document.createElement('div');
       c.className = 'thumb' + (prior ? ' prior' : '');
@@ -204,6 +251,18 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   function show(): void {
     head.style.left = xOf(t) + '%';
     const at = reel.at(t);
+    if (at.span) {
+      el.classList.add('video');
+      el.classList.remove('off');
+      stateEl.textContent = '';
+      showClip(at.span.clip);
+      caption(null);
+      return;
+    }
+    if (el.classList.contains('video')) {
+      el.classList.remove('video');
+      stopVideo();
+    }
     const f = at.frame;
     el.classList.toggle('off', at.gap);
     stateEl.textContent = at.kind === 'dropped' ? 'offline' : at.kind === 'nodata' ? 'no frame'
@@ -224,6 +283,36 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
       }, 300);
     }
   }
+
+  /* the clip at the playhead in the video element, seeked to t (once it
+   * knows its length): the larger version, when HD and the clip has one */
+  function showClip(c: Clip): void {
+    const src = prefs.hd && c.hi ? c.hi : c.url;
+    if (src !== vidSrc) {
+      vidClip = c;
+      vidSrc = src;
+      pendingT = t;
+      video.src = src;
+      return;
+    }
+    if (driving) {return;}
+    if (video.readyState >= 1 && video.duration > 0) {video.currentTime = videoTime(c, t, video.duration);}
+    else {pendingT = t;}
+  }
+  video.addEventListener('loadedmetadata', () => {
+    if (gone) {return;}
+    size(video.videoWidth, video.videoHeight);
+    place();
+    if (vidClip && pendingT !== null && video.duration > 0) {video.currentTime = videoTime(vidClip, pendingT, video.duration);}
+    pendingT = null;
+  });
+  // a larger version that won't play: the smaller one
+  video.addEventListener('error', () => {
+    if (gone || !vidClip || !vidClip.hi || vidSrc !== vidClip.hi) {return;}
+    vidSrc = vidClip.url;
+    pendingT = t;
+    video.src = vidClip.url;
+  });
 
   /* the title (and how many of the slot's frames are shown, when not all),
    * and the time of what's shown: the frame's own, or a gap's start */
@@ -261,13 +350,31 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     seek(at);
   }
 
+  function stopVideo(): void {
+    driving = false;
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    if (!video.paused) {video.pause();}
+  }
   function stop(): void {
     playing = false;
-    if (timer) { clearInterval(timer); timer = null; }
+    if (timer) { clearTimeout(timer); timer = null; }
+    stopVideo();
     labels();
   }
-  /* the next stop in the slot (a frame, or a gap with its reason), round and round */
-  function tick(): void {
+  /* playing: a clip at the playhead plays to the end of its part; anything
+   * else is shown for a frame's time; then on to the next stop */
+  function run(): void {
+    if (!playing || gone) {return;}
+    const span = reel.clipAt(t);
+    // a part too short to watch (a slot's sliver of a timelapse) is shown
+    // for a frame's time, as a still
+    const d = video.duration;
+    if (span && !(d > 0 && videoTime(span.clip, span.to, d) - videoTime(span.clip, span.from, d) < MIN_CLIP_S)) { playSpan(span); return; }
+    timer = setTimeout(() => { timer = null; advance(); }, 1000 / prefs.fps);
+  }
+  /* the next stop in the slot (a frame, a gap with its reason, or a clip),
+   * round and round */
+  function advance(): void {
     const next = reel.cycle(t, most());
     if (next === null) { stop(); return; }
     seek(next);
@@ -275,12 +382,38 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     const fs = reel.shown(most());
     const j = fs.findIndex((f) => f.ts > t);
     for (let k = 0; k < 3 && fs.length; k++) { const p = new Image(); p.src = fs[((j < 0 ? 0 : j) + k) % fs.length].url; }
+    run();
+  }
+  /* the video plays its part of the slot, and the playhead follows it */
+  function playSpan(span: ClipSpan): void {
+    driving = true;
+    const follow = () => {
+      raf = 0;
+      if (!playing || gone || !driving) {return;}
+      const d = video.duration;
+      if (d > 0) {
+        t = Math.max(span.from, clipTime(span.clip, video.currentTime, d));
+        head.style.left = xOf(t) + '%';
+        caption(null);
+      }
+      if (video.ended || t >= span.to - 1) { stopVideo(); advance(); return; }
+      raf = requestAnimationFrame(follow);
+    };
+    const go = () => {
+      if (!playing || gone || !driving) {return;}
+      video.muted = prefs.muted;
+      // sound needs a press: refused, it plays muted
+      playVideo(video).catch(() => { video.muted = true; return playVideo(video); }).catch(() => stop());
+      raf = requestAnimationFrame(follow);
+    };
+    if (video.readyState >= 1 && pendingT === null) {go();}
+    else {video.addEventListener('loadedmetadata', () => setTimeout(go, 0), { once: true });}
   }
   function play(): void {
-    if (playing || reel.stops(most()).length < 2) {return;}
+    if (playing || !reel.playable(most())) {return;}
     playing = true;
     labels();
-    timer = setInterval(tick, 1000 / prefs.fps);
+    run();
   }
 
   /* the neighbouring slot: the frame the strip shows for it, and the
@@ -308,6 +441,20 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
       }
       case 'prev-slot': stop(); toSlot(-1); break;
       case 'next-slot': stop(); toSlot(1); break;
+      case 'mute':
+        prefs.muted = !prefs.muted; savePrefs(prefs);
+        video.muted = prefs.muted;
+        labels();
+        break;
+      case 'hd': {
+        prefs.hd = !prefs.hd; savePrefs(prefs);
+        const was = playing;
+        stop();
+        show();
+        if (was) {play();}
+        labels();
+        break;
+      }
       case 'fps': prefs.fps = FPS[(FPS.indexOf(prefs.fps) + 1) % FPS.length]; savePrefs(prefs); if (playing) { stop(); play(); } labels(); break;
       // the same frames either way: only how they're drawn changes
       case 'style-ticks': case 'style-thumbs': {
@@ -355,10 +502,10 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
    * controls a taller one. Then it stays that size, whatever it shows. */
   let sized = false;
   const stage = el.querySelector<HTMLElement>('.stage')!;
-  function size(): void {
-    if (sized || !img.naturalWidth || !img.naturalHeight) {return;}
+  function size(nw: number, nh: number): void {
+    if (sized || !nw || !nh) {return;}
     sized = true;
-    const aspect = img.naturalWidth / img.naturalHeight;
+    const aspect = nw / nh;
     const pad = 12 + 2;   // the popup's padding and border
     const maxW = Math.min(MAX_W, window.innerWidth * 0.92) - pad;
     let h = Math.min(STAGE_H, window.innerHeight * 0.55);
@@ -370,16 +517,19 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     drawScrub();   // as many as the new width holds
     show();
   }
-  img.onload = () => { size(); place(); };
+  img.onload = () => { size(img.naturalWidth, img.naturalHeight); place(); };
   img.onerror = () => { if (img.dataset.hiOf) { img.src = img.dataset.hiOf; delete img.dataset.hiOf; } };
-  if (img.complete) { size(); place(); }
+  if (start && img.complete) { size(img.naturalWidth, img.naturalHeight); place(); }
   labels();
   caption(start);
-  void load(start.ts);
+  void load(startTs);
 
   return () => {
     gone = true;
     stop();
+    // let go of the video's download
+    video.removeAttribute('src');
+    video.load();
     if (hiTimer) {clearTimeout(hiTimer);}
     document.removeEventListener('keydown', keyH);
   };

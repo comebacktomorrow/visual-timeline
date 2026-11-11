@@ -1,5 +1,5 @@
 import { buildIntervals } from './intervals';
-import { Reel, type ReelSource } from './reel';
+import { clipTime, Reel, videoTime, type ReelSource } from './reel';
 import type { Frame } from '../types';
 
 const MIN = 60e3;
@@ -62,5 +62,45 @@ describe('a slot\'s reel', () => {
     const second = r.load(100);
     expect(await first).toBe(false);
     expect(await second).toBe(true);
+  });
+});
+
+describe('a slot\'s reel with a video clip (M10c)', () => {
+  // a clip over 12-16: it plays over the stills 13-15, and covers part of the gap
+  const clip = { from: at(12), to: at(16), url: 'c.mp4' };
+  const withClip = (clips = [clip]) => source({ clips: async (from, to) => clips.filter((c) => c.to > from && c.from < to) });
+
+  test('the clip plays over the stills under it, and over the gap', async () => {
+    const r = new Reel(withClip(), slot);
+    await r.load(100);
+    expect(r.clipSpans().map((c) => [c.from / MIN, c.to / MIN])).toEqual([[12, 16]]);
+    expect(r.inSlot().map((f) => f.url)).toEqual(['f16', 'f17', 'f18', 'f19']);
+    expect(r.total()).toBe(4);
+    expect(r.gaps().map((g) => [g.kind, g.from / MIN, g.to / MIN])).toEqual([['dropped', 10, 12]]);
+    expect(r.stops(100).map((t) => t / MIN)).toEqual([10, 12, 16, 17, 18, 19]);
+    expect(r.at(at(14))).toMatchObject({ kind: 'clip', gap: false, span: { clip } });
+    expect(r.at(at(17)).frame!.url).toBe('f17');
+  });
+
+  test('a slot that is all clip plays, and its one stop comes round again', async () => {
+    const r = new Reel(withClip([{ from: at(9), to: at(21), url: 'all.mp4' }]), slot);
+    await r.load(100);
+    expect(r.stops(100).map((t) => t / MIN)).toEqual([10]);
+    expect(r.playable(100)).toBe(true);
+    expect(r.cycle(at(15), 100)! / MIN).toBe(10);
+  });
+
+  test('overlapping clips: the later from its start', async () => {
+    const r = new Reel(withClip([{ from: at(10), to: at(18), url: 'a' }, { from: at(14), to: at(20), url: 'b' }]), slot);
+    await r.load(100);
+    expect(r.clipSpans().map((c) => [c.clip.url, c.from / MIN, c.to / MIN])).toEqual([['a', 10, 14], ['b', 14, 20]]);
+  });
+
+  test('a time in a clip is its fraction of the video, real time or timelapse alike', () => {
+    const day = { from: 0, to: 864e5, url: 'day.mp4' };
+    expect(videoTime(day, 432e5, 7)).toBeCloseTo(3.5);
+    expect(clipTime(day, 3.5, 7)).toBeCloseTo(432e5);
+    expect(videoTime(day, -5, 7)).toBe(0);
+    expect(clipTime(day, 99, 7)).toBe(864e5);
   });
 });

@@ -60,6 +60,8 @@ interface VisualTimelineOptions {
   hostField?: string;
   siteField?: string;
   previewField?: string;
+  /** A video clip's URL (M10c). */
+  videoField?: string;
   /** State fields (#126, M4): which field holds each host's state. */
   stateField?: string;
   cadenceField?: string;
@@ -196,7 +198,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
    * knows about each host (history, time zone, tags). */
   const roles: FieldRoles = {
     time: options.timeField, image: options.imageField, host: options.hostField,
-    site: options.siteField, preview: options.previewField, cadence: options.cadenceField,
+    site: options.siteField, preview: options.previewField, cadence: options.cadenceField, video: options.videoField,
   };
   const records = recordsFromSeries(props.data?.series, roles);
   // keyed on content, as above: a host's frames only ever grow, so its count
@@ -621,6 +623,13 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       name: 'Preview image',
       category: ['Frame fields'],
       description: 'Optional: a larger image for the click-in preview. Empty: a field named image_hi or preview; without one, the image itself.',
+      settings: { filter: (f) => f.type === FieldType.string },
+    })
+    .addFieldNamePicker({
+      path: 'videoField',
+      name: 'Video',
+      category: ['Frame fields'],
+      description: 'Optional: a video clip that starts at the row\'s time; the click-in preview plays it over the frames. Empty: a field named video. Its end: a video_end field, else a video_duration (ms), else the typical clip.',
       settings: { filter: (f) => f.type === FieldType.string },
     })
     .addFieldNamePicker({

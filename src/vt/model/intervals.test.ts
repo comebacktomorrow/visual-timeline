@@ -185,3 +185,20 @@ describe('pauses', () => {
     expect(brief(r.intervals)).toEqual([[0, 1, 'frame', 'f0.jpg'], [1, 8, 'paused'], [8, 10, 'beyond']]);
   });
 });
+
+describe('video clips (M10c)', () => {
+  const clip = (a: number, b: number) => ({ from: at(a), to: at(b), url: `c${a}.mp4` });
+  it('a clip covers what would be no data; frames still win', () => {
+    // no promise; a fixed hold, so where no data starts is plain
+    const r = build({ frames: [fr(0), fr(1), fr(40)], hold: 5 * M, clips: [clip(10, 30), clip(30, 50)] });
+    expect(brief(r.intervals)).toEqual([
+      [0, 1, 'frame', 'f0.jpg'], [1, 6, 'frame', 'f1.jpg'], [6, 10, 'nodata'],
+      [10, 30, 'clip'], [30, 40, 'clip'], [40, 45, 'frame', 'f40.jpg'], [45, 50, 'clip'], [50, 60, 'nodata'],
+    ]);
+    expect(r.intervals[3].clip!.url).toBe('c10.mp4');
+  });
+  it('a broken promise is still dropped: a promise is about frames', () => {
+    const r = build({ frames: [fr(0)], promiseAt: () => M, clips: [clip(0, 60)] });
+    expect(brief(r.intervals).map((x) => x[2])).toEqual(['frame', 'pending', 'dropped']);
+  });
+});

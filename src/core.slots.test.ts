@@ -83,6 +83,7 @@ describe('slotClass', () => {
     // the core knows no reasons: a pause is its label and colour
     [{ ts: 0, span: 1, paused: true, reason: 'screen-sleep', intended: false }, ' paused'],
     [{ ts: 0, span: 1, paused: true, label: 'Down', color: '#f00' }, ' paused tinted'],
+    [{ ts: 0, span: 1, frame: null, future: false, nodata: true, clip: { from: 0, to: 1, url: 'c' } }, ' clip'],
   ])('%p → %p', (sl, cls) => {
     expect(slotClass(sl)).toBe(cls);
   });
@@ -297,5 +298,31 @@ describe("the panel's Expected cadence", () => {
     // the source says 10 minutes; the panel expects one a minute
     const m = await build(decl({ cadence: 10 * MIN }), P, backendWith(have), BUDGET, { expected: MIN });
     expect(view(m.slots).filter(([, c]) => c === 'gap')).not.toHaveLength(0);
+  });
+});
+
+describe('buildSourceModel: video clips (M10c)', () => {
+  test('a host with only clips: clip slots where they cover, no data elsewhere', async () => {
+    now = T0 + 120 * MIN;
+    const P = { from: T0, to: T0 + 120 * MIN };
+    const backend = {
+      frames: () => Promise.resolve([]),
+      clips: () => Promise.resolve([{ from: T0 + 30 * MIN, to: T0 + 60 * MIN, url: 'a.mp4' }, { from: T0 + 60 * MIN, to: T0 + 90 * MIN, url: 'b.mp4' }]),
+    };
+    const m = await build(decl({ cadence: 30 * MIN, inferred: true }), P, backend, 4);
+    tiles(m, P);
+    // each slot read at its tick: the one at 90 is past b's end
+    expect(view(m.slots)).toEqual([[0, 'gap nodata'], [30, 'clip'], [60, 'clip'], [90, 'gap nodata'], [120, 'gap nodata']]);
+    expect(m.slotAt(T0 + 40 * MIN).clip.url).toBe('a.mp4');
+    expect(m.slotAt(T0 + 70 * MIN).clip.url).toBe('b.mp4');
+  });
+
+  test('the live poll brings new clips', async () => {
+    now = T0 + 60 * MIN;
+    const P = { from: T0, to: T0 + 60 * MIN };
+    const m = await build(decl({ cadence: 30 * MIN, inferred: true }), P, { frames: () => Promise.resolve([]) }, 4);
+    expect(m.slots.some((sl: any) => sl.clip)).toBe(false);
+    (m.refresh as any)([], now, [{ from: T0, to: T0 + 60 * MIN, url: 'a.mp4' }]);
+    expect(m.slots.every((sl: any) => sl.clip)).toBe(true);
   });
 });
