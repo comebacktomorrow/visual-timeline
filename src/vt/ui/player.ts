@@ -1,45 +1,31 @@
 import { pauseInfo } from '../model/eras';
-import type { Interval } from '../model/intervals';
-import { frameIndexAt } from '../model/playhead';
+import { Reel, type ReelSlot, type ReelSource } from '../model/reel';
 import type { ZoneTexts } from '../zones/source';
 import type { Frame, TimeWindow } from '../types';
 
 /* The preview player (M10): the click-in preview, with the slot's own
  * timeline under it. A slot of the strip can show one frame; the player shows
- * the rest. Its scrubber spans just the current slot: a tick per frame taken
- * within it, at its true time (or the frames themselves, as thumbnails),
- * over the stretches the strip draws (dropped, no data, pauses). Hovering,
- * clicking, dragging, previous and next and Play all stay within the slot,
- * and the dashboard's crosshair stays still; stepping and playing stop on a
- * gap too, showing its reason. Only ‹‹ ›› (Shift+←/→) move to the
- * neighbouring slot, and the crosshair with it; Zoom sets the dashboard's
- * range to the slot. Only the frame under the playhead loads, and the slot's
- * frames while it plays. */
+ * the rest, from the slot's reel (model/reel.ts, which the hover flipbook
+ * plays too). Its scrubber spans just the current slot: a tick per frame at
+ * its true time (and, as thumbnails, the frames themselves), over the
+ * stretches the strip draws (dropped, no data, pauses). Hovering, clicking,
+ * dragging, previous and next and Play all stay within the slot, and the
+ * dashboard's crosshair stays still; stepping and playing stop on a gap too,
+ * showing its reason. Only ‹‹ ›› (Shift+←/→) move to the neighbouring slot,
+ * and the crosshair with it; Zoom sets the dashboard's range to the slot.
+ * Only the frame under the playhead loads, and the slot's frames while it
+ * plays. */
 
 export type ScrubStyle = 'ticks' | 'thumbs';
 
-/** A slot of the host's strip, as the player needs it: its span, its tick,
- * and the frame the strip shows for it. */
-export interface PlayerSlot {
-  from: number;
-  to: number;
-  ts: number;
-  frameTs?: number;
-}
+/** A slot of the host's strip, as the player needs it. */
+export type PlayerSlot = ReelSlot;
 
-/** What the player needs from the mount that opened it. */
-export interface PlayerContext {
+/** What the player needs from the mount that opened it: where the slot's
+ * frames come from (a reel's source), and the mount around it. */
+export interface PlayerContext extends ReelSource {
   /** the dashboard's window */
   window: TimeWindow;
-  /** the host's slot duration */
-  step: number;
-  /** the host's frames in [from, to], as the mount has them (perhaps thinned) */
-  fetch(from: number, to: number): Promise<Frame[]>;
-  /** one slot's frames, asking again if need be: at most maxPoints, thinned
-   * by the source (with counts) */
-  detail?(from: number, to: number, maxPoints?: number): Promise<Frame[]>;
-  /** the intervals for frames over a range (the host's promise and pauses) */
-  intervals(frames: Frame[], range: TimeWindow, sample?: number): Interval[];
   /** the strip's slot at a time */
   slotAt(t: number): PlayerSlot | null;
   /** the player moved to another slot: the mount moves its crosshair */
@@ -47,7 +33,7 @@ export interface PlayerContext {
   /** set the dashboard's time range to a span (the timeline's drag-zoom) */
   onZoom?(from: number, to: number): void;
   tt: ZoneTexts;
-  /** what the caption names: "site / host" */
+  /** what the title names: "site / host" */
   label?: string;
   /** the panel's default scrubber style; the viewer's last choice wins */
   scrubber?: ScrubStyle;
@@ -70,9 +56,11 @@ function savePrefs(p: Prefs): void {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* private mode: the choice lasts this preview */ }
 }
 
-/* A slot can hold more frames than its timeline can tell apart: it draws at
- * most a tick per TICK_PX and a thumbnail per THUMB_PX, evenly through the
- * slot, and steps and plays through those. Zoom shows them all. */
+/* A slot can hold more frames than its timeline can tell apart. It shows at
+ * most a frame per TICK_PX, evenly through the slot, whichever the style:
+ * those are its ticks, what it steps and plays through, and what it fetches
+ * (no finer). As thumbnails, a picture per THUMB_PX of them. Zoom shows
+ * them all. */
 const TICK_PX = 2;
 const THUMB_PX = 48;
 /* the popup's size (size() in mountPlayer) */
@@ -80,9 +68,10 @@ const STAGE_H = 405;
 const MIN_W = 400;
 const MAX_W = 960;
 
-/* the scrubber's two styles, as icons */
+/* icons: the scrubber's two styles, and Zoom */
 const ICON_TICKS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><path d="M2 2v8M5 4v6M8 1v9M11 5v5M14 3v7" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>';
-const ICON_THUMBS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><rect x="1" y="2" width="4" height="8" fill="currentColor"/><rect x="6" y="2" width="4" height="8" fill="currentColor" opacity=".7"/><rect x="11" y="2" width="4" height="8" fill="currentColor" opacity=".45"/></svg>';
+const ICON_THUMBS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><rect x="1" y="1" width="14" height="10" rx="1" stroke="currentColor" stroke-width="1.2" fill="none"/><circle cx="11" cy="4" r="1.3" fill="currentColor"/><path d="M2.5 9.5l3.5-4 2.5 2.5 1.5-1.5 3 3z" fill="currentColor"/></svg>';
+const ICON_ZOOM = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10 10l4.5 4.5M4.5 6.5h4M6.5 4.5v4" stroke="currentColor" stroke-width="1.5"/></svg>';
 
 const btn = (a: string, label: string, title: string) =>
   `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
@@ -96,7 +85,7 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   // frame's time, the transport, how the timeline draws and its speed)
   el.innerHTML =
     '<div class="top">' +
-    (ctx.onZoom ? btn('zoom', 'Zoom', 'Zoom the dashboard to this slot') : '<span></span>') +
+    (ctx.onZoom ? btn('zoom', ICON_ZOOM, 'Zoom the dashboard to this slot') : '<span></span>') +
     '<span class="title"></span>' +
     btn('close', '✕', 'Close (Esc)') +
     '</div>' +
@@ -111,7 +100,7 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     btn('next-slot', '››', 'Next slot (Shift+→)') +
     '</span>' +
     '<span class="opts">' +
-    btn('style-ticks', ICON_TICKS, 'Scrubber: a tick per frame') + btn('style-thumbs', ICON_THUMBS, 'Scrubber: the frames themselves') +
+    btn('style-ticks', ICON_TICKS, 'Scrubber: a tick per frame') + btn('style-thumbs', ICON_THUMBS, 'Scrubber: the frames as pictures') +
     btn('fps', '', 'Speed') +
     '</span>' +
     '</div>';
@@ -130,64 +119,40 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   const timeEl = el.querySelector<HTMLElement>('.time')!;
   const b = (a: string) => el.querySelector<HTMLButtonElement>(`button[data-a="${a}"]`)!;
 
-  /* the slot the player is in, and the frames taken within it (plus the one
-   * in force at its start, for what shows before its first) */
-  let slot: PlayerSlot = ctx.slotAt(start.ts) ?? { from: start.ts - ctx.step / 2, to: start.ts + ctx.step / 2, ts: start.ts };
-  let frames: Frame[] = [start];
-  let ivs: Interval[] = [];
+  /* the slot the player is in, as a reel; the playhead */
+  const firstSlot: PlayerSlot = ctx.slotAt(start.ts) ?? { from: start.ts - ctx.step / 2, to: start.ts + ctx.step / 2, ts: start.ts };
+  let reel = new Reel(ctx, firstSlot, start);
   let t = start.ts;
   let playing = false;
   let timer: ReturnType<typeof setInterval> | null = null;
   let hiTimer: ReturnType<typeof setTimeout> | null = null;
-  let loadSeq = 0;
   let gone = false;
 
-  const span = () => Math.max(1, slot.to - slot.from);
-  const xOf = (ts: number) => ((ts - slot.from) / span()) * 100;
-  const inSlot = () => frames.filter((f) => f.ts >= slot.from && f.ts < slot.to);
-  /* the slot's frames the timeline draws: all of them, or evenly through
-   * the slot when there are more than it can tell apart */
-  const most = () => Math.max(4, Math.floor((scrub.clientWidth || 560) / (prefs.style === 'thumbs' ? THUMB_PX : TICK_PX)));
-  const shown = (): Frame[] => {
-    const fs = inSlot();
-    const n = most();
-    if (fs.length <= n) {return fs;}
-    const out: Frame[] = [];
-    for (let i = 0; i < n; i++) {out.push(fs[Math.floor((i * fs.length) / n)]);}
-    return out;
-  };
-  /* the slot's stops, in time order: each frame, and the start of each
-   * stretch without one (dropped, no data, a pause), so stepping and playing
-   * show a gap with its reason instead of skipping it */
-  const stops = (): number[] => {
-    const out = new Set(shown().map((f) => f.ts));
-    for (const iv of ivs) {
-      if (iv.kind === 'dropped' || iv.kind === 'nodata' || iv.kind === 'paused') {
-        const from = Math.max(iv.from, slot.from);
-        if (from < slot.to) {out.add(from);}
-      }
-    }
-    return [...out].sort((a, z) => a - z);
-  };
+  const width = () => scrub.clientWidth || 560;
+  /* how many of the slot's frames it shows: the same in either style */
+  const most = () => Math.max(4, Math.floor(width() / TICK_PX));
+  const slot = () => reel.slot;
+  const span = () => Math.max(1, slot().to - slot().from);
+  const xOf = (ts: number) => ((ts - slot().from) / span()) * 100;
 
   function labels(): void {
     b('fps').textContent = prefs.fps + ' fps';
     b('style-ticks').setAttribute('aria-pressed', String(prefs.style === 'ticks'));
     b('style-thumbs').setAttribute('aria-pressed', String(prefs.style === 'thumbs'));
     b('play').textContent = playing ? '❚❚' : '▶';
-    const n = stops().length;
+    const n = reel.stops(most()).length;
     b('play').disabled = n < 2;
     b('play').title = n < 2 ? 'One frame in this slot: nothing to play' : playing ? 'Pause (Space)' : 'Play this slot (Space)';
     b('prev').disabled = b('next').disabled = n < 2;
     el.classList.toggle('thumbs', prefs.style === 'thumbs');
   }
 
-  /* the slot's timeline: its stretches, a tick per frame, or the frames
-   * themselves, each as wide as it stands */
+  /* the slot's timeline: its stretches, a tick per frame shown, and (as
+   * thumbnails) pictures of them, each running to the next one drawn or to
+   * the stretch without a frame after it */
   function drawScrub(): void {
     lanes.textContent = '';
-    for (const iv of ivs) {
-      if (iv.kind === 'frame' || iv.kind === 'pending' || iv.kind === 'beyond') {continue;}
+    for (const iv of reel.gaps()) {
       const d = document.createElement('div');
       d.className = 'lane ' + iv.kind;
       if (iv.kind === 'paused') {
@@ -198,72 +163,60 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
       d.style.width = Math.max(0, Math.min(100, xOf(iv.to)) - Math.max(0, xOf(iv.from))) + '%';
       lanes.appendChild(d);
     }
-    const fs = shown();
     ticks.textContent = '';
-    for (const f of fs) {
+    for (const f of reel.shown(most())) {
       const k = document.createElement('div');
       k.className = 'tick';
       k.style.left = xOf(f.ts) + '%';
       ticks.appendChild(k);
     }
     thumbs.textContent = '';
-    if (prefs.style === 'thumbs') {
-      // before the slot's first frame, the one still in force from before it, dimmed
-      const prior = frames.filter((f) => f.ts < slot.from).pop();
-      const firstTs = fs.length ? fs[0].ts : slot.to;
-      if (prior && firstTs > slot.from) {
-        const cell = document.createElement('div');
-        cell.className = 'thumb prior';
-        cell.style.left = '0%';
-        cell.style.width = xOf(firstTs) + '%';
-        const ti = document.createElement('img');
-        ti.alt = '';
-        ti.src = prior.url;
-        cell.appendChild(ti);
-        thumbs.appendChild(cell);
-      }
-      fs.forEach((f, i) => {
-        // up to the next thumbnail drawn, or the first stretch without a
-        // frame before it (a broken promise, a hold that ends, a pause), so
-        // those show and nothing else does
-        const next = i + 1 < fs.length ? fs[i + 1].ts : slot.to;
-        const gap = ivs.find((iv) => (iv.kind === 'dropped' || iv.kind === 'nodata' || iv.kind === 'paused') && iv.from >= f.ts && iv.from < next);
-        const end = gap ? gap.from : next;
-        const cell = document.createElement('div');
-        cell.className = 'thumb';
-        cell.style.left = xOf(f.ts) + '%';
-        cell.style.width = Math.max(0, xOf(end) - xOf(f.ts)) + '%';
-        const ti = document.createElement('img');
-        ti.alt = '';
-        ti.src = f.url;
-        cell.appendChild(ti);
-        thumbs.appendChild(cell);
-      });
-    }
+    if (prefs.style !== 'thumbs') {return;}
+    const fs = reel.shown(Math.max(4, Math.floor(width() / THUMB_PX)));
+    const gaps = reel.gaps();
+    const cell = (f: Frame, from: number, to: number, prior = false) => {
+      const c = document.createElement('div');
+      c.className = 'thumb' + (prior ? ' prior' : '');
+      c.style.left = xOf(from) + '%';
+      c.style.width = Math.max(0, xOf(to) - xOf(from)) + '%';
+      const ti = document.createElement('img');
+      ti.alt = '';
+      ti.src = f.url;
+      c.appendChild(ti);
+      thumbs.appendChild(c);
+    };
+    // before the slot's first frame, the one still in force from before it, dimmed
+    const prior = reel.prior();
+    const firstTs = fs.length ? fs[0].ts : slot().to;
+    const firstGap = gaps.find((g) => g.from <= slot().from);
+    if (prior && firstTs > slot().from && !firstGap) {cell(prior, slot().from, firstTs, true);}
+    fs.forEach((f, i) => {
+      const next = i + 1 < fs.length ? fs[i + 1].ts : slot().to;
+      const gap = gaps.find((g) => g.from >= f.ts && g.from < next);
+      cell(f, f.ts, gap ? gap.from : next);
+    });
   }
 
   /* what the playhead shows: the frame in force at t, and the stretch it's in */
   function show(): void {
     head.style.left = xOf(t) + '%';
-    const j = frameIndexAt(frames, t);
-    const f = j >= 0 ? frames[j] : null;
-    const iv = ivs.find((x) => x.from <= t && t < x.to) || null;
-    const kind = iv ? iv.kind : f ? 'frame' : 'nodata';
-    el.classList.toggle('off', kind === 'dropped' || kind === 'nodata' || kind === 'paused');
-    stateEl.textContent = kind === 'dropped' ? 'offline' : kind === 'nodata' ? 'no frame'
-      : kind === 'paused' ? pauseInfo({ paused: true, label: iv?.pause?.label }).label.toLowerCase() : '';
+    const at = reel.at(t);
+    const f = at.frame;
+    el.classList.toggle('off', at.gap);
+    stateEl.textContent = at.kind === 'dropped' ? 'offline' : at.kind === 'nodata' ? 'no frame'
+      : at.kind === 'paused' ? pauseInfo({ paused: true, label: at.interval?.pause?.label }).label.toLowerCase() : '';
     if (f && img.getAttribute('src') !== f.url && img.dataset.hiOf !== f.url) {
       img.src = f.url;
       delete img.dataset.hiOf;
     }
-    caption(f);
+    caption(at.gap ? null : f);
     // the large image once the playhead settles
     if (hiTimer) {clearTimeout(hiTimer);}
     if (f && f.hi && !playing) {
       const hi = f.hi, lo = f.url;
       hiTimer = setTimeout(() => {
         const pre = new Image();
-        pre.onload = () => { if (!gone && frames[frameIndexAt(frames, t)] === f) { img.src = hi; img.dataset.hiOf = lo; } };
+        pre.onload = () => { if (!gone && reel.at(t).frame === f) { img.src = hi; img.dataset.hiOf = lo; } };
         pre.src = hi;
       }, 300);
     }
@@ -272,56 +225,34 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   /* the title (and how many of the slot's frames are shown, when not all),
    * and the time of what's shown: the frame's own, or a gap's start */
   function caption(f: Frame | null): void {
-    const fs = shown();
-    // the frames the player has for the slot, and how many the slot holds:
-    // more, when the source thinned them (each row's count says how many)
-    const total = inSlot().reduce((a, x) => a + (x.count && x.count > 1 ? x.count : 1), 0);
-    titleEl.textContent = (ctx.label ?? '') + (total > fs.length ? ' (showing ' + fs.length + ' of ' + total + ')' : '');
+    const shown = reel.shown(most()).length;
+    const total = reel.total();
+    titleEl.textContent = (ctx.label ?? '') + (total > shown ? ' (showing ' + shown + ' of ' + total + ')' : '');
     titleEl.title = titleEl.textContent;
-    const at = f && !el.classList.contains('off') ? f.ts : t;
+    const at = f ? f.ts : t;
     timeEl.textContent = ctx.tt.time(at) + ctx.tt.sfx(at);
     // more frames than shown: Zoom shows them all
     const zoom = el.querySelector<HTMLButtonElement>('button[data-a="zoom"]');
     if (zoom) {
-      zoom.classList.toggle('hint', total > fs.length);
-      zoom.title = total > fs.length ? total + ' frames in this slot, ' + fs.length + ' shown: zoom the dashboard to the slot to see them all' : 'Zoom the dashboard to this slot';
+      zoom.classList.toggle('hint', total > shown);
+      const tip = total > shown ? total + ' frames in this slot, ' + shown + ' shown: zoom the dashboard to the slot to see them all' : 'Zoom the dashboard to this slot';
+      zoom.title = tip;
+      zoom.setAttribute('aria-label', tip);
     }
   }
 
   /* the playhead, within the slot: the crosshair doesn't move */
   function seek(to: number): void {
-    t = Math.max(slot.from, Math.min(slot.to - 1, to));
+    t = Math.max(slot().from, Math.min(slot().to - 1, to));
     show();
   }
 
-  /* the slot's frames (at full resolution where the backend can fetch them
-   * again) and its stretches, then the playhead at `at` */
+  /* the slot's frames, no finer than it shows (for it and the slot before),
+   * then the playhead at `at` */
   async function load(at: number): Promise<void> {
-    const seq = ++loadSeq;
-    const range = { from: slot.from, to: slot.to };
-    let got: Frame[] = [];
-    let sample: number | undefined;
-    try {
-      // with the frame in force at the slot's start: at the same resolution as
-      // the slot's (a thinned one from before would read as a broken promise)
-      if (ctx.detail) {
-        // no more than the timeline can draw (and as many for the slot before);
-        // a source may answer one per interval, so promises are judged at it
-        const points = 2 * most();
-        const all = await ctx.detail(range.from - ctx.step, range.to, points);
-        sample = Math.ceil((range.to - range.from + ctx.step) / points);
-        got = [...all.filter((f) => f.ts < range.from).slice(-1), ...all.filter((f) => f.ts >= range.from)];
-      } else {
-        const before = (await ctx.fetch(range.from - ctx.step * 2, range.from)).filter((f) => f.ts < range.from);
-        got = [...before.slice(-1), ...(await ctx.fetch(range.from, range.to))];
-      }
-    } catch (e) { console.warn('[visual-timeline] player fetch failed:', e); }
-    if (gone || seq !== loadSeq) {return;}
-    const byTs = new Map<number, Frame>();
-    for (const f of got) {byTs.set(f.ts, f);}
-    if (start.ts >= range.from && start.ts < range.to && !byTs.has(start.ts)) {byTs.set(start.ts, start);}
-    frames = [...byTs.values()].sort((x, y) => x.ts - y.ts);
-    ivs = ctx.intervals(frames, range, sample);
+    const r = reel;
+    const ok = await r.load(2 * most());
+    if (gone || !ok || r !== reel) {return;}
     drawScrub();
     labels();
     seek(at);
@@ -334,17 +265,16 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   }
   /* the next stop in the slot (a frame, or a gap with its reason), round and round */
   function tick(): void {
-    const st = stops();
-    if (st.length < 2) { stop(); return; }
-    const i = st.findIndex((x) => x > t);
-    seek(st[i < 0 ? 0 : i]);
+    const next = reel.cycle(t, most());
+    if (next === null) { stop(); return; }
+    seek(next);
     // the next few frames load ahead
-    const fs = shown();
+    const fs = reel.shown(most());
     const j = fs.findIndex((f) => f.ts > t);
     for (let k = 0; k < 3 && fs.length; k++) { const p = new Image(); p.src = fs[((j < 0 ? 0 : j) + k) % fs.length].url; }
   }
   function play(): void {
-    if (playing || stops().length < 2) {return;}
+    if (playing || reel.stops(most()).length < 2) {return;}
     playing = true;
     labels();
     timer = setInterval(tick, 1000 / prefs.fps);
@@ -353,12 +283,10 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   /* the neighbouring slot: the frame the strip shows for it, and the
    * dashboard's crosshair moves to it */
   function toSlot(dir: 1 | -1): void {
-    const next = ctx.slotAt(dir > 0 ? slot.to : slot.from - 1);
-    if (!next || next.from === slot.from) {return;}
-    slot = next;
+    const next = ctx.slotAt(dir > 0 ? slot().to : slot().from - 1);
+    if (!next || next.from === slot().from) {return;}
+    reel = new Reel(ctx, next);
     const at = next.frameTs !== undefined && next.frameTs >= next.from && next.frameTs < next.to ? next.frameTs : next.ts;
-    frames = frames.filter((f) => f.ts < next.from).slice(-1);
-    ivs = [];
     drawScrub();
     labels();
     seek(at);
@@ -371,24 +299,21 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
       case 'play': if (playing) {stop();} else {play();} break;
       case 'prev': case 'next': {
         stop();
-        const st = stops();
-        const i = st.findIndex((x) => x > t);
-        const cur = i < 0 ? st.length - 1 : i - 1;
-        const to = st[a === 'next' ? cur + 1 : cur - 1];
-        if (to !== undefined) {seek(to);}
+        const to = reel.step(t, a === 'next' ? 1 : -1, most());
+        if (to !== null) {seek(to);}
         break;
       }
       case 'prev-slot': stop(); toSlot(-1); break;
       case 'next-slot': stop(); toSlot(1); break;
       case 'fps': prefs.fps = FPS[(FPS.indexOf(prefs.fps) + 1) % FPS.length]; savePrefs(prefs); if (playing) { stop(); play(); } labels(); break;
-      // a style draws a different number of frames: ask for that many
+      // the same frames either way: only how they're drawn changes
       case 'style-ticks': case 'style-thumbs': {
         const style: ScrubStyle = a === 'style-ticks' ? 'ticks' : 'thumbs';
         if (style === prefs.style) {break;}
-        prefs.style = style; savePrefs(prefs); labels(); drawScrub(); show(); void load(t);
+        prefs.style = style; savePrefs(prefs); labels(); drawScrub(); show();
         break;
       }
-      case 'zoom': stop(); ctx.onZoom?.(slot.from, slot.to); close(); break;
+      case 'zoom': stop(); ctx.onZoom?.(slot().from, slot().to); close(); break;
     }
   };
   el.addEventListener('click', (e) => {
@@ -400,7 +325,7 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   // a press and drag holds on to it
   const tAt = (clientX: number) => {
     const r = scrub.getBoundingClientRect();
-    return slot.from + Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width))) * span();
+    return slot().from + Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width))) * span();
   };
   scrub.addEventListener('pointermove', (e) => {
     if (playing) {stop();}
@@ -423,8 +348,8 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   /* The popup takes the camera's shape, from its first frame: the image area
    * a fixed height (STAGE_H, or 55% of the window), as wide as the frame
    * needs, between what the controls need and MAX_W (or 92% of the window);
-   * a frame too wide for that gets a shorter area. Then it stays that size,
-   * whatever it shows. */
+   * a frame too wide for that gets a shorter area, one narrower than the
+   * controls a taller one. Then it stays that size, whatever it shows. */
   let sized = false;
   const stage = el.querySelector<HTMLElement>('.stage')!;
   function size(): void {
@@ -436,12 +361,10 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     let h = Math.min(STAGE_H, window.innerHeight * 0.55);
     let w = h * aspect;
     if (w > maxW) { w = maxW; h = w / aspect; }
-    // a frame narrower than the controls (a portrait screen): taller, to
-    // fill more of the width they need
     if (w < MIN_W) { h = Math.min(MIN_W / aspect, STAGE_H * 1.5, window.innerHeight * 0.7); w = h * aspect; }
     el.style.width = Math.round(Math.max(MIN_W, w) + pad) + 'px';
     stage.style.height = Math.round(h) + 'px';
-    drawScrub();   // as many thumbnails as the new width holds
+    drawScrub();   // as many as the new width holds
     show();
   }
   img.onload = () => { size(); place(); };

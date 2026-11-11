@@ -1527,6 +1527,7 @@ var VTCore = (() => {
 .ktl .tile.offline img, .ktl .tile.offline .t-ts { display:none; }
 .ktl .mag.flip::after { content:'\u25B6'; position:absolute; top:3px; left:5px; font-size:9px; line-height:1;
                         color:var(--ktl-accent); text-shadow:0 0 3px rgba(0,0,0,.8); pointer-events:none; }
+.ktl .mag.flip-gap img { opacity:.35; }
 .ktl-pop { position:fixed; z-index:1060; background:var(--ktl-float-bg); border:1px solid var(--ktl-accent);
            border-radius:4px; padding:4px; cursor:zoom-out;
            box-shadow:var(--ktl-shadow); }
@@ -1943,6 +1944,123 @@ var VTCore = (() => {
     return out;
   }
 
+  // src/vt/model/reel.ts
+  var isGap = (k) => k === "dropped" || k === "nodata" || k === "paused";
+  var Reel = class {
+    /** `seed`: a frame to show until the reel loads (the one clicked); it's
+     * not kept once the slot's own frames arrive */
+    constructor(src, slot, seed) {
+      this.src = src;
+      this.slot = slot;
+      /** the slot's frames, and the one in force at its start */
+      this.frames = [];
+      /** the stretches over the slot */
+      this.intervals = [];
+      this.seq = 0;
+      if (seed) {
+        this.frames = [seed];
+      }
+    }
+    /** Fetches the slot: at most `points` frames over it and the slot before
+     * (for the frame in force at its start), judged at the interval they were
+     * asked for at. False when another load started meanwhile. */
+    async load(points) {
+      const seq = ++this.seq;
+      const { from, to } = this.slot;
+      let got = [];
+      let sample2;
+      try {
+        if (this.src.detail) {
+          const n = Math.max(2, Math.floor(points));
+          const all = await this.src.detail(from - this.src.step, to, n);
+          sample2 = Math.ceil((to - from + this.src.step) / n);
+          got = [...all.filter((f) => f.ts < from).slice(-1), ...all.filter((f) => f.ts >= from)];
+        } else {
+          const before = (await this.src.fetch(from - this.src.step * 2, from)).filter((f) => f.ts < from);
+          got = [...before.slice(-1), ...await this.src.fetch(from, to)];
+        }
+      } catch (e) {
+        console.warn("[visual-timeline] fetching a slot's frames failed:", e);
+      }
+      if (seq !== this.seq) {
+        return false;
+      }
+      const byTs = /* @__PURE__ */ new Map();
+      for (const f of got) {
+        byTs.set(f.ts, f);
+      }
+      if (!byTs.size) {
+        for (const f of this.frames) {
+          byTs.set(f.ts, f);
+        }
+      }
+      this.frames = [...byTs.values()].sort((a, z) => a.ts - z.ts);
+      this.intervals = this.src.intervals(this.frames, { from, to }, sample2);
+      return true;
+    }
+    /** the frames taken within the slot */
+    inSlot() {
+      return this.frames.filter((f) => f.ts >= this.slot.from && f.ts < this.slot.to);
+    }
+    /** the frame in force before the slot's first (from before it) */
+    prior() {
+      return this.frames.filter((f) => f.ts < this.slot.from).pop() ?? null;
+    }
+    /** how many frames the slot holds: more than it has when the source thinned
+     * them (each kept frame's count) */
+    total() {
+      return this.inSlot().reduce((a, f) => a + (f.count && f.count > 1 ? f.count : 1), 0);
+    }
+    /** the slot's frames, at most n of them, evenly through it */
+    shown(n) {
+      const fs = this.inSlot();
+      if (fs.length <= n) {
+        return fs;
+      }
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        out.push(fs[Math.floor(i * fs.length / n)]);
+      }
+      return out;
+    }
+    /** the stretches without a frame, within the slot */
+    gaps() {
+      return this.intervals.filter((iv) => isGap(iv.kind) && iv.to > this.slot.from && iv.from < this.slot.to);
+    }
+    /** the stops: each of the n frames shown, and the start of each gap */
+    stops(n) {
+      const out = new Set(this.shown(n).map((f) => f.ts));
+      for (const g of this.gaps()) {
+        out.add(Math.max(g.from, this.slot.from));
+      }
+      return [...out].sort((a, z) => a - z);
+    }
+    /** what's in force at t */
+    at(t) {
+      const j = frameIndexAt(this.frames, t);
+      const frame = j >= 0 ? this.frames[j] : null;
+      const interval = this.intervals.find((x) => x.from <= t && t < x.to) || null;
+      const kind = interval ? interval.kind : frame ? "frame" : "nodata";
+      return { frame, interval, kind, gap: isGap(kind) };
+    }
+    /** the stop `dir` on from t (null at either end) */
+    step(t, dir, n) {
+      const st = this.stops(n);
+      const i = st.findIndex((x) => x > t);
+      const cur = i < 0 ? st.length - 1 : i - 1;
+      return st[dir > 0 ? cur + 1 : cur - 1] ?? null;
+    }
+    /** the next stop from t, round and round (null with fewer than two) */
+    cycle(t, n) {
+      const st = this.stops(n);
+      if (st.length < 2) {
+        return null;
+      }
+      const i = st.findIndex((x) => x > t);
+      return st[i < 0 ? 0 : i];
+    }
+  };
+
   // src/vt/ui/player.ts
   var PREFS_KEY = "ktl-player";
   var FPS = [1, 2, 4, 8, 16];
@@ -1970,13 +2088,14 @@ var VTCore = (() => {
   var MIN_W = 400;
   var MAX_W = 960;
   var ICON_TICKS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><path d="M2 2v8M5 4v6M8 1v9M11 5v5M14 3v7" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>';
-  var ICON_THUMBS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><rect x="1" y="2" width="4" height="8" fill="currentColor"/><rect x="6" y="2" width="4" height="8" fill="currentColor" opacity=".7"/><rect x="11" y="2" width="4" height="8" fill="currentColor" opacity=".45"/></svg>';
+  var ICON_THUMBS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><rect x="1" y="1" width="14" height="10" rx="1" stroke="currentColor" stroke-width="1.2" fill="none"/><circle cx="11" cy="4" r="1.3" fill="currentColor"/><path d="M2.5 9.5l3.5-4 2.5 2.5 1.5-1.5 3 3z" fill="currentColor"/></svg>';
+  var ICON_ZOOM = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10 10l4.5 4.5M4.5 6.5h4M6.5 4.5v4" stroke="currentColor" stroke-width="1.5"/></svg>';
   var btn = (a, label, title) => `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
   function mountPlayer(el, start, ctx, place, close = () => {
   }) {
     const prefs = loadPrefs(ctx);
     el.classList.add("player");
-    el.innerHTML = '<div class="top">' + (ctx.onZoom ? btn("zoom", "Zoom", "Zoom the dashboard to this slot") : "<span></span>") + '<span class="title"></span>' + btn("close", "\u2715", "Close (Esc)") + '</div><div class="stage"><div class="state"></div></div><div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="bar"><span class="time"></span><span class="transport">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame in this slot (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame in this slot (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '</span><span class="opts">' + btn("style-ticks", ICON_TICKS, "Scrubber: a tick per frame") + btn("style-thumbs", ICON_THUMBS, "Scrubber: the frames themselves") + btn("fps", "", "Speed") + "</span></div>";
+    el.innerHTML = '<div class="top">' + (ctx.onZoom ? btn("zoom", ICON_ZOOM, "Zoom the dashboard to this slot") : "<span></span>") + '<span class="title"></span>' + btn("close", "\u2715", "Close (Esc)") + '</div><div class="stage"><div class="state"></div></div><div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="bar"><span class="time"></span><span class="transport">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame in this slot (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame in this slot (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '</span><span class="opts">' + btn("style-ticks", ICON_TICKS, "Scrubber: a tick per frame") + btn("style-thumbs", ICON_THUMBS, "Scrubber: the frames as pictures") + btn("fps", "", "Speed") + "</span></div>";
     const img = document.createElement("img");
     img.alt = "frame";
     img.src = start.url;
@@ -1990,49 +2109,24 @@ var VTCore = (() => {
     const titleEl = el.querySelector(".title");
     const timeEl = el.querySelector(".time");
     const b = (a) => el.querySelector(`button[data-a="${a}"]`);
-    let slot = ctx.slotAt(start.ts) ?? { from: start.ts - ctx.step / 2, to: start.ts + ctx.step / 2, ts: start.ts };
-    let frames = [start];
-    let ivs = [];
+    const firstSlot = ctx.slotAt(start.ts) ?? { from: start.ts - ctx.step / 2, to: start.ts + ctx.step / 2, ts: start.ts };
+    let reel = new Reel(ctx, firstSlot, start);
     let t = start.ts;
     let playing = false;
     let timer = null;
     let hiTimer = null;
-    let loadSeq = 0;
     let gone = false;
-    const span = () => Math.max(1, slot.to - slot.from);
-    const xOf = (ts) => (ts - slot.from) / span() * 100;
-    const inSlot = () => frames.filter((f) => f.ts >= slot.from && f.ts < slot.to);
-    const most = () => Math.max(4, Math.floor((scrub.clientWidth || 560) / (prefs.style === "thumbs" ? THUMB_PX : TICK_PX)));
-    const shown = () => {
-      const fs = inSlot();
-      const n = most();
-      if (fs.length <= n) {
-        return fs;
-      }
-      const out = [];
-      for (let i = 0; i < n; i++) {
-        out.push(fs[Math.floor(i * fs.length / n)]);
-      }
-      return out;
-    };
-    const stops = () => {
-      const out = new Set(shown().map((f) => f.ts));
-      for (const iv of ivs) {
-        if (iv.kind === "dropped" || iv.kind === "nodata" || iv.kind === "paused") {
-          const from = Math.max(iv.from, slot.from);
-          if (from < slot.to) {
-            out.add(from);
-          }
-        }
-      }
-      return [...out].sort((a, z) => a - z);
-    };
+    const width = () => scrub.clientWidth || 560;
+    const most = () => Math.max(4, Math.floor(width() / TICK_PX));
+    const slot = () => reel.slot;
+    const span = () => Math.max(1, slot().to - slot().from);
+    const xOf = (ts) => (ts - slot().from) / span() * 100;
     function labels() {
       b("fps").textContent = prefs.fps + " fps";
       b("style-ticks").setAttribute("aria-pressed", String(prefs.style === "ticks"));
       b("style-thumbs").setAttribute("aria-pressed", String(prefs.style === "thumbs"));
       b("play").textContent = playing ? "\u275A\u275A" : "\u25B6";
-      const n = stops().length;
+      const n = reel.stops(most()).length;
       b("play").disabled = n < 2;
       b("play").title = n < 2 ? "One frame in this slot: nothing to play" : playing ? "Pause (Space)" : "Play this slot (Space)";
       b("prev").disabled = b("next").disabled = n < 2;
@@ -2040,10 +2134,7 @@ var VTCore = (() => {
     }
     function drawScrub() {
       lanes.textContent = "";
-      for (const iv of ivs) {
-        if (iv.kind === "frame" || iv.kind === "pending" || iv.kind === "beyond") {
-          continue;
-        }
+      for (const iv of reel.gaps()) {
         const d = document.createElement("div");
         d.className = "lane " + iv.kind;
         if (iv.kind === "paused") {
@@ -2056,58 +2147,53 @@ var VTCore = (() => {
         d.style.width = Math.max(0, Math.min(100, xOf(iv.to)) - Math.max(0, xOf(iv.from))) + "%";
         lanes.appendChild(d);
       }
-      const fs = shown();
       ticks.textContent = "";
-      for (const f of fs) {
+      for (const f of reel.shown(most())) {
         const k = document.createElement("div");
         k.className = "tick";
         k.style.left = xOf(f.ts) + "%";
         ticks.appendChild(k);
       }
       thumbs.textContent = "";
-      if (prefs.style === "thumbs") {
-        const prior = frames.filter((f) => f.ts < slot.from).pop();
-        const firstTs = fs.length ? fs[0].ts : slot.to;
-        if (prior && firstTs > slot.from) {
-          const cell = document.createElement("div");
-          cell.className = "thumb prior";
-          cell.style.left = "0%";
-          cell.style.width = xOf(firstTs) + "%";
-          const ti = document.createElement("img");
-          ti.alt = "";
-          ti.src = prior.url;
-          cell.appendChild(ti);
-          thumbs.appendChild(cell);
-        }
-        fs.forEach((f, i) => {
-          const next = i + 1 < fs.length ? fs[i + 1].ts : slot.to;
-          const gap = ivs.find((iv) => (iv.kind === "dropped" || iv.kind === "nodata" || iv.kind === "paused") && iv.from >= f.ts && iv.from < next);
-          const end = gap ? gap.from : next;
-          const cell = document.createElement("div");
-          cell.className = "thumb";
-          cell.style.left = xOf(f.ts) + "%";
-          cell.style.width = Math.max(0, xOf(end) - xOf(f.ts)) + "%";
-          const ti = document.createElement("img");
-          ti.alt = "";
-          ti.src = f.url;
-          cell.appendChild(ti);
-          thumbs.appendChild(cell);
-        });
+      if (prefs.style !== "thumbs") {
+        return;
       }
+      const fs = reel.shown(Math.max(4, Math.floor(width() / THUMB_PX)));
+      const gaps = reel.gaps();
+      const cell = (f, from, to, prior2 = false) => {
+        const c = document.createElement("div");
+        c.className = "thumb" + (prior2 ? " prior" : "");
+        c.style.left = xOf(from) + "%";
+        c.style.width = Math.max(0, xOf(to) - xOf(from)) + "%";
+        const ti = document.createElement("img");
+        ti.alt = "";
+        ti.src = f.url;
+        c.appendChild(ti);
+        thumbs.appendChild(c);
+      };
+      const prior = reel.prior();
+      const firstTs = fs.length ? fs[0].ts : slot().to;
+      const firstGap = gaps.find((g) => g.from <= slot().from);
+      if (prior && firstTs > slot().from && !firstGap) {
+        cell(prior, slot().from, firstTs, true);
+      }
+      fs.forEach((f, i) => {
+        const next = i + 1 < fs.length ? fs[i + 1].ts : slot().to;
+        const gap = gaps.find((g) => g.from >= f.ts && g.from < next);
+        cell(f, f.ts, gap ? gap.from : next);
+      });
     }
     function show() {
       head.style.left = xOf(t) + "%";
-      const j = frameIndexAt(frames, t);
-      const f = j >= 0 ? frames[j] : null;
-      const iv = ivs.find((x) => x.from <= t && t < x.to) || null;
-      const kind = iv ? iv.kind : f ? "frame" : "nodata";
-      el.classList.toggle("off", kind === "dropped" || kind === "nodata" || kind === "paused");
-      stateEl.textContent = kind === "dropped" ? "offline" : kind === "nodata" ? "no frame" : kind === "paused" ? pauseInfo({ paused: true, label: iv?.pause?.label }).label.toLowerCase() : "";
+      const at = reel.at(t);
+      const f = at.frame;
+      el.classList.toggle("off", at.gap);
+      stateEl.textContent = at.kind === "dropped" ? "offline" : at.kind === "nodata" ? "no frame" : at.kind === "paused" ? pauseInfo({ paused: true, label: at.interval?.pause?.label }).label.toLowerCase() : "";
       if (f && img.getAttribute("src") !== f.url && img.dataset.hiOf !== f.url) {
         img.src = f.url;
         delete img.dataset.hiOf;
       }
-      caption(f);
+      caption(at.gap ? null : f);
       if (hiTimer) {
         clearTimeout(hiTimer);
       }
@@ -2116,7 +2202,7 @@ var VTCore = (() => {
         hiTimer = setTimeout(() => {
           const pre = new Image();
           pre.onload = () => {
-            if (!gone && frames[frameIndexAt(frames, t)] === f) {
+            if (!gone && reel.at(t).frame === f) {
               img.src = hi;
               img.dataset.hiOf = lo;
             }
@@ -2126,52 +2212,30 @@ var VTCore = (() => {
       }
     }
     function caption(f) {
-      const fs = shown();
-      const total = inSlot().reduce((a, x) => a + (x.count && x.count > 1 ? x.count : 1), 0);
-      titleEl.textContent = (ctx.label ?? "") + (total > fs.length ? " (showing " + fs.length + " of " + total + ")" : "");
+      const shown = reel.shown(most()).length;
+      const total = reel.total();
+      titleEl.textContent = (ctx.label ?? "") + (total > shown ? " (showing " + shown + " of " + total + ")" : "");
       titleEl.title = titleEl.textContent;
-      const at = f && !el.classList.contains("off") ? f.ts : t;
+      const at = f ? f.ts : t;
       timeEl.textContent = ctx.tt.time(at) + ctx.tt.sfx(at);
       const zoom = el.querySelector('button[data-a="zoom"]');
       if (zoom) {
-        zoom.classList.toggle("hint", total > fs.length);
-        zoom.title = total > fs.length ? total + " frames in this slot, " + fs.length + " shown: zoom the dashboard to the slot to see them all" : "Zoom the dashboard to this slot";
+        zoom.classList.toggle("hint", total > shown);
+        const tip = total > shown ? total + " frames in this slot, " + shown + " shown: zoom the dashboard to the slot to see them all" : "Zoom the dashboard to this slot";
+        zoom.title = tip;
+        zoom.setAttribute("aria-label", tip);
       }
     }
     function seek(to) {
-      t = Math.max(slot.from, Math.min(slot.to - 1, to));
+      t = Math.max(slot().from, Math.min(slot().to - 1, to));
       show();
     }
     async function load(at) {
-      const seq = ++loadSeq;
-      const range = { from: slot.from, to: slot.to };
-      let got = [];
-      let sample2;
-      try {
-        if (ctx.detail) {
-          const points = 2 * most();
-          const all = await ctx.detail(range.from - ctx.step, range.to, points);
-          sample2 = Math.ceil((range.to - range.from + ctx.step) / points);
-          got = [...all.filter((f) => f.ts < range.from).slice(-1), ...all.filter((f) => f.ts >= range.from)];
-        } else {
-          const before = (await ctx.fetch(range.from - ctx.step * 2, range.from)).filter((f) => f.ts < range.from);
-          got = [...before.slice(-1), ...await ctx.fetch(range.from, range.to)];
-        }
-      } catch (e) {
-        console.warn("[visual-timeline] player fetch failed:", e);
-      }
-      if (gone || seq !== loadSeq) {
+      const r = reel;
+      const ok = await r.load(2 * most());
+      if (gone || !ok || r !== reel) {
         return;
       }
-      const byTs = /* @__PURE__ */ new Map();
-      for (const f of got) {
-        byTs.set(f.ts, f);
-      }
-      if (start.ts >= range.from && start.ts < range.to && !byTs.has(start.ts)) {
-        byTs.set(start.ts, start);
-      }
-      frames = [...byTs.values()].sort((x, y) => x.ts - y.ts);
-      ivs = ctx.intervals(frames, range, sample2);
       drawScrub();
       labels();
       seek(at);
@@ -2185,14 +2249,13 @@ var VTCore = (() => {
       labels();
     }
     function tick() {
-      const st = stops();
-      if (st.length < 2) {
+      const next = reel.cycle(t, most());
+      if (next === null) {
         stop();
         return;
       }
-      const i = st.findIndex((x) => x > t);
-      seek(st[i < 0 ? 0 : i]);
-      const fs = shown();
+      seek(next);
+      const fs = reel.shown(most());
       const j = fs.findIndex((f) => f.ts > t);
       for (let k = 0; k < 3 && fs.length; k++) {
         const p = new Image();
@@ -2200,7 +2263,7 @@ var VTCore = (() => {
       }
     }
     function play() {
-      if (playing || stops().length < 2) {
+      if (playing || reel.stops(most()).length < 2) {
         return;
       }
       playing = true;
@@ -2208,14 +2271,12 @@ var VTCore = (() => {
       timer = setInterval(tick, 1e3 / prefs.fps);
     }
     function toSlot(dir) {
-      const next = ctx.slotAt(dir > 0 ? slot.to : slot.from - 1);
-      if (!next || next.from === slot.from) {
+      const next = ctx.slotAt(dir > 0 ? slot().to : slot().from - 1);
+      if (!next || next.from === slot().from) {
         return;
       }
-      slot = next;
+      reel = new Reel(ctx, next);
       const at = next.frameTs !== void 0 && next.frameTs >= next.from && next.frameTs < next.to ? next.frameTs : next.ts;
-      frames = frames.filter((f) => f.ts < next.from).slice(-1);
-      ivs = [];
       drawScrub();
       labels();
       seek(at);
@@ -2234,11 +2295,8 @@ var VTCore = (() => {
         case "prev":
         case "next": {
           stop();
-          const st = stops();
-          const i = st.findIndex((x) => x > t);
-          const cur = i < 0 ? st.length - 1 : i - 1;
-          const to = st[a === "next" ? cur + 1 : cur - 1];
-          if (to !== void 0) {
+          const to = reel.step(t, a === "next" ? 1 : -1, most());
+          if (to !== null) {
             seek(to);
           }
           break;
@@ -2260,7 +2318,7 @@ var VTCore = (() => {
           }
           labels();
           break;
-        // a style draws a different number of frames: ask for that many
+        // the same frames either way: only how they're drawn changes
         case "style-ticks":
         case "style-thumbs": {
           const style = a === "style-ticks" ? "ticks" : "thumbs";
@@ -2272,12 +2330,11 @@ var VTCore = (() => {
           labels();
           drawScrub();
           show();
-          void load(t);
           break;
         }
         case "zoom":
           stop();
-          ctx.onZoom?.(slot.from, slot.to);
+          ctx.onZoom?.(slot().from, slot().to);
           close();
           break;
       }
@@ -2290,7 +2347,7 @@ var VTCore = (() => {
     });
     const tAt = (clientX) => {
       const r = scrub.getBoundingClientRect();
-      return slot.from + Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width))) * span();
+      return slot().from + Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width))) * span();
     };
     scrub.addEventListener("pointermove", (e) => {
       if (playing) {
@@ -2897,33 +2954,33 @@ var VTCore = (() => {
     }
     async function start(sl) {
       const mine = ++seq;
-      let frames = [];
-      try {
-        frames = await target.frames(sl.x0, sl.x0 + sl.span, FLIP_MAX);
-      } catch {
+      const reel = target.reel({ from: sl.x0, to: sl.x0 + sl.span, ts: sl.ts });
+      const ok = await reel.load(FLIP_MAX);
+      if (!ok || mine !== seq || !current || current.x0 !== sl.x0) {
         return;
       }
-      if (mine !== seq || !current || current.x0 !== sl.x0) {
+      const stops = reel.stops(FLIP_MAX);
+      if (stops.length < 2) {
         return;
       }
-      frames = frames.filter((f) => f.ts >= sl.x0 && f.ts < sl.x0 + sl.span).sort((a, b) => a.ts - b.ts);
-      if (frames.length < 2) {
-        return;
-      }
-      const preload = (i2) => {
-        for (let k = 1; k <= 3; k++) {
+      const frames = reel.shown(FLIP_MAX);
+      const preload = (t) => {
+        const j = Math.max(0, frames.findIndex((f) => f.ts > t));
+        for (let k = 0; k < 3 && frames.length; k++) {
           const p = new Image();
-          p.src = frames[(i2 + k) % frames.length].url;
+          p.src = frames[(j + k) % frames.length].url;
         }
       };
       let i = 0;
+      const showAt = () => {
+        target.show(reel.at(stops[i]), stops[i], i, stops.length);
+        preload(stops[i]);
+      };
       target.playingChanged(true);
-      target.show(frames[0], 0, frames.length);
-      preload(0);
+      showAt();
       timer = setInterval(() => {
-        i = (i + 1) % frames.length;
-        target.show(frames[i], i, frames.length);
-        preload(i);
+        i = (i + 1) % stops.length;
+        showAt();
       }, 1e3 / FLIP_FPS);
     }
     return {
@@ -3069,28 +3126,32 @@ var VTCore = (() => {
     renderStrip(s, model, strip, kiosk, tt);
     dressStrip(model);
     let rec = null;
-    const fetchAll = playerContext(s.backend, s.cfg, s.P, decl, model, tt, () => {
-    }).fetch;
+    const source = playerContext(s.backend, s.cfg, s.P, decl, model, tt, () => {
+    });
     const flip = makeFlipbook({
-      // a slot's frames: asked again at full resolution where the backend can
-      // (the panel re-runs its query), else the frames the model holds
-      frames: (from, to, maxPoints) => s.backend.detail ? s.backend.detail(decl.site, decl.id, from, to, maxPoints) : model.frames.length && s.backend.allFrames ? Promise.resolve(model.frames.filter((f) => f.ts >= from && f.ts < to)) : fetchAll(from, to),
-      show: (f, i, n) => {
+      reel: (slot) => new Reel(source, slot),
+      show: (at, t, i, n) => {
         const m = rec?.mag;
         if (!m) {
           return;
         }
         const im = m.querySelector("img");
-        if (im.getAttribute("src") !== f.url) {
-          im.src = f.url;
+        if (at.frame && im.getAttribute("src") !== at.frame.url) {
+          im.src = at.frame.url;
         }
-        m.querySelector(".cap").textContent = tt.time(f.ts) + tt.sfx(f.ts) + " \xB7 " + (i + 1) + "/" + n;
+        m.classList.toggle("flip-gap", at.gap);
+        const reason = at.kind === "dropped" ? "offline" : at.kind === "nodata" ? "no frame" : at.kind === "paused" ? pauseInfo({ paused: true, label: at.interval?.pause?.label }).label.toLowerCase() : "";
+        const ts = at.gap || !at.frame ? t : at.frame.ts;
+        m.querySelector(".cap").textContent = tt.time(ts) + tt.sfx(ts) + (reason ? " \xB7 " + reason : "") + " \xB7 " + (i + 1) + "/" + n;
       },
       playingChanged: (on) => {
         if (!rec) {
           return;
         }
         rec.mag.classList.toggle("flip", on);
+        if (!on) {
+          rec.mag.classList.remove("flip-gap");
+        }
         if (!on && !s.destroyed) {
           rec.shown = null;
           setCursor(s, s.cursorT, null, true);

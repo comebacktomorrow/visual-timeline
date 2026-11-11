@@ -1,7 +1,10 @@
-import type { Frame, Slot, TickSlot } from '../types';
+import type { Reel, ReelAt, ReelSlot } from '../model/reel';
+import type { Slot, TickSlot } from '../types';
 
 /* The hover flipbook (M10b): a slot that holds more than one frame plays
- * them through the magnifier once the cursor has rested on it for DWELL_MS.
+ * them through the magnifier once the cursor has rested on it for DWELL_MS:
+ * the slot's reel (model/reel.ts), as the preview player plays it, gaps and
+ * their reasons included.
  * Nothing loads while the cursor moves: scrubbing a day of strips fetches
  * no more than it did before. Moving to another slot, leaving the strip,
  * pressing, or the crosshair moving from elsewhere stops it, and the
@@ -24,10 +27,11 @@ export interface Flipbook {
 }
 
 export interface FlipTarget {
-  /** the frames taken within [from, to), at most maxPoints */
-  frames(from: number, to: number, maxPoints: number): Promise<Frame[]>;
-  /** show this frame in the magnifier, with its caption */
-  show(f: Frame, i: number, n: number): void;
+  /** the slot's reel (model/reel.ts: what the preview player plays too) */
+  reel(slot: ReelSlot): Reel;
+  /** show what's in force at a stop (a frame, or a gap with its reason) in
+   * the magnifier; i of n stops */
+  show(at: ReelAt, t: number, i: number, n: number): void;
   /** playing started (true) or stopped (false): restore the magnifier */
   playingChanged(on: boolean): void;
 }
@@ -47,23 +51,28 @@ export function makeFlipbook(target: FlipTarget, anySlot = false): Flipbook {
     if (timer) { clearInterval(timer); timer = null; target.playingChanged(false); }
   }
 
+  /* the slot's reel, at most FLIP_MAX frames, played stop by stop (gaps
+   * included, with their reason), round and round */
   async function start(sl: TickSlot): Promise<void> {
     const mine = ++seq;
-    let frames: Frame[] = [];
-    try { frames = await target.frames(sl.x0, sl.x0 + sl.span, FLIP_MAX); } catch { return; }
-    if (mine !== seq || !current || current.x0 !== sl.x0) {return;}
-    frames = frames.filter((f) => f.ts >= sl.x0 && f.ts < sl.x0 + sl.span).sort((a, b) => a.ts - b.ts);
-    if (frames.length < 2) {return;}
-    // the next few load ahead of the one shown
-    const preload = (i: number) => { for (let k = 1; k <= 3; k++) { const p = new Image(); p.src = frames[(i + k) % frames.length].url; } };
+    const reel = target.reel({ from: sl.x0, to: sl.x0 + sl.span, ts: sl.ts });
+    const ok = await reel.load(FLIP_MAX);
+    if (!ok || mine !== seq || !current || current.x0 !== sl.x0) {return;}
+    const stops = reel.stops(FLIP_MAX);
+    if (stops.length < 2) {return;}
+    const frames = reel.shown(FLIP_MAX);
+    // the next few frames load ahead of the one shown
+    const preload = (t: number) => {
+      const j = Math.max(0, frames.findIndex((f) => f.ts > t));
+      for (let k = 0; k < 3 && frames.length; k++) { const p = new Image(); p.src = frames[(j + k) % frames.length].url; }
+    };
     let i = 0;
+    const showAt = () => { target.show(reel.at(stops[i]), stops[i], i, stops.length); preload(stops[i]); };
     target.playingChanged(true);
-    target.show(frames[0], 0, frames.length);
-    preload(0);
+    showAt();
     timer = setInterval(() => {
-      i = (i + 1) % frames.length;
-      target.show(frames[i], i, frames.length);
-      preload(i);
+      i = (i + 1) % stops.length;
+      showAt();
     }, 1000 / FLIP_FPS);
   }
 

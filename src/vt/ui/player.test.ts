@@ -1,5 +1,6 @@
 import { frameIndexAt } from '../model/playhead';
 import { buildIntervals } from '../model/intervals';
+import { thinWithCounts } from '../../shared/frameRecords';
 import { mountPlayer, type PlayerContext } from './player';
 import type { Frame } from '../types';
 
@@ -181,23 +182,24 @@ describe('the preview player', () => {
     expect(asked).toEqual([560]);
     expect(cap()).toBe('site / cam (showing 5 of 300) — 10:30:00');
     expect(el.querySelector('button[data-a="zoom"]')!.classList.contains('hint')).toBe(true);
-    // thumbnails draw fewer: asked again for that many
+    // thumbnails show the same frames, as pictures: nothing asked again
     press('style-thumbs');
     await flush();
-    expect(asked).toEqual([560, 22]);
+    expect(asked).toEqual([560]);
   });
 
   test('a thinned slot is judged at the interval it was asked for at, not drawn offline between its rows', async () => {
-    localStorage.setItem('ktl-player', JSON.stringify({ style: 'thumbs' }));
-    // a frame a second promised; the slot asked for at 22 points (thumbnails
-    // over two slots): rows 25 s apart, as a thinning source answers
-    const rows = Array.from({ length: 12 }, (_, i) => ({ ts: at(30) + i * 25e3, url: `r${i}.jpg`, count: 25 }));
-    teardown = mountPlayer(el, rows[0], ctx({
+    // a frame a second promised and taken; the source thins to the points
+    // asked for, as ours does (each kept row counting its bucket)
+    const every = Array.from({ length: 600 }, (_, i) => ({ ts: at(25) + i * 1000, url: `s${i}.jpg` }));
+    teardown = mountPlayer(el, every[300], ctx({
       intervals: (frames, range, sample) => buildIntervals({ frames, window: range, now: at(999), promiseAt: () => 1000, sample }).intervals,
-      detail: async (from, to) => rows.filter((f) => f.ts >= from && f.ts < to),
+      detail: async (from, to, maxPoints) => thinWithCounts(every, from, to, Math.ceil((to - from) / maxPoints!)).filter((f) => f.ts >= from && f.ts < to),
     }), () => {});
     await flush();
     expect(el.querySelectorAll('.lane.dropped')).toHaveLength(0);
+    // thinned: the title says how many of the slot's frames are shown
+    expect(el.querySelector('.title')!.textContent).toMatch(/^site \/ cam \(showing \d+ of 29\d\)$/);
   });
 
   test('more frames than drawn: Zoom is highlighted, and says why', async () => {

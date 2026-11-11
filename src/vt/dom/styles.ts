@@ -283,6 +283,7 @@ const CSS = `
 .ktl .tile.offline img, .ktl .tile.offline .t-ts { display:none; }
 .ktl .mag.flip::after { content:'▶'; position:absolute; top:3px; left:5px; font-size:9px; line-height:1;
                         color:var(--ktl-accent); text-shadow:0 0 3px rgba(0,0,0,.8); pointer-events:none; }
+.ktl .mag.flip-gap img { opacity:.35; }
 .ktl-pop { position:fixed; z-index:1060; background:var(--ktl-float-bg); border:1px solid var(--ktl-accent);
            border-radius:4px; padding:4px; cursor:zoom-out;
            box-shadow:var(--ktl-shadow); }

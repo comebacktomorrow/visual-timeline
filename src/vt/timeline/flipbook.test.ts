@@ -1,4 +1,6 @@
 import { DWELL_MS, FLIP_FPS, makeFlipbook } from './flipbook';
+import { Reel, type ReelAt } from '../model/reel';
+import { buildIntervals } from '../model/intervals';
 import type { Frame, TickSlot } from '../types';
 
 const slot = (x0: number, count: number): TickSlot => ({ ts: x0 + 30, x0, span: 60, frame: { ts: x0, url: `f${x0}` }, cadence: 10, step: 60, future: false, count });
@@ -8,14 +10,20 @@ describe('the hover flipbook', () => {
   let shown: string[];
   let states: boolean[];
   let fetched: number;
+  // a reel over the frames above: the same model the preview player plays
+  const source = {
+    step: 60,
+    fetch: async (from: number, to: number) => frames.filter((f) => f.ts >= from && f.ts < to),
+    intervals: (fs: Frame[], range: { from: number; to: number }) => buildIntervals({ frames: fs, window: range, now: 1e9, hold: 'none' }).intervals,
+  };
   const target = () => ({
-    frames: async (from: number, to: number) => { fetched++; return frames.filter((f) => f.ts >= from && f.ts < to); },
-    show: (f: Frame) => shown.push(f.url),
+    reel: (slot: { from: number; to: number; ts: number }) => { fetched++; return new Reel(source, slot); },
+    show: (at: ReelAt) => shown.push(at.frame!.url),
     playingChanged: (on: boolean) => states.push(on),
   });
   beforeEach(() => { jest.useFakeTimers(); shown = []; states = []; fetched = 0; });
   afterEach(() => jest.useRealTimers());
-  const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
+  const settle = async () => { for (let i = 0; i < 6; i++) {await Promise.resolve();} };
 
   test('nothing loads until the cursor has rested on the slot for the whole dwell', async () => {
     const fb = makeFlipbook(target());
@@ -64,4 +72,17 @@ describe('the hover flipbook', () => {
     await settle();
     expect(fetched).toBe(0);
   });
+
+  test('it plays a gap too, as the player does: it shows the gap\'s stop', async () => {
+    const gappy = { ...source, fetch: async (from: number, to: number) => frames.filter((f) => f.ts >= from && f.ts < to && f.ts !== 20 && f.ts !== 30),
+      intervals: (fs: Frame[], range: { from: number; to: number }) => buildIntervals({ frames: fs, window: range, now: 1e9, promiseAt: () => 10 }).intervals };
+    const seen: string[] = [];
+    const fb = makeFlipbook({ reel: (slot) => new Reel(gappy, slot), show: (at) => seen.push(at.gap ? at.kind : at.frame!.url), playingChanged: () => {} });
+    fb.hover(slot(0, 6));
+    jest.advanceTimersByTime(DWELL_MS);
+    await settle();
+    jest.advanceTimersByTime((1000 / FLIP_FPS) * 4);
+    expect(seen).toEqual(['f0', 'f10', 'dropped', 'f40', 'f50']);
+  });
 });
+

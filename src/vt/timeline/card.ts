@@ -11,6 +11,7 @@ import { ruleBeyond } from './axis';
 import { hideSelection, setCursor, showSelection } from './cursor';
 import { playerContext } from '../ui/playerContext';
 import { makeFlipbook } from './flipbook';
+import { Reel } from '../model/reel';
 import type { Card, TimelineState } from './state';
 
 /* Post-layout dressing, idempotent and re-runnable:
@@ -151,25 +152,26 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   // the hover flipbook: a slot of several frames plays them in the
   // magnifier once the cursor has rested on it (flipbook.ts)
   let rec: Card | null = null;
-  const fetchAll = playerContext(s.backend, s.cfg, s.P, decl, model, tt, () => {}).fetch;
+  // the slot's reel, from the same source the preview player reads
+  const source = playerContext(s.backend, s.cfg, s.P, decl, model, tt, () => {});
   const flip = makeFlipbook({
-    // a slot's frames: asked again at full resolution where the backend can
-    // (the panel re-runs its query), else the frames the model holds
-    frames: (from, to, maxPoints) => (s.backend.detail
-      ? s.backend.detail(decl.site, decl.id, from, to, maxPoints)
-      : model.frames.length && s.backend.allFrames
-        ? Promise.resolve(model.frames.filter((f) => f.ts >= from && f.ts < to))
-        : fetchAll(from, to)),
-    show: (f, i, n) => {
+    reel: (slot) => new Reel(source, slot),
+    show: (at, t, i, n) => {
       const m = rec?.mag;
       if (!m) {return;}
       const im = m.querySelector('img')!;
-      if (im.getAttribute('src') !== f.url) {im.src = f.url;}
-      m.querySelector('.cap')!.textContent = tt.time(f.ts) + tt.sfx(f.ts) + ' · ' + (i + 1) + '/' + n;
+      if (at.frame && im.getAttribute('src') !== at.frame.url) {im.src = at.frame.url;}
+      // a gap shows its reason over the last frame, dimmed, as the player does
+      m.classList.toggle('flip-gap', at.gap);
+      const reason = at.kind === 'dropped' ? 'offline' : at.kind === 'nodata' ? 'no frame'
+        : at.kind === 'paused' ? pauseInfo({ paused: true, label: at.interval?.pause?.label }).label.toLowerCase() : '';
+      const ts = at.gap || !at.frame ? t : at.frame.ts;
+      m.querySelector('.cap')!.textContent = tt.time(ts) + tt.sfx(ts) + (reason ? ' · ' + reason : '') + ' · ' + (i + 1) + '/' + n;
     },
     playingChanged: (on) => {
       if (!rec) {return;}
       rec.mag.classList.toggle('flip', on);
+      if (!on) {rec.mag.classList.remove('flip-gap');}
       // back to the slot's own frame
       if (!on && !s.destroyed) { rec.shown = null; setCursor(s, s.cursorT, null, true); }
     },
