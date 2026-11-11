@@ -281,12 +281,62 @@ const CSS = `
   background:repeating-linear-gradient(45deg,var(--ktl-tpause-a),var(--ktl-tpause-a) 7px,var(--ktl-tpause-b) 7px,var(--ktl-tpause-b) 14px); }
 .ktl .tile.offline .t-off { display:flex; }
 .ktl .tile.offline img, .ktl .tile.offline .t-ts { display:none; }
+.ktl .mag.flip::after { content:'▶'; position:absolute; top:3px; left:5px; font-size:9px; line-height:1;
+                        color:var(--ktl-accent); text-shadow:0 0 3px rgba(0,0,0,.8); pointer-events:none; }
+.ktl .mag.flip-gap img { opacity:.35; }
 .ktl-pop { position:fixed; z-index:1060; background:var(--ktl-float-bg); border:1px solid var(--ktl-accent);
            border-radius:4px; padding:4px; cursor:zoom-out;
            box-shadow:var(--ktl-shadow); }
 .ktl-pop img { display:block; max-width:min(560px, 50vw); max-height:55vh; border-radius:2px; }
 .ktl-pop .cap { text-align:center; color:var(--ktl-text); font-size:11px; padding:3px 0 0;
-                font-variant-numeric:tabular-nums; }`;
+                font-variant-numeric:tabular-nums; }
+/* the preview as a player (M10): stage, scrubber, controls */
+.ktl-pop.player { cursor:default; padding:6px; width:min(720px, 92vw); max-width:92vw; font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;
+                  color:var(--ktl-text); display:flex; flex-direction:column; gap:6px; }
+.ktl-pop.player .stage { position:relative; display:flex; align-items:center; justify-content:center; background:var(--ktl-media);
+                         border-radius:2px; height:min(55vh, 405px); }
+/* one size whatever the frame's shape: the popup doesn't change size as it plays */
+.ktl-pop.player .stage img { width:100%; height:100%; object-fit:contain; }
+.ktl-pop.player.off .stage img { opacity:.35; }
+.ktl-pop.player .stage .state { position:absolute; inset:auto 0 8px; text-align:center; font-weight:700; color:var(--ktl-off);
+                                 text-transform:uppercase; letter-spacing:.04em; pointer-events:none; }
+.ktl-pop.player .scrub { position:relative; height:22px; border-radius:2px; background:var(--ktl-pause-a); cursor:pointer;
+                         touch-action:none; overflow:hidden; outline:none; }
+.ktl-pop.player.thumbs .scrub { height:40px; }
+.ktl-pop.player .scrub:focus-visible { box-shadow:0 0 0 2px var(--ktl-accent); }
+.ktl-pop.player .lane { position:absolute; top:0; bottom:0; }
+.ktl-pop.player .lane.dropped { background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 4px,var(--ktl-gap-b) 4px,var(--ktl-gap-b) 8px); }
+.ktl-pop.player .lane.nodata { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 4px,var(--ktl-pause-b) 4px,var(--ktl-pause-b) 8px); }
+.ktl-pop.player .lane.paused { background:var(--ktl-band, var(--ktl-pause-b)); opacity:.6; }
+.ktl-pop.player .lane.beyond { background:transparent; }
+.ktl-pop.player .thumbs { position:absolute; inset:0; pointer-events:none; }
+.ktl-pop.player .thumb { position:absolute; top:0; bottom:0; overflow:hidden; border-right:1px solid rgba(0,0,0,.4); }
+.ktl-pop.player .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.ktl-pop.player .thumb.prior img { opacity:.4; }
+.ktl-pop.player .ticks { position:absolute; inset:0; pointer-events:none; }
+.ktl-pop.player .tick { position:absolute; bottom:0; height:40%; width:1px; background:var(--ktl-text); opacity:.55; }
+.ktl-pop.player.thumbs .tick { height:6px; }
+.ktl-pop.player .head { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--ktl-accent); pointer-events:none; }
+.ktl-pop.player .top, .ktl-pop.player .bar { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:6px; }
+/* on top, what this is: the title gives way rather than wrap and grow the popup */
+.ktl-pop.player .top { grid-template-columns:auto minmax(0, 1fr) auto; }
+.ktl-pop.player .top .title { text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
+/* below, the playback: the frame's time, the transport centred, the options */
+.ktl-pop.player .bar .time { justify-self:start; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.ktl-pop.player .bar .transport, .ktl-pop.player .bar .opts { display:flex; gap:4px; align-items:center; }
+.ktl-pop.player .bar .opts { justify-self:end; }
+.ktl-pop.player button svg { display:block; }
+.ktl-pop.player button[aria-pressed="true"] { border-color:var(--ktl-accent); color:var(--ktl-accent); }
+.ktl-pop.player button[aria-pressed="false"] { opacity:.6; }
+.ktl-pop.player button { flex:0 0 auto; }
+.ktl-pop.player button.hint { border-color:var(--ktl-accent); color:var(--ktl-accent); }
+.ktl-pop.player button { font:inherit; color:var(--ktl-text); background:transparent; border:1px solid var(--ktl-border);
+                         border-radius:2px; padding:2px 7px; min-width:28px; height:24px; cursor:pointer; line-height:18px;
+                         display:inline-flex; align-items:center; justify-content:center; }
+.ktl-pop.player button:hover:not(:disabled) { border-color:var(--ktl-accent); }
+.ktl-pop.player button:disabled { opacity:.4; cursor:default; }
+.ktl-pop.player button:focus-visible { outline:2px solid var(--ktl-accent); outline-offset:1px; }
+.ktl-pop.player button[data-a="play"] { min-width:36px; }`;
 
 export function injectStyles(): void {
   const existing = document.getElementById(STYLE_ID);

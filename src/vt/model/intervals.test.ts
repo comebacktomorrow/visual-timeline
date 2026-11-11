@@ -91,6 +91,26 @@ describe('promised frames', () => {
     expect(r.intervals.every((i) => i.kind === 'frame')).toBe(true);
   });
 
+  it('asked at a coarser interval ($__interval): a frame a step apart keeps a finer promise', () => {
+    // a minute promised, rows two minutes apart (asked for at 90 s): kept
+    const rows = [0, 2, 4, 6].map((m) => fr(m));
+    const r = build({ frames: rows, promiseAt: minute, sample: 90e3, window: { from: at(0), to: at(7) } });
+    expect(r.intervals.some((i) => i.kind === 'dropped')).toBe(false);
+    // a real outage still breaks it: 6 to 14
+    const out = build({ frames: [...rows, fr(14)], promiseAt: minute, sample: 90e3, window: { from: at(0), to: at(15) } });
+    expect(brief(out.intervals).filter((i) => i[2] === 'dropped')).toEqual([[8, 14, 'dropped']]);
+  });
+
+  it('without the interval, the same rows are dropped every other minute', () => {
+    const r = build({ frames: [0, 2, 4, 6].map((m) => fr(m)), promiseAt: minute, window: { from: at(0), to: at(7) } });
+    expect(r.intervals.filter((i) => i.kind === 'dropped')).toHaveLength(3);
+  });
+
+  it('a first frame within its promise of the window\'s start is no broken promise', () => {
+    const r = build({ frames: [fr(0.5), fr(1.5)], promiseAt: minute, window: { from: at(0), to: at(2) } });
+    expect(brief(r.intervals)[0]).toEqual([0, 0.5, 'nodata']);
+  });
+
   it('a promised source silent all window: dropped from the start', () => {
     expect(brief(build({ frames: [], promiseAt: minute }).intervals)).toEqual([[0, 60, 'dropped']]);
   });

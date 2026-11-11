@@ -9,6 +9,9 @@ import { zoneFor, type ZoneTexts } from '../zones/source';
 import type { Slot, SourceDecl, SourceModel } from '../types';
 import { ruleBeyond } from './axis';
 import { hideSelection, setCursor, showSelection } from './cursor';
+import { playerContext } from '../ui/playerContext';
+import { makeFlipbook } from './flipbook';
+import { Reel } from '../model/reel';
 import type { Card, TimelineState } from './state';
 
 /* Post-layout dressing, idempotent and re-runnable:
@@ -146,11 +149,39 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   // ~12px they read as zebra noise rather than structure
   renderStrip(s, model, strip, kiosk, tt);
   dressStrip(model);   // hatch alignment + band labels (re-run post-reveal)
+  // the hover flipbook: a slot of several frames plays them in the
+  // magnifier once the cursor has rested on it (flipbook.ts)
+  let rec: Card | null = null;
+  // the slot's reel, from the same source the preview player reads
+  const source = playerContext(s.backend, s.cfg, s.P, decl, model, tt, () => {});
+  const flip = makeFlipbook({
+    reel: (slot) => new Reel(source, slot),
+    show: (at, t, i, n) => {
+      const m = rec?.mag;
+      if (!m) {return;}
+      const im = m.querySelector('img')!;
+      if (at.frame && im.getAttribute('src') !== at.frame.url) {im.src = at.frame.url;}
+      // a gap shows its reason over the last frame, dimmed, as the player does
+      m.classList.toggle('flip-gap', at.gap);
+      const reason = at.kind === 'dropped' ? 'offline' : at.kind === 'nodata' ? 'no frame'
+        : at.kind === 'paused' ? pauseInfo({ paused: true, label: at.interval?.pause?.label }).label.toLowerCase() : '';
+      const ts = at.gap || !at.frame ? t : at.frame.ts;
+      m.querySelector('.cap')!.textContent = tt.time(ts) + tt.sfx(ts) + (reason ? ' · ' + reason : '') + ' · ' + (i + 1) + '/' + n;
+    },
+    playingChanged: (on) => {
+      if (!rec) {return;}
+      rec.mag.classList.toggle('flip', on);
+      if (!on) {rec.mag.classList.remove('flip-gap');}
+      // back to the slot's own frame
+      if (!on && !s.destroyed) { rec.shown = null; setCursor(s, s.cursorT, null, true); }
+    },
+  }, !!s.backend.detail);
   const hoverAt = (e: MouseEvent) => {
     const r = strip.getBoundingClientRect();
     if (!r.width) {return;}   // stale wrapper mid-swap: no geometry, no cursor
     const t = s.P.from + s.SPAN * ((e.clientX - r.left) / r.width);
     setCursor(s, t, card, false);
+    flip.hover(model.slotAt(s.cursorT));
   };
   strip.addEventListener('mousemove', hoverAt);
   strip.addEventListener('mouseenter', e => {
@@ -162,15 +193,22 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     hoverAt(e);
   });
   strip.addEventListener('mouseleave', () => {
+    flip.stop();
     s.wrap.classList.remove('strip-hover');
     if (s.cfg.onHoverClear) {s.cfg.onHoverClear();}
   });
   strip.addEventListener('click', e => {
+    flip.stop();
     if (s.suppressClick) { s.suppressClick = false; return; }
     const sl = model.slotAt(s.cursorT);
     const f = sl && sl.frame;
     const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
-    if (f) {s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt);}
+    if (f) {
+      // the preview is a player over this host's frames; it moves the crosshair
+      const player = playerContext(s.backend, s.cfg, s.P, decl, model, tt, (t) => { if (!s.destroyed) {setCursor(s, t, null, false);} },
+        s.cfg.onZoom ? (from, to) => { if (!s.destroyed) {s.cfg.onZoom!(Math.floor(from), Math.ceil(to));} } : undefined);
+      s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt, player);
+    }
     else if (g) {s.pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl!.ts, tt);}   // g is only set from a slot
   });
   /* magnifier takes the aspect of the actual frames (portrait screens etc.) */
@@ -183,6 +221,7 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   /* drag-select = zoom, grafana-style: band across all cards, release → onZoom */
   strip.addEventListener('mousedown', e => {
     if (e.button !== 0) {return;}
+    flip.stop();
     e.preventDefault();
     const r = strip.getBoundingClientRect();
     const fracOf = (x: number) => Math.max(0, Math.min(1, (x - r.left) / r.width));
@@ -213,8 +252,8 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   });
   q(s.wrap, '.cards').appendChild(card);
   attachZoneChip(zone, card);
-  return {
-    card, model, zone, tt,
+  rec = {
+    card, model, zone, tt, flip,
     head: card.querySelector<HTMLElement>('.ft')!,
     strip,
     cross: card.querySelector<HTMLElement>('.xh')!,
@@ -222,4 +261,5 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     mag: card.querySelector<HTMLElement>('.mag')!,
     lane: card.querySelector<HTMLElement>('.card-lane')!,
   };
+  return rec;
 }

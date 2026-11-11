@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **The preview player** (M10). Clicking a frame opens it large with the
+  slot's own timeline: the frames the slot holds, at their true times, as
+  ticks or small pictures, over its offline, no-data and pause stretches.
+  Hover, drag, ‹ › and ▶ stay within the slot (the dashboard's crosshair
+  stays still; playing stops on a gap to show its reason); ‹‹ ›› move to the
+  next slot, and Zoom sets the dashboard's range to the slot. The popup
+  takes the camera's shape.
+- **The hover flipbook** (M10). A slot that holds several frames says so in
+  its magnifier ("· 4 frames"); resting the cursor on it for three seconds
+  plays them there. Nothing loads while the cursor moves.
+- **A slot's frames on demand.** The panel runs its own query again for one
+  slot, no finer than it can draw, when the player or the flipbook needs
+  it: any data source that filters by the time range answers. The HTTP
+  folder thins to the panel's width again, each row carrying `frame_count`
+  (how many frames it stands for).
+- **Frame width** (panel option, default 7 px): the least width a frame
+  gets, in the strip and in the player's timeline.
+- Fixed: on long ranges, rows thinned by a data source (ours, or the
+  reference worker's `step=$__interval_ms`) were drawn as broken promises,
+  red between every frame. Promises are judged no finer than the interval
+  the query was asked for.
+- Esc closes the player only, not Grafana's panel view or kiosk mode.
+
 - **A cadence is a promise** (M9, [docs/TIMELINE-MODEL.md](docs/TIMELINE-MODEL.md)).
   The timeline no longer infers a heartbeat and holds every host to it. A
   frame is shown until the next one; a host that declares a cadence (a
@@ -171,7 +194,7 @@ Release process only: the plugin itself is unchanged.
 - Release zips carry build provenance: the release workflow attests each
   zip with GitHub's artifact attestations, so anyone can check that this
   repository's workflow built it (`gh attestation verify <zip> --repo
-  comebacktomorrow/visual-timeline`). The catalog's validator looks for it.
+comebacktomorrow/visual-timeline`). The catalog's validator looks for it.
 
 ## 1.2.2 (2026-10-16)
 
@@ -606,6 +629,7 @@ Build tooling only: the plugin itself is unchanged.
 ## 0.9.20 (2026-09-25)
 
 ### Fixes
+
 - The viewer key stays out of image URLs that don't need it. Since 0.9.18
   the reference worker signs its image URLs so the long-lived key can be
   left out of them, but the client kept appending `?k=` to every frame
@@ -624,6 +648,7 @@ Build tooling only: the plugin itself is unchanged.
   worker logs a warning, instead of dropping frames silently.
 
 ### Dependencies
+
 - `@grafana/*` 13.2.2 with React 19, as dev dependencies (#40). Grafana
   supplies React to the panel at runtime. `grafanaDependency` stays
   `>=10.4.0`, and e2e passes on every Grafana from 10.4 to nightly.
@@ -638,6 +663,7 @@ Build tooling only: the plugin itself is unchanged.
   #23, #24, #34, #37, #41).
 
 ### CI
+
 - Installs run on npm 11, so Dependabot-built lockfiles install (#27,
   #28).
 - The monthly scaffold-update workflow runs on Node 24 and opens its PR
@@ -647,6 +673,7 @@ Build tooling only: the plugin itself is unchanged.
   `npm run test:ci` runs it.
 
 ### Demo and docs
+
 - The fleet simulator and the local dev tokens use the built-in demo's
   names (`site-a`/`site-b`, `source-1` to `source-5`), so the curl
   examples in docs/API.md work against a fresh `wrangler dev`. The
@@ -804,7 +831,7 @@ Four fixes from live fleet use:
   attachment so the diagonals run continuously across adjacent slots —
   per-slot gradients restarted at every slot edge, and narrow-slot runs
   showed only the first stripe color (a solid block).
-- Slots ahead of *now* are `future`, not offline: plain dark instead of
+- Slots ahead of _now_ are `future`, not offline: plain dark instead of
   red hatch, "upcoming" instead of "offline — last seen", and they age
   into real gaps only a full step past their tick with no frame.
 

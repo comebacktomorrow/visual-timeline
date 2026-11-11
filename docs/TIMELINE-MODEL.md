@@ -98,7 +98,8 @@ largest of 1.5 times the promise, the hold limit, and an hour.
 
 ## Drawing it
 
-The strip keeps a uniform row of **slots**, about one per 7 pixels, but a
+The strip keeps a uniform row of **slots**, about one per **Frame width**
+(a panel option, 7 px by default), but a
 slot is now a sample, not a promise. Slots are sized to a round duration and
 aligned to its multiples, so they don't shimmer as the window slides. Each
 slot shows what is in force at its centre: a frame, dropped, no data,
@@ -110,10 +111,12 @@ pending, a pause, or beyond now.
 - **Non-frame intervals are also drawn at their true time and width**, on a
   layer over the slots. A dropped stretch shorter than a slot still shows,
   at least 1 px wide, so zooming out can't hide a short outage.
-- **A slot holding more than one frame** is marked. M10's player animates
-  through those frames on hover.
-- **Each frame's own time** can show as a small notch along the strip's
-  bottom edge, so viewers see when frames actually arrived.
+- **A slot holding more than one frame** is marked, and its magnifier says
+  how many. Resting the cursor on it for three seconds plays them there
+  (the hover flipbook); clicking it opens the preview player on the slot's
+  own timeline (below).
+- (Not built: each frame's own time as a notch along the strip's bottom
+  edge.)
 
 Grid tiles show the interval in force at the crosshair, as the strip does.
 
@@ -123,13 +126,33 @@ Grid tiles show the interval in force at the crosshair, as the strip does.
 the slot duration as `step`. A backend may return more than one frame per
 step, and the core uses every frame it gets:
 
-- **Records** (any data source through the panel) return every frame they
-  have.
+- **Records** (any data source through the panel) return every row the
+  query returned.
 - **The reference worker** answers one frame per step. Its frames keep their
   true times; a drop shorter than a step, with frames on both sides, can't
   be seen (a limit today too).
-- **Our folder data source** stops thinning rows before the panel sees them,
-  up to the panel's row cap.
+- **Our data source** (demo data, the HTTP folder) thins its rows to the
+  panel's width (max data points), each kept row carrying `frame_count`:
+  how many frames it stands for.
+
+**Thinned answers aren't broken promises.** A data source may answer one
+row per the interval Grafana asked it for (the larger of `$__interval` and
+the range over max data points): a 1-minute host's rows 2 minutes apart over
+a day. A promise finer than that interval counts as the whole multiple of
+itself that covers it, so only a gap longer than the data can show is red.
+
+## A slot's frames (M10)
+
+The preview player and the hover flipbook play one slot's frames: its
+**reel** (`src/vt/model/reel.ts`), one model for both. The reel asks for
+the slot again (`Backend.detail`): the panel runs its own query once more
+for just that slot's span, asking for no more points than the view can draw
+(a tick per Frame width; the flipbook at most 100), with `$__interval` to
+match. A slot so fetched is judged at that interval too. The reel holds the
+slot's frames and the one in force at its start, the stretches they make,
+what's in force at a time, the frames shown when there are more than fit
+(evenly through the slot), and its stops: each frame shown, and the start
+of each gap, which playing shows with its reason rather than skipping.
 
 ## Options, before and after
 

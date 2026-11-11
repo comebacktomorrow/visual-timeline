@@ -56,6 +56,9 @@ export interface Frame {
   /* the promise this frame makes: the next frame within this many ms
    * (docs/TIMELINE-MODEL.md); unset, the source's declaration decides */
   cadence?: number;
+  /* how many frames this one stands for, when a data source thinned them
+   * (a frame_count field); unset, one */
+  count?: number;
 }
 
 /* A span of a source's window on one grid (erasFor). reason and intended
@@ -77,6 +80,14 @@ export interface Era {
 export interface Backend {
   kiosks(sites?: string[] | null): Promise<SourceDecl[]> | SourceDecl[];
   frames(site: string, id: string, from: number, to: number, step: number): Promise<Frame[]>;
+  /* every frame in [from, to], unthinned: a backend that holds them all
+   * (frame records) offers it, for the preview player (M10) */
+  allFrames?(site: string, id: string, from: number, to: number): Promise<Frame[]>;
+  /* one short span's frames, asking for them again if need be (the panel
+   * re-runs its query for the span): what the preview player and the hover
+   * flipbook play (M10). At most maxPoints, as a source thins them (each
+   * kept frame's count says how many it stands for); unset, all of them */
+  detail?(site: string, id: string, from: number, to: number, maxPoints?: number): Promise<Frame[]>;
   /* demo seam only; raw annotations, normalized by normAnnotations */
   annotations?(): RawAnnotation[];
 }
@@ -198,6 +209,9 @@ export interface SourceModel {
   lastActive: TickSlot | null;
   /* add frames (the live poll's) and rebuild for `now` */
   refresh(fresh: Frame[], now: number): void;
+  /* intervals for other frames over another range, by this host's promise,
+   * pauses and hold (the preview player's scrubber) */
+  intervalsFor(frames: Frame[], window: TimeWindow, now: number, sample?: number): Interval[];
 }
 
 /* ---- mounts (mountTimeline, mountGrid) ---- */
@@ -244,6 +258,16 @@ export interface MountConfig {
   /* a promise for every host (ms), whatever its source says: the panel's
    * Expected cadence (docs/TIMELINE-MODEL.md); unset, the sources decide */
   expectedCadence?: number;
+  /* the interval the host's queries were asked for at (ms; Grafana's
+   * $__interval): a source may answer one frame per it, so promises are
+   * judged no finer */
+  sampleInterval?: number;
+  /* the preview player's default scrubber style (a viewer's own last choice
+   * wins): 'ticks' (default) or 'thumbs' */
+  playerScrubber?: string;
+  /* the least width a frame gets wherever it's drawn (px, default
+   * FRAME_WIDTH): the strip's slots and the preview player's ticks */
+  frameWidth?: number;
   onHover?: (t: number) => void;               // timeline: a local hover moved the cursor
   onHoverClear?: () => void;                   // timeline: the mouse left a strip
   onCursor?: (t: number) => void;              // timeline: every cursor move (host chrome)

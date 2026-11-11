@@ -21,7 +21,8 @@ async function pollOnce(s: GridState): Promise<void> {
     const last = lastFrame(rec);
     let fresh;
     try {
-      fresh = await s.backend.frames(k.site, k.id, Math.max(last ? last.ts : s.P.from, s.P.from) + 1, Math.min(s.P.to, Date.now()), rec.model.step);
+      const from = Math.max(last ? last.ts : s.P.from, s.P.from) + 1, to = Math.min(s.P.to, Date.now());
+      fresh = s.backend.allFrames ? await s.backend.allFrames(k.site, k.id, from, to) : await s.backend.frames(k.site, k.id, from, to, rec.model.step);
     } catch (e) {
       // one source's failure must not stop the others' polls
       console.warn('[visual-timeline] live poll failed for ' + k.id + ':', e);

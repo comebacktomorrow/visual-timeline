@@ -59,7 +59,7 @@ export function mountGrid(root: HTMLElement, cfg: MountConfig): MountInstance & 
     }
     // a few at a time; tiles still go in declared order
     const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) =>
-      s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence }).catch((e) => {
+      s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence, sample: s.cfg.sampleInterval }).catch((e) => {
         console.warn('[visual-timeline] model build failed for ' + k.id + ':', e);
         return null;
       }));

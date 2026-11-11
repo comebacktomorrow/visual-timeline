@@ -13,7 +13,7 @@ import {
 } from '@grafana/data';
 import { getTemplateSrv } from '@grafana/runtime';
 
-import { HostRecords, framesPerStep, recordsBackend } from '../shared/frameRecords';
+import { HostRecords, recordsBackend, thinWithCounts } from '../shared/frameRecords';
 import { lastFrameIn } from '../shared/lastFrame';
 import { FolderSource, proxyTextFetch, TextFetch } from './folder/source';
 import {
@@ -30,8 +30,9 @@ import {
 import { DemoBackend, makeBackend as makeDemoBackend } from '../vt/backends/demo';
 import { resolveTimeZone } from '../vt/time/zones';
 import { coreTimeZone } from '../timezone';
+import { WINDOW_FROM, WINDOW_TO } from '../shared/ids';
 import { limited, MODEL_CONCURRENCY } from '../vt/model/pool';
-import type { SourceDecl } from '../vt/types';
+import type { Frame, SourceDecl } from '../vt/types';
 import type { VisualTimelineOptions, VisualTimelineQuery, VisualTimelineVariableQuery } from './types';
 import { VisualTimelineVariableSupport } from './variables';
 
@@ -106,12 +107,16 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
 
   async query(request: DataQueryRequest<VisualTimelineQuery>): Promise<DataQueryResponse> {
     const window = { from: request.range.from.valueOf(), to: request.range.to.valueOf() };
+    // the demo places its outage, pauses and pace change in the dashboard's
+    // range: a panel asking for one slot again (M10) says which range that was
+    const pf = Number(request.scopedVars?.[WINDOW_FROM]?.value), pt = Number(request.scopedVars?.[WINDOW_TO]?.value);
+    const demoWindow = Number.isFinite(pf) && Number.isFinite(pt) && pt > pf ? { from: pf, to: pt } : window;
     const data = await Promise.all(
       request.targets
         .filter((t) => !t.hide)
         .map(async (t): Promise<DataFrame | DataFrame[]> => {
           if (t.kind === 'annotations') {
-            return annotationsToFrame(this.demo ? this.demoBackend(window).annotations() : [], t.refId);
+            return annotationsToFrame(this.demo ? this.demoBackend(demoWindow).annotations() : [], t.refId);
           }
           const sites = interpolatedList(this.field(t.sites, request.scopedVars));
           const hosts = interpolatedList(this.field(t.hosts, request.scopedVars));
@@ -119,7 +124,7 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
           if (!this.demo && (this.folder || this.folderError)) {
             return this.folderQuery(t, window, request, { sites, hosts, tags });
           }
-          const sources = applySourceFilter(await this.sources(sites, window), {
+          const sources = applySourceFilter(await this.sources(sites, this.demo ? demoWindow : window), {
             sites,
             hosts,
             tags: /\$[{a-zA-Z_]/.test(tags) ? '' : tags,
@@ -132,7 +137,7 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
             const tz = resolveTimeZone(coreTimeZone(request.timezone));
             // and its pauses as state rows, so the panel reads them as it would anyone's (#126, M4)
             return this.demo
-              ? [list, await this.demoRecords(sources, window, request.maxDataPoints, t.refId, tz), pauseStatesToFrame(sources, t.refId)]
+              ? [list, await this.demoRecords(sources, window, request.maxDataPoints, t.refId, tz, demoWindow), pauseStatesToFrame(sources, t.refId)]
               : list;
           }
           // the last frame at the range's end, or now if the range runs past it
@@ -184,11 +189,12 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
    * or coarser for a long window, so there are never more rows per source
    * than the panel has pixels. */
   private async demoRecords(
-    sources: SourceDecl[], window: { from: number; to: number }, maxDataPoints: number | undefined, refId: string, timeZone: string
+    sources: SourceDecl[], window: { from: number; to: number }, maxDataPoints: number | undefined, refId: string, timeZone: string,
+    demoWindow: { from: number; to: number } = window
   ) {
-    const demo = this.demoBackend(window, timeZone);
+    const demo = this.demoBackend(demoWindow, timeZone);
     const span = Math.max(1, window.to - window.from);
-    const rows: Array<{ ts: number; host: string; site: string; url: string; cadence: number }> = [];
+    const rows: Array<{ ts: number; host: string; site: string; url: string; cadence: number; count?: number }> = [];
     for (const s of sources) {
       const cadences = [s.cadence, ...(s.history || []).map((h) => h.cadence)].filter((c): c is number => !!c && c > 0);
       const finest = Math.min(...cadences);
@@ -198,7 +204,10 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
       const paces = (s.history || []).filter((h) => h.cadence && (h.variant || 'lo') === 'lo').sort((a, b) => a.since - b.since);
       const paceAt = (ts: number) => paces.filter((h) => h.since <= ts).pop()?.cadence ?? s.cadence;
       for (const f of await demo.frames(s.site, s.id, window.from, window.to, step)) {
-        rows.push({ ts: f.ts, host: s.id, site: s.site, url: f.url, cadence: paceAt(f.ts) });
+        // a row a step apart stands for the frames the host took in it
+        const pace = paceAt(f.ts);
+        const count = Math.max(1, Math.round(step / pace));
+        rows.push({ ts: f.ts, host: s.id, site: s.site, url: f.url, cadence: pace, ...(count > 1 ? { count } : {}) });
       }
     }
     return recordsToFrame(rows, refId);
@@ -276,15 +285,25 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
 /* a folder host as a source declaration */
 const declOf = (r: HostRecords): SourceDecl => ({ id: r.id, site: r.site, cadence: r.cadence, ...(r.inferred ? { inferred: true } : {}) });
 
-/* a folder's frames as rows: one per step for each host, at its own cadence
- * or coarser, so no more rows than the panel has pixels */
+/* A folder's frames as rows: one per step for each host, at its own cadence
+ * or coarser, so no more rows than the panel has pixels (maxDataPoints).
+ * Each row says how many frames it stands for (frame_count): the panel
+ * shows "4 frames" on a slot, and fetches a slot's frames again, at full
+ * resolution, when the preview player or the hover flipbook plays them
+ * (M10). Plus the frame in force at the window's start. */
 function folderRows(records: HostRecords[], window: { from: number; to: number }, maxDataPoints: number | undefined) {
   const span = Math.max(1, window.to - window.from);
-  const rows: Array<{ ts: number; host: string; site: string; url: string; hi?: string }> = [];
+  const rows: Array<{ ts: number; host: string; site: string; url: string; hi?: string; count?: number }> = [];
   for (const r of records) {
-    const step = r.cadence * Math.max(1, Math.ceil(span / (maxDataPoints || 1000) / r.cadence));
-    for (const f of framesPerStep(r.frames, window.from, window.to, step)) {
-      rows.push({ ts: f.ts, host: r.id, site: r.site, url: f.url, ...(f.hi ? { hi: f.hi } : {}) });
+    const inWindow = r.frames.filter((f) => f.ts >= window.from && f.ts <= window.to);
+    const points = Math.max(1, maxDataPoints || 1000);
+    // few enough: every one; else a whole number of the host's cadence per row
+    const kept = inWindow.length <= points ? inWindow
+      : thinWithCounts(r.frames, window.from, window.to, r.cadence * Math.max(1, Math.ceil(span / points / r.cadence)));
+    let before: Frame | undefined;
+    for (const f of r.frames) {if (f.ts < window.from) {before = f;}}
+    for (const f of before ? [before, ...kept] : kept) {
+      rows.push({ ts: f.ts, host: r.id, site: r.site, url: f.url, ...(f.hi ? { hi: f.hi } : {}), ...(f.count ? { count: f.count } : {}) });
     }
   }
   return rows;

@@ -23,6 +23,8 @@ import { DATASOURCE_ID } from '../shared/ids';
 import { FieldRoles, hostTableFromSeries, recordsBackend, recordsFromSeries } from '../shared/frameRecords';
 import { stateAnnotations, statesFromSeries } from '../shared/hostState';
 import { needsRebuild } from './resize';
+import { makeDetail } from './detail';
+import { FRAME_WIDTH, FRAME_WIDTH_MAX, FRAME_WIDTH_MIN } from '../vt/ui/frameWidth';
 import { chipLinkUrl, parseChips } from './chips';
 
 interface VisualTimelineOptions {
@@ -43,6 +45,10 @@ interface VisualTimelineOptions {
   /** A promise for every host in the panel ("1m"): a frame missing past it
    * is offline. Empty: what the data says. */
   expectedCadence?: string;
+  /** The preview player's default scrubber style (M10). */
+  playerScrubber?: 'ticks' | 'thumbs';
+  /** The least width a frame gets, px: the strip's slots and the player's ticks. */
+  frameWidth?: number;
   /** Header chips (#126): which, in order, and what a click does. */
   chips?: string;
   chipClick?: 'filter' | 'link' | 'none';
@@ -152,6 +158,12 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const showDetails = options.showDetails === true;
   const hideEmpty = options.hideEmpty === true;
   const showAnnotations = options.showAnnotations !== false;
+  // the interval Grafana asked the queries for at: a data source may answer
+  // one frame per it (the reference worker's step=$__interval_ms), or per
+  // the range over max data points (ours), before Grafana rounds it
+  const req = props.data?.request;
+  const reqSpan = req ? req.range.to.valueOf() - req.range.from.valueOf() : 0;
+  const sampleInterval = Math.max(req?.intervalMs ?? 0, req?.maxDataPoints ? Math.ceil(reqSpan / req.maxDataPoints) : 0);
   // a promise for every host, whatever its data says (ms; 0: none)
   const expectedCadence = options.expectedCadence ? safeInterval(options.expectedCadence) : 0;
   // frames without a promise: how long one is shown when none follows soon
@@ -203,11 +215,19 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const tableKey = table.length ? JSON.stringify(table) : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const tableMemo = useMemo(() => table, [tableKey]);
+  /* A slot's frames at full resolution, by running the panel's queries again
+   * for just that slot (M10, detail.ts): read through refs, so the backend
+   * keeps its identity across refreshes. */
+  const requestRef = useRef(props.data?.request);
+  requestRef.current = props.data?.request;
+  const rolesRef = useRef(roles);
+  rolesRef.current = roles;
+  const detail = useMemo(() => makeDetail(() => requestRef.current as never, () => rolesRef.current), []);
   const backend = useMemo(
     () => (recordsMemo || statesMemo || tableMemo.length
-      ? recordsBackend(recordsMemo ?? [], tableMemo, statesMemo ?? [])
+      ? { ...recordsBackend(recordsMemo ?? [], tableMemo, statesMemo ?? []), detail }
       : null),
-    [recordsMemo, statesMemo, tableMemo]
+    [recordsMemo, statesMemo, tableMemo, detail]
   );
   /* Clicking a host, site or tag chip adds that filter to the dashboard's ad
    * hoc filter for this data source, as a table cell's "filter for value"
@@ -270,6 +290,9 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       from, to, width: buildWidth, fit, backend, showDetails, hideEmpty, onFilter,
       annotations, showAnnotations, annotationLanes: options.annotationLanes || 'shared',
       hold, chips, ...(expectedCadence > 0 ? { expectedCadence } : {}),
+      ...(sampleInterval > 0 ? { sampleInterval } : {}),
+      playerScrubber: options.playerScrubber || 'ticks',
+      frameWidth: options.frameWidth || FRAME_WIDTH,
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
       timeZone,
@@ -298,7 +321,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, chipsKey]);
+  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, sampleInterval, options.playerScrubber, options.frameWidth, chipsKey]);
 
   useEffect(() => {
     const subs = [
@@ -503,11 +526,29 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       defaultValue: '10m',
       showIf: (o) => o.holdFrames === 'limit' || o.holdFrames === 'threshold',
     })
+    .addRadio({
+      path: 'playerScrubber',
+      name: 'Scrubber style',
+      category: ['Preview player'],
+      description: 'Clicking a frame opens a player with the slot\'s own timeline: the frames the slot holds but can\'t show. Ticks: a mark per frame at its true time (loads only the frame under the playhead). Thumbnails: the frames themselves. Viewers can change it in the player; their last choice is remembered.',
+      defaultValue: 'ticks',
+      settings: { options: [
+        { value: 'ticks', label: 'Ticks' },
+        { value: 'thumbs', label: 'Thumbnails' },
+      ] },
+    })
     .addBooleanSwitch({
       path: 'hideEmpty',
       name: 'Hide hosts with no data',
       description: 'Leave out hosts with no frames in the time range, instead of showing them offline',
       defaultValue: false,
+    })
+    .addSliderInput({
+      path: 'frameWidth',
+      name: 'Frame width',
+      description: 'The least width a frame gets, in pixels, wherever it is drawn: the strip\'s slots, and the ticks in the player\'s timeline of a slot. Smaller shows more detail and loads more images; larger, fewer.',
+      defaultValue: FRAME_WIDTH,
+      settings: { min: FRAME_WIDTH_MIN, max: FRAME_WIDTH_MAX, step: 1 },
     })
     .addBooleanSwitch({
       path: 'showDetails',

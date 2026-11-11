@@ -85,11 +85,14 @@ export class FolderSource {
   /* one folder's listing, cached; S3 pages followed; a missing folder (a day
    * with no frames) is empty */
   private list = (folder: string, opts?: { startAfter?: string }): Promise<Listing> => {
-    const key = folder + '\u0000' + (opts?.startAfter ?? '');
+    // only an S3 listing starts after a key; HTML and JSON listings are the
+    // same whatever the range, so one answer serves them all
+    const startAfter = this.listing === 's3' ? opts?.startAfter : undefined;
+    const key = folder + '\u0000' + (startAfter ?? '');
     const now = Date.now();
     const hit = this.cache.get(key);
     if (hit && now - hit.at < LISTING_TTL_MS) {return hit.p;}
-    const p = this.fetchListing(folder, opts);
+    const p = this.fetchListing(folder, startAfter ? { startAfter } : undefined);
     this.cache.set(key, { at: now, p });
     p.catch(() => this.cache.delete(key));
     if (this.cache.size > 500) {this.cache.clear();}

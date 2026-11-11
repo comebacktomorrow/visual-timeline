@@ -257,9 +257,10 @@ describe('mounted panels', () => {
     expect(text('.t-off')[0]).toBe('OFFLINE — last seen ' + KTM(OUTAGE - MIN));
     m.setExternalCursor(t);
     (root.querySelector('.tile') as HTMLElement).click();
-    expect(document.querySelector('.ktl-pop .cap')!.textContent).toBe('site-a / zoned — ' + KTM(t));
+    const shown = () => document.querySelector('.ktl-pop .title')!.textContent + ' — ' + document.querySelector('.ktl-pop .time')!.textContent;
+    expect(shown()).toBe('site-a / zoned — ' + KTM(t));
     (root.querySelectorAll('.tile')[1] as HTMLElement).click();
-    expect(document.querySelector('.ktl-pop .cap')!.textContent).toBe('site-a / plain — ' + fmtTime(t, 'UTC'));
+    expect(shown()).toBe('site-a / plain — ' + fmtTime(t, 'UTC'));
   });
 
   test("grid with thumbTimes 'panel': tile times stay in panel time", async () => {

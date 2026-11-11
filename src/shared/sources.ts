@@ -197,7 +197,7 @@ export function lastFramesByHost(sources: SourceDecl[], last: Array<LastFrame | 
 
 /** Frame records as rows the panel reads like any source's (#126): one row
  * per frame, with its time, host, site and image locator. */
-export function recordsToFrame(rows: Array<{ ts: number; host: string; site: string; url: string; hi?: string; cadence?: number }>, refId: string): DataFrame {
+export function recordsToFrame(rows: Array<{ ts: number; host: string; site: string; url: string; hi?: string; cadence?: number; count?: number }>, refId: string): DataFrame {
   return createDataFrame({
     refId,
     name: 'frames',
@@ -210,6 +210,8 @@ export function recordsToFrame(rows: Array<{ ts: number; host: string; site: str
       ...(rows.some((r) => r.hi) ? [{ name: 'image_hi', type: FieldType.string, values: rows.map((r) => r.hi ?? null) }] : []),
       // the pace in force at each frame: where it changes, the panel draws eras
       ...(rows.some((r) => r.cadence) ? [{ name: 'cadence', type: FieldType.number, values: rows.map((r) => r.cadence ?? null), config: { unit: 'ms' } }] : []),
+      // how many frames a thinned row stands for
+      ...(rows.some((r) => r.count && r.count > 1) ? [{ name: 'frame_count', type: FieldType.number, values: rows.map((r) => r.count ?? 1) }] : []),
     ],
   });
 }

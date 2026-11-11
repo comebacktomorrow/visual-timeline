@@ -24,10 +24,12 @@ export interface ModelOptions {
   /** a promise for every frame (ms), whatever the source says: the panel's
    * Expected cadence */
   expected?: number;
+  /** the interval the frames were asked for at (ms): Grafana's $__interval */
+  sample?: number;
 }
 
 export async function buildSourceModel(
-  decl: SourceDecl, P: TimeWindow, backend: Pick<Backend, 'frames'>, budgetSlots: number, opts: ModelOptions = {}
+  decl: SourceDecl, P: TimeWindow, backend: Pick<Backend, 'frames' | 'allFrames'>, budgetSlots: number, opts: ModelOptions = {}
 ): Promise<SourceModel> {
   const expected = opts.expected && opts.expected > 0 ? opts.expected : undefined;
   // a source with an Expected cadence promises it, whatever it declared
@@ -38,8 +40,10 @@ export async function buildSourceModel(
   // without a promise), coarsened to the pixel budget in whole paces
   const active = eras.filter((e) => !e.paused);
   const base = Math.max(1000, Math.min(...(active.length ? active : eras).map((e) => e.cadence)));
-  // the budget is for active time: a pause is one band, however long
-  const activeSpan = Math.max(1, active.reduce((a, e) => a + (e.to - e.from), 0) || P.to - P.from);
+  // the budget is for active time: a closed pause is one band, however long.
+  // An open one (the last era) counts as active: frames may end it anywhere
+  const closedPaused = eras.slice(0, -1).filter((e) => e.paused).reduce((a, e) => a + (e.to - e.from), 0);
+  const activeSpan = Math.max(1, (P.to - P.from) - closedPaused);
   const step = base * Math.max(1, Math.ceil(activeSpan / base / Math.max(4, budgetSlots)));
   const maxCadence = Math.max(...eras.map((e) => e.cadence));
   const wanted = promised ? 1.5 * maxCadence + step
@@ -47,7 +51,11 @@ export async function buildSourceModel(
   const lookback = Math.min(wanted, LOOKBACK_STEPS * step);
 
   const now0 = opts.now ?? Date.now();
-  const fetched = await backend.frames(decl.site, decl.id, P.from - lookback, Math.min(P.to, now0), step);
+  // every frame when the backend holds them all (records): slots then know
+  // how many frames they hold (the hover flipbook plays them); else one per step
+  const fetched = backend.allFrames
+    ? await backend.allFrames(decl.site, decl.id, P.from - lookback, Math.min(P.to, now0))
+    : await backend.frames(decl.site, decl.id, P.from - lookback, Math.min(P.to, now0), step);
 
   // the promise in force at a time: its era's pace (the first era's before
   // the window); none for a source whose cadence was only inferred
@@ -73,6 +81,11 @@ export async function buildSourceModel(
   const model: SourceModel = {
     eras, step, promised, frames: [], intervals: [], slots: [], drops: [], lastActive: null,
     slotAt: () => null, intervalAt: () => null,
+    // frames for a span (the player's), judged at the interval they were
+    // asked for at: the span's own (0: every frame), else the panel's
+    intervalsFor: (frames, window, now, sample) => buildIntervals({
+      frames, promiseAt, pauses, hold, window, now, promiseOverride: expected, sample: sample ?? opts.sample,
+    }).intervals,
     refresh(fresh: Frame[], now: number) {
       const byTs = new Map(model.frames.map((f) => [f.ts, f]));
       for (const f of fresh) {byTs.set(f.ts, f);}
@@ -85,7 +98,7 @@ export async function buildSourceModel(
       const thinned = model.frames.length <= 1.1 * buckets;
       const built = buildIntervals({
         frames: model.frames, promiseAt, pauses, hold, window: P, now, step: promised && thinned ? step : undefined,
-        promiseOverride: expected,
+        promiseOverride: expected, sample: opts.sample,
       });
       // each slot's cadence: the promise in force at its tick, or the typical gap
       const { slots, drops } = sample(built, step, (t) => promiseAt(t) ?? base);
@@ -141,7 +154,7 @@ function sample(built: Intervals, step: number, cadenceAt: (t: number) => number
       let count = 0, best: Frame | null = null;
       const last = k === ticks.length - 1;
       for (let m = fi; m < frames.length && (frames[m].ts < x1 || (last && frames[m].ts === x1)); m++) {
-        count++;
+        count += frames[m].count && frames[m].count! > 1 ? frames[m].count! : 1;
         if (!best || Math.abs(frames[m].ts - t) < Math.abs(best.ts - t)) {best = frames[m];}
       }
       // the last slot of a stretch reads its end (at the live edge: now)

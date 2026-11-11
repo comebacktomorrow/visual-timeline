@@ -1,3 +1,4 @@
+import { frameWidthOf } from '../ui/frameWidth';
 import { resolveTimeZone } from '../time/zones';
 import { wireFilters } from '../dom/html';
 import { buildSourceModel } from '../model/slots';
@@ -39,7 +40,8 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
   const TZ = resolveTimeZone(cfg.timeZone);
   const SPAN = Math.max(1, P.to - P.from);
   const LIVE = P.to > Date.now() - 2 * 60 * 1000;
-  const MIN_SLICE_PX = 7;
+  // the least width a slot gets: a frame per this many pixels at most
+  const MIN_SLICE_PX = frameWidthOf(cfg);
   const hostWidth = cfg.width || root.clientWidth || 800;   // plugin passes width; web mounts measure
   const pxBudget = Math.max(10, Math.floor((hostWidth - 20) / MIN_SLICE_PX));
   const backend: Backend =
@@ -84,7 +86,7 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
     }
     // a few at a time; cards still go in declared order
     const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) =>
-      s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence }).catch((e) => {
+      s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence, sample: s.cfg.sampleInterval }).catch((e) => {
         // one source's backend hiccup must not black out the whole panel;
         // the next refresh retries it
         console.warn('[visual-timeline] model build failed for ' + k.id + ':', e);

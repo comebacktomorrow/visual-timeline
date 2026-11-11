@@ -33,6 +33,13 @@ can load; `image_hi` (optional) is a larger one for the click-in preview;
 `site` (optional) groups hosts. Name the columns as you like and set them
 under the panel's **Frame fields** when they differ.
 
+A large table can return fewer rows over long ranges: one per host per
+`$__interval` (with a `frame_count` column saying how many frames each row
+stands for, if you like). The panel draws what it gets, and when its preview
+player or hover flipbook needs one slot's frames, it runs the query again
+for just that slot, so `$__timeFilter` and `$__interval` there narrow to
+it.
+
 To have missing frames drawn as offline, add a `cadence` column (ms): how
 often the host promises a frame, such as `60000 AS cadence`. Without one, a
 host promises nothing, and its silences are neutral "no data" (the panel's

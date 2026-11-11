@@ -1,6 +1,6 @@
 import { createDataFrame, FieldType } from '@grafana/data';
 
-import { framesPerStep, hostTableFromSeries, imageLocator, inferCadence, recordsBackend, recordsFromSeries } from './frameRecords';
+import { framesPerStep, hostTableFromSeries, imageLocator, inferCadence, recordsBackend, recordsFromSeries, thinWithCounts } from './frameRecords';
 
 const MIN = 60_000;
 const T0 = Date.UTC(2026, 10, 10, 10);
@@ -308,5 +308,26 @@ describe('an image field found by its content', () => {
       { name: 'host', type: FieldType.string, values: ['cam'] },
     ] });
     expect(recordsFromSeries([two])).toBeNull();
+  });
+});
+
+describe('thinning that keeps counts (M10)', () => {
+  test('one frame per step, the one nearest its tick, saying how many its bucket held', () => {
+    const MIN = 60e3;
+    // buckets of 4 minutes around ticks 0, 4 and 8: {0, 1}, {2, 3, 4, 5}, {6, 7}
+    const frames = [0, 1, 2, 3, 4, 5, 6, 7].map((m) => ({ ts: m * MIN, url: `f${m}` }));
+    expect(thinWithCounts(frames, 0, 7 * MIN, 4 * MIN).map((f) => [f.ts / MIN, f.count])).toEqual([[0, 2], [4, 4], [7, 2]]);
+  });
+  test('a row that stands for one frame says nothing', () => {
+    expect(thinWithCounts([{ ts: 0, url: 'a' }], 0, 60e3, 60e3)[0].count).toBeUndefined();
+  });
+  test('a frame_count field is how many frames a row stands for', () => {
+    const recs = recordsFromSeries([createDataFrame({ fields: [
+      { name: 'time', type: FieldType.time, values: [1, 2] },
+      { name: 'host', type: FieldType.string, values: ['a', 'a'] },
+      { name: 'image', type: FieldType.string, values: ['http://x/1', 'http://x/2'] },
+      { name: 'frame_count', type: FieldType.number, values: [4, 1] },
+    ] })]);
+    expect(recs![0].frames.map((f) => f.count)).toEqual([4, undefined]);
   });
 });
