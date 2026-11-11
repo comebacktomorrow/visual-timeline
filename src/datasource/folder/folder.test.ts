@@ -1,5 +1,5 @@
 import { listingPath, parseHtmlListing, parseJsonListing, parseS3Listing } from './listings';
-import { compileTemplate, parsePath, startAfterName } from './template';
+import { compileTemplate, finestUnit, parsePath, startAfterName, unitEnd } from './template';
 import { Lister, walkFrames } from './walk';
 
 const T = (iso: string) => Date.parse(iso);
@@ -151,5 +151,24 @@ describe('walking a folder tree for a time range', () => {
     const { list } = treeLister({ '': hosts });
     const { truncated } = await walkFrames(tpl, list, { from: 0, to: 1, tz: 'UTC', maxListings: 3 });
     expect(truncated).toBe(true);
+  });
+});
+
+describe('a video template\'s span (M11)', () => {
+  test('the finest time it names', () => {
+    expect(finestUnit(compileTemplate('{host}/{YYYY}/{MM}/{DD}/{YYYY}{MM}{DD}.mp4'))).toBe('day');
+    expect(finestUnit(compileTemplate('{host}/{YYYY}{DDD}.mp4'))).toBe('day');
+    expect(finestUnit(compileTemplate('{host}/{YYYY}-{MM}-{DD}T{HH}.mp4'))).toBe('hour');
+    expect(finestUnit(compileTemplate('{host}/{YYYY}{MM}{DD}{HH}{mm}.mp4'))).toBe('minute');
+    expect(finestUnit(compileTemplate('{host}/{YYYY}-{MM}.mp4'))).toBe('month');
+    expect(finestUnit(compileTemplate('{host}/{YYYY}{MM}{DD}{HH}{mm}{ss}.mp4'))).toBeNull();
+    expect(finestUnit(compileTemplate('{host}/{epoch}.mp4'))).toBeNull();
+  });
+  test('the end of a unit, on the clock of the folder\'s zone', () => {
+    expect(unitEnd(T('2026-03-10T00:00:00Z'), 'day', 'UTC')).toBe(T('2026-03-11T00:00:00Z'));
+    expect(unitEnd(T('2026-12-01T00:00:00Z'), 'month', 'UTC')).toBe(T('2027-01-01T00:00:00Z'));
+    expect(unitEnd(T('2026-11-10T05:00:00Z'), 'hour', 'UTC')).toBe(T('2026-11-10T06:00:00Z'));
+    // Sydney's clocks go back on 5 April 2026: that day is 25 hours long
+    expect(unitEnd(T('2026-04-04T13:00:00Z'), 'day', 'Australia/Sydney') - T('2026-04-04T13:00:00Z')).toBe(25 * 3600e3);
   });
 });

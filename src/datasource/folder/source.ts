@@ -6,11 +6,11 @@ import { rangeUtil } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
 import { lastValueFrom } from 'rxjs';
 
-import { HostRecords, inferCadence } from '../../shared/frameRecords';
+import { HostRecords, inferCadence, RawClip, resolveClips } from '../../shared/frameRecords';
 import type { Frame } from '../../vt/types';
 import type { VisualTimelineOptions } from '../types';
 import { Listing, ListingFormat, listingPath, parseListing } from './listings';
-import { compileTemplate, FolderTemplate } from './template';
+import { compileTemplate, finestUnit, FolderTemplate, UNIT_MS, unitEnd } from './template';
 import { walkFrames } from './walk';
 
 /** routes[].path in datasource/plugin.json: the folder's base URL. */
@@ -62,6 +62,8 @@ export class FolderSource {
   private readonly large?: string;
   private readonly raw: string;
   private compiled: FolderTemplate | null = null;
+  private readonly videoRaw: string;
+  private compiledVideo: FolderTemplate | null = null;
   private cache = new Map<string, { at: number; p: Promise<Listing> }>();
 
   constructor(o: VisualTimelineOptions, private readonly fetchText: TextFetch) {
@@ -74,12 +76,19 @@ export class FolderSource {
     this.small = (o.smallVariant || '').trim() || undefined;
     this.large = (o.largeVariant || '').trim() || undefined;
     this.raw = o.template || '';
+    this.videoRaw = (o.videoTemplate || '').trim();
     if (!trimSlashes(o.folderUrl || '')) {throw new Error('Set the folder URL');}
   }
 
   /** The compiled template; throws the template's own message when it can't work. */
   get template(): FolderTemplate {
     return (this.compiled ??= compileTemplate(this.raw));
+  }
+
+  /** The compiled video template (M11), or null when none is set. */
+  get videoTemplate(): FolderTemplate | null {
+    if (!this.videoRaw) {return null;}
+    return (this.compiledVideo ??= compileTemplate(this.videoRaw, 'video path template'));
   }
 
   /* one folder's listing, cached; S3 pages followed; a missing folder (a day
@@ -124,22 +133,54 @@ export class FolderSource {
     const variants = this.small || this.large ? [...new Set([this.small, this.large].filter((v): v is string => !!v))] : null;
     // a frame can sit up to half a cadence before the window and still be its first
     const pad = 3600e3;
-    const { frames, truncated } = await walkFrames(this.template, this.list, {
+    const walked = await walkFrames(this.template, this.list, {
       from: from - pad, to, tz: this.tz, hosts: filters.hosts ?? null, sites: filters.sites ?? null, variants,
     });
-    const byHost = new Map<string, { id: string; site: string; small: Frame[]; large: Frame[] }>();
-    for (const f of frames) {
-      const key = f.site + '/' + f.host;
+    const frames = walked.frames;
+    let truncated = walked.truncated;
+    type Host = { id: string; site: string; small: Frame[]; large: Frame[]; clips: RawClip[]; clipsHi: Map<number, string> };
+    const byHost = new Map<string, Host>();
+    const hostOf = (site: string, id: string): Host => {
+      const key = site + '/' + id;
       let h = byHost.get(key);
-      if (!h) { h = { id: f.host, site: f.site, small: [], large: [] }; byHost.set(key, h); }
+      if (!h) { h = { id, site, small: [], large: [], clips: [], clipsHi: new Map() }; byHost.set(key, h); }
+      return h;
+    };
+    // video clips (M11): each spans its template's finest time unit (a day's
+    // movie, an hour's recording); walked from far enough back that one
+    // that began before the range is found
+    const vt = this.videoTemplate;
+    if (vt) {
+      const unit = finestUnit(vt);
+      const clips = await walkFrames(vt, this.list, {
+        from: from - (unit ? UNIT_MS[unit] : pad), to, tz: this.tz, hosts: filters.hosts ?? null, sites: filters.sites ?? null, variants,
+      });
+      truncated = truncated || clips.truncated;
+      for (const c of clips.frames) {
+        const h = hostOf(c.site, c.host);
+        const url = this.imageBase + '/' + encodePath(c.path);
+        // the large variant of a clip is its larger version
+        if (this.large && c.variant === this.large && this.small !== this.large) { h.clipsHi.set(c.ts, url); continue; }
+        if (this.small && c.variant && c.variant !== this.small) {continue;}
+        h.clips.push({ from: c.ts, url, ...(unit ? { to: unitEnd(c.ts, unit, this.tz) } : {}) });
+      }
+    }
+    for (const f of frames) {
+      const h = hostOf(f.site, f.host);
       const fr: Frame = { ts: f.ts, url: this.imageBase + '/' + encodePath(f.path), source: f.host };
       if (!this.small || f.variant === this.small) {h.small.push(fr);}
       if (this.large && f.variant === this.large) {h.large.push(fr);}
     }
     const records: HostRecords[] = [];
     for (const h of byHost.values()) {
-      if (!h.small.length) {continue;}
-      const cadence = inferCadence(h.small.map((f) => f.ts));
+      if (!h.small.length && !h.clips.length) {continue;}
+      const cadence = inferCadence(h.small.length ? h.small.map((f) => f.ts) : h.clips.map((c) => c.from).sort((a, b) => a - b));
+      for (const c of h.clips) {
+        const hi = h.clipsHi.get(c.from);
+        if (hi) {c.hi = hi;}
+      }
+      // a clip with no unit to span lasts a frame's time (an assumption)
+      const clips = h.clips.length ? { clips: resolveClips(h.clips, cadence, h.small.length > 1 ? (this.expected || cadence) : undefined) } : {};
       // the large image nearest each small one, within a cadence
       let j = 0;
       for (const f of h.small) {
@@ -150,8 +191,8 @@ export class FolderSource {
       // a folder promises its Expected every, else nothing: its cadence is
       // then only the typical gap
       records.push(this.expected
-        ? { id: h.id, site: h.site, frames: h.small, cadence: this.expected }
-        : { id: h.id, site: h.site, frames: h.small, cadence, inferred: true });
+        ? { id: h.id, site: h.site, frames: h.small, cadence: this.expected, ...clips }
+        : { id: h.id, site: h.site, frames: h.small, cadence, inferred: true, ...clips });
     }
     records.sort((a, b) => a.site.localeCompare(b.site) || a.id.localeCompare(b.id));
     return { records, truncated };

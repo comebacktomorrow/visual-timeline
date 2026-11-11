@@ -206,7 +206,9 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   // keyed on content, as above: a host's frames only ever grow, so its count
   // and newest frame say whether anything changed
   const recordsKey = records
-    ? JSON.stringify(records.map((h) => [h.site, h.id, h.cadence, h.frames.length, h.frames[0]?.ts, h.frames.at(-1)?.ts, h.frames.at(-1)?.url]))
+    ? JSON.stringify(records.map((h) => [h.site, h.id, h.cadence, h.frames.length, h.frames[0]?.ts, h.frames.at(-1)?.ts, h.frames.at(-1)?.url,
+      // and its clips (M10c): a new one can come with no new frame
+      h.clips?.length ?? 0, h.clips?.at(-1)?.from, h.clips?.at(-1)?.to]))
     : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const recordsMemo = useMemo(() => records, [recordsKey]);

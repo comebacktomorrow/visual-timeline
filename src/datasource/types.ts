@@ -19,6 +19,9 @@ export interface VisualTimelineOptions extends DataSourceJsonData {
   listing?: 'json' | 'html' | 's3';
   /** HTTP folder: where frames live, relative to the base (#125). */
   template?: string;
+  /** HTTP folder: where video clips live, relative to the base (M11,
+   * experimental). A clip spans the template's finest time unit. */
+  videoTemplate?: string;
   /** HTTP folder: the time zone of the times in names (default UTC). */
   /** How often each host promises a frame ("1m"): a missing one is
    * offline. Empty: no promise (docs/TIMELINE-MODEL.md). */

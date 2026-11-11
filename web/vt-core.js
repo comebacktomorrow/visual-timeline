@@ -1609,6 +1609,9 @@ var VTCore = (() => {
 .ktl-pop.player .stage video { display:none; width:100%; height:100%; object-fit:contain; }
 .ktl-pop.player.video .stage video { display:block; }
 .ktl-pop.player.video .stage img { display:none; }
+.ktl-pop.player.video.loading .stage img[src] { display:block; }
+.ktl-pop.player.video.loading .stage video { display:none; }
+.ktl-pop.player.video.loading .stage .state { color:var(--ktl-text); font-weight:500; opacity:.85; }
 .ktl-pop.player:not(.has-clip) button[data-a="mute"], .ktl-pop.player:not(.has-clip) button[data-a="hd"],
 .ktl-pop.player:not(.has-hi) button[data-a="hd"] { display:none; }
 .ktl-pop.player.off .stage img { opacity:.35; }
@@ -2496,13 +2499,18 @@ var VTCore = (() => {
       if (at.span) {
         el.classList.add("video");
         el.classList.remove("off");
-        stateEl.textContent = "";
+        stateEl.textContent = el.classList.contains("loading") ? "loading video\u2026" : "";
+        if (at.frame && img.getAttribute("src") !== at.frame.url && img.dataset.hiOf !== at.frame.url) {
+          img.src = at.frame.url;
+          delete img.dataset.hiOf;
+        }
         showClip(at.span.clip);
         caption(null);
         return;
       }
       if (el.classList.contains("video")) {
         el.classList.remove("video");
+        loading(false);
         stopVideo();
       }
       const f = at.frame;
@@ -2562,6 +2570,25 @@ var VTCore = (() => {
       }
       pendingT = null;
     });
+    function loading(on) {
+      if (el.classList.contains("loading") === on) {
+        return;
+      }
+      el.classList.toggle("loading", on);
+      if (el.classList.contains("video")) {
+        stateEl.textContent = on ? "loading video\u2026" : "";
+      }
+    }
+    for (const e of ["waiting", "seeking", "loadstart"]) {
+      video.addEventListener(e, () => {
+        if (video.readyState < 3) {
+          loading(true);
+        }
+      });
+    }
+    for (const e of ["canplay", "playing", "seeked"]) {
+      video.addEventListener(e, () => loading(video.readyState < 3 && video.seeking));
+    }
     video.addEventListener("error", () => {
       if (gone || !vidClip || !vidClip.hi || vidSrc !== vidClip.hi) {
         return;

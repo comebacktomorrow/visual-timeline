@@ -38,6 +38,13 @@
   video); a host with only clips draws them as bands with ▶, though frames
   alongside are recommended. A new **Video** field option names the field.
   A clip with no end lasts a frame's time (one a minute: a minute of video).
+  While a clip loads, the player shows the frame underneath and says so.
+- **Video from a folder** (M11, experimental). The HTTP folder connection's
+  **Video path template** finds clips beside the frames; each spans its
+  name's finest time (a day with `{DD}`, an hour with `{HH}`). The demo's
+  **The Sun** plays NASA SDO's daily movies over its stills.
+- Fixed: a panel whose query brought new clips but no new frames kept its
+  old clips.
 
 - **A cadence is a promise** (M9, [docs/TIMELINE-MODEL.md](docs/TIMELINE-MODEL.md)).
   The timeline no longer infers a heartbeat and holds every host to it. A

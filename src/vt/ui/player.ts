@@ -276,13 +276,19 @@ export function mountPlayer(
     if (at.span) {
       el.classList.add('video');
       el.classList.remove('off');
-      stateEl.textContent = '';
+      stateEl.textContent = el.classList.contains('loading') ? 'loading video…' : '';
+      // the still in force, shown while the video loads or seeks
+      if (at.frame && img.getAttribute('src') !== at.frame.url && img.dataset.hiOf !== at.frame.url) {
+        img.src = at.frame.url;
+        delete img.dataset.hiOf;
+      }
       showClip(at.span.clip);
       caption(null);
       return;
     }
     if (el.classList.contains('video')) {
       el.classList.remove('video');
+      loading(false);
       stopVideo();
     }
     const f = at.frame;
@@ -329,6 +335,15 @@ export function mountPlayer(
     if (vidClip && pendingT !== null && video.duration > 0) {video.currentTime = videoTime(vidClip, pendingT, video.duration);}
     pendingT = null;
   });
+  // a video still on its way (a large file, a slow server, a seek that
+  // needs more of it) says so, over its last picture
+  function loading(on: boolean): void {
+    if (el.classList.contains('loading') === on) {return;}
+    el.classList.toggle('loading', on);
+    if (el.classList.contains('video')) {stateEl.textContent = on ? 'loading video…' : '';}
+  }
+  for (const e of ['waiting', 'seeking', 'loadstart']) {video.addEventListener(e, () => { if (video.readyState < 3) {loading(true);} });}
+  for (const e of ['canplay', 'playing', 'seeked']) {video.addEventListener(e, () => loading(video.readyState < 3 && video.seeking));}
   // a larger version that won't play: the smaller one
   video.addEventListener('error', () => {
     if (gone || !vidClip || !vidClip.hi || vidSrc !== vidClip.hi) {return;}

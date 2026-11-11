@@ -25,9 +25,9 @@ const LISTINGS = [
 ];
 
 /* the template's own complaint, or none */
-function templateError(t: string | undefined): string | undefined {
+function templateError(t: string | undefined, label?: string): string | undefined {
   if (!t) {return undefined;}
-  try { compileTemplate(t); return undefined; } catch (e) { return (e as Error).message; }
+  try { compileTemplate(t, label); return undefined; } catch (e) { return (e as Error).message; }
 }
 
 export function ConfigEditor({ options, onOptionsChange }: Props) {
@@ -36,6 +36,7 @@ export function ConfigEditor({ options, onOptionsChange }: Props) {
   const set = (patch: Partial<VisualTimelineOptions>) => onOptionsChange({ ...options, jsonData: { ...jsonData, ...patch } });
   const text = (key: keyof VisualTimelineOptions) => (e: ChangeEvent<HTMLInputElement>) => set({ [key]: e.target.value });
   const tplError = templateError(jsonData.template);
+  const videoError = templateError(jsonData.videoTemplate, 'video path template');
 
   return (
     <div data-testid="vt-datasource-config">
@@ -83,6 +84,14 @@ export function ConfigEditor({ options, onOptionsChange }: Props) {
               description="Where frames live below the folder: {host} and a time ({YYYY} {MM} {DD} {DDD} {HH} {mm} {ss}, {epoch} or {epoch_ms}), optionally {site} and {variant}, anywhere in the path."
             >
               <Input id="vt-template" width={60} value={jsonData.template || ''} placeholder="{host}/{YYYY}-{MM}-{DD}/{HH}{mm}{ss}.jpg" onChange={text('template')} />
+            </Field>
+            <Field
+              label="Video path template (experimental)"
+              invalid={!!videoError}
+              error={videoError}
+              description="Optional: where video clips live below the folder, named like the frames. A clip covers its name's finest time: a day's movie with {DD}, an hour's with {HH}. The preview plays it over the frames."
+            >
+              <Input id="vt-video-template" width={60} value={jsonData.videoTemplate || ''} placeholder="{host}/{YYYY}-{MM}-{DD}.mp4" onChange={text('videoTemplate')} />
             </Field>
             <Field label="Time zone" description="The zone the times in names are in: an IANA name such as Australia/Brisbane. Empty: UTC.">
               <Input id="vt-timezone" width={30} value={jsonData.timezone || ''} placeholder="UTC" onChange={text('timezone')} />

@@ -23,6 +23,7 @@ import {
   pauseStatesToFrame,
   lastFramesByHost,
   recordsToFrame,
+  type RecordRow,
   sourcesToFrame,
   tagKeys,
   tagValues,
@@ -293,7 +294,7 @@ const declOf = (r: HostRecords): SourceDecl => ({ id: r.id, site: r.site, cadenc
  * (M10). Plus the frame in force at the window's start. */
 function folderRows(records: HostRecords[], window: { from: number; to: number }, maxDataPoints: number | undefined) {
   const span = Math.max(1, window.to - window.from);
-  const rows: Array<{ ts: number; host: string; site: string; url: string; hi?: string; count?: number }> = [];
+  const rows: RecordRow[] = [];
   for (const r of records) {
     const inWindow = r.frames.filter((f) => f.ts >= window.from && f.ts <= window.to);
     const points = Math.max(1, maxDataPoints || 1000);
@@ -304,6 +305,12 @@ function folderRows(records: HostRecords[], window: { from: number; to: number }
     for (const f of r.frames) {if (f.ts < window.from) {before = f;}}
     for (const f of before ? [before, ...kept] : kept) {
       rows.push({ ts: f.ts, host: r.id, site: r.site, url: f.url, ...(f.hi ? { hi: f.hi } : {}), ...(f.count ? { count: f.count } : {}) });
+    }
+    // its video clips over the window (M11), the one in force at its start
+    // included: a row each, with no image
+    for (const c of r.clips ?? []) {
+      if (c.to <= window.from || c.from > window.to) {continue;}
+      rows.push({ ts: c.from, host: r.id, site: r.site, url: null, video: c.url, videoEnd: c.to, ...(c.hi ? { videoHi: c.hi } : {}) });
     }
   }
   return rows;
