@@ -54,7 +54,9 @@ test('a clip plays over the frames in the player, and a host of clips opens on i
 
   // a band of cam-w's: the player opens on the clip, with no frame
   const wBox = (await camW.locator('.strip').boundingBox())!;
-  const wx = wBox.x + wBox.width * (7 / 32);   // 10:05
+  // 10:03: inside the slot whose tick (10:00) shows clip-w1, clear of the
+  // edge at 10:05 where the next slot (and clip) begins
+  const wx = wBox.x + wBox.width * (5 / 32);
   await expect(async () => {
     await page.mouse.move(wx, wBox.y + wBox.height / 2);
     await page.mouse.click(wx, wBox.y + wBox.height / 2);
