@@ -109,20 +109,14 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
     // a playing flipbook (one moved by this strip's own hover keeps it)
     if (external && c.flip && !s.wrap.classList.contains('strip-hover')) {c.flip.stop();}
     if (c.flip?.playing()) {continue;}   // the flipbook has the magnifier
-    // a slot of several frames says so on the strip under the mouse, where
-    // resting on it plays them
-    const many = !!(slot && slot.frame && !slot.paused && !slot.beyond && slot.count > 1 && c.card.classList.contains('hovered'));
-    const base = shownKey(slot);
-    const key = base === null ? null : base + (many ? ':n' : '');
+    const key = shownKey(slot);
     if (key !== null && key === c.shown) {continue;}
     c.shown = key;
     c.mag.classList.remove('ghost', 'clip');
     if (slot && slot.frame) {
       c.mag.classList.remove('gap', 'future', 'off'); clearPauseClasses(c.mag);
       setSrc(c.mag.querySelector('img')!, slot.frame.url);
-      // a slot of several frames says so: resting on it plays them
-      setText(c.mag.querySelector('.cap')!, tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts) +
-        (many ? ' · ' + slot.count + ' frames' : ''));
+      setText(c.mag.querySelector('.cap')!, tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts));
       setText(c.head, '');                 // healthy: time lives on the magnifier
       c.head.classList.remove('stale'); clearPauseClasses(c.head);
     } else if (slot && slot.paused) {

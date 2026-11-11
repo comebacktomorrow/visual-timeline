@@ -68,6 +68,8 @@ export function makeFlipbook(target: FlipTarget, anySlot = false, hasClip: (sl: 
   async function start(sl: TickSlot): Promise<void> {
     const mine = ++seq;
     const reel = target.reel({ from: sl.x0, to: sl.x0 + sl.span, ts: sl.ts });
+    // video only when every clip in the slot is among what it plays
+    reel.capacity = FLIP_MAX;
     const ok = await reel.load(FLIP_MAX);
     if (!ok || mine !== seq || !current || current.x0 !== sl.x0) {return;}
     if (reel.clips.length) {await target.measure?.(reel);}

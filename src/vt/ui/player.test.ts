@@ -300,7 +300,9 @@ describe('the preview player', () => {
       teardown = mountPlayer(el, fr(30), clipCtx(), () => {});
       await flush();
       expect(el.querySelectorAll('.lane.clip')).toHaveLength(1);
-      expect(el.querySelectorAll('.tick')).toHaveLength(2);
+      // the stills outside it, and a tick where the clip starts
+      expect(el.querySelectorAll('.tick:not(.clip-start)')).toHaveLength(2);
+      expect(el.querySelectorAll('.tick.clip-start')).toHaveLength(1);
       expect(el.classList.contains('has-clip')).toBe(true);
       expect(el.classList.contains('has-hi')).toBe(true);
       expect(el.classList.contains('video')).toBe(false);
@@ -359,6 +361,43 @@ describe('the preview player', () => {
       press('play');
       await flush();
       expect(el.querySelector('video')!.playbackRate).toBe(1);
+    });
+
+    test('several clips in a slot play one after another, the next loading meanwhile; each a tick and a picture', async () => {
+      noteClipLength('s1.webm', 2);
+      noteClipLength('s2.webm', 2);
+      const two = [{ from: at(30), to: at(32), url: 's1.webm' }, { from: at(32), to: at(35), url: 's2.webm' }];
+      teardown = mountPlayer(el, fr(30), clipCtx(two), () => {});
+      await flush();
+      expect(el.querySelectorAll('.tick.clip-start')).toHaveLength(2);
+      press('style-thumbs');
+      expect([...el.querySelectorAll('.thumb.clip img')].map((i) => i.getAttribute('src'))).toEqual(['f30.jpg', 'f32.jpg']);
+      const [shown, spare] = [...el.querySelectorAll('.stage video')] as HTMLVideoElement[];
+      metadata(shown, 2);
+      press('play');
+      await flush();
+      // the second clip loads in the spare while the first plays
+      expect(spare.classList.contains('spare')).toBe(true);
+      expect(spare.getAttribute('src')).toBe('s2.webm');
+      expect(spare.preload).toBe('auto');
+    });
+
+    test('video it can\'t show at this scale: a bubble over the picture, which zooms to the slot', async () => {
+      const zoomed: Array<[number, number]> = [];
+      const long = [{ from: at(31), to: at(34), url: 'long.webm' }];
+      teardown = mountPlayer(el, fr(30), { ...clipCtx(long), onZoom: (a, z) => zoomed.push([a, z]) }, () => {});
+      await flush();
+      expect(el.classList.contains('video-far')).toBe(true);
+      (el.querySelector('.zoom-video') as HTMLButtonElement).click();
+      expect(zoomed).toEqual([[at(30), at(35)]]);
+    });
+
+    test('a slot of video with no stills: no ticks-or-pictures choice', async () => {
+      const whole = [{ from: at(29), to: at(36), url: 'w.webm' }];
+      teardown = mountPlayer(el, null, { ...clipCtx(whole), fetch: async () => [] }, () => {}, () => {}, at(32));
+      await flush();
+      expect(el.classList.contains('no-stills')).toBe(true);
+      expect(el.classList.contains('video')).toBe(true);
     });
 
     test('zoomed out, more video than plays in a few seconds: the slot\'s stills, as frames are; Zoom to watch it', async () => {

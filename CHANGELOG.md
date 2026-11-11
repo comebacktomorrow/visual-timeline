@@ -9,9 +9,9 @@
   stays still; playing stops on a gap to show its reason); ‹‹ ›› move to the
   next slot, and Zoom sets the dashboard's range to the slot. The popup
   takes the camera's shape.
-- **The hover flipbook** (M10). A slot that holds several frames says so in
-  its magnifier ("· 4 frames"); resting the cursor on it for three seconds
-  plays them there. Nothing loads while the cursor moves.
+- **The hover flipbook** (M10). Resting the cursor on a slot that holds
+  several frames for three seconds plays them there. Nothing loads while
+  the cursor moves.
 - **A slot's frames on demand.** The panel runs its own query again for one
   slot, no finer than it can draw, when the player or the flipbook needs
   it: any data source that filters by the time range answers. The HTTP
@@ -39,6 +39,11 @@
   alongside are recommended. A new **Video** field option names the field.
   A clip with no end lasts a frame's time (one a minute: a minute of video).
   While a clip loads, the player shows the frame underneath and says so.
+  Video plays whole or not at all: a slot with more clips than its timeline
+  shows, or more video than 16× plays in ten seconds, plays its frames, with
+  a "Zoom in for the video" bubble. Several clips in a slot play as
+  segments, the next preloading; each has a tick and a thumbnail (the frame
+  nearest its start).
 - **Video from a folder** (M11, experimental). The HTTP folder connection's
   **Video path template** finds clips beside the frames; each spans its
   name's finest time (a day with `{DD}`, an hour with `{HH}`). The demo's

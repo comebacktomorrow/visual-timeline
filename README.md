@@ -115,9 +115,8 @@ slots on a full-width panel):
   of its frame. Hover for the whole frame in the magnifier; click for the
   preview player (below).
 - **The frames a slot can't show.** A slot zoomed out over many frames shows
-  one. Its magnifier says how many it holds ("· 4 frames"); rest the cursor
-  on it for three seconds and the magnifier plays them. Click it for the
-  preview player.
+  one. Rest the cursor on it for three seconds and the magnifier plays them;
+  click it for the preview player.
 - **Images load newest first.** Across all the hosts in a panel, the
   thumbnails load from the live edge backwards, a few at a time, so on a
   slow connection the most recent frames appear first. Browsers keep the
@@ -155,10 +154,15 @@ stretches the strip draws.
   whatever plays the slot's video in about ten seconds (1× for a short
   clip, faster for more), and a click steps up through 1×, 2×, 4×, 8×
   and 16×.
-- **Zoomed out**, a slot can hold more video than plays in ten seconds at
-  16×. It's then played as a slot of many frames is: its frames, as many
-  as fit, with the video as a bar under them, and Zoom highlighted to watch
-  it.
+- **Several clips in a slot** play one after another, the next loading
+  while one plays, like a stream's segments. Each has a tick where it starts
+  and, as thumbnails, the frame nearest its start.
+- **Zoomed out**, video is played whole or not at all: never with clips left
+  out, which would break its flow. A slot holding more video than plays in
+  ten seconds at 16×, or more clips than its timeline can show, plays its
+  frames as a slot of many frames does, with the video as a bar under them.
+  A "Zoom in for the video" bubble over the picture zooms the dashboard to
+  the slot, as Zoom does.
 
 The player asks for one slot's frames when it needs them, by running the
 panel's own query again for just that slot, no finer than it can draw.

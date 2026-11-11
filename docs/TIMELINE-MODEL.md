@@ -116,8 +116,8 @@ pending, a pause, or beyond now.
 - **Non-frame intervals are also drawn at their true time and width**, on a
   layer over the slots. A dropped stretch shorter than a slot still shows,
   at least 1 px wide, so zooming out can't hide a short outage.
-- **A slot holding more than one frame** is marked, and its magnifier says
-  how many. Resting the cursor on it for three seconds plays them there
+- **A slot holding more than one frame**: resting the cursor on it for
+  three seconds plays them in the magnifier
   (the hover flipbook); clicking it opens the preview player on the slot's
   own timeline (below).
 - (Not built: each frame's own time as a notch along the strip's bottom
@@ -170,9 +170,12 @@ frames it holds does for frames. A row says when a clip starts and ends,
 not how long its video is, so the player reads the first clip's length
 and takes the host's others to be alike. Up to ten seconds, it plays at
 1×; up to 16× that, sped up to fit (the speed button then sets the video's
-speed, from that). Longer (zoomed out), the slot is played as frames: its
-stills, sampled to what fits, and, where only a clip covers it, the
-video's own frames at evenly spaced stops.
+speed, from that). Longer (zoomed out), or holding more clips than the
+view can show, the slot is played as frames: its stills, sampled to what
+fits, and, where only a clip covers it, the video's own frames at evenly
+spaced stops. Video is never played with clips left out: that breaks its
+flow, and frames scale better. Several clips that are played follow one
+another as segments, the next loading out of sight meanwhile.
 
 ## Options, before and after
 
