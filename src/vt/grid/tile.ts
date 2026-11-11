@@ -5,6 +5,7 @@ import { attachZoneChip, dressZoneChip, zoneChip } from '../zones/chip';
 import { zoneFor } from '../zones/source';
 import type { Frame, SourceDecl, SourceModel } from '../types';
 import type { GridState, Tile } from './state';
+import { playerContext } from '../ui/playerContext';
 
 /* The grid's tiles: building one (header, image, click-in preview), the
  * latest frame of a tile, and setShown, which shows every tile at a time
@@ -32,7 +33,11 @@ export function buildTile(s: GridState, decl: SourceDecl, model: SourceModel): T
   };
   el.addEventListener('click', e => {
     if (rec.shown && rec.shownExpected) {s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, null, rec.shownExpected, rec.tt);}
-    else if (rec.shown) {s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, rec.shown.hi ?? null, null, rec.tt);}
+    else if (rec.shown) {
+      // the preview is a player over this host's frames; it moves the grid's time
+      const player = playerContext(s.backend, s.cfg, s.P, decl, model, rec.tt, (t) => { if (!s.destroyed) {setShown(s, t);} });
+      s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, rec.shown.hi ?? null, null, rec.tt, player);
+    }
   });
   q(s.wrap, '.grid').appendChild(el);
   return rec;

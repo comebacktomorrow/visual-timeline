@@ -77,6 +77,9 @@ export interface Era {
 export interface Backend {
   kiosks(sites?: string[] | null): Promise<SourceDecl[]> | SourceDecl[];
   frames(site: string, id: string, from: number, to: number, step: number): Promise<Frame[]>;
+  /* every frame in [from, to], unthinned: a backend that holds them all
+   * (frame records) offers it, for the preview player (M10) */
+  allFrames?(site: string, id: string, from: number, to: number): Promise<Frame[]>;
   /* demo seam only; raw annotations, normalized by normAnnotations */
   annotations?(): RawAnnotation[];
 }
@@ -198,6 +201,9 @@ export interface SourceModel {
   lastActive: TickSlot | null;
   /* add frames (the live poll's) and rebuild for `now` */
   refresh(fresh: Frame[], now: number): void;
+  /* intervals for other frames over another range, by this host's promise,
+   * pauses and hold (the preview player's scrubber) */
+  intervalsFor(frames: Frame[], window: TimeWindow, now: number): Interval[];
 }
 
 /* ---- mounts (mountTimeline, mountGrid) ---- */
@@ -244,6 +250,11 @@ export interface MountConfig {
   /* a promise for every host (ms), whatever its source says: the panel's
    * Expected cadence (docs/TIMELINE-MODEL.md); unset, the sources decide */
   expectedCadence?: number;
+  /* the preview player's defaults (a viewer's own last choices win): how far
+   * its scrubber reaches, 'near' (default) or 'all'; and its style, 'ticks'
+   * (default) or 'thumbs' */
+  playerReach?: string;
+  playerScrubber?: string;
   onHover?: (t: number) => void;               // timeline: a local hover moved the cursor
   onHoverClear?: () => void;                   // timeline: the mouse left a strip
   onCursor?: (t: number) => void;              // timeline: every cursor move (host chrome)

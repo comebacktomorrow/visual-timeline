@@ -73,6 +73,9 @@ export async function buildSourceModel(
   const model: SourceModel = {
     eras, step, promised, frames: [], intervals: [], slots: [], drops: [], lastActive: null,
     slotAt: () => null, intervalAt: () => null,
+    intervalsFor: (frames, window, now) => buildIntervals({
+      frames, promiseAt, pauses, hold, window, now, promiseOverride: expected,
+    }).intervals,
     refresh(fresh: Frame[], now: number) {
       const byTs = new Map(model.frames.map((f) => [f.ts, f]));
       for (const f of fresh) {byTs.set(f.ts, f);}

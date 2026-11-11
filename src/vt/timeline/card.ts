@@ -9,6 +9,7 @@ import { zoneFor, type ZoneTexts } from '../zones/source';
 import type { Slot, SourceDecl, SourceModel } from '../types';
 import { ruleBeyond } from './axis';
 import { hideSelection, setCursor, showSelection } from './cursor';
+import { playerContext } from '../ui/playerContext';
 import type { Card, TimelineState } from './state';
 
 /* Post-layout dressing, idempotent and re-runnable:
@@ -170,7 +171,11 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     const sl = model.slotAt(s.cursorT);
     const f = sl && sl.frame;
     const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
-    if (f) {s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt);}
+    if (f) {
+      // the preview is a player over this host's frames; it moves the crosshair
+      const player = playerContext(s.backend, s.cfg, s.P, decl, model, tt, (t) => { if (!s.destroyed) {setCursor(s, t, null, false);} });
+      s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt, player);
+    }
     else if (g) {s.pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl!.ts, tt);}   // g is only set from a slot
   });
   /* magnifier takes the aspect of the actual frames (portrait screens etc.) */

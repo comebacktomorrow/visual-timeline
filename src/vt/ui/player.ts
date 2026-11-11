@@ -1,0 +1,302 @@
+import { pauseInfo } from '../model/eras';
+import type { Interval } from '../model/intervals';
+import { frameIndexAt, framesIn, NEAR_SLOTS, reachRange, stepFrame, type Reach } from '../model/playhead';
+import type { ZoneTexts } from '../zones/source';
+import type { Frame, TimeWindow } from '../types';
+
+/* The preview player (M10): the click-in preview with its own scrubber over
+ * the host's frames. A non-visual scrubber (a tick per frame at its true
+ * time, over the stretches the strip draws: dropped, no data, pauses) or
+ * thumbnails; the clicked slot and NEAR_SLOTS either side, or the whole
+ * range; previous and next frame and slot; play, at a speed, looping the
+ * range or continuing past it, moving the dashboard's crosshair as it goes.
+ * Only the frame under the playhead loads, and a few ahead while playing. */
+
+export type ScrubStyle = 'ticks' | 'thumbs';
+export type PlayMode = 'loop' | 'continuous';
+
+/** What the player needs from the mount that opened it. */
+export interface PlayerContext {
+  /** the dashboard's window */
+  window: TimeWindow;
+  /** the host's slot duration: previous and next slot step by it */
+  step: number;
+  /** every frame of the host in [from, to] */
+  fetch(from: number, to: number): Promise<Frame[]>;
+  /** the intervals for frames over a range (the host's promise and pauses) */
+  intervals(frames: Frame[], range: TimeWindow): Interval[];
+  /** the playhead moved: the mount moves its crosshair */
+  onTime?(t: number): void;
+  tt: ZoneTexts;
+  /** what the caption names: "site / host" */
+  label?: string;
+  /** the panel's defaults; the viewer's last choices win */
+  reach?: Reach;
+  scrubber?: ScrubStyle;
+}
+
+interface Prefs { reach: Reach; style: ScrubStyle; fps: number; mode: PlayMode }
+const PREFS_KEY = 'ktl-player';
+const FPS = [1, 2, 4, 8, 16];
+function loadPrefs(ctx: PlayerContext): Prefs {
+  const base: Prefs = { reach: ctx.reach ?? 'near', style: ctx.scrubber ?? 'ticks', fps: 4, mode: 'loop' };
+  try {
+    const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+    return {
+      reach: p.reach === 'all' || p.reach === 'near' ? p.reach : base.reach,
+      style: p.style === 'thumbs' || p.style === 'ticks' ? p.style : base.style,
+      fps: FPS.includes(p.fps) ? p.fps : base.fps,
+      mode: p.mode === 'continuous' || p.mode === 'loop' ? p.mode : base.mode,
+    };
+  } catch { return base; }
+}
+function savePrefs(p: Prefs): void {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* private mode: the choice lasts this preview */ }
+}
+
+const btn = (a: string, label: string, title: string) =>
+  `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
+
+/** Builds the player into `el` (the popup) for a frame at `start`; returns
+ * its teardown. `place` re-positions the popup once the image has a size. */
+export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, place: () => void): () => void {
+  const prefs = loadPrefs(ctx);
+  el.classList.add('player');
+  el.innerHTML =
+    '<div class="stage"><div class="state"></div></div>' +
+    '<div class="scrub" role="slider" tabindex="0" aria-label="Scrub through frames">' +
+    '<div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div>' +
+    '<div class="bar">' +
+    btn('prev-slot', '‹‹', 'Previous slot (Shift+←)') + btn('prev', '‹', 'Previous frame (←)') +
+    btn('play', '▶', 'Play (Space)') + btn('next', '›', 'Next frame (→)') + btn('next-slot', '››', 'Next slot (Shift+→)') +
+    '<span class="cap"></span>' +
+    btn('fps', '', 'Speed') + btn('mode', '', 'At the end: loop, or continue') +
+    btn('reach', '', 'How far the scrubber reaches') + btn('style', '', 'Scrubber: ticks or thumbnails') +
+    btn('close', '✕', 'Close (Esc)') +
+    '</div>';
+  // the image goes in with its source already set
+  const img = document.createElement('img');
+  img.alt = 'frame';
+  img.src = start.url;
+  const stateEl = el.querySelector<HTMLElement>('.stage .state')!;
+  el.querySelector('.stage')!.prepend(img);
+  const scrub = el.querySelector<HTMLElement>('.scrub')!;
+  const lanes = el.querySelector<HTMLElement>('.lanes')!;
+  const thumbs = el.querySelector<HTMLElement>('.thumbs')!;
+  const ticks = el.querySelector<HTMLElement>('.ticks')!;
+  const head = el.querySelector<HTMLElement>('.head')!;
+  const cap = el.querySelector<HTMLElement>('.cap')!;
+  const b = (a: string) => el.querySelector<HTMLButtonElement>(`button[data-a="${a}"]`)!;
+
+  let frames: Frame[] = [];
+  let range: TimeWindow = { from: start.ts, to: start.ts + 1 };
+  let ivs: Interval[] = [];
+  let t = start.ts;
+  let playing = false;
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let hiTimer: ReturnType<typeof setTimeout> | null = null;
+  let loadSeq = 0;
+  let gone = false;
+
+  const xOf = (ts: number) => ((ts - range.from) / Math.max(1, range.to - range.from)) * 100;
+  const now = () => Date.now();
+
+  function labels(): void {
+    b('fps').textContent = prefs.fps + ' fps';
+    b('mode').textContent = prefs.mode === 'loop' ? 'Loop' : 'Continue';
+    b('reach').textContent = prefs.reach === 'near' ? '±' + NEAR_SLOTS + ' slots' : 'All';
+    b('style').textContent = prefs.style === 'ticks' ? 'Ticks' : 'Thumbs';
+    b('play').textContent = playing ? '❚❚' : '▶';
+    b('play').title = playing ? 'Pause (Space)' : 'Play (Space)';
+    el.classList.toggle('thumbs', prefs.style === 'thumbs');
+  }
+
+  /* the scrubber's stretches, ticks and (when chosen) thumbnails */
+  function drawScrub(): void {
+    lanes.textContent = '';
+    for (const iv of ivs) {
+      if (iv.kind === 'frame' || iv.kind === 'pending') {continue;}
+      const d = document.createElement('div');
+      d.className = 'lane ' + iv.kind;
+      if (iv.kind === 'paused' && iv.pause?.color) {d.style.setProperty('--ktl-band', iv.pause.color);}
+      if (iv.kind === 'paused') {d.title = pauseInfo({ paused: true, label: iv.pause?.label, color: iv.pause?.color }).label.toLowerCase();}
+      d.style.left = xOf(iv.from) + '%';
+      d.style.width = Math.max(0, xOf(iv.to) - xOf(iv.from)) + '%';
+      lanes.appendChild(d);
+    }
+    ticks.textContent = '';
+    for (const f of framesIn(frames, range)) {
+      const k = document.createElement('div');
+      k.className = 'tick';
+      k.style.left = xOf(f.ts) + '%';
+      ticks.appendChild(k);
+    }
+    thumbs.textContent = '';
+    if (prefs.style === 'thumbs') {
+      // one thumbnail per ~56px: the frame in force at each one's centre
+      const n = Math.max(4, Math.floor((scrub.clientWidth || 560) / 56));
+      for (let i = 0; i < n; i++) {
+        const at = range.from + ((i + 0.5) / n) * (range.to - range.from);
+        const j = frameIndexAt(frames, at);
+        const cell = document.createElement('div');
+        cell.className = 'thumb';
+        if (j >= 0) {
+          const ti = document.createElement('img');
+          ti.alt = '';
+          ti.loading = 'lazy';
+          ti.src = frames[j].url;
+          cell.appendChild(ti);
+        }
+        thumbs.appendChild(cell);
+      }
+    }
+  }
+
+  /* what the playhead shows: the frame in force at t, and the stretch it's in */
+  function show(): void {
+    head.style.left = xOf(t) + '%';
+    const j = frameIndexAt(frames, t);
+    const f = j >= 0 ? frames[j] : null;
+    const iv = ivs.find((x) => x.from <= t && t < x.to) || null;
+    const kind = iv ? iv.kind : f ? 'frame' : 'nodata';
+    el.classList.toggle('off', kind === 'dropped' || kind === 'nodata' || kind === 'paused');
+    stateEl.textContent = kind === 'dropped' ? 'offline' : kind === 'nodata' ? 'no frame' : kind === 'paused' ? pauseInfo({ paused: true, label: iv?.pause?.label }).label.toLowerCase() : '';
+    if (f && img.getAttribute('src') !== f.url && img.dataset.hiOf !== f.url) {
+      img.src = f.url;
+      delete img.dataset.hiOf;
+    }
+    caption(f);
+    // the large image once the playhead settles
+    if (hiTimer) {clearTimeout(hiTimer);}
+    if (f && f.hi && !playing) {
+      const hi = f.hi, lo = f.url;
+      hiTimer = setTimeout(() => {
+        const pre = new Image();
+        pre.onload = () => { if (!gone && frames[frameIndexAt(frames, t)] === f) { img.src = hi; img.dataset.hiOf = lo; } };
+        pre.src = hi;
+      }, 300);
+    }
+  }
+
+  function caption(f: Frame | null): void {
+    cap.textContent = (ctx.label ? ctx.label + ' — ' : '') + ctx.tt.time(t) + ctx.tt.sfx(t) +
+      (f && f.ts !== t ? ' · frame ' + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : '');
+  }
+
+  function seek(to: number, publish = true): void {
+    t = Math.max(range.from, Math.min(range.to, to));
+    show();
+    if (publish && ctx.onTime) {ctx.onTime(t);}
+  }
+
+  /* load the range around a time (its frames and intervals), then show */
+  async function load(around: number, keepT = true): Promise<void> {
+    const seq = ++loadSeq;
+    range = reachRange(prefs.reach, around, ctx.step, ctx.window, now());
+    let got: Frame[] = [];
+    try { got = await ctx.fetch(range.from - 1, range.to); } catch (e) { console.warn('[visual-timeline] player fetch failed:', e); }
+    if (gone || seq !== loadSeq) {return;}
+    frames = got.slice().sort((x, y) => x.ts - y.ts);
+    ivs = ctx.intervals(frames, range);
+    drawScrub();
+    seek(keepT ? around : range.from, false);
+  }
+
+  function stop(): void {
+    playing = false;
+    if (timer) { clearInterval(timer); timer = null; }
+    labels();
+  }
+  function tick(): void {
+    const f = stepFrame(frames, t, 1, range);
+    if (f) {
+      seek(f.ts);
+      // a few frames ahead, so playing doesn't wait on each one
+      const j = frames.indexOf(f);
+      for (const n of frames.slice(j + 1, j + 4)) { const p = new Image(); p.src = n.url; }
+      return;
+    }
+    if (prefs.mode === 'loop') {
+      const first = framesIn(frames, range)[0];
+      if (first) {seek(first.ts);}
+      return;
+    }
+    // continue: the next stretch of the same reach, until now or the window's end
+    const end = Math.min(ctx.window.to, now());
+    if (range.to >= end - 1) { stop(); return; }
+    // the next range starts where this one ended
+    const next = range.to + (range.to - range.from) / 2;
+    stop();
+    void load(next, false).then(() => { if (!gone) {play();} });
+  }
+  function play(): void {
+    if (playing) {return;}
+    playing = true;
+    labels();
+    timer = setInterval(tick, 1000 / prefs.fps);
+  }
+
+  const act = (a: string): void => {
+    switch (a) {
+      case 'play': if (playing) {stop();} else {play();} break;
+      case 'prev': case 'next': {
+        stop();
+        const f = stepFrame(frames, t, a === 'next' ? 1 : -1, range);
+        if (f) {seek(f.ts);}
+        break;
+      }
+      case 'prev-slot': case 'next-slot': {
+        stop();
+        const to = t + (a === 'next-slot' ? 1 : -1) * ctx.step;
+        if (to < range.from || to > range.to) {void load(to).then(() => ctx.onTime?.(t));}
+        else {seek(to);}
+        break;
+      }
+      case 'fps': prefs.fps = FPS[(FPS.indexOf(prefs.fps) + 1) % FPS.length]; savePrefs(prefs); if (playing) { stop(); play(); } labels(); break;
+      case 'mode': prefs.mode = prefs.mode === 'loop' ? 'continuous' : 'loop'; savePrefs(prefs); labels(); break;
+      case 'reach': prefs.reach = prefs.reach === 'near' ? 'all' : 'near'; savePrefs(prefs); labels(); void load(t); break;
+      case 'style': prefs.style = prefs.style === 'ticks' ? 'thumbs' : 'ticks'; savePrefs(prefs); labels(); drawScrub(); show(); break;
+    }
+  };
+  el.querySelector('.bar')!.addEventListener('click', (e) => {
+    const a = (e.target as HTMLElement).closest('button')?.dataset.a;
+    if (a && a !== 'close') {act(a);}
+  });
+
+  // the scrubber: press and drag
+  const tAt = (clientX: number) => {
+    const r = scrub.getBoundingClientRect();
+    return range.from + Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width))) * (range.to - range.from);
+  };
+  scrub.addEventListener('pointerdown', (e) => {
+    stop();
+    scrub.setPointerCapture?.(e.pointerId);
+    seek(tAt(e.clientX));
+    const move = (ev: PointerEvent) => seek(tAt(ev.clientX));
+    const up = () => { scrub.removeEventListener('pointermove', move); scrub.removeEventListener('pointerup', up); };
+    scrub.addEventListener('pointermove', move);
+    scrub.addEventListener('pointerup', up);
+  });
+
+  const keyH = (e: KeyboardEvent) => {
+    const k = e.key;
+    if (k === ' ') { e.preventDefault(); act('play'); }
+    else if (k === 'ArrowLeft') { e.preventDefault(); act(e.shiftKey ? 'prev-slot' : 'prev'); }
+    else if (k === 'ArrowRight') { e.preventDefault(); act(e.shiftKey ? 'next-slot' : 'next'); }
+  };
+  document.addEventListener('keydown', keyH);
+
+  img.onload = place;
+  img.onerror = () => { if (img.dataset.hiOf) { img.src = img.dataset.hiOf; delete img.dataset.hiOf; } };
+  if (img.complete) {place();}
+  labels();
+  caption(start);
+  void load(start.ts);
+
+  return () => {
+    gone = true;
+    stop();
+    if (hiTimer) {clearTimeout(hiTimer);}
+    document.removeEventListener('keydown', keyH);
+  };
+}

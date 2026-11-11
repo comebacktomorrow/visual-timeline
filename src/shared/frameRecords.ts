@@ -395,5 +395,7 @@ export function recordsBackend(hosts: HostRecords[], known: SourceDecl[] = [], s
   return {
     kiosks: (sites) => (sites ? decls.filter((d) => sites.includes(d.site)) : decls),
     frames: async (site, id, from, to, step) => framesPerStep(byKey.get(site + '/' + id)?.frames ?? [], from, to, step),
+    // records hold every frame: the preview player gets them all
+    allFrames: async (site, id, from, to) => (byKey.get(site + '/' + id)?.frames ?? []).filter((f) => f.ts >= from && f.ts <= to),
   };
 }

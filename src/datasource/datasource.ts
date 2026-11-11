@@ -31,7 +31,7 @@ import { DemoBackend, makeBackend as makeDemoBackend } from '../vt/backends/demo
 import { resolveTimeZone } from '../vt/time/zones';
 import { coreTimeZone } from '../timezone';
 import { limited, MODEL_CONCURRENCY } from '../vt/model/pool';
-import type { SourceDecl } from '../vt/types';
+import type { Frame, SourceDecl } from '../vt/types';
 import type { VisualTimelineOptions, VisualTimelineQuery, VisualTimelineVariableQuery } from './types';
 import { VisualTimelineVariableSupport } from './variables';
 
@@ -176,7 +176,7 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
       const frame = t.lastFrameFormat === 'host' ? lastFramesByHost(sources, last, t.refId) : sourcesToFrame(sources, t.refId, last);
       return [withNotices(frame, notice)];
     }
-    return [withNotices(sourcesToFrame(sources, t.refId), notice), recordsToFrame(folderRows(mine, window, request.maxDataPoints), t.refId)];
+    return [withNotices(sourcesToFrame(sources, t.refId), notice), recordsToFrame(folderRows(mine, window), t.refId)];
   }
 
   /* Demo frames for these sources as rows. Each source's rows come at the
@@ -276,14 +276,22 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
 /* a folder host as a source declaration */
 const declOf = (r: HostRecords): SourceDecl => ({ id: r.id, site: r.site, cadence: r.cadence, ...(r.inferred ? { inferred: true } : {}) });
 
-/* a folder's frames as rows: one per step for each host, at its own cadence
- * or coarser, so no more rows than the panel has pixels */
-function folderRows(records: HostRecords[], window: { from: number; to: number }, maxDataPoints: number | undefined) {
+/* A folder's frames as rows: every one, so the preview player can step
+ * through them all (M10), up to FOLDER_MAX_ROWS per host; past that, thinned
+ * to one per step at a whole number of the host's cadence. The panel samples
+ * them for its strips itself. */
+export const FOLDER_MAX_ROWS = 5000;
+function folderRows(records: HostRecords[], window: { from: number; to: number }) {
   const span = Math.max(1, window.to - window.from);
   const rows: Array<{ ts: number; host: string; site: string; url: string; hi?: string }> = [];
   for (const r of records) {
-    const step = r.cadence * Math.max(1, Math.ceil(span / (maxDataPoints || 1000) / r.cadence));
-    for (const f of framesPerStep(r.frames, window.from, window.to, step)) {
+    const inWindow = r.frames.filter((f) => f.ts >= window.from && f.ts <= window.to);
+    const kept = inWindow.length <= FOLDER_MAX_ROWS ? inWindow
+      : framesPerStep(r.frames, window.from, window.to, r.cadence * Math.max(1, Math.ceil(span / FOLDER_MAX_ROWS / r.cadence)));
+    // and the frame in force at the window's start, so the strip shows it
+    let before: Frame | undefined;
+    for (const f of r.frames) {if (f.ts < window.from) {before = f;}}
+    for (const f of before ? [before, ...kept] : kept) {
       rows.push({ ts: f.ts, host: r.id, site: r.site, url: f.url, ...(f.hi ? { hi: f.hi } : {}) });
     }
   }

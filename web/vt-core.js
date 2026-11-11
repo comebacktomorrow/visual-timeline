@@ -677,6 +677,15 @@ var VTCore = (() => {
       lastActive: null,
       slotAt: () => null,
       intervalAt: () => null,
+      intervalsFor: (frames, window2, now) => buildIntervals({
+        frames,
+        promiseAt,
+        pauses,
+        hold,
+        window: window2,
+        now,
+        promiseOverride: expected
+      }).intervals,
       refresh(fresh, now) {
         const byTs = new Map(model.frames.map((f) => [f.ts, f]));
         for (const f of fresh) {
@@ -1512,7 +1521,38 @@ var VTCore = (() => {
            box-shadow:var(--ktl-shadow); }
 .ktl-pop img { display:block; max-width:min(560px, 50vw); max-height:55vh; border-radius:2px; }
 .ktl-pop .cap { text-align:center; color:var(--ktl-text); font-size:11px; padding:3px 0 0;
-                font-variant-numeric:tabular-nums; }`;
+                font-variant-numeric:tabular-nums; }
+/* the preview as a player (M10): stage, scrubber, controls */
+.ktl-pop.player { cursor:default; padding:6px; width:min(720px, 92vw); font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;
+                  color:var(--ktl-text); display:flex; flex-direction:column; gap:6px; }
+.ktl-pop.player .stage { position:relative; display:flex; justify-content:center; background:var(--ktl-media); border-radius:2px; min-height:120px; }
+.ktl-pop.player .stage img { max-width:100%; max-height:60vh; }
+.ktl-pop.player.off .stage img { opacity:.35; }
+.ktl-pop.player .stage .state { position:absolute; inset:auto 0 8px; text-align:center; font-weight:700; color:var(--ktl-off);
+                                 text-transform:uppercase; letter-spacing:.04em; pointer-events:none; }
+.ktl-pop.player .scrub { position:relative; height:22px; border-radius:2px; background:var(--ktl-pause-a); cursor:pointer;
+                         touch-action:none; overflow:hidden; outline:none; }
+.ktl-pop.player.thumbs .scrub { height:40px; }
+.ktl-pop.player .scrub:focus-visible { box-shadow:0 0 0 2px var(--ktl-accent); }
+.ktl-pop.player .lane { position:absolute; top:0; bottom:0; }
+.ktl-pop.player .lane.dropped { background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 4px,var(--ktl-gap-b) 4px,var(--ktl-gap-b) 8px); }
+.ktl-pop.player .lane.nodata { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 4px,var(--ktl-pause-b) 4px,var(--ktl-pause-b) 8px); }
+.ktl-pop.player .lane.paused { background:var(--ktl-band, var(--ktl-pause-b)); opacity:.6; }
+.ktl-pop.player .lane.beyond { background:transparent; }
+.ktl-pop.player .thumbs { position:absolute; inset:0; display:flex; pointer-events:none; }
+.ktl-pop.player .thumb { flex:1 1 0; min-width:0; overflow:hidden; border-right:1px solid rgba(0,0,0,.4); }
+.ktl-pop.player .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.ktl-pop.player .ticks { position:absolute; inset:0; pointer-events:none; }
+.ktl-pop.player .tick { position:absolute; bottom:0; height:40%; width:1px; background:var(--ktl-text); opacity:.55; }
+.ktl-pop.player.thumbs .tick { height:6px; }
+.ktl-pop.player .head { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--ktl-accent); pointer-events:none; }
+.ktl-pop.player .bar { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+.ktl-pop.player .bar .cap { flex:1 1 auto; min-width:120px; padding:0 6px; text-align:center; }
+.ktl-pop.player button { font:inherit; color:var(--ktl-text); background:transparent; border:1px solid var(--ktl-border);
+                         border-radius:2px; padding:2px 7px; min-width:28px; cursor:pointer; line-height:18px; }
+.ktl-pop.player button:hover { border-color:var(--ktl-accent); }
+.ktl-pop.player button:focus-visible { outline:2px solid var(--ktl-accent); outline-offset:1px; }
+.ktl-pop.player button[data-a="play"] { min-width:36px; }`;
   function injectStyles() {
     const existing = document.getElementById(STYLE_ID);
     if (existing) {
@@ -1861,12 +1901,383 @@ var VTCore = (() => {
     };
   }
 
+  // src/vt/model/playhead.ts
+  var NEAR_SLOTS = 10;
+  function reachRange(reach, t, step, P, now) {
+    const end = Math.max(P.from + 1, Math.min(P.to, now));
+    if (reach === "all" || !(step > 0)) {
+      return { from: P.from, to: end };
+    }
+    const half = (NEAR_SLOTS + 0.5) * step;
+    let from = t - half, to = t + half;
+    if (from < P.from) {
+      to += P.from - from;
+      from = P.from;
+    }
+    if (to > end) {
+      from -= to - end;
+      to = end;
+    }
+    return { from: Math.max(P.from, from), to: Math.max(Math.max(P.from, from) + 1, to) };
+  }
+  function frameIndexAt(frames, t) {
+    let lo = 0, hi = frames.length - 1, out = -1;
+    while (lo <= hi) {
+      const mid = lo + hi >> 1;
+      if (frames[mid].ts <= t) {
+        out = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return out;
+  }
+  function stepFrame(frames, t, dir, range) {
+    const i = frameIndexAt(frames, t);
+    const j = i < 0 ? dir > 0 ? 0 : -1 : i + dir;
+    const f = frames[j];
+    return f && f.ts >= range.from && f.ts <= range.to ? f : null;
+  }
+  function framesIn(frames, range) {
+    return frames.filter((f) => f.ts >= range.from && f.ts <= range.to);
+  }
+
+  // src/vt/ui/player.ts
+  var PREFS_KEY = "ktl-player";
+  var FPS = [1, 2, 4, 8, 16];
+  function loadPrefs(ctx) {
+    const base = { reach: ctx.reach ?? "near", style: ctx.scrubber ?? "ticks", fps: 4, mode: "loop" };
+    try {
+      const p = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
+      return {
+        reach: p.reach === "all" || p.reach === "near" ? p.reach : base.reach,
+        style: p.style === "thumbs" || p.style === "ticks" ? p.style : base.style,
+        fps: FPS.includes(p.fps) ? p.fps : base.fps,
+        mode: p.mode === "continuous" || p.mode === "loop" ? p.mode : base.mode
+      };
+    } catch {
+      return base;
+    }
+  }
+  function savePrefs(p) {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(p));
+    } catch {
+    }
+  }
+  var btn = (a, label, title) => `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
+  function mountPlayer(el, start, ctx, place) {
+    const prefs = loadPrefs(ctx);
+    el.classList.add("player");
+    el.innerHTML = '<div class="stage"><div class="state"></div></div><div class="scrub" role="slider" tabindex="0" aria-label="Scrub through frames"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="bar">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame (\u2190)") + btn("play", "\u25B6", "Play (Space)") + btn("next", "\u203A", "Next frame (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '<span class="cap"></span>' + btn("fps", "", "Speed") + btn("mode", "", "At the end: loop, or continue") + btn("reach", "", "How far the scrubber reaches") + btn("style", "", "Scrubber: ticks or thumbnails") + btn("close", "\u2715", "Close (Esc)") + "</div>";
+    const img = document.createElement("img");
+    img.alt = "frame";
+    img.src = start.url;
+    const stateEl = el.querySelector(".stage .state");
+    el.querySelector(".stage").prepend(img);
+    const scrub = el.querySelector(".scrub");
+    const lanes = el.querySelector(".lanes");
+    const thumbs = el.querySelector(".thumbs");
+    const ticks = el.querySelector(".ticks");
+    const head = el.querySelector(".head");
+    const cap = el.querySelector(".cap");
+    const b = (a) => el.querySelector(`button[data-a="${a}"]`);
+    let frames = [];
+    let range = { from: start.ts, to: start.ts + 1 };
+    let ivs = [];
+    let t = start.ts;
+    let playing = false;
+    let timer = null;
+    let hiTimer = null;
+    let loadSeq = 0;
+    let gone = false;
+    const xOf = (ts) => (ts - range.from) / Math.max(1, range.to - range.from) * 100;
+    const now = () => Date.now();
+    function labels() {
+      b("fps").textContent = prefs.fps + " fps";
+      b("mode").textContent = prefs.mode === "loop" ? "Loop" : "Continue";
+      b("reach").textContent = prefs.reach === "near" ? "\xB1" + NEAR_SLOTS + " slots" : "All";
+      b("style").textContent = prefs.style === "ticks" ? "Ticks" : "Thumbs";
+      b("play").textContent = playing ? "\u275A\u275A" : "\u25B6";
+      b("play").title = playing ? "Pause (Space)" : "Play (Space)";
+      el.classList.toggle("thumbs", prefs.style === "thumbs");
+    }
+    function drawScrub() {
+      lanes.textContent = "";
+      for (const iv of ivs) {
+        if (iv.kind === "frame" || iv.kind === "pending") {
+          continue;
+        }
+        const d = document.createElement("div");
+        d.className = "lane " + iv.kind;
+        if (iv.kind === "paused" && iv.pause?.color) {
+          d.style.setProperty("--ktl-band", iv.pause.color);
+        }
+        if (iv.kind === "paused") {
+          d.title = pauseInfo({ paused: true, label: iv.pause?.label, color: iv.pause?.color }).label.toLowerCase();
+        }
+        d.style.left = xOf(iv.from) + "%";
+        d.style.width = Math.max(0, xOf(iv.to) - xOf(iv.from)) + "%";
+        lanes.appendChild(d);
+      }
+      ticks.textContent = "";
+      for (const f of framesIn(frames, range)) {
+        const k = document.createElement("div");
+        k.className = "tick";
+        k.style.left = xOf(f.ts) + "%";
+        ticks.appendChild(k);
+      }
+      thumbs.textContent = "";
+      if (prefs.style === "thumbs") {
+        const n = Math.max(4, Math.floor((scrub.clientWidth || 560) / 56));
+        for (let i = 0; i < n; i++) {
+          const at = range.from + (i + 0.5) / n * (range.to - range.from);
+          const j = frameIndexAt(frames, at);
+          const cell = document.createElement("div");
+          cell.className = "thumb";
+          if (j >= 0) {
+            const ti = document.createElement("img");
+            ti.alt = "";
+            ti.loading = "lazy";
+            ti.src = frames[j].url;
+            cell.appendChild(ti);
+          }
+          thumbs.appendChild(cell);
+        }
+      }
+    }
+    function show() {
+      head.style.left = xOf(t) + "%";
+      const j = frameIndexAt(frames, t);
+      const f = j >= 0 ? frames[j] : null;
+      const iv = ivs.find((x) => x.from <= t && t < x.to) || null;
+      const kind = iv ? iv.kind : f ? "frame" : "nodata";
+      el.classList.toggle("off", kind === "dropped" || kind === "nodata" || kind === "paused");
+      stateEl.textContent = kind === "dropped" ? "offline" : kind === "nodata" ? "no frame" : kind === "paused" ? pauseInfo({ paused: true, label: iv?.pause?.label }).label.toLowerCase() : "";
+      if (f && img.getAttribute("src") !== f.url && img.dataset.hiOf !== f.url) {
+        img.src = f.url;
+        delete img.dataset.hiOf;
+      }
+      caption(f);
+      if (hiTimer) {
+        clearTimeout(hiTimer);
+      }
+      if (f && f.hi && !playing) {
+        const hi = f.hi, lo = f.url;
+        hiTimer = setTimeout(() => {
+          const pre = new Image();
+          pre.onload = () => {
+            if (!gone && frames[frameIndexAt(frames, t)] === f) {
+              img.src = hi;
+              img.dataset.hiOf = lo;
+            }
+          };
+          pre.src = hi;
+        }, 300);
+      }
+    }
+    function caption(f) {
+      cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : "");
+    }
+    function seek(to, publish = true) {
+      t = Math.max(range.from, Math.min(range.to, to));
+      show();
+      if (publish && ctx.onTime) {
+        ctx.onTime(t);
+      }
+    }
+    async function load(around, keepT = true) {
+      const seq = ++loadSeq;
+      range = reachRange(prefs.reach, around, ctx.step, ctx.window, now());
+      let got = [];
+      try {
+        got = await ctx.fetch(range.from - 1, range.to);
+      } catch (e) {
+        console.warn("[visual-timeline] player fetch failed:", e);
+      }
+      if (gone || seq !== loadSeq) {
+        return;
+      }
+      frames = got.slice().sort((x, y) => x.ts - y.ts);
+      ivs = ctx.intervals(frames, range);
+      drawScrub();
+      seek(keepT ? around : range.from, false);
+    }
+    function stop() {
+      playing = false;
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+      labels();
+    }
+    function tick() {
+      const f = stepFrame(frames, t, 1, range);
+      if (f) {
+        seek(f.ts);
+        const j = frames.indexOf(f);
+        for (const n of frames.slice(j + 1, j + 4)) {
+          const p = new Image();
+          p.src = n.url;
+        }
+        return;
+      }
+      if (prefs.mode === "loop") {
+        const first = framesIn(frames, range)[0];
+        if (first) {
+          seek(first.ts);
+        }
+        return;
+      }
+      const end = Math.min(ctx.window.to, now());
+      if (range.to >= end - 1) {
+        stop();
+        return;
+      }
+      const next = range.to + (range.to - range.from) / 2;
+      stop();
+      void load(next, false).then(() => {
+        if (!gone) {
+          play();
+        }
+      });
+    }
+    function play() {
+      if (playing) {
+        return;
+      }
+      playing = true;
+      labels();
+      timer = setInterval(tick, 1e3 / prefs.fps);
+    }
+    const act = (a) => {
+      switch (a) {
+        case "play":
+          if (playing) {
+            stop();
+          } else {
+            play();
+          }
+          break;
+        case "prev":
+        case "next": {
+          stop();
+          const f = stepFrame(frames, t, a === "next" ? 1 : -1, range);
+          if (f) {
+            seek(f.ts);
+          }
+          break;
+        }
+        case "prev-slot":
+        case "next-slot": {
+          stop();
+          const to = t + (a === "next-slot" ? 1 : -1) * ctx.step;
+          if (to < range.from || to > range.to) {
+            void load(to).then(() => ctx.onTime?.(t));
+          } else {
+            seek(to);
+          }
+          break;
+        }
+        case "fps":
+          prefs.fps = FPS[(FPS.indexOf(prefs.fps) + 1) % FPS.length];
+          savePrefs(prefs);
+          if (playing) {
+            stop();
+            play();
+          }
+          labels();
+          break;
+        case "mode":
+          prefs.mode = prefs.mode === "loop" ? "continuous" : "loop";
+          savePrefs(prefs);
+          labels();
+          break;
+        case "reach":
+          prefs.reach = prefs.reach === "near" ? "all" : "near";
+          savePrefs(prefs);
+          labels();
+          void load(t);
+          break;
+        case "style":
+          prefs.style = prefs.style === "ticks" ? "thumbs" : "ticks";
+          savePrefs(prefs);
+          labels();
+          drawScrub();
+          show();
+          break;
+      }
+    };
+    el.querySelector(".bar").addEventListener("click", (e) => {
+      const a = e.target.closest("button")?.dataset.a;
+      if (a && a !== "close") {
+        act(a);
+      }
+    });
+    const tAt = (clientX) => {
+      const r = scrub.getBoundingClientRect();
+      return range.from + Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width))) * (range.to - range.from);
+    };
+    scrub.addEventListener("pointerdown", (e) => {
+      stop();
+      scrub.setPointerCapture?.(e.pointerId);
+      seek(tAt(e.clientX));
+      const move = (ev) => seek(tAt(ev.clientX));
+      const up = () => {
+        scrub.removeEventListener("pointermove", move);
+        scrub.removeEventListener("pointerup", up);
+      };
+      scrub.addEventListener("pointermove", move);
+      scrub.addEventListener("pointerup", up);
+    });
+    const keyH = (e) => {
+      const k = e.key;
+      if (k === " ") {
+        e.preventDefault();
+        act("play");
+      } else if (k === "ArrowLeft") {
+        e.preventDefault();
+        act(e.shiftKey ? "prev-slot" : "prev");
+      } else if (k === "ArrowRight") {
+        e.preventDefault();
+        act(e.shiftKey ? "next-slot" : "next");
+      }
+    };
+    document.addEventListener("keydown", keyH);
+    img.onload = place;
+    img.onerror = () => {
+      if (img.dataset.hiOf) {
+        img.src = img.dataset.hiOf;
+        delete img.dataset.hiOf;
+      }
+    };
+    if (img.complete) {
+      place();
+    }
+    labels();
+    caption(start);
+    void load(start.ts);
+    return () => {
+      gone = true;
+      stop();
+      if (hiTimer) {
+        clearTimeout(hiTimer);
+      }
+      document.removeEventListener("keydown", keyH);
+    };
+  }
+
   // src/vt/ui/preview.ts
-  var popState = { el: null, keyH: null, retireTimer: null };
+  var popState = { el: null, keyH: null, downH: null, teardown: null, retireTimer: null };
   function closePreview() {
     if (popState.retireTimer) {
       clearTimeout(popState.retireTimer);
       popState.retireTimer = null;
+    }
+    if (popState.teardown) {
+      popState.teardown();
+      popState.teardown = null;
     }
     if (popState.el) {
       popState.el.remove();
@@ -1875,6 +2286,10 @@ var VTCore = (() => {
     if (popState.keyH) {
       document.removeEventListener("keydown", popState.keyH);
       popState.keyH = null;
+    }
+    if (popState.downH) {
+      document.removeEventListener("pointerdown", popState.downH, true);
+      popState.downH = null;
     }
   }
   function makePreview(root, tz) {
@@ -1887,9 +2302,13 @@ var VTCore = (() => {
       // expectedTs set = frame is the pending slot's ghost: shown blurred and
       // captioned as the last frame, never as the expected one. tt: the
       // source's time text (zoneTexts), the panel's when omitted
-      open(site, kiosk, frame, x, y, hiUrl, expectedTs, tt) {
+      open(site, kiosk, frame, x, y, hiUrl, expectedTs, tt, player) {
         tt = tt || panelTexts;
         closePreview();
+        if (player && !expectedTs) {
+          openPlayer(root, site, kiosk, frame, x, y, { ...player, tt, label: site + " / " + kiosk });
+          return;
+        }
         const el = document.createElement("div");
         el.className = "ktl-pop" + (expectedTs ? " ghost" : "");
         copyVars(root, el);
@@ -1928,6 +2347,47 @@ var VTCore = (() => {
         }
       }
     };
+  }
+  function openPlayer(root, site, kiosk, frame, x, y, ctx) {
+    const el = document.createElement("div");
+    el.className = "ktl-pop";
+    copyVars(root, el);
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-label", site + " / " + kiosk);
+    document.body.appendChild(el);
+    let placed = false;
+    const place = () => {
+      if (!el.isConnected) {
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      if (placed && r.right <= window.innerWidth && r.bottom <= window.innerHeight) {
+        return;
+      }
+      placed = true;
+      el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x - r.width / 2)) + "px";
+      el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y + 16)) + "px";
+    };
+    popState.teardown = mountPlayer(el, frame, ctx, place);
+    el.querySelector('button[data-a="close"]')?.addEventListener("click", closePreview);
+    place();
+    popState.el = el;
+    popState.keyH = (e) => {
+      if (e.key === "Escape") {
+        closePreview();
+      }
+    };
+    document.addEventListener("keydown", popState.keyH);
+    popState.downH = (e) => {
+      if (!el.contains(e.target)) {
+        closePreview();
+      }
+    };
+    setTimeout(() => {
+      if (popState.el === el && popState.downH) {
+        document.addEventListener("pointerdown", popState.downH, true);
+      }
+    }, 0);
   }
 
   // src/vt/ui/wrapper.ts
@@ -2270,6 +2730,21 @@ var VTCore = (() => {
     }
   }
 
+  // src/vt/ui/playerContext.ts
+  var PLAYER_BUCKETS = 800;
+  function playerContext(backend, cfg, P, decl, model, tt, onTime) {
+    return {
+      window: { from: P.from, to: P.to },
+      step: model.step,
+      tt,
+      fetch: (from, to) => backend.allFrames ? backend.allFrames(decl.site, decl.id, from, to) : backend.frames(decl.site, decl.id, from, to, Math.max(model.lastActive?.cadence ?? model.step, Math.ceil((to - from) / PLAYER_BUCKETS))),
+      intervals: (frames, range) => model.intervalsFor(frames, range, Date.now()),
+      onTime,
+      reach: cfg.playerReach === "all" ? "all" : cfg.playerReach === "near" ? "near" : void 0,
+      scrubber: cfg.playerScrubber === "thumbs" ? "thumbs" : cfg.playerScrubber === "ticks" ? "ticks" : void 0
+    };
+  }
+
   // src/vt/timeline/card.ts
   function dressStrip(model) {
     for (const sl of model.slots) {
@@ -2417,7 +2892,12 @@ var VTCore = (() => {
       const f = sl && sl.frame;
       const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
       if (f) {
-        s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt);
+        const player = playerContext(s.backend, s.cfg, s.P, decl, model, tt, (t) => {
+          if (!s.destroyed) {
+            setCursor(s, t, null, false);
+          }
+        });
+        s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt, player);
       } else if (g) {
         s.pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl.ts, tt);
       }
@@ -2762,7 +3242,12 @@ var VTCore = (() => {
       if (rec.shown && rec.shownExpected) {
         s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, null, rec.shownExpected, rec.tt);
       } else if (rec.shown) {
-        s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, rec.shown.hi ?? null, null, rec.tt);
+        const player = playerContext(s.backend, s.cfg, s.P, decl, model, rec.tt, (t) => {
+          if (!s.destroyed) {
+            setShown(s, t);
+          }
+        });
+        s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, rec.shown.hi ?? null, null, rec.tt, player);
       }
     });
     q(s.wrap, ".grid").appendChild(el);

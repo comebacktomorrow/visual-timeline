@@ -1,6 +1,7 @@
 import { copyVars } from '../dom/styles';
 import { zoneTexts, type ZoneTexts } from '../zones/source';
 import type { Frame } from '../types';
+import { mountPlayer, type PlayerContext } from './player';
 
 /* a mount's handle on the shared preview. open(): expectedTs set = frame is
  * the pending slot's ghost; tt is the source's time text (the panel's when
@@ -8,7 +9,7 @@ import type { Frame } from '../types';
 export interface Preview {
   open(
     site: string, kiosk: string, frame: Frame, x: number, y: number,
-    hiUrl: string | null, expectedTs: number | null, tt?: ZoneTexts
+    hiUrl: string | null, expectedTs: number | null, tt?: ZoneTexts, player?: PlayerContext
   ): void;
   close(): void;
   retire(): void;
@@ -26,13 +27,17 @@ export interface Preview {
 interface PopState {
   el: HTMLDivElement | null;
   keyH: ((e: KeyboardEvent) => void) | null;
+  downH: ((e: PointerEvent) => void) | null;
+  teardown: (() => void) | null;
   retireTimer: ReturnType<typeof setTimeout> | null;
 }
-const popState: PopState = { el: null, keyH: null, retireTimer: null };
+const popState: PopState = { el: null, keyH: null, downH: null, teardown: null, retireTimer: null };
 function closePreview(): void {
   if (popState.retireTimer) { clearTimeout(popState.retireTimer); popState.retireTimer = null; }
+  if (popState.teardown) { popState.teardown(); popState.teardown = null; }
   if (popState.el) { popState.el.remove(); popState.el = null; }
   if (popState.keyH) { document.removeEventListener('keydown', popState.keyH); popState.keyH = null; }
+  if (popState.downH) { document.removeEventListener('pointerdown', popState.downH, true); popState.downH = null; }
 }
 export function makePreview(root: HTMLElement, tz: string): Preview {
   // adopt: a mount created while a retire is pending cancels the close
@@ -42,9 +47,10 @@ export function makePreview(root: HTMLElement, tz: string): Preview {
     // expectedTs set = frame is the pending slot's ghost: shown blurred and
     // captioned as the last frame, never as the expected one. tt: the
     // source's time text (zoneTexts), the panel's when omitted
-    open(site, kiosk, frame, x, y, hiUrl, expectedTs, tt) {
+    open(site, kiosk, frame, x, y, hiUrl, expectedTs, tt, player) {
       tt = tt || panelTexts;
       closePreview();
+      if (player && !expectedTs) { openPlayer(root, site, kiosk, frame, x, y, { ...player, tt, label: site + ' / ' + kiosk }); return; }
       const el = document.createElement('div');
       el.className = 'ktl-pop' + (expectedTs ? ' ghost' : '');
       copyVars(root, el);
@@ -79,4 +85,36 @@ export function makePreview(root: HTMLElement, tz: string): Preview {
       }
     },
   };
+}
+
+/* The preview as a player (M10): it stays open while it's used, and closes
+ * on its close button, Esc, or a press outside it. */
+function openPlayer(root: HTMLElement, site: string, kiosk: string, frame: Frame, x: number, y: number, ctx: PlayerContext): void {
+  const el = document.createElement('div');
+  el.className = 'ktl-pop';
+  copyVars(root, el);
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', site + ' / ' + kiosk);
+  document.body.appendChild(el);
+  let placed = false;
+  const place = () => {
+    if (!el.isConnected) {return;}
+    const r = el.getBoundingClientRect();
+    // anchored once, near the click: it doesn't jump as frames change size
+    if (placed && r.right <= window.innerWidth && r.bottom <= window.innerHeight) {return;}
+    placed = true;
+    el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x - r.width / 2)) + 'px';
+    el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y + 16)) + 'px';
+  };
+  popState.teardown = mountPlayer(el, frame, ctx, place);
+  el.querySelector('button[data-a="close"]')?.addEventListener('click', closePreview);
+  place();
+  popState.el = el;
+  popState.keyH = (e) => { if (e.key === 'Escape') {closePreview();} };
+  document.addEventListener('keydown', popState.keyH);
+  // a press outside closes it (capture: before anything under it reacts)
+  popState.downH = (e) => { if (!el.contains(e.target as Node)) {closePreview();} };
+  setTimeout(() => {
+    if (popState.el === el && popState.downH) {document.addEventListener('pointerdown', popState.downH, true);}
+  }, 0);
 }
