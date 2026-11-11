@@ -6,11 +6,12 @@ import { test, expect } from '@grafana/plugin-e2e';
 // larger version); cam-w has only clips, 10:00 to 10:20.
 
 test('a clip plays over the frames in the player, and a host of clips opens on its video', async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
-  await page.setViewportSize({ width: 1280, height: 1200 });
+  // tall enough that the panel, last on the dashboard, renders without
+  // scrolling (Grafana 12 leaves panels below the fold unrendered)
+  await page.setViewportSize({ width: 1280, height: 2600 });
   const dashboard = await readProvisionedDashboard({ fileName: 'any-source.json' });
   const dashboardPage = await gotoDashboardPage(dashboard);
   const panel = dashboardPage.getPanelByTitle('Video clips from TestData');
-  await panel.locator.scrollIntoViewIfNeeded();
   const cards = panel.locator.locator('.ktl .card');
   await expect(cards).toHaveCount(2, { timeout: 20000 });
   const [camV, camW] = [cards.nth(0), cards.nth(1)];
