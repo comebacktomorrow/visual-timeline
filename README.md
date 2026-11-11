@@ -147,6 +147,18 @@ stretches the strip draws.
   tick per Frame width) shows as many as fit, says so in the title
   ("showing 57 of 456"), and highlights Zoom.
 - The large image loads once the playhead settles; Esc or ✕ closes.
+- **Video** (experimental, below): where a clip covers the slot, it plays over the
+  frames. Its part of the timeline is a plain bar to hover or drag through,
+  ▶ plays it (round again at the slot's end), and the bar gains sound
+  (muted by default) and HD/SD (when the clip has a larger version), both
+  remembered. The speed button becomes the video's speed: it starts at
+  whatever plays the slot's video in about ten seconds (1× for a short
+  clip, faster for more), and a click steps up through 1×, 2×, 4×, 8×
+  and 16×.
+- **Zoomed out**, a slot can hold more video than plays in ten seconds at
+  16×. It's then played as a slot of many frames is: its frames, as many
+  as fit, with the video as a bar under them, and Zoom highlighted to watch
+  it.
 
 The player asks for one slot's frames when it needs them, by running the
 panel's own query again for just that slot, no finer than it can draw.
@@ -248,6 +260,7 @@ or Base64 image data. The panel never signs or proxies images itself.
 | Preview image | `image_hi`, `preview`                                              | optional, for the click-in preview                                                                                           |
 | Cadence       | `cadence` (milliseconds)                                           | optional; otherwise the typical gap between frames. A value that changes over time draws each pace on its own grid (an era). |
 | Host details  | `timezone`, `location`, `tags`; or labels on the image field       | optional, shown in the host's header                                                                                         |
+| Video         | `video`, with `video_hi`, `video_end` or `video_duration` (ms)     | optional: a clip from the row's time, played in the preview (below)                                                          |
 
 A **wide table** works too, as a SQL pivot returns it: one time column and an
 image column per host, each column named for its host (or carrying a `host`
@@ -268,6 +281,39 @@ no image or state, so hosts that sent no frames still show). The details are in
 [docs/INFINITY.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/INFINITY.md),
 whose recipes work for any data source. The provisioned dashboard **Visual Timeline — any data
 source** shows a timeline and a grid drawn from TestData CSV rows.
+
+### Video clips (experimental)
+
+Video is experimental: built and tested against test clips, not yet a real
+camera's feed, so how it works may change.
+
+A row can carry a **video** as well as its image: a clip that starts at the
+row's time and runs to its `video_end` (a time), or for `video_duration`
+milliseconds. With neither, as long as the host's other clips say they
+last, else a frame's time: a host taking a frame a minute is taken to have
+a minute of video per clip (an assumption). Never past the next clip. `video_hi` is a larger version for the preview
+player. A clip of real time and a timelapse (a whole day in seconds) work
+alike: a time within the clip is found by its fraction of the way through
+it.
+
+**Keep the frames coming alongside the video.** They fill the strip and the
+player's thumbnails, and they're what a zoomed-out slot shows. A host with
+only clips works (they draw as plain bands with ▶, and a zoomed-out slot
+shows frames taken from the video itself, which is slower), but isn't the
+way to set one up.
+
+- **The strip doesn't change**: frames still fill it. **Mark video on the
+  strip** (a panel option, off by default) draws a thin line along its foot
+  where the host has video.
+- **The preview player plays the clip over the frames** (above). The hover
+  flipbook plays the smaller version in the magnifier, muted.
+- **Formats:** whatever the viewer's browser plays: MP4 (H.264) or WebM
+  (VP9) are safe. Serve them with range requests, and for MP4 put the index
+  at the front (`ffmpeg -movflags +faststart`): a file with it at the end
+  can't seek until the browser has fetched its tail.
+- A clip that began before the dashboard's range is only found if the query
+  returns it: include the clip in force at the range's start, as you would
+  the frame before it.
 
 ## Show the last frame in a table
 
@@ -364,6 +410,7 @@ set how it draws them.
 | **Chip click**                    | What clicking a host or chip does: add an ad hoc filter (where the data source supports one), follow a **Chip link** (a URL with `${__chip.key}`, `${__chip.value}` and `${__host}`, plus dashboard variables), or nothing. |
 | **Expected cadence**              | How often every host promises a frame (`1m`, `30s`): a frame missing past it is red, as offline. Empty: each host's own cadence field or declared pace; a host with none promises nothing and is never red.                 |
 | **Hold frames without a promise** | How long a frame from a host that promises nothing is shown when no frame follows soon: Auto (three times the typical gap around it), Until the next frame, or Up to a duration such as `10m`. Past it: neutral "no data".  |
+| **Mark video on the strip**       | Experimental. A thin line along the foot of each strip where its host has video clips. Off by default: only the preview shows them.                                                                                         |
 | **Frame width**                   | The least width a frame gets, in pixels (default 7): the strip's slots, and the ticks in the preview player's timeline of a slot. Smaller shows more detail and loads more images; larger, fewer.                           |
 | **Scrubber style**                | The preview player's timeline: Ticks (a mark per frame) or Thumbnails (small pictures). Viewers can switch it in the player; their last choice is remembered in their browser.                                              |
 | **Show cadence details**          | Show each host's cadence (the promise, or `~` and "no promise" for a typical gap) and display resolution (for tuning).                                                                                                      |

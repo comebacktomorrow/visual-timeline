@@ -1,4 +1,4 @@
-import type { Frame, TimeWindow } from '../types';
+import type { Clip, Frame, TimeWindow } from '../types';
 
 /* ================ frames → intervals (docs/TIMELINE-MODEL.md) ================
  * A frame is shown from its own time until the next frame replaces it, or
@@ -6,7 +6,8 @@ import type { Frame, TimeWindow } from '../types';
  * by t + cadence (kept up to t + (1 + tolerance) * cadence); a broken
  * promise is DROPPED time, the only red. A frame with no promise is shown up
  * to a hold limit, and past it there's neutral NO DATA. A pause suspends
- * promises. Pure: no DOM, no fetching. */
+ * promises. A video clip covers what would be no data (M10c): there's no
+ * frame, but there is video. Pure: no DOM, no fetching. */
 
 export type IntervalKind =
   | 'frame'     // a frame in force
@@ -14,6 +15,7 @@ export type IntervalKind =
   | 'dropped'   // a promise broke and no frame has come since: red
   | 'nodata'    // no promise in force, or none kept past its hold limit: neutral
   | 'paused'    // a pause: promises suspended
+  | 'clip'      // no frame in force, but a video clip covers it (M10c)
   | 'beyond';   // past now: unknown
 
 export interface PauseSpan {
@@ -37,6 +39,8 @@ export interface Interval {
   frame?: Frame;
   /** the pause ('paused') */
   pause?: PauseSpan;
+  /** the clip ('clip') */
+  clip?: Clip;
 }
 
 /** How long a frame with no promise is shown when no frame follows it soon:
@@ -68,6 +72,10 @@ export interface IntervalInput {
    * data source may answer one frame per it, so a finer promise counts as the
    * whole multiple of itself that covers it */
   sample?: number;
+  /** video clips (M10c): where one covers time with no frame in force (no
+   * data), it's clip time. Frames still win, and a broken promise is still
+   * dropped: a promise is about frames. */
+  clips?: Clip[];
 }
 
 /** Auto hold: this many times the typical gap around a frame. */
@@ -233,12 +241,14 @@ export function buildIntervals(input: IntervalInput): Intervals {
   }
 
   if (horizon < W.to) {out.push({ from: Math.max(cursor, horizon), to: W.to, kind: 'beyond' });}
+  const final = input.clips?.length ? coverWithClips(out, input.clips) : out;
 
   const inWindow = shown.filter((f) => f.ts <= W.to);
   return {
-    intervals: out,
+    intervals: final,
     frames: inWindow,
     at(t: number): Interval | null {
+      const out = final;
       if (!out.length) {return null;}
       const x = Math.max(out[0].from, Math.min(out[out.length - 1].to - 1e-6, t));
       let lo = 0, hi = out.length - 1;
@@ -249,6 +259,33 @@ export function buildIntervals(input: IntervalInput): Intervals {
       return out[lo];
     },
   };
+}
+
+/* No-data stretches that clips cover, as clip time: each no-data interval
+ * split at the clips over it (where clips overlap, the later one). */
+function coverWithClips(ivs: Interval[], clips: Clip[]): Interval[] {
+  const cs = [...clips].sort((a, b) => a.from - b.from);
+  const out: Interval[] = [];
+  for (const iv of ivs) {
+    if (iv.kind !== 'nodata') { out.push(iv); continue; }
+    // the edges inside it where what covers it changes
+    const edges = new Set<number>([iv.from, iv.to]);
+    for (const c of cs) {
+      if (c.to <= iv.from || c.from >= iv.to) {continue;}
+      edges.add(Math.max(c.from, iv.from));
+      edges.add(Math.min(c.to, iv.to));
+    }
+    const xs = [...edges].sort((a, b) => a - b);
+    for (let k = 0; k + 1 < xs.length; k++) {
+      const a = xs[k], b = xs[k + 1];
+      const c = [...cs].reverse().find((x) => x.from <= a && x.to >= b);
+      const last = out[out.length - 1];
+      if (c && last && last.kind === 'clip' && last.clip === c && last.to === a) { last.to = b; continue; }
+      if (!c && last && last.kind === 'nodata' && last.to === a) { last.to = b; continue; }
+      out.push(c ? { from: a, to: b, kind: 'clip', clip: c } : { from: a, to: b, kind: 'nodata' });
+    }
+  }
+  return out;
 }
 
 /* Pauses with their ends settled and in order: an open pause ends at the

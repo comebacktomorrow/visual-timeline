@@ -37,6 +37,10 @@ export function buildTile(s: GridState, decl: SourceDecl, model: SourceModel): T
       // the preview is a player over this host's frames; it moves the grid's time
       const player = playerContext(s.backend, s.cfg, s.P, decl, model, rec.tt, (t) => { if (!s.destroyed) {setShown(s, t);} });
       s.pv.open(decl.site, decl.id, rec.shown, e.clientX, e.clientY, rec.shown.hi ?? null, null, rec.tt, player);
+    } else if (rec.shownClip != null) {
+      // a video clip's time (M10c): the player, there
+      const player = playerContext(s.backend, s.cfg, s.P, decl, model, rec.tt, (t) => { if (!s.destroyed) {setShown(s, t);} });
+      s.pv.play(decl.site, decl.id, rec.shownClip, e.clientX, e.clientY, rec.tt, player);
     }
   });
   q(s.wrap, '.grid').appendChild(el);
@@ -71,14 +75,17 @@ export function setShown(s: GridState, t: number | null): void {
     if (rec.zone.el) {dressZoneChip(rec.zone, zoneAt);}
     const tt = rec.tt;
     let frame: Frame | null = null, offMsg: string | null = null, pausedMsg: string | null = null,
-      pausedAt: PauseSubject | null = null, expectedTs: number | null = null, nodata = false;
+      pausedAt: PauseSubject | null = null, expectedTs: number | null = null, nodata = false, clipAt: number | null = null;
     // "latest": in a live window, what's in force now; in a past one, the
     // window's last frame (no offline call), or the pause it ended in
     const at = t == null ? live - 1 : t;
     const iv = rec.model.intervalAt(at);
     let kind = iv ? iv.kind : 'nodata';
     const latest = t == null ? lastFrame(rec) : null;
-    if (t == null && !s.LIVE && kind !== 'paused') {kind = latest ? 'frame' : 'nodata';}
+    // a host of video clips: its last one
+    const clips = rec.model.clips;
+    const lastClip = clips.length ? clips[clips.length - 1] : null;
+    if (t == null && !s.LIVE && kind !== 'paused') {kind = latest ? 'frame' : lastClip && lastClip.from < at ? 'clip' : 'nodata';}
     if (t == null && kind === 'frame' && latest) {
       frame = latest;
     } else if (kind === 'frame') {
@@ -91,14 +98,22 @@ export function setShown(s: GridState, t: number | null): void {
       pausedAt = { paused: true, label: iv!.pause!.label, color: iv!.pause!.color };
       const last = t == null ? lastFrame(rec) : null;
       pausedMsg = pauseInfo(pausedAt).label + (last ? ' — last frame ' + tt.time(last.ts) + tt.sfx(last.ts) : '');
+    } else if (kind === 'clip') {
+      // no frame, but a video clip covers it (the latest: within the last
+      // one): click to play it
+      clipAt = t == null && lastClip ? Math.max(lastClip.from, Math.min(at, lastClip.to - 1)) : at;
+      offMsg = '▶ video — ' + tt.time(clipAt) + tt.sfx(clipAt);
+      nodata = true;
     } else if (kind === 'beyond') {
       offMsg = '—';   // ahead of now: unknown, not a failure: neutral
       nodata = true;
     } else {
       nodata = kind === 'nodata';
       const last = frameBefore(rec, at);
+      const ended = last ? null : clips.filter((c) => c.to <= at).pop();
       offMsg = last
         ? (nodata ? 'NO FRAME' : 'OFFLINE') + ' — last seen ' + tt.time(last.ts) + tt.sfx(last.ts)
+        : ended ? (nodata ? 'NO VIDEO' : 'OFFLINE') + ' — last clip ended ' + tt.time(ended.to) + tt.sfx(ended.to)
         : t == null ? 'no data in window' : 'no data';
     }
     rec.el.classList.toggle('offline', !!offMsg);
@@ -109,6 +124,8 @@ export function setShown(s: GridState, t: number | null): void {
     rec.el.classList.toggle('ghost', !!expectedTs);
     rec.shown = frame;
     rec.shownExpected = expectedTs;
+    rec.shownClip = clipAt;
+    rec.el.classList.toggle('clip', clipAt !== null);
     if (frame && !offMsg && !pausedMsg) {
       rec.img.src = frame.url;
       rec.ts.textContent = (expectedTs

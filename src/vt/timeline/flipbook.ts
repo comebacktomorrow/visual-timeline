@@ -1,4 +1,4 @@
-import type { Reel, ReelAt, ReelSlot } from '../model/reel';
+import { MAX_RATE, type ClipSpan, type Reel, type ReelAt, type ReelSlot } from '../model/reel';
 import type { Slot, TickSlot } from '../types';
 
 /* The hover flipbook (M10b): a slot that holds more than one frame plays
@@ -8,7 +8,12 @@ import type { Slot, TickSlot } from '../types';
  * Nothing loads while the cursor moves: scrubbing a day of strips fetches
  * no more than it did before. Moving to another slot, leaving the strip,
  * pressing, or the crosshair moving from elsewhere stops it, and the
- * magnifier goes back to the slot's own frame. */
+ * magnifier goes back to the slot's own frame.
+ * A slot a video clip covers (M10c) plays the clip's part of it instead,
+ * the smaller version, muted, round and round, sped up to be watched in a
+ * few seconds. Zoomed out, a slot holding more video than that flips
+ * through its stills as any other; one with only video plays it as fast as
+ * it goes. */
 
 /** How long the cursor rests on one slot before it plays: long enough that
  * it has to be meant. */
@@ -34,21 +39,28 @@ export interface FlipTarget {
   show(at: ReelAt, t: number, i: number, n: number): void;
   /** playing started (true) or stopped (false): restore the magnifier */
   playingChanged(on: boolean): void;
+  /** play a clip's part of the slot in the magnifier, round and round, at
+   * `rate` (null: stop it) */
+  clip?(span: ClipSpan | null, rate?: number): void;
+  /** learn how long the reel's clips play (clipLength.ts) */
+  measure?(reel: Reel): Promise<unknown>;
 }
 
 /** `anySlot`: arm on every slot that shows a frame, not only those known to
  * hold several (a backend that can fetch a slot's frames again: a thinned
  * answer may not say how many it had). */
-export function makeFlipbook(target: FlipTarget, anySlot = false): Flipbook {
+export function makeFlipbook(target: FlipTarget, anySlot = false, hasClip: (sl: TickSlot) => boolean = (sl) => !!sl.clip): Flipbook {
   let current: TickSlot | null = null;
   let dwell: ReturnType<typeof setTimeout> | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
+  let clipOn = false;
   let seq = 0;
 
   function halt(): void {
     seq++;
     if (dwell) { clearTimeout(dwell); dwell = null; }
     if (timer) { clearInterval(timer); timer = null; target.playingChanged(false); }
+    if (clipOn) { clipOn = false; target.clip?.(null); target.playingChanged(false); }
   }
 
   /* the slot's reel, at most FLIP_MAX frames, played stop by stop (gaps
@@ -58,6 +70,21 @@ export function makeFlipbook(target: FlipTarget, anySlot = false): Flipbook {
     const reel = target.reel({ from: sl.x0, to: sl.x0 + sl.span, ts: sl.ts });
     const ok = await reel.load(FLIP_MAX);
     if (!ok || mine !== seq || !current || current.x0 !== sl.x0) {return;}
+    if (reel.clips.length) {await target.measure?.(reel);}
+    if (mine !== seq || !current || current.x0 !== sl.x0) {return;}
+    // a clip plays over stills: the one at the slot's tick (the one the
+    // strip shows), else the longest part of one in the slot. Too much video
+    // to watch: the stills, unless there are none
+    const rate = reel.videoRate();
+    const all = reel.clipSpans();
+    const spans = (rate === null ? all : reel.watched()).sort((a, z) => (z.to - z.from) - (a.to - a.from));
+    const span = all.find((c) => c.from <= sl.ts && sl.ts < c.to) ?? spans[0];
+    if (span && target.clip && (rate !== null || !reel.inSlot().length)) {
+      clipOn = true;
+      target.playingChanged(true);
+      target.clip(span, rate ?? MAX_RATE);
+      return;
+    }
     const stops = reel.stops(FLIP_MAX);
     if (stops.length < 2) {return;}
     const frames = reel.shown(FLIP_MAX);
@@ -78,7 +105,7 @@ export function makeFlipbook(target: FlipTarget, anySlot = false): Flipbook {
 
   return {
     hover(slot) {
-      const sl = slot && !slot.paused && !slot.beyond && (slot.count > 1 || (anySlot && slot.frame)) ? slot : null;
+      const sl = slot && !slot.paused && !slot.beyond && (slot.count > 1 || (anySlot && slot.frame) || hasClip(slot)) ? slot : null;
       // resting on the same slot (by its time: the live poll rebuilds slots)
       // lets the dwell run on
       if (sl === current || (sl && current && sl.x0 === current.x0 && sl.ts === current.ts)) {return;}
@@ -87,6 +114,6 @@ export function makeFlipbook(target: FlipTarget, anySlot = false): Flipbook {
       if (sl) {dwell = setTimeout(() => { dwell = null; void start(sl); }, DWELL_MS);}
     },
     stop() { halt(); current = null; },
-    playing: () => timer !== null,
+    playing: () => timer !== null || clipOn,
   };
 }

@@ -11,6 +11,8 @@ export interface Preview {
     site: string, kiosk: string, frame: Frame, x: number, y: number,
     hiUrl: string | null, expectedTs: number | null, tt?: ZoneTexts, player?: PlayerContext
   ): void;
+  /** the player at t, with no frame to show first: a video clip's slot (M10c) */
+  play(site: string, kiosk: string, t: number, x: number, y: number, tt: ZoneTexts | undefined, player: PlayerContext): void;
   close(): void;
   retire(): void;
 }
@@ -56,7 +58,7 @@ export function makePreview(root: HTMLElement, tz: string): Preview {
     open(site, kiosk, frame, x, y, hiUrl, expectedTs, tt, player) {
       tt = tt || panelTexts;
       closePreview();
-      if (player && !expectedTs) { openPlayer(root, site, kiosk, frame, x, y, { ...player, tt, label: site ? site + ' / ' + kiosk : kiosk }); return; }
+      if (player && !expectedTs) { openPlayer(root, site, kiosk, frame, frame.ts, x, y, { ...player, tt, label: site ? site + ' / ' + kiosk : kiosk }); return; }
       const el = document.createElement('div');
       el.className = 'ktl-pop' + (expectedTs ? ' ghost' : '');
       copyVars(root, el);
@@ -82,6 +84,10 @@ export function makePreview(root: HTMLElement, tz: string): Preview {
       popState.keyH = e => { if (e.key === 'Escape') {closePreview();} };
       document.addEventListener('keydown', popState.keyH);
     },
+    play(site, kiosk, t, x, y, tt, player) {
+      closePreview();
+      openPlayer(root, site, kiosk, null, t, x, y, { ...player, tt: tt || panelTexts, label: site ? site + ' / ' + kiosk : kiosk });
+    },
     close: closePreview,
     retire() {
       // destroy() path: don't kill an open preview a refresh remount is
@@ -95,7 +101,7 @@ export function makePreview(root: HTMLElement, tz: string): Preview {
 
 /* The preview as a player (M10): it stays open while it's used, and closes
  * on its close button, Esc, or a press outside it. */
-function openPlayer(root: HTMLElement, site: string, kiosk: string, frame: Frame, x: number, y: number, ctx: PlayerContext): void {
+function openPlayer(root: HTMLElement, site: string, kiosk: string, frame: Frame | null, t: number, x: number, y: number, ctx: PlayerContext): void {
   const el = document.createElement('div');
   el.className = 'ktl-pop';
   copyVars(root, el);
@@ -113,7 +119,7 @@ function openPlayer(root: HTMLElement, site: string, kiosk: string, frame: Frame
     el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x - r.width / 2)) + 'px';
     el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y + 16)) + 'px';
   };
-  popState.teardown = mountPlayer(el, frame, ctx, place, closePreview);
+  popState.teardown = mountPlayer(el, frame, ctx, place, closePreview, t);
   el.querySelector('button[data-a="close"]')?.addEventListener('click', closePreview);
   place();
   popState.el = el;

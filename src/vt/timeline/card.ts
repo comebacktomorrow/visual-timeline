@@ -11,7 +11,8 @@ import { ruleBeyond } from './axis';
 import { hideSelection, setCursor, showSelection } from './cursor';
 import { playerContext } from '../ui/playerContext';
 import { makeFlipbook } from './flipbook';
-import { Reel } from '../model/reel';
+import { clipTime, playVideo, Reel, videoTime } from '../model/reel';
+import { measureReel, noteClipLength } from '../ui/clipLength';
 import type { Card, TimelineState } from './state';
 
 /* Post-layout dressing, idempotent and re-runnable:
@@ -55,9 +56,11 @@ export function renderStrip(s: TimelineState, model: SourceModel, strip: HTMLEle
   const cells: Cell[] = [];
   for (const sl of model.slots) {
     const key = sl.frame ? 'f:' + sl.frame.ts + ':' + sl.frame.url
-      : sl.paused ? 'p:' + sl.x0 : sl.beyond ? 'b' : (sl.future ? 'u:' : sl.nodata ? 'n:' : 'g:') + sl.x0;
+      : sl.paused ? 'p:' + sl.x0 : sl.beyond ? 'b' : sl.clip ? 'c:' + sl.clip.from + ':' + sl.clip.url
+      : (sl.future ? 'u:' : sl.nodata ? 'n:' : 'g:') + sl.x0;
     const last = cells[cells.length - 1];
-    if (sl.frame && last && last.key === key) {last.slots.push(sl);}
+    // slots showing the same frame, or the same clip, are one cell
+    if ((sl.frame || sl.clip) && last && last.key === key) {last.slots.push(sl);}
     else {cells.push({ key, slots: [sl] });}
   }
   const old = ((strip as StripEl).__cells ??= new Map<string, HTMLElement>());
@@ -112,6 +115,26 @@ export function renderStrip(s: TimelineState, model: SourceModel, strip: HTMLEle
       drops.appendChild(m);
     }
   }
+  // where the host has video (M10c), when the panel asks: a thin line along
+  // the strip's foot, over frames too (the preview plays the video there)
+  let clipsEl = strip.querySelector<HTMLElement>('.clips');
+  const inWindow = s.cfg.videoLine ? model.clips.filter((c) => c.to > s.P.from && c.from < s.P.to) : [];
+  if (inWindow.length && !clipsEl) {
+    clipsEl = document.createElement('div');
+    clipsEl.className = 'clips';
+    strip.appendChild(clipsEl);
+  }
+  if (clipsEl) {
+    clipsEl.textContent = '';
+    for (const c of inWindow) {
+      const a = Math.max(c.from, s.P.from), b = Math.min(c.to, s.P.to);
+      const m = document.createElement('div');
+      m.className = 'cliplane';
+      m.style.left = ((a - s.P.from) / s.SPAN * 100).toFixed(4) + '%';
+      m.style.width = ((b - a) / s.SPAN * 100).toFixed(4) + '%';
+      clipsEl.appendChild(m);
+    }
+  }
   const tail = model.slots[model.slots.length - 1];
   if (tail && tail.beyond) {ruleBeyond(s, tail);}
 }
@@ -161,12 +184,47 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
       if (!m) {return;}
       const im = m.querySelector('img')!;
       if (at.frame && im.getAttribute('src') !== at.frame.url) {im.src = at.frame.url;}
-      // a gap shows its reason over the last frame, dimmed, as the player does
-      m.classList.toggle('flip-gap', at.gap);
-      const reason = at.kind === 'dropped' ? 'offline' : at.kind === 'nodata' ? 'no frame'
+      // a gap shows its reason over the last frame, dimmed, as the player
+      // does; so does a stretch only video covers (zoomed out)
+      m.classList.toggle('flip-gap', at.gap || at.kind === 'clip');
+      const reason = at.kind === 'dropped' ? 'offline' : at.kind === 'nodata' ? 'no frame' : at.kind === 'clip' ? 'video'
         : at.kind === 'paused' ? pauseInfo({ paused: true, label: at.interval?.pause?.label }).label.toLowerCase() : '';
-      const ts = at.gap || !at.frame ? t : at.frame.ts;
+      const ts = at.gap || at.kind === 'clip' || !at.frame ? t : at.frame.ts;
       m.querySelector('.cap')!.textContent = tt.time(ts) + tt.sfx(ts) + (reason ? ' · ' + reason : '') + ' · ' + (i + 1) + '/' + n;
+    },
+    measure: (r) => measureReel(r, source.key),
+    // a clip's part of the slot, the smaller version, muted, round and round
+    clip: (span, rate = 1) => {
+      const m = rec?.mag;
+      if (!m) {return;}
+      let v = m.querySelector('video');
+      if (!span) {
+        m.classList.remove('flip-video');
+        if (v) { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); }
+        return;
+      }
+      if (!v) {
+        v = document.createElement('video');
+        v.muted = true;
+        v.playsInline = true;
+        m.insertBefore(v, m.querySelector('.cap'));
+      }
+      const vid = v;
+      const from = () => videoTime(span.clip, span.from, vid.duration), to = () => videoTime(span.clip, span.to, vid.duration);
+      const again = () => { vid.currentTime = from(); vid.playbackRate = rate; playVideo(vid).catch(() => {}); };
+      vid.onloadedmetadata = () => {
+        noteClipLength(span.clip.url, vid.duration);
+        if (vid.videoWidth && vid.videoHeight) {m.style.aspectRatio = String(vid.videoWidth / vid.videoHeight);}
+        again();
+      };
+      vid.ontimeupdate = () => {
+        const at = clipTime(span.clip, vid.currentTime, vid.duration);
+        m.querySelector('.cap')!.textContent = '▶ ' + tt.time(at) + tt.sfx(at) + ' · video';
+        if (vid.currentTime >= to() - 0.05) {again();}
+      };
+      vid.onended = again;
+      m.classList.add('flip-video');
+      vid.src = span.clip.url;
     },
     playingChanged: (on) => {
       if (!rec) {return;}
@@ -175,7 +233,7 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
       // back to the slot's own frame
       if (!on && !s.destroyed) { rec.shown = null; setCursor(s, s.cursorT, null, true); }
     },
-  }, !!s.backend.detail);
+  }, !!s.backend.detail, (sl) => model.clips.some((c) => c.to > sl.x0 && c.from < sl.x0 + sl.span));
   const hoverAt = (e: MouseEvent) => {
     const r = strip.getBoundingClientRect();
     if (!r.width) {return;}   // stale wrapper mid-swap: no geometry, no cursor
@@ -203,12 +261,12 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     const sl = model.slotAt(s.cursorT);
     const f = sl && sl.frame;
     const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
-    if (f) {
-      // the preview is a player over this host's frames; it moves the crosshair
-      const player = playerContext(s.backend, s.cfg, s.P, decl, model, tt, (t) => { if (!s.destroyed) {setCursor(s, t, null, false);} },
-        s.cfg.onZoom ? (from, to) => { if (!s.destroyed) {s.cfg.onZoom!(Math.floor(from), Math.ceil(to));} } : undefined);
-      s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt, player);
-    }
+    // the preview is a player over this host's frames; it moves the crosshair
+    const player = () => playerContext(s.backend, s.cfg, s.P, decl, model, tt, (t) => { if (!s.destroyed) {setCursor(s, t, null, false);} },
+      s.cfg.onZoom ? (from, to) => { if (!s.destroyed) {s.cfg.onZoom!(Math.floor(from), Math.ceil(to));} } : undefined);
+    if (f) {s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt, player());}
+    // a slot a video clip covers: the player, at the slot's time (M10c)
+    else if (sl && !sl.paused && !sl.beyond && sl.clip) {s.pv.play(decl.site, kiosk, sl.ts, e.clientX, e.clientY, tt, player());}
     else if (g) {s.pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl!.ts, tt);}   // g is only set from a slot
   });
   /* magnifier takes the aspect of the actual frames (portrait screens etc.) */

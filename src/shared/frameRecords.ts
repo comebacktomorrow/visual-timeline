@@ -9,7 +9,7 @@
  * data, and nothing here signs, rewrites or authenticates anything. */
 import { DataFrame, Field, FieldType, getFieldDisplayName } from '@grafana/data';
 
-import type { Backend, Frame, HistoryEvent, SourceDecl } from '../vt/types';
+import type { Backend, Clip, Frame, HistoryEvent, SourceDecl } from '../vt/types';
 import { withPauseStates, type HostStates } from './hostState';
 
 /** Which field plays which role. Empty means "find it by the usual names". */
@@ -20,6 +20,8 @@ export interface FieldRoles {
   site?: string;
   preview?: string;
   cadence?: string;
+  /** a video clip's URL (M10c) */
+  video?: string;
 }
 
 /** What a query may say about a host besides its frames (M4c). */
@@ -34,6 +36,8 @@ export interface HostRecords extends HostMeta {
   id: string;
   site: string;
   frames: Frame[];
+  /** Video clips (M10c), in time order, from a video field. */
+  clips?: Clip[];
   /** From a cadence field (ms), else the median gap between frames. */
   cadence: number;
   /** No cadence field: the cadence is only the typical gap, not a promise. */
@@ -53,6 +57,10 @@ export const ROLE_NAMES = {
   preview: ['image_hi', 'url_hi', 'preview', 'preview_url', 'image_large'],
   cadence: ['cadence', 'cadence_ms'],
   count: ['frame_count'],
+  video: ['video', 'video_url'],
+  videoHi: ['video_hi', 'video_url_hi'],
+  videoEnd: ['video_end', 'clip_end'],
+  videoDuration: ['video_duration', 'video_duration_ms'],
   timezone: ['timezone', 'tz', 'time_zone'],
   location: ['location'],
   tags: ['tags'],
@@ -163,6 +171,12 @@ const BASE64_TYPES: Array<[string, string]> = [
   ['PD94b', 'image/svg+xml'],
 ];
 
+/** A URL that is plainly a video, not an image: by its file type, or a
+ * data: URL of one. */
+export function isVideoUrl(s: string): boolean {
+  return /^data:video\//i.test(s) || /\.(mp4|m4v|webm|mov|ogv|mkv|m3u8)([?#]|$)/i.test(s);
+}
+
 /** A value as something an <img> can load: URLs and data: URLs as they are,
  * bare Base64 image data as a data: URL. */
 export function imageLocator(v: unknown): string | null {
@@ -200,6 +214,7 @@ function looksLikeImages(f: Field): boolean {
   const v = f.values.find((x) => typeof x === 'string' && x.trim());
   if (typeof v !== 'string') {return false;}
   const s = v.trim();
+  if (isVideoUrl(s)) {return false;}
   return /^(https?:\/\/|data:image\/|blob:)/i.test(s) || BASE64_TYPES.some(([magic]) => s.startsWith(magic));
 }
 
@@ -208,7 +223,7 @@ function looksLikeImages(f: Field): boolean {
  * host, named by its host label or its display name. Our "Per host" last
  * frame table has a time field per host, so it isn't one. */
 function wideColumns(frame: DataFrame, roles: FieldRoles): Field[] {
-  if (roles.image || fieldNamed(frame, roles.host, ROLE_NAMES.host)) {return [];}
+  if (roles.image || fieldNamed(frame, roles.host, ROLE_NAMES.host) || fieldNamed(frame, roles.video, ROLE_NAMES.video)) {return [];}
   if (frame.fields.filter((f) => f.type === FieldType.time).length !== 1) {return [];}
   return frame.fields.filter(looksLikeImages);
 }
@@ -219,28 +234,30 @@ function wideColumns(frame: DataFrame, roles: FieldRoles): Field[] {
  * fields could be the image (that's a wide table, or ambiguous). */
 function imageByContent(frame: DataFrame, roles: FieldRoles): Field | undefined {
   if (roles.image || !fieldNamed(frame, roles.host, ROLE_NAMES.host)) {return undefined;}
-  const candidates = frame.fields.filter(looksLikeImages);
+  const video = fieldNamed(frame, roles.video, ROLE_NAMES.video);
+  const candidates = frame.fields.filter((f) => f !== video && looksLikeImages(f));
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
 /** The frame records in a query result, one entry per host, or null when no
  * frame in it has an image field (or image columns, in a wide table). */
 export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldRoles = {}): HostRecords[] | null {
-  const byHost = new Map<string, { id: string; site: string; frames: Map<number, Frame>; cadence?: number; paces: Map<number, number>; meta: HostMeta }>();
+  const byHost = new Map<string, { id: string; site: string; frames: Map<number, Frame>; clips: RawClip[]; cadence?: number; paces: Map<number, number>; meta: HostMeta }>();
   let found = false;
   const recFor = (id: string, siteId: string) => {
     const key = siteId + '/' + id;
     let rec = byHost.get(key);
     if (!rec) {
-      rec = { id, site: siteId, frames: new Map(), paces: new Map(), meta: {} };
+      rec = { id, site: siteId, frames: new Map(), clips: [], paces: new Map(), meta: {} };
       byHost.set(key, rec);
     }
     return rec;
   };
   for (const frame of series || []) {
+    const video = fieldNamed(frame, roles.video, ROLE_NAMES.video);
     const image = fieldNamed(frame, roles.image, ROLE_NAMES.image) ?? imageByContent(frame, roles);
     const time = timeField(frame, roles.time);
-    if (!image && time) {
+    if (!image && !video && time) {
       // a wide table: a column per host
       const cols = wideColumns(frame, roles);
       if (cols.length) {found = true;}
@@ -255,8 +272,12 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
       }
       continue;
     }
-    if (!image || !time || image === time) {continue;}
+    if ((!image && !video) || !time || image === time) {continue;}
     found = true;
+    // a video clip's larger version, and its end (a time) or its length (ms)
+    const videoHi = video ? fieldNamed(frame, undefined, ROLE_NAMES.videoHi) : undefined;
+    const videoEnd = video ? fieldNamed(frame, undefined, ROLE_NAMES.videoEnd) : undefined;
+    const videoLen = video ? fieldNamed(frame, undefined, ROLE_NAMES.videoDuration) : undefined;
     const host = fieldNamed(frame, roles.host, ROLE_NAMES.host);
     const site = fieldNamed(frame, roles.site, ROLE_NAMES.site);
     const preview = fieldNamed(frame, roles.preview, ROLE_NAMES.preview);
@@ -264,25 +285,38 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
     // how many frames a thinned row stands for (our data source sends it)
     const counts = fieldNamed(frame, undefined, ROLE_NAMES.count);
     // a frame without a host field: one host, from a label or the query
-    const fallbackHost = image.labels?.host ?? frame.name ?? frame.refId ?? 'host';
-    const fallbackSite = image.labels?.site ?? '';
-    const fromLabels = labelMeta(image.labels);
+    const labelled = (image ?? video)!;
+    const fallbackHost = labelled.labels?.host ?? frame.name ?? frame.refId ?? 'host';
+    const fallbackSite = labelled.labels?.site ?? '';
+    const fromLabels = labelMeta(labelled.labels);
     const meta = metaFields(frame);
     for (let i = 0; i < frame.length; i++) {
       const ts = toMillis(time.values[i]);
-      const url = imageLocator(image.values[i]);
-      if (ts == null || !url) {continue;}
+      const url = image ? imageLocator(image.values[i]) : null;
+      const vurl = video ? imageLocator(video.values[i]) : null;
+      if (ts == null || (!url && !vurl)) {continue;}
       const id = String(host ? host.values[i] ?? '' : fallbackHost);
       const siteId = String(site ? site.values[i] ?? '' : fallbackSite);
       if (!id) {continue;}
       const key = siteId + '/' + id;
       let rec = byHost.get(key);
       if (!rec) {
-        rec = { id, site: siteId, frames: new Map(), paces: new Map(), meta: {} };
+        rec = { id, site: siteId, frames: new Map(), clips: [], paces: new Map(), meta: {} };
         addMeta(rec.meta, fromLabels);
         byHost.set(key, rec);
       }
       if (meta.any) {addMeta(rec.meta, meta.row(i));}
+      if (vurl) {
+        const c: RawClip = { from: ts, url: vurl };
+        const hiV = videoHi ? imageLocator(videoHi.values[i]) : null;
+        if (hiV) {c.hi = hiV;}
+        const end = videoEnd ? toMillis(videoEnd.values[i]) : null;
+        const len = videoLen ? Number(videoLen.values[i]) : NaN;
+        if (end != null && end > ts) {c.to = end;}
+        else if (Number.isFinite(len) && len > 0) {c.to = ts + len;}
+        rec.clips.push(c);
+      }
+      if (!url) {continue;}
       const f: Frame = { ts, url, source: id };
       const hi = preview ? imageLocator(preview.values[i]) : null;
       if (hi) {f.hi = hi;}
@@ -301,9 +335,44 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
   return hosts.map((r) => {
     const frames = [...r.frames.values()].sort((a, b) => a.ts - b.ts);
     const history = paceHistory(r.paces);
-    // the pace in force at the end of the window
-    const cadence = history ? history[history.length - 1].cadence! : r.cadence ?? inferCadence(frames.map((f) => f.ts));
-    return { ...r.meta, id: r.id, site: r.site, frames, cadence, ...(r.cadence ? {} : { inferred: true }), ...(history ? { history } : {}) };
+    // the pace in force at the end of the window; a host with only clips,
+    // the typical gap between them
+    const cadence = history ? history[history.length - 1].cadence! : r.cadence
+      ?? inferCadence(frames.length ? frames.map((f) => f.ts) : r.clips.map((c) => c.from).sort((a, b) => a - b));
+    // a clip with no end lasts a frame's time, when the host has frames
+    const clips = r.clips.length ? resolveClips(r.clips, cadence, frames.length > 1 ? cadence : undefined) : null;
+    return { ...r.meta, id: r.id, site: r.site, frames, cadence, ...(r.cadence ? {} : { inferred: true }), ...(history ? { history } : {}),
+      ...(clips ? { clips } : {}) };
+  });
+}
+
+/** A clip as a row gives it: its end only when the row says. */
+export interface RawClip {
+  from: number;
+  to?: number;
+  url: string;
+  hi?: string;
+}
+
+/** Clips with their ends settled, in time order, one per start (the later
+ * row wins). A clip with no end stated (a video_end or video_duration field)
+ * lasts as long as its host's clips typically do (the ones that say), else
+ * the host's frame pacing (`pace`: a clip per frame, an assumption), else
+ * the typical gap between their starts, else `fallback`; never past the
+ * next clip's start. */
+export function resolveClips(raw: RawClip[], fallback: number, pace?: number): Clip[] {
+  const byFrom = new Map<number, RawClip>();
+  for (const c of raw) {byFrom.set(c.from, c);}
+  const cs = [...byFrom.values()].sort((a, b) => a.from - b.from);
+  const median = (xs: number[]) => (xs.length ? xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)] : null);
+  const lengths = cs.filter((c) => c.to !== undefined).map((c) => c.to! - c.from);
+  const starts: number[] = [];
+  for (let i = 1; i < cs.length; i++) {starts.push(cs[i].from - cs[i - 1].from);}
+  const typical = median(lengths) ?? (pace && pace > 0 ? pace : null) ?? median(starts) ?? fallback;
+  return cs.map((c, i) => {
+    const next = cs[i + 1]?.from ?? Infinity;
+    const to = c.to !== undefined ? c.to : Math.min(next, c.from + typical);
+    return { from: c.from, to, url: c.url, ...(c.hi ? { hi: c.hi } : {}) };
   });
 }
 
@@ -314,7 +383,7 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
 export function hostTableFromSeries(series: DataFrame[] | undefined, roles: FieldRoles = {}): SourceDecl[] {
   const out = new Map<string, SourceDecl>();
   for (const frame of series || []) {
-    if (fieldNamed(frame, roles.image, ROLE_NAMES.image) || fieldNamed(frame, undefined, ['state', 'status'])) {continue;}
+    if (fieldNamed(frame, roles.image, ROLE_NAMES.image) || fieldNamed(frame, roles.video, ROLE_NAMES.video) || fieldNamed(frame, undefined, ['state', 'status'])) {continue;}
     const host = fieldNamed(frame, roles.host, [...ROLE_NAMES.host, 'id']);
     const meta = metaFields(frame);
     const cadence = fieldNamed(frame, roles.cadence, ROLE_NAMES.cadence);
@@ -421,5 +490,8 @@ export function recordsBackend(hosts: HostRecords[], known: SourceDecl[] = [], s
     frames: async (site, id, from, to, step) => framesPerStep(byKey.get(site + '/' + id)?.frames ?? [], from, to, step),
     // records hold every frame: the preview player gets them all
     allFrames: async (site, id, from, to) => (byKey.get(site + '/' + id)?.frames ?? []).filter((f) => f.ts >= from && f.ts <= to),
+    ...(hosts.some((h) => h.clips?.length)
+      ? { clips: async (site: string, id: string, from: number, to: number) => (byKey.get(site + '/' + id)?.clips ?? []).filter((c) => c.to > from && c.from <= to) }
+      : {}),
   };
 }

@@ -116,7 +116,7 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
     const key = base === null ? null : base + (many ? ':n' : '');
     if (key !== null && key === c.shown) {continue;}
     c.shown = key;
-    c.mag.classList.remove('ghost');
+    c.mag.classList.remove('ghost', 'clip');
     if (slot && slot.frame) {
       c.mag.classList.remove('gap', 'future', 'off'); clearPauseClasses(c.mag);
       setSrc(c.mag.querySelector('img')!, slot.frame.url);
@@ -134,6 +134,13 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
       setText(c.head, pi.label.toLowerCase());
       c.head.classList.remove('stale'); clearPauseClasses(c.head);
       addPauseClasses(c.head, slot);
+    } else if (slot && slot.clip) {
+      // no frame, but a video clip covers it (M10c): click to play it
+      c.mag.classList.remove('gap', 'future', 'off', 'nodata'); clearPauseClasses(c.mag);
+      c.mag.classList.add('clip');
+      setText(c.mag.querySelector('.cap')!, '▶ video ' + tt.time(slot.clip.from) + '–' + tt.time(slot.clip.to) + tt.sfx(slot.clip.from));
+      setText(c.head, '');
+      c.head.classList.remove('stale', 'nodata'); clearPauseClasses(c.head);
     } else if (slot && slot.beyond) {
       // ahead of now: unknown — nothing to preview, only the crosshair
       c.mag.classList.remove('gap', 'future'); clearPauseClasses(c.mag);
@@ -163,7 +170,11 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
       for (let j = i; j >= 0; j--) {if (c.model.slots[j].frame) { last = c.model.slots[j].frame; break; }}
       // dropped time is offline (a promise broke); no data is neutral
       const nodata = !!(slot && !slot.paused && !slot.beyond && slot.nodata);
-      const msg = last ? (nodata ? 'no frame — last seen ' : 'offline — last seen ') + tt.time(last.ts) + tt.sfx(last.ts) : 'no data in window';
+      // a host of video clips: when its last one ended
+      const lastClip = last ? null : c.model.clips.filter((x) => x.to <= s.cursorT).pop();
+      const msg = last ? (nodata ? 'no frame — last seen ' : 'offline — last seen ') + tt.time(last.ts) + tt.sfx(last.ts)
+        : lastClip ? (nodata ? 'no video — last clip ended ' : 'offline — last clip ended ') + tt.time(lastClip.to) + tt.sfx(lastClip.to)
+        : 'no data in window';
       setText(c.mag.querySelector('.cap')!, msg);
       setText(c.head, msg);
       c.head.classList.add('stale');
@@ -186,6 +197,7 @@ function shownKey(slot: Slot | null | undefined): string | null {
   if (slot.paused) {return 'p:' + slot.ts + ':' + (slot.reason ?? '') + ':' + String(slot.intended);}
   if (slot.beyond) {return 'b';}
   if (slot.future) {return null;}
+  if (slot.clip) {return 'c:' + slot.ts + ':' + slot.clip.url;}
   return 'g:' + slot.ts;
 }
 function setText(el: Element, text: string): void {

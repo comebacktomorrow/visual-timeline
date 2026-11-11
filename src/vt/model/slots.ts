@@ -1,4 +1,4 @@
-import type { Backend, DropMark, Frame, Slot, SourceDecl, SourceModel, TickSlot, TimeWindow } from '../types';
+import type { Backend, Clip, DropMark, Frame, Slot, SourceDecl, SourceModel, TickSlot, TimeWindow } from '../types';
 import { erasFor, pauseInfo, type PauseSubject } from './eras';
 import { buildIntervals, type HoldLimit, type Interval, type Intervals, type PauseSpan } from './intervals';
 
@@ -29,7 +29,7 @@ export interface ModelOptions {
 }
 
 export async function buildSourceModel(
-  decl: SourceDecl, P: TimeWindow, backend: Pick<Backend, 'frames' | 'allFrames'>, budgetSlots: number, opts: ModelOptions = {}
+  decl: SourceDecl, P: TimeWindow, backend: Pick<Backend, 'frames' | 'allFrames' | 'clips'>, budgetSlots: number, opts: ModelOptions = {}
 ): Promise<SourceModel> {
   const expected = opts.expected && opts.expected > 0 ? opts.expected : undefined;
   // a source with an Expected cadence promises it, whatever it declared
@@ -56,6 +56,8 @@ export async function buildSourceModel(
   const fetched = backend.allFrames
     ? await backend.allFrames(decl.site, decl.id, P.from - lookback, Math.min(P.to, now0))
     : await backend.frames(decl.site, decl.id, P.from - lookback, Math.min(P.to, now0), step);
+  // the host's video clips (M10c): they cover time with no frame
+  const clips0 = backend.clips ? await backend.clips(decl.site, decl.id, P.from - lookback, Math.min(P.to, now0)) : [];
 
   // the promise in force at a time: its era's pace (the first era's before
   // the window); none for a source whose cadence was only inferred
@@ -79,14 +81,19 @@ export async function buildSourceModel(
   });
 
   const model: SourceModel = {
-    eras, step, promised, frames: [], intervals: [], slots: [], drops: [], lastActive: null,
+    eras, step, promised, frames: [], clips: [], intervals: [], slots: [], drops: [], lastActive: null,
     slotAt: () => null, intervalAt: () => null,
     // frames for a span (the player's), judged at the interval they were
     // asked for at: the span's own (0: every frame), else the panel's
-    intervalsFor: (frames, window, now, sample) => buildIntervals({
-      frames, promiseAt, pauses, hold, window, now, promiseOverride: expected, sample: sample ?? opts.sample,
+    intervalsFor: (frames, window, now, sample, clips) => buildIntervals({
+      frames, promiseAt, pauses, hold, window, now, promiseOverride: expected, sample: sample ?? opts.sample, clips: clips ?? model.clips,
     }).intervals,
-    refresh(fresh: Frame[], now: number) {
+    refresh(fresh: Frame[], now: number, clips?: Clip[]) {
+      if (clips) {
+        const byFrom = new Map(model.clips.map((c) => [c.from, c]));
+        for (const c of clips) {byFrom.set(c.from, c);}
+        model.clips = [...byFrom.values()].sort((a, b) => a.from - b.from);
+      }
       const byTs = new Map(model.frames.map((f) => [f.ts, f]));
       for (const f of fresh) {byTs.set(f.ts, f);}
       model.frames = [...byTs.values()].sort((a, b) => a.ts - b.ts);
@@ -98,7 +105,7 @@ export async function buildSourceModel(
       const thinned = model.frames.length <= 1.1 * buckets;
       const built = buildIntervals({
         frames: model.frames, promiseAt, pauses, hold, window: P, now, step: promised && thinned ? step : undefined,
-        promiseOverride: expected, sample: opts.sample,
+        promiseOverride: expected, sample: opts.sample, clips: model.clips,
       });
       // each slot's cadence: the promise in force at its tick, or the typical gap
       const { slots, drops } = sample(built, step, (t) => promiseAt(t) ?? base);
@@ -110,7 +117,7 @@ export async function buildSourceModel(
       model.lastActive = [...slots].reverse().find((sl): sl is TickSlot => !sl.paused && !sl.beyond) || null;
     },
   };
-  model.refresh(fetched, now0);
+  model.refresh(fetched, now0, clips0);
   return model;
 }
 
@@ -165,6 +172,7 @@ function sample(built: Intervals, step: number, cadenceAt: (t: number) => number
         future: !best && !!at && at.kind === 'pending',
       };
       if (!best && at && at.kind === 'nodata') {sl.nodata = true;}
+      if (!best && at && at.kind === 'clip') {sl.clip = at.clip;}
       slots.push(sl);
     }
     i = j;
@@ -213,13 +221,13 @@ export function ghostFor(slots: Slot[], sl: Slot): Frame | null {
   return null;
 }
 /* the slot state slotClass reads: any Slot, or a slot-shaped object */
-export type SlotState = PauseSubject & { beyond?: boolean; frame?: Frame | null; future?: boolean; nodata?: boolean };
+export type SlotState = PauseSubject & { beyond?: boolean; frame?: Frame | null; future?: boolean; nodata?: boolean; clip?: Clip };
 /* A strip slot's state classes (appended to "slot"): a pause band, the
- * beyond-now spacer, a frame, pending ("future"), dropped ("gap": offline)
- * or no data ("gap nodata": neutral). */
+ * beyond-now spacer, a frame, pending ("future"), a video clip ("clip"),
+ * dropped ("gap": offline) or no data ("gap nodata": neutral). */
 export function slotClass(sl: SlotState): string {
   return sl.paused ? ' ' + pauseInfo(sl).classes.join(' ') : sl.beyond ? ' beyond'
-    : sl.frame ? '' : sl.future ? ' future' : sl.nodata ? ' gap nodata' : ' gap';
+    : sl.frame ? '' : sl.future ? ' future' : sl.clip ? ' clip' : sl.nodata ? ' gap nodata' : ' gap';
 }
 
 export type { Interval };

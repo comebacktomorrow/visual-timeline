@@ -84,5 +84,47 @@ describe('the hover flipbook', () => {
     jest.advanceTimersByTime((1000 / FLIP_FPS) * 4);
     expect(seen).toEqual(['f0', 'f10', 'dropped', 'f40', 'f50']);
   });
-});
 
+  test('a slot a clip covers plays the clip\'s part of it, not its stills; stopping stops it', async () => {
+    const spans: Array<[string, number, number] | null> = [];
+    const clipSource = { ...source, clips: async () => [{ from: 15, to: 45, url: 'c.webm' }] };
+    const fb = makeFlipbook({
+      ...target(),
+      reel: (sl) => new Reel(clipSource, sl),
+      clip: (sp) => spans.push(sp && [sp.clip.url, sp.from, sp.to]),
+    }, false, () => true);
+    // one frame in the slot, but video over it: it arms
+    fb.hover(slot(0, 1));
+    jest.advanceTimersByTime(DWELL_MS);
+    await settle();
+    expect(spans).toEqual([['c.webm', 15, 45]]);
+    expect(shown).toEqual([]);
+    expect(fb.playing()).toBe(true);
+    fb.stop();
+    expect(spans).toEqual([['c.webm', 15, 45], null]);
+    expect(states).toEqual([true, false]);
+  });
+
+  test('zoomed out, more video than plays in a few seconds: it flips the stills; with none, the video as fast as it goes', async () => {
+    const rates: Array<number | undefined> = [];
+    const make = (clips: Array<{ from: number; to: number; url: string }>, fs: Frame[]) => makeFlipbook({
+      ...target(),
+      reel: (sl) => new Reel({ ...source, fetch: async (from: number, to: number) => fs.filter((f) => f.ts >= from && f.ts < to), clips: async () => clips }, sl),
+      clip: (sp, rate) => { if (sp) {rates.push(rate);} },
+      // ten minutes of video in the slot: more than plays in ten seconds at 16×
+      measure: async (r) => { r.ratio = 10; },
+    }, false, () => true);
+    const withStills = make([{ from: 0, to: 60, url: 'c.webm' }], frames);
+    withStills.hover(slot(0, 6));
+    jest.advanceTimersByTime(DWELL_MS);
+    await settle();
+    expect(rates).toEqual([]);
+    expect(shown[0]).toBe('f0');
+    withStills.stop();
+    const only = make([{ from: 0, to: 60, url: 'c.webm' }], []);
+    only.hover(slot(0, 1));
+    jest.advanceTimersByTime(DWELL_MS);
+    await settle();
+    expect(rates).toEqual([16]);
+  });
+});

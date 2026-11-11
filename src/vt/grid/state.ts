@@ -10,6 +10,8 @@ export interface Tile {
   el: HTMLDivElement;
   shown: Frame | null | undefined;   // the frame on the tile (click-in preview)
   shownExpected?: number | null;     // set: shown is the pending slot's ghost, for this tick
+  /* the time shown, when it's a video clip's (no frame, M10c): its click plays it */
+  shownClip?: number | null;
   zone: SourceZone;
   tt: ZoneTexts;
   img: HTMLImageElement;

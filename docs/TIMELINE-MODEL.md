@@ -75,6 +75,11 @@ replaces today's Hold last frame:
 - **Until the next frame**: no limit.
 - **Up to a duration**, such as `10m`.
 
+A **video clip** (M10c, experimental) covers what would be **no data**: there's no frame
+in force, but there is video, so it's clip time, drawn as a plain band. A
+frame still wins where one is in force, and a broken promise is still
+dropped: a promise is about frames.
+
 A **pause** (a state with Pauses frames, or a declared pause in a source's
 history) suspends promises. The frame before it is shown up to the pause, the
 pause draws as its band, and the first frame inside a pause with no end yet
@@ -153,6 +158,21 @@ slot's frames and the one in force at its start, the stretches they make,
 what's in force at a time, the frames shown when there are more than fit
 (evenly through the slot), and its stops: each frame shown, and the start
 of each gap, which playing shows with its reason rather than skipping.
+
+A video clip over the slot plays over its frames: the clip's part of the
+slot is one stop, played as video, and the frames under it are left out.
+A time within a clip maps to its fraction of the way through the video,
+so a clip of real time and a timelapse are handled alike. A part too short
+to watch (a slot's sliver of a day-long timelapse) is shown as a still.
+
+How long the slot's video plays decides how it's played, as how many
+frames it holds does for frames. A row says when a clip starts and ends,
+not how long its video is, so the player reads the first clip's length
+and takes the host's others to be alike. Up to ten seconds, it plays at
+1×; up to 16× that, sped up to fit (the speed button then sets the video's
+speed, from that). Longer (zoomed out), the slot is played as frames: its
+stills, sampled to what fits, and, where only a clip covers it, the
+video's own frames at evenly spaced stops.
 
 ## Options, before and after
 

@@ -24,6 +24,20 @@
   red between every frame. Promises are judged no finer than the interval
   the query was asked for.
 - Esc closes the player only, not Grafana's panel view or kiosk mode.
+- **Video clips** (M10c, experimental until tried against a real camera's
+  feed). A `video` field (with `video_hi`, and
+  `video_end` or `video_duration`) gives a host clips beside, or instead
+  of, its frames. The preview player plays a clip over the frames it
+  covers: a plain bar on its timeline, ▶ round again at the slot's end,
+  muted unless unmuted, HD/SD when there's a larger version, both
+  remembered. Its speed starts at what plays the slot's video in about ten
+  seconds and steps up to 16×; zoomed out, a slot with more video than
+  that plays its frames, as a busy slot does, with Zoom to watch it. The
+  hover flipbook plays the smaller version. The strip keeps its frames
+  (**Mark video on the strip**, off by default, draws a line where there's
+  video); a host with only clips draws them as bands with ▶, though frames
+  alongside are recommended. A new **Video** field option names the field.
+  A clip with no end lasts a frame's time (one a minute: a minute of video).
 
 - **A cadence is a promise** (M9, [docs/TIMELINE-MODEL.md](docs/TIMELINE-MODEL.md)).
   The timeline no longer infers a heartbeat and holds every host to it. A

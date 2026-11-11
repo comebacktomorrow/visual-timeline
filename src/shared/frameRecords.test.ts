@@ -1,6 +1,6 @@
 import { createDataFrame, FieldType } from '@grafana/data';
 
-import { framesPerStep, hostTableFromSeries, imageLocator, inferCadence, recordsBackend, recordsFromSeries, thinWithCounts } from './frameRecords';
+import { framesPerStep, hostTableFromSeries, imageLocator, inferCadence, isVideoUrl, recordsBackend, recordsFromSeries, resolveClips, thinWithCounts } from './frameRecords';
 
 const MIN = 60_000;
 const T0 = Date.UTC(2026, 10, 10, 10);
@@ -329,5 +329,103 @@ describe('thinning that keeps counts (M10)', () => {
       { name: 'frame_count', type: FieldType.number, values: [4, 1] },
     ] })]);
     expect(recs![0].frames.map((f) => f.count)).toEqual([4, undefined]);
+  });
+});
+
+describe('video clips (M10c)', () => {
+  const H = 3600e3;
+  test('a video field on frame rows: clips beside the frames, ends from video_end', () => {
+    const t = createDataFrame({ fields: [
+      { name: 'time', type: FieldType.time, values: [T0, T0 + MIN, T0 + 2 * MIN] },
+      { name: 'host', type: FieldType.string, values: ['cam', 'cam', 'cam'] },
+      { name: 'image', type: FieldType.string, values: ['https://img/1.jpg', 'https://img/2.jpg', 'https://img/3.jpg'] },
+      { name: 'video', type: FieldType.string, values: ['https://vid/a.mp4', '', ''] },
+      { name: 'video_hi', type: FieldType.string, values: ['https://vid/a-hi.mp4', '', ''] },
+      { name: 'video_end', type: FieldType.time, values: [T0 + H, null, null] },
+    ] });
+    const [h] = recordsFromSeries([t])!;
+    expect(h.frames).toHaveLength(3);
+    expect(h.clips).toEqual([{ from: T0, to: T0 + H, url: 'https://vid/a.mp4', hi: 'https://vid/a-hi.mp4' }]);
+  });
+
+  test('rows with only a video: a host of clips, its cadence their typical gap', () => {
+    const t = createDataFrame({ fields: [
+      { name: 'time', type: FieldType.time, values: [T0, T0 + H, T0 + 2 * H] },
+      { name: 'camera', type: FieldType.string, values: ['sun', 'sun', 'sun'] },
+      { name: 'video', type: FieldType.string, values: ['https://vid/0.mp4', 'https://vid/1.mp4', 'https://vid/2.mp4'] },
+    ] });
+    const [h] = recordsFromSeries([t])!;
+    expect(h.frames).toEqual([]);
+    expect(h.cadence).toBe(H);
+    expect(h.inferred).toBe(true);
+    // no end stated: each lasts the typical gap, never past the next
+    expect(h.clips!.map((c) => [c.from - T0, c.to - T0])).toEqual([[0, H], [H, 2 * H], [2 * H, 3 * H]]);
+  });
+
+  test('a video_duration in ms; a clip with no end lasts as long as the ones that say', () => {
+    expect(resolveClips([
+      { from: 0, to: 10, url: 'a' }, { from: 100, url: 'b' }, { from: 105, url: 'c' },
+    ], 60).map((c) => [c.from, c.to])).toEqual([[0, 10], [100, 105], [105, 115]]);
+    const t = createDataFrame({ fields: [
+      { name: 'time', type: FieldType.time, values: [T0] },
+      { name: 'host', type: FieldType.string, values: ['cam'] },
+      { name: 'video', type: FieldType.string, values: ['https://vid/a.webm'] },
+      { name: 'video_duration', type: FieldType.number, values: [90_000] },
+    ] });
+    expect(recordsFromSeries([t])![0].clips![0].to - T0).toBe(90_000);
+  });
+
+  test('a video URL is never taken for the image', () => {
+    expect(isVideoUrl('https://x/a.mp4?sig=1')).toBe(true);
+    expect(isVideoUrl('https://x/a.jpg')).toBe(false);
+    const logs = createDataFrame({ fields: [
+      { name: 'Time', type: FieldType.time, values: [T0] },
+      { name: 'Line', type: FieldType.string, values: ['https://vid/1.mp4'] },
+      { name: 'host', type: FieldType.string, values: ['cam'] },
+    ] });
+    expect(recordsFromSeries([logs])).toBeNull();
+    // a wide table's column of videos is not a host of images
+    const wide = createDataFrame({ fields: [
+      { name: 'time', type: FieldType.time, values: [T0] },
+      { name: 'cam', type: FieldType.string, values: ['https://vid/1.mp4'] },
+    ] });
+    expect(recordsFromSeries([wide])).toBeNull();
+  });
+
+  test('the backend answers a span\'s clips, those that overlap it', async () => {
+    const hosts = recordsFromSeries([createDataFrame({ fields: [
+      { name: 'time', type: FieldType.time, values: [T0, T0 + H] },
+      { name: 'host', type: FieldType.string, values: ['cam', 'cam'] },
+      { name: 'video', type: FieldType.string, values: ['https://vid/0.mp4', 'https://vid/1.mp4'] },
+    ] })])!;
+    const b = recordsBackend(hosts);
+    expect((await b.clips!('', 'cam', T0 + H - MIN, T0 + H + MIN)).map((c) => c.url)).toEqual(['https://vid/0.mp4', 'https://vid/1.mp4']);
+    expect((await b.clips!('', 'cam', T0 + 2 * H, T0 + 3 * H)).map((c) => c.url)).toEqual([]);
+    expect(recordsBackend(recordsFromSeries([table([[T0, 'cam', 'https://img/1.jpg']])])!).clips).toBeUndefined();
+  });
+
+  test('a host table never takes rows with a video', () => {
+    const t = createDataFrame({ fields: [
+      { name: 'host', type: FieldType.string, values: ['cam'] },
+      { name: 'video', type: FieldType.string, values: ['https://vid/1.mp4'] },
+      { name: 'timezone', type: FieldType.string, values: ['UTC'] },
+    ] });
+    expect(hostTableFromSeries([t])).toEqual([]);
+  });
+});
+
+describe('a clip with no end, on a host with frames (M10c)', () => {
+  test('lasts a frame\'s time: a frame a minute, a minute of video each (an assumption)', () => {
+    const rows = Array.from({ length: 20 }, (_, i) => T0 + i * MIN);
+    const t = createDataFrame({ fields: [
+      { name: 'time', type: FieldType.time, values: rows },
+      { name: 'host', type: FieldType.string, values: rows.map(() => 'cam') },
+      { name: 'image', type: FieldType.string, values: rows.map((_, i) => `https://img/${i}.jpg`) },
+      // a clip on every tenth frame only
+      { name: 'video', type: FieldType.string, values: rows.map((_, i) => (i % 10 ? '' : `https://vid/${i}.mp4`)) },
+    ] });
+    expect(recordsFromSeries([t])![0].clips!.map((c) => [(c.from - T0) / MIN, (c.to - T0) / MIN])).toEqual([[0, 1], [10, 11]]);
+    // lengths the rows state still win
+    expect(resolveClips([{ from: 0, to: 5, url: 'a' }, { from: 100, url: 'b' }], 60, 30).map((c) => c.to)).toEqual([5, 105]);
   });
 });

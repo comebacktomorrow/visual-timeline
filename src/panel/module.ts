@@ -49,6 +49,8 @@ interface VisualTimelineOptions {
   playerScrubber?: 'ticks' | 'thumbs';
   /** The least width a frame gets, px: the strip's slots and the player's ticks. */
   frameWidth?: number;
+  /** A line along the strip's foot where a host has video (M10c). */
+  showVideoLine?: boolean;
   /** Header chips (#126): which, in order, and what a click does. */
   chips?: string;
   chipClick?: 'filter' | 'link' | 'none';
@@ -60,6 +62,8 @@ interface VisualTimelineOptions {
   hostField?: string;
   siteField?: string;
   previewField?: string;
+  /** A video clip's URL (M10c). */
+  videoField?: string;
   /** State fields (#126, M4): which field holds each host's state. */
   stateField?: string;
   cadenceField?: string;
@@ -196,7 +200,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
    * knows about each host (history, time zone, tags). */
   const roles: FieldRoles = {
     time: options.timeField, image: options.imageField, host: options.hostField,
-    site: options.siteField, preview: options.previewField, cadence: options.cadenceField,
+    site: options.siteField, preview: options.previewField, cadence: options.cadenceField, video: options.videoField,
   };
   const records = recordsFromSeries(props.data?.series, roles);
   // keyed on content, as above: a host's frames only ever grow, so its count
@@ -293,6 +297,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       ...(sampleInterval > 0 ? { sampleInterval } : {}),
       playerScrubber: options.playerScrubber || 'ticks',
       frameWidth: options.frameWidth || FRAME_WIDTH,
+      videoLine: !!options.showVideoLine,
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
       timeZone,
@@ -321,7 +326,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, sampleInterval, options.playerScrubber, options.frameWidth, chipsKey]);
+  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, sampleInterval, options.playerScrubber, options.frameWidth, options.showVideoLine, chipsKey]);
 
   useEffect(() => {
     const subs = [
@@ -551,6 +556,13 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       settings: { min: FRAME_WIDTH_MIN, max: FRAME_WIDTH_MAX, step: 1 },
     })
     .addBooleanSwitch({
+      path: 'showVideoLine',
+      name: 'Mark video on the strip (experimental)',
+      description: 'A thin line along the foot of each strip where its host has video clips. Off: only the preview shows them.',
+      defaultValue: false,
+      showIf: (o) => o.mode !== 'grid',
+    })
+    .addBooleanSwitch({
       path: 'showDetails',
       name: 'Show cadence details',
       description: 'Each host\'s capture cadence and display resolution, for tuning',
@@ -621,6 +633,13 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       name: 'Preview image',
       category: ['Frame fields'],
       description: 'Optional: a larger image for the click-in preview. Empty: a field named image_hi or preview; without one, the image itself.',
+      settings: { filter: (f) => f.type === FieldType.string },
+    })
+    .addFieldNamePicker({
+      path: 'videoField',
+      name: 'Video (experimental)',
+      category: ['Frame fields'],
+      description: 'Optional: a video clip that starts at the row\'s time; the click-in preview plays it over the frames. Empty: a field named video. Its end: a video_end field, else a video_duration (ms), else as long as the host\'s clips that say, else a frame\'s time.',
       settings: { filter: (f) => f.type === FieldType.string },
     })
     .addFieldNamePicker({

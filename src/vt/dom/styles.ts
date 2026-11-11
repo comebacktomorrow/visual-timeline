@@ -126,6 +126,14 @@ const CSS = `
  * a pixel, so an outage shorter than a slot still shows */
 .ktl .strip .drops { position:absolute; inset:0; pointer-events:none; z-index:2; }
 .ktl .strip .drop { position:absolute; top:0; bottom:0; min-width:1px; background:var(--ktl-off); opacity:.8; }
+/* video clips (M10c): a slot with no frame that a clip covers is a plain
+ * band with a play mark, and a line along the strip's foot shows where the
+ * host has video, over frames too */
+.ktl .slot.clip { background:var(--ktl-pause-a); }
+.ktl .slot.clip::before { content:'▶'; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  font-size:10px; line-height:1; color:var(--ktl-link); opacity:.85; pointer-events:none; }
+.ktl .strip .clips { position:absolute; left:0; right:0; bottom:0; height:3px; pointer-events:none; z-index:2; }
+.ktl .strip .cliplane { position:absolute; top:0; bottom:0; min-width:1px; background:var(--ktl-link); opacity:.8; }
 .ktl .slot.paused { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 7px,var(--ktl-pause-b) 7px,var(--ktl-pause-b) 14px); }
 .ktl.filterable [data-fk] { cursor:pointer; }
 .ktl.filterable [data-fk]:hover { text-decoration:underline; text-underline-offset:2px; }
@@ -203,6 +211,13 @@ const CSS = `
 .ktl .mag.gap.nodata { border-color:var(--ktl-dim);
                 background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 5px,var(--ktl-pause-b) 5px,var(--ktl-pause-b) 10px), var(--ktl-mag-bg); }
 .ktl .mag.gap img { display:none; }
+.ktl .mag.clip { border-color:var(--ktl-link); }
+.ktl .mag.clip img { display:none; }
+.ktl .mag video { display:none; width:100%; height:100%; object-fit:contain; background:var(--ktl-mag-bg); }
+.ktl .mag.flip-video video { display:block; }
+.ktl .mag.flip-video img { display:none; }
+.ktl .tile.clip { cursor:pointer; }
+.ktl .tile.clip .t-off { color:var(--ktl-link); }
 /* The caption spans the magnifier, centred on it. A narrow magnifier (a
  * portrait source's is ~30px wide) wrapped and clipped even a time with a
  * zone offset, "16:15:00 (+5h45m)" (~85px), so the caption may grow to
@@ -297,6 +312,11 @@ const CSS = `
                          border-radius:2px; height:min(55vh, 405px); }
 /* one size whatever the frame's shape: the popup doesn't change size as it plays */
 .ktl-pop.player .stage img { width:100%; height:100%; object-fit:contain; }
+.ktl-pop.player .stage video { display:none; width:100%; height:100%; object-fit:contain; }
+.ktl-pop.player.video .stage video { display:block; }
+.ktl-pop.player.video .stage img { display:none; }
+.ktl-pop.player:not(.has-clip) button[data-a="mute"], .ktl-pop.player:not(.has-clip) button[data-a="hd"],
+.ktl-pop.player:not(.has-hi) button[data-a="hd"] { display:none; }
 .ktl-pop.player.off .stage img { opacity:.35; }
 .ktl-pop.player .stage .state { position:absolute; inset:auto 0 8px; text-align:center; font-weight:700; color:var(--ktl-off);
                                  text-transform:uppercase; letter-spacing:.04em; pointer-events:none; }
@@ -309,6 +329,7 @@ const CSS = `
 .ktl-pop.player .lane.nodata { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 4px,var(--ktl-pause-b) 4px,var(--ktl-pause-b) 8px); }
 .ktl-pop.player .lane.paused { background:var(--ktl-band, var(--ktl-pause-b)); opacity:.6; }
 .ktl-pop.player .lane.beyond { background:transparent; }
+.ktl-pop.player .lane.clip { background:var(--ktl-link); opacity:.45; }
 .ktl-pop.player .thumbs { position:absolute; inset:0; pointer-events:none; }
 .ktl-pop.player .thumb { position:absolute; top:0; bottom:0; overflow:hidden; border-right:1px solid rgba(0,0,0,.4); }
 .ktl-pop.player .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
