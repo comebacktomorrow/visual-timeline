@@ -233,7 +233,7 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
       // back to the slot's own frame
       if (!on && !s.destroyed) { rec.shown = null; setCursor(s, s.cursorT, null, true); }
     },
-  }, !!s.backend.detail, (sl) => model.clips.some((c) => c.to > sl.x0 && c.from < sl.x0 + sl.span));
+  }, !!s.backend.detail, (sl) => model.clips.some((c) => c.to > sl.x0 && c.from < sl.x0 + sl.span), !!s.cfg.videoAutoSpeed);
   const hoverAt = (e: MouseEvent) => {
     const r = strip.getBoundingClientRect();
     if (!r.width) {return;}   // stale wrapper mid-swap: no geometry, no cursor

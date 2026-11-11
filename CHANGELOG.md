@@ -30,8 +30,9 @@
   of, its frames. The preview player plays a clip over the frames it
   covers: a plain bar on its timeline, ▶ round again at the slot's end,
   muted unless unmuted, HD/SD when there's a larger version, both
-  remembered. Its speed starts at what plays the slot's video in about ten
-  seconds and steps up to 16×; zoomed out, a slot with more video than
+  remembered. Its speed starts at 1× and steps ¼× to 16× (**Speed up video
+  to fit**, off by default, starts it at what plays the slot's video in
+  about ten seconds); zoomed out, a slot with more video than
   that plays its frames, as a busy slot does, with Zoom to watch it. The
   hover flipbook plays the smaller version (only for a clip in two sizes;
   otherwise it flips the frames). The strip keeps its frames

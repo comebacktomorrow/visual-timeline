@@ -2359,8 +2359,8 @@ var VTCore = (() => {
   // src/vt/ui/player.ts
   var PREFS_KEY = "ktl-player";
   var FPS = [1, 2, 4, 8, 16];
-  var SPEEDS = [1, 2, 4, 8, 16];
-  var fmtRate = (r) => Math.round(r * 10) / 10 + "\xD7";
+  var SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
+  var fmtRate = (r) => (r === 0.25 ? "\xBC" : r === 0.5 ? "\xBD" : String(Math.round(r * 10) / 10)) + "\xD7";
   function loadPrefs(ctx) {
     const base = { style: ctx.scrubber ?? "ticks", fps: 4, hd: true, muted: true };
     try {
@@ -2438,7 +2438,7 @@ var VTCore = (() => {
     let raf = 0;
     let speed = null;
     const videoMode = () => reel.watched().length > 0;
-    const rateNow = () => speed ?? reel.videoRate() ?? 1;
+    const rateNow = () => speed ?? (ctx.autoSpeed ? reel.videoRate() ?? 1 : 1);
     let hiTimer = null;
     let gone = false;
     const width = () => scrub.clientWidth || 560;
@@ -2450,7 +2450,7 @@ var VTCore = (() => {
     function labels() {
       if (videoMode()) {
         b("fps").textContent = fmtRate(rateNow());
-        b("fps").title = "Video speed" + (speed === null ? " (fits this slot's video into about ten seconds)" : "") + ": click for faster";
+        b("fps").title = "Video speed" + (speed === null && ctx.autoSpeed ? " (fits this slot's video into about ten seconds)" : "") + ": click for faster, round from \xBC\xD7";
       } else {
         b("fps").textContent = prefs.fps + " fps";
         b("fps").title = "Speed";
@@ -2889,7 +2889,9 @@ var VTCore = (() => {
         return;
       }
       reel = new Reel(ctx, next);
-      speed = null;
+      if (ctx.autoSpeed) {
+        speed = null;
+      }
       const at = next.frameTs !== void 0 && next.frameTs >= next.from && next.frameTs < next.to ? next.frameTs : next.ts;
       drawScrub();
       labels();
@@ -3593,7 +3595,8 @@ var VTCore = (() => {
       // the timeline's drag-zoom (the grid has none)
       ...onZoom ? { onZoom } : {},
       scrubber: cfg.playerScrubber === "thumbs" ? "thumbs" : cfg.playerScrubber === "ticks" ? "ticks" : void 0,
-      frameWidth: frameWidthOf(cfg)
+      frameWidth: frameWidthOf(cfg),
+      autoSpeed: !!cfg.videoAutoSpeed
     };
   }
 
@@ -3601,7 +3604,7 @@ var VTCore = (() => {
   var DWELL_MS = 3e3;
   var FLIP_FPS = 4;
   var FLIP_MAX = 100;
-  function makeFlipbook(target, anySlot = false, hasClip = (sl) => !!sl.clip) {
+  function makeFlipbook(target, anySlot = false, hasClip = (sl) => !!sl.clip, autoSpeed = false) {
     let current = null;
     let dwell = null;
     let timer = null;
@@ -3648,7 +3651,7 @@ var VTCore = (() => {
       if (span && span.clip.hi && target.clip && (rate !== null || !reel.inSlot().length)) {
         clipOn = true;
         target.playingChanged(true);
-        target.clip(span, rate ?? MAX_RATE);
+        target.clip(span, rate === null ? MAX_RATE : autoSpeed ? rate : 1);
         return;
       }
       const stops = reel.stops(FLIP_MAX);
@@ -3917,7 +3920,7 @@ var VTCore = (() => {
           setCursor(s, s.cursorT, null, true);
         }
       }
-    }, !!s.backend.detail, (sl) => model.clips.some((c) => c.to > sl.x0 && c.from < sl.x0 + sl.span));
+    }, !!s.backend.detail, (sl) => model.clips.some((c) => c.to > sl.x0 && c.from < sl.x0 + sl.span), !!s.cfg.videoAutoSpeed);
     const hoverAt = (e) => {
       const r = strip.getBoundingClientRect();
       if (!r.width) {

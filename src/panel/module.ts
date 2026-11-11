@@ -51,6 +51,8 @@ interface VisualTimelineOptions {
   frameWidth?: number;
   /** A line along the strip's foot where a host has video (M10c). */
   showVideoLine?: boolean;
+  /** Video starts at the speed that fits a slot's video into ~10 s (M10c). */
+  videoAutoSpeed?: boolean;
   /** Header chips (#126): which, in order, and what a click does. */
   chips?: string;
   chipClick?: 'filter' | 'link' | 'none';
@@ -300,6 +302,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       playerScrubber: options.playerScrubber || 'ticks',
       frameWidth: options.frameWidth || FRAME_WIDTH,
       videoLine: !!options.showVideoLine,
+      videoAutoSpeed: !!options.videoAutoSpeed,
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
       timeZone,
@@ -328,7 +331,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, sampleInterval, options.playerScrubber, options.frameWidth, options.showVideoLine, chipsKey]);
+  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, sampleInterval, options.playerScrubber, options.frameWidth, options.showVideoLine, options.videoAutoSpeed, chipsKey]);
 
   useEffect(() => {
     const subs = [
@@ -543,6 +546,13 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
         { value: 'ticks', label: 'Ticks' },
         { value: 'thumbs', label: 'Thumbnails' },
       ] },
+    })
+    .addBooleanSwitch({
+      path: 'videoAutoSpeed',
+      name: 'Speed up video to fit (experimental)',
+      category: ['Preview player'],
+      description: 'Video starts at the speed that plays a slot\'s video in about ten seconds (up to 16x). Off: it starts at 1x; viewers pick another speed (1/4x to 16x) in the player.',
+      defaultValue: false,
     })
     .addBooleanSwitch({
       path: 'hideEmpty',

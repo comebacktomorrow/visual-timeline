@@ -51,6 +51,8 @@ export interface PlayerContext extends ReelSource {
   scrubber?: ScrubStyle;
   /** the least width a frame gets (the panel's Frame width): the ticks' spacing */
   frameWidth?: number;
+  /** video starts at the speed that fits a slot's video into ~10 s; unset, 1x */
+  autoSpeed?: boolean;
 }
 
 interface Prefs { style: ScrubStyle; fps: number; hd: boolean; muted: boolean }
@@ -58,8 +60,8 @@ const PREFS_KEY = 'ktl-player';
 const FPS = [1, 2, 4, 8, 16];
 /* a slot's video: its speed, from what fits it into a few seconds
  * (Reel.videoRate) to the viewer's choice of these */
-const SPEEDS = [1, 2, 4, 8, 16];
-const fmtRate = (r: number) => (Math.round(r * 10) / 10) + '×';
+const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
+const fmtRate = (r: number) => (r === 0.25 ? '¼' : r === 0.5 ? '½' : String(Math.round(r * 10) / 10)) + '×';
 function loadPrefs(ctx: PlayerContext): Prefs {
   const base: Prefs = { style: ctx.scrubber ?? 'ticks', fps: 4, hd: true, muted: true };
   try {
@@ -185,7 +187,7 @@ export function mountPlayer(
   let speed: number | null = null;
   /* the slot's video plays: the speed button sets how fast */
   const videoMode = () => reel.watched().length > 0;
-  const rateNow = () => speed ?? reel.videoRate() ?? 1;
+  const rateNow = () => speed ?? (ctx.autoSpeed ? reel.videoRate() ?? 1 : 1);
   let hiTimer: ReturnType<typeof setTimeout> | null = null;
   let gone = false;
 
@@ -202,7 +204,7 @@ export function mountPlayer(
     // video into a few seconds until the viewer picks another
     if (videoMode()) {
       b('fps').textContent = fmtRate(rateNow());
-      b('fps').title = 'Video speed' + (speed === null ? ' (fits this slot\'s video into about ten seconds)' : '') + ': click for faster';
+      b('fps').title = 'Video speed' + (speed === null && ctx.autoSpeed ? ' (fits this slot\'s video into about ten seconds)' : '') + ': click for faster, round from ¼×';
     } else {
       b('fps').textContent = prefs.fps + ' fps';
       b('fps').title = 'Speed';
@@ -590,7 +592,9 @@ export function mountPlayer(
     const next = ctx.slotAt(dir > 0 ? slot().to : slot().from - 1);
     if (!next || next.from === slot().from) {return;}
     reel = new Reel(ctx, next);
-    speed = null;
+    // a speed fitted to the slot is fitted to the next one; one the viewer
+    // chose stays
+    if (ctx.autoSpeed) {speed = null;}
     const at = next.frameTs !== undefined && next.frameTs >= next.from && next.frameTs < next.to ? next.frameTs : next.ts;
     drawScrub();
     labels();

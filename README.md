@@ -150,10 +150,11 @@ stretches the strip draws.
   frames. Its part of the timeline is a plain bar to hover or drag through,
   ▶ plays it (round again at the slot's end), and the bar gains sound
   (muted by default) and HD/SD (when the clip has a larger version), both
-  remembered. The speed button becomes the video's speed: it starts at
-  whatever plays the slot's video in about ten seconds (1× for a short
-  clip, faster for more), and a click steps up through 1×, 2×, 4×, 8×
-  and 16×.
+  remembered. The speed button becomes the video's speed: 1× to start (scrub
+  near, then play), and a click steps up through 2×, 4×, 8× and 16×, then
+  round from ¼× and ½× for short clips. **Speed up video to fit** (a panel
+  option, off by default) starts it instead at whatever plays the slot's
+  video in about ten seconds.
 - **Several clips in a slot** play one after another, the next loading
   while one plays, like a stream's segments. Each has a tick where it starts
   and, as thumbnails, the frame nearest its start.
@@ -418,6 +419,7 @@ set how it draws them.
 | **Hold frames without a promise** | How long a frame from a host that promises nothing is shown when no frame follows soon: Auto (three times the typical gap around it), Until the next frame, or Up to a duration such as `10m`. Past it: neutral "no data".  |
 | **Mark video on the strip**       | Experimental. A thin line along the foot of each strip where its host has video clips. Off by default: only the preview shows them.                                                                                         |
 | **Frame width**                   | The least width a frame gets, in pixels (default 7): the strip's slots, and the ticks in the preview player's timeline of a slot. Smaller shows more detail and loads more images; larger, fewer.                           |
+| **Speed up video to fit**         | Experimental. Video in the preview player starts at the speed that plays a slot's video in about ten seconds (up to 16×). Off (default): it starts at 1×; viewers pick another speed (¼× to 16×) in the player.             |
 | **Scrubber style**                | The preview player's timeline: Ticks (a mark per frame) or Thumbnails (small pictures). Viewers can switch it in the player; their last choice is remembered in their browser.                                              |
 | **Show cadence details**          | Show each host's cadence (the promise, or `~` and "no promise" for a typical gap) and display resolution (for tuning).                                                                                                      |
 | **Header**                        | Bar (a header row per host), Inline (the header floats over the image), or Inline with a gradient behind them for busy frames.                                                                                              |

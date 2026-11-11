@@ -50,7 +50,9 @@ export interface FlipTarget {
 /** `anySlot`: arm on every slot that shows a frame, not only those known to
  * hold several (a backend that can fetch a slot's frames again: a thinned
  * answer may not say how many it had). */
-export function makeFlipbook(target: FlipTarget, anySlot = false, hasClip: (sl: TickSlot) => boolean = (sl) => !!sl.clip): Flipbook {
+export function makeFlipbook(
+  target: FlipTarget, anySlot = false, hasClip: (sl: TickSlot) => boolean = (sl) => !!sl.clip, autoSpeed = false
+): Flipbook {
   let current: TickSlot | null = null;
   let dwell: ReturnType<typeof setTimeout> | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -89,7 +91,9 @@ export function makeFlipbook(target: FlipTarget, anySlot = false, hasClip: (sl: 
     if (span && span.clip.hi && target.clip && (rate !== null || !reel.inSlot().length)) {
       clipOn = true;
       target.playingChanged(true);
-      target.clip(span, rate ?? MAX_RATE);
+      // at 1x unless the panel fits video to its slot; a slot of video too
+      // long to play (and no stills) as fast as it goes
+      target.clip(span, rate === null ? MAX_RATE : autoSpeed ? rate : 1);
       return;
     }
     const stops = reel.stops(FLIP_MAX);

@@ -293,6 +293,9 @@ export interface MountConfig {
   frameWidth?: number;
   /* a line along the strip's foot where the host has video clips (M10c) */
   videoLine?: boolean;
+  /* video starts at the speed that plays a slot's video in about ten
+   * seconds; unset, at 1x (the viewer picks another) */
+  videoAutoSpeed?: boolean;
   onHover?: (t: number) => void;               // timeline: a local hover moved the cursor
   onHoverClear?: () => void;                   // timeline: the mouse left a strip
   onCursor?: (t: number) => void;              // timeline: every cursor move (host chrome)

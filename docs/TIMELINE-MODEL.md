@@ -168,9 +168,10 @@ to watch (a slot's sliver of a day-long timelapse) is shown as a still.
 How long the slot's video plays decides how it's played, as how many
 frames it holds does for frames. A row says when a clip starts and ends,
 not how long its video is, so the player reads the first clip's length
-and takes the host's others to be alike. Up to ten seconds, it plays at
-1×; up to 16× that, sped up to fit (the speed button then sets the video's
-speed, from that). Longer (zoomed out), or holding more clips than the
+and takes the host's others to be alike. Video is played when it would
+take ten seconds or less at up to 16×: it starts at 1×, and the viewer
+picks another speed (or, with Speed up video to fit, it starts at the
+speed that fits). Longer (zoomed out), or holding more clips than the
 view can show, the slot is played as frames: its stills, sampled to what
 fits, and, where only a clip covers it, the video's own frames at evenly
 spaced stops. Video is never played with clips left out: that breaks its

@@ -346,21 +346,37 @@ describe('the preview player', () => {
       expect(times).toEqual([]);
     });
 
-    test('the speed button is the video\'s speed: what fits the slot\'s video in about ten seconds, then faster', async () => {
-      teardown = mountPlayer(el, fr(30), clipCtx([{ from: at(31), to: at(34), url: 'fast.webm' }]), () => {});
+    test('the speed button is the video\'s speed: 1x to start, stepping up to 16x and round from 1/4x', async () => {
+      // a clip on into the next slot
+      noteClipLength('on.webm', 90);
+      teardown = mountPlayer(el, fr(30), clipCtx([{ from: at(31), to: at(40), url: 'on.webm' }]), () => {});
+      await flush();
+      const fps = el.querySelector('button[data-a="fps"]')!;
+      expect(fps.textContent).toBe('1×');
+      press('fps');
+      expect(fps.textContent).toBe('2×');
+      for (let i = 0; i < 4; i++) {press('fps');}
+      expect(fps.textContent).toBe('¼×');
+      press('fps');
+      expect(fps.textContent).toBe('½×');
+      press('next');
+      metadata(el.querySelector('.stage video:not(.spare)')!, 90);
+      press('play');
+      await flush();
+      expect((el.querySelector('.stage video:not(.spare)') as HTMLVideoElement).playbackRate).toBe(0.5);
+      // the viewer's speed stays as the player moves on
+      press('next-slot');
+      await flush();
+      expect(fps.textContent).toBe('½×');
+    });
+
+    test('with Speed up video to fit: what plays the slot\'s video in about ten seconds, refitted per slot', async () => {
+      teardown = mountPlayer(el, fr(30), { ...clipCtx([{ from: at(31), to: at(34), url: 'fast.webm' }]), autoSpeed: true }, () => {});
       await flush();
       const fps = el.querySelector('button[data-a="fps"]')!;
       expect(fps.textContent).toBe('6×');
       press('fps');
       expect(fps.textContent).toBe('8×');
-      press('fps');
-      press('fps');
-      expect(fps.textContent).toBe('1×');
-      press('next');
-      metadata(el.querySelector('video')!, 60);
-      press('play');
-      await flush();
-      expect(el.querySelector('video')!.playbackRate).toBe(1);
     });
 
     test('several clips in a slot play one after another, the next loading meanwhile; each a tick and a picture', async () => {
