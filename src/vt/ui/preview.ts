@@ -50,14 +50,14 @@ export function makePreview(root: HTMLElement, tz: string): Preview {
     open(site, kiosk, frame, x, y, hiUrl, expectedTs, tt, player) {
       tt = tt || panelTexts;
       closePreview();
-      if (player && !expectedTs) { openPlayer(root, site, kiosk, frame, x, y, { ...player, tt, label: site + ' / ' + kiosk }); return; }
+      if (player && !expectedTs) { openPlayer(root, site, kiosk, frame, x, y, { ...player, tt, label: site ? site + ' / ' + kiosk : kiosk }); return; }
       const el = document.createElement('div');
       el.className = 'ktl-pop' + (expectedTs ? ' ghost' : '');
       copyVars(root, el);
       el.innerHTML = '<img alt="frame"><div class="cap"></div>';
       // both are in the markup just set
       const img = el.querySelector('img')!;
-      el.querySelector('.cap')!.textContent = site + ' / ' + kiosk + ' — ' + (expectedTs
+      el.querySelector('.cap')!.textContent = (site ? site + ' / ' : '') + kiosk + ' — ' + (expectedTs
         ? 'expected ' + tt.short(expectedTs) + ' · last frame ' + tt.time(frame.ts)
         : tt.time(frame.ts)) + tt.sfx(frame.ts);
       el.addEventListener('click', closePreview);
@@ -94,7 +94,7 @@ function openPlayer(root: HTMLElement, site: string, kiosk: string, frame: Frame
   el.className = 'ktl-pop';
   copyVars(root, el);
   el.setAttribute('role', 'dialog');
-  el.setAttribute('aria-label', site + ' / ' + kiosk);
+  el.setAttribute('aria-label', site ? site + ' / ' + kiosk : kiosk);
   document.body.appendChild(el);
   let placed = false;
   const place = () => {

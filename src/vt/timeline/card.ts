@@ -153,9 +153,13 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   let rec: Card | null = null;
   const fetchAll = playerContext(s.backend, s.cfg, s.P, decl, model, tt, () => {}).fetch;
   const flip = makeFlipbook({
-    frames: (from, to) => (model.frames.length && s.backend.allFrames
-      ? Promise.resolve(model.frames.filter((f) => f.ts >= from && f.ts < to))
-      : fetchAll(from, to)),
+    // a slot's frames: asked again at full resolution where the backend can
+    // (the panel re-runs its query), else the frames the model holds
+    frames: (from, to) => (s.backend.detail
+      ? s.backend.detail(decl.site, decl.id, from, to)
+      : model.frames.length && s.backend.allFrames
+        ? Promise.resolve(model.frames.filter((f) => f.ts >= from && f.ts < to))
+        : fetchAll(from, to)),
     show: (f, i, n) => {
       const m = rec?.mag;
       if (!m) {return;}
@@ -169,7 +173,7 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
       // back to the slot's own frame
       if (!on && !s.destroyed) { rec.shown = null; setCursor(s, s.cursorT, null, true); }
     },
-  });
+  }, !!s.backend.detail);
   const hoverAt = (e: MouseEvent) => {
     const r = strip.getBoundingClientRect();
     if (!r.width) {return;}   // stale wrapper mid-swap: no geometry, no cursor

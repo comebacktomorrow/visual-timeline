@@ -132,6 +132,23 @@ describe('the preview player', () => {
     expect((el.querySelector('button[data-a="play"]') as HTMLButtonElement).disabled).toBe(true);
   });
 
+  test('a thinned answer: the slot\'s frames are fetched again at full resolution, and then Play has them', async () => {
+    const thinned = all.filter((f) => (f.ts - T0) % (5 * MIN) === 0);
+    const asked: Array<[number, number]> = [];
+    teardown = mountPlayer(el, fr(30), ctx({
+      fetch: async (from, to) => thinned.filter((f) => f.ts >= from && f.ts <= to),
+      detail: async (from, to) => { asked.push([from, to]); return all.filter((f) => f.ts >= from && f.ts < to); },
+    }), () => {});
+    await flush(); await flush();
+    expect(asked).toEqual([[at(30), at(35)]]);
+    expect((el.querySelector('button[data-a="play"]') as HTMLButtonElement).disabled).toBe(false);
+    expect(cap()).toBe('site / cam — 10:30:00 · 1/5 in slot');
+    // the next slot is asked for when the playhead gets there
+    press('next-slot');
+    await flush(); await flush();
+    expect(asked).toEqual([[at(30), at(35)], [at(35), at(40)]]);
+  });
+
   test('the viewer\'s choices are remembered: whole range, thumbnails', async () => {
     teardown = mountPlayer(el, fr(30), ctx(), () => {});
     await flush();

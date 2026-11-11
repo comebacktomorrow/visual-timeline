@@ -34,8 +34,10 @@ export interface PlayerContext {
   window: TimeWindow;
   /** the host's slot duration: previous and next slot step by it */
   step: number;
-  /** every frame of the host in [from, to] */
+  /** the host's frames in [from, to], as the mount has them (perhaps thinned) */
   fetch(from: number, to: number): Promise<Frame[]>;
+  /** one slot's frames at full resolution, asking again if need be */
+  detail?(from: number, to: number): Promise<Frame[]>;
   /** the intervals for frames over a range (the host's promise and pauses) */
   intervals(frames: Frame[], range: TimeWindow): Interval[];
   /** the strip's slot at a time */
@@ -215,13 +217,31 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
       (slotFrames.length > 1 && i >= 0 ? ' · ' + (i + 1) + '/' + slotFrames.length + ' in slot' : '');
   }
 
+  /* the current slot's frames at full resolution, once per slot: merged in,
+   * and Play and the caption know them */
+  const detailed = new Set<number>();
+  async function ensureDetail(sl: PlayerSlot | null): Promise<void> {
+    if (!ctx.detail || !sl || detailed.has(sl.from)) {return;}
+    detailed.add(sl.from);
+    let got: Frame[] = [];
+    try { got = await ctx.detail(sl.from, sl.to); } catch { return; }
+    if (gone || !got.length) {return;}
+    const byTs = new Map(frames.map((f) => [f.ts, f]));
+    for (const f of got) {byTs.set(f.ts, f);}
+    frames = [...byTs.values()].sort((x, y) => x.ts - y.ts);
+    ivs = ctx.intervals(frames, range);
+    drawScrub();
+    labels();
+    show();
+  }
+
   /* move the playhead; the crosshair follows only to another slot */
   function seek(to: number, publish = true): void {
     t = Math.max(range.from, Math.min(range.to, to));
     const sl = ctx.slotAt(t);
     const moved = !cur || !sl || sl.from !== cur.from;
     cur = sl;
-    if (moved) { drawSlot(); labels(); }
+    if (moved) { drawSlot(); labels(); void ensureDetail(sl); }
     show();
     if (publish && moved && sl && ctx.onTime) {ctx.onTime(sl.ts);}
   }
@@ -238,6 +258,7 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     drawScrub();
     seek(keepT ? around : range.from, false);
     labels();   // Play knows the slot's frames now
+    void ensureDetail(cur);
   }
 
   function stop(): void {

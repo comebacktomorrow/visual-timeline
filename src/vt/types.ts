@@ -56,6 +56,9 @@ export interface Frame {
   /* the promise this frame makes: the next frame within this many ms
    * (docs/TIMELINE-MODEL.md); unset, the source's declaration decides */
   cadence?: number;
+  /* how many frames this one stands for, when a data source thinned them
+   * (a frame_count field); unset, one */
+  count?: number;
 }
 
 /* A span of a source's window on one grid (erasFor). reason and intended
@@ -80,6 +83,10 @@ export interface Backend {
   /* every frame in [from, to], unthinned: a backend that holds them all
    * (frame records) offers it, for the preview player (M10) */
   allFrames?(site: string, id: string, from: number, to: number): Promise<Frame[]>;
+  /* one short span's frames at full resolution, asking for them again if
+   * need be (the panel re-runs its query for the span): what the preview
+   * player and the hover flipbook play (M10) */
+  detail?(site: string, id: string, from: number, to: number): Promise<Frame[]>;
   /* demo seam only; raw annotations, normalized by normAnnotations */
   annotations?(): RawAnnotation[];
 }

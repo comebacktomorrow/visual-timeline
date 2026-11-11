@@ -30,7 +30,10 @@ export interface FlipTarget {
   playingChanged(on: boolean): void;
 }
 
-export function makeFlipbook(target: FlipTarget): Flipbook {
+/** `anySlot`: arm on every slot that shows a frame, not only those known to
+ * hold several (a backend that can fetch a slot's frames again: a thinned
+ * answer may not say how many it had). */
+export function makeFlipbook(target: FlipTarget, anySlot = false): Flipbook {
   let current: TickSlot | null = null;
   let dwell: ReturnType<typeof setTimeout> | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -64,7 +67,7 @@ export function makeFlipbook(target: FlipTarget): Flipbook {
 
   return {
     hover(slot) {
-      const sl = slot && !slot.paused && !slot.beyond && slot.count > 1 ? slot : null;
+      const sl = slot && !slot.paused && !slot.beyond && (slot.count > 1 || (anySlot && slot.frame)) ? slot : null;
       // resting on the same slot (by its time: the live poll rebuilds slots)
       // lets the dwell run on
       if (sl === current || (sl && current && sl.x0 === current.x0 && sl.ts === current.ts)) {return;}

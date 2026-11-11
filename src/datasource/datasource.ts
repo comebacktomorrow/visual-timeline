@@ -13,7 +13,7 @@ import {
 } from '@grafana/data';
 import { getTemplateSrv } from '@grafana/runtime';
 
-import { HostRecords, framesPerStep, recordsBackend } from '../shared/frameRecords';
+import { HostRecords, recordsBackend, thinWithCounts } from '../shared/frameRecords';
 import { lastFrameIn } from '../shared/lastFrame';
 import { FolderSource, proxyTextFetch, TextFetch } from './folder/source';
 import {
@@ -176,7 +176,7 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
       const frame = t.lastFrameFormat === 'host' ? lastFramesByHost(sources, last, t.refId) : sourcesToFrame(sources, t.refId, last);
       return [withNotices(frame, notice)];
     }
-    return [withNotices(sourcesToFrame(sources, t.refId), notice), recordsToFrame(folderRows(mine, window), t.refId)];
+    return [withNotices(sourcesToFrame(sources, t.refId), notice), recordsToFrame(folderRows(mine, window, request.maxDataPoints), t.refId)];
   }
 
   /* Demo frames for these sources as rows. Each source's rows come at the
@@ -276,23 +276,25 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
 /* a folder host as a source declaration */
 const declOf = (r: HostRecords): SourceDecl => ({ id: r.id, site: r.site, cadence: r.cadence, ...(r.inferred ? { inferred: true } : {}) });
 
-/* A folder's frames as rows: every one, so the preview player can step
- * through them all (M10), up to FOLDER_MAX_ROWS per host; past that, thinned
- * to one per step at a whole number of the host's cadence. The panel samples
- * them for its strips itself. */
-export const FOLDER_MAX_ROWS = 5000;
-function folderRows(records: HostRecords[], window: { from: number; to: number }) {
+/* A folder's frames as rows: one per step for each host, at its own cadence
+ * or coarser, so no more rows than the panel has pixels (maxDataPoints).
+ * Each row says how many frames it stands for (frame_count): the panel
+ * shows "4 frames" on a slot, and fetches a slot's frames again, at full
+ * resolution, when the preview player or the hover flipbook plays them
+ * (M10). Plus the frame in force at the window's start. */
+function folderRows(records: HostRecords[], window: { from: number; to: number }, maxDataPoints: number | undefined) {
   const span = Math.max(1, window.to - window.from);
-  const rows: Array<{ ts: number; host: string; site: string; url: string; hi?: string }> = [];
+  const rows: Array<{ ts: number; host: string; site: string; url: string; hi?: string; count?: number }> = [];
   for (const r of records) {
     const inWindow = r.frames.filter((f) => f.ts >= window.from && f.ts <= window.to);
-    const kept = inWindow.length <= FOLDER_MAX_ROWS ? inWindow
-      : framesPerStep(r.frames, window.from, window.to, r.cadence * Math.max(1, Math.ceil(span / FOLDER_MAX_ROWS / r.cadence)));
-    // and the frame in force at the window's start, so the strip shows it
+    const points = Math.max(1, maxDataPoints || 1000);
+    // few enough: every one; else a whole number of the host's cadence per row
+    const kept = inWindow.length <= points ? inWindow
+      : thinWithCounts(r.frames, window.from, window.to, r.cadence * Math.max(1, Math.ceil(span / points / r.cadence)));
     let before: Frame | undefined;
     for (const f of r.frames) {if (f.ts < window.from) {before = f;}}
     for (const f of before ? [before, ...kept] : kept) {
-      rows.push({ ts: f.ts, host: r.id, site: r.site, url: f.url, ...(f.hi ? { hi: f.hi } : {}) });
+      rows.push({ ts: f.ts, host: r.id, site: r.site, url: f.url, ...(f.hi ? { hi: f.hi } : {}), ...(f.count ? { count: f.count } : {}) });
     }
   }
   return rows;

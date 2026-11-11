@@ -765,7 +765,7 @@ var VTCore = (() => {
         let count = 0, best = null;
         const last = k === ticks.length - 1;
         for (let m = fi; m < frames.length && (frames[m].ts < x1 || last && frames[m].ts === x1); m++) {
-          count++;
+          count += frames[m].count && frames[m].count > 1 ? frames[m].count : 1;
           if (!best || Math.abs(frames[m].ts - t) < Math.abs(best.ts - t)) {
             best = frames[m];
           }
@@ -2100,6 +2100,31 @@ var VTCore = (() => {
       const i = f ? slotFrames.indexOf(f) : -1;
       cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : "") + (slotFrames.length > 1 && i >= 0 ? " \xB7 " + (i + 1) + "/" + slotFrames.length + " in slot" : "");
     }
+    const detailed = /* @__PURE__ */ new Set();
+    async function ensureDetail(sl) {
+      if (!ctx.detail || !sl || detailed.has(sl.from)) {
+        return;
+      }
+      detailed.add(sl.from);
+      let got = [];
+      try {
+        got = await ctx.detail(sl.from, sl.to);
+      } catch {
+        return;
+      }
+      if (gone || !got.length) {
+        return;
+      }
+      const byTs = new Map(frames.map((f) => [f.ts, f]));
+      for (const f of got) {
+        byTs.set(f.ts, f);
+      }
+      frames = [...byTs.values()].sort((x, y) => x.ts - y.ts);
+      ivs = ctx.intervals(frames, range);
+      drawScrub();
+      labels();
+      show();
+    }
     function seek(to, publish = true) {
       t = Math.max(range.from, Math.min(range.to, to));
       const sl = ctx.slotAt(t);
@@ -2108,6 +2133,7 @@ var VTCore = (() => {
       if (moved) {
         drawSlot();
         labels();
+        void ensureDetail(sl);
       }
       show();
       if (publish && moved && sl && ctx.onTime) {
@@ -2131,6 +2157,7 @@ var VTCore = (() => {
       drawScrub();
       seek(keepT ? around : range.from, false);
       labels();
+      void ensureDetail(cur);
     }
     function stop() {
       playing = false;
@@ -2322,7 +2349,7 @@ var VTCore = (() => {
         tt = tt || panelTexts;
         closePreview();
         if (player && !expectedTs) {
-          openPlayer(root, site, kiosk, frame, x, y, { ...player, tt, label: site + " / " + kiosk });
+          openPlayer(root, site, kiosk, frame, x, y, { ...player, tt, label: site ? site + " / " + kiosk : kiosk });
           return;
         }
         const el = document.createElement("div");
@@ -2330,7 +2357,7 @@ var VTCore = (() => {
         copyVars(root, el);
         el.innerHTML = '<img alt="frame"><div class="cap"></div>';
         const img = el.querySelector("img");
-        el.querySelector(".cap").textContent = site + " / " + kiosk + " \u2014 " + (expectedTs ? "expected " + tt.short(expectedTs) + " \xB7 last frame " + tt.time(frame.ts) : tt.time(frame.ts)) + tt.sfx(frame.ts);
+        el.querySelector(".cap").textContent = (site ? site + " / " : "") + kiosk + " \u2014 " + (expectedTs ? "expected " + tt.short(expectedTs) + " \xB7 last frame " + tt.time(frame.ts) : tt.time(frame.ts)) + tt.sfx(frame.ts);
         el.addEventListener("click", closePreview);
         document.body.appendChild(el);
         const place = () => {
@@ -2369,7 +2396,7 @@ var VTCore = (() => {
     el.className = "ktl-pop";
     copyVars(root, el);
     el.setAttribute("role", "dialog");
-    el.setAttribute("aria-label", site + " / " + kiosk);
+    el.setAttribute("aria-label", site ? site + " / " + kiosk : kiosk);
     document.body.appendChild(el);
     let placed = false;
     const place = () => {
@@ -2762,6 +2789,7 @@ var VTCore = (() => {
       step: model.step,
       tt,
       fetch: (from, to) => backend.allFrames ? backend.allFrames(decl.site, decl.id, from, to) : backend.frames(decl.site, decl.id, from, to, Math.max(model.lastActive?.cadence ?? model.step, Math.ceil((to - from) / PLAYER_BUCKETS))),
+      ...backend.detail ? { detail: (from, to) => backend.detail(decl.site, decl.id, from, to) } : {},
       intervals: (frames, range) => model.intervalsFor(frames, range, Date.now()),
       // the strip's own slots, so the player's slots are the ones on screen
       slotAt: (t) => {
@@ -2777,7 +2805,7 @@ var VTCore = (() => {
   // src/vt/timeline/flipbook.ts
   var DWELL_MS = 3e3;
   var FLIP_FPS = 4;
-  function makeFlipbook(target) {
+  function makeFlipbook(target, anySlot = false) {
     let current = null;
     let dwell = null;
     let timer = null;
@@ -2827,7 +2855,7 @@ var VTCore = (() => {
     }
     return {
       hover(slot) {
-        const sl = slot && !slot.paused && !slot.beyond && slot.count > 1 ? slot : null;
+        const sl = slot && !slot.paused && !slot.beyond && (slot.count > 1 || anySlot && slot.frame) ? slot : null;
         if (sl === current || sl && current && sl.x0 === current.x0 && sl.ts === current.ts) {
           return;
         }
@@ -2971,7 +2999,9 @@ var VTCore = (() => {
     const fetchAll = playerContext(s.backend, s.cfg, s.P, decl, model, tt, () => {
     }).fetch;
     const flip = makeFlipbook({
-      frames: (from, to) => model.frames.length && s.backend.allFrames ? Promise.resolve(model.frames.filter((f) => f.ts >= from && f.ts < to)) : fetchAll(from, to),
+      // a slot's frames: asked again at full resolution where the backend can
+      // (the panel re-runs its query), else the frames the model holds
+      frames: (from, to) => s.backend.detail ? s.backend.detail(decl.site, decl.id, from, to) : model.frames.length && s.backend.allFrames ? Promise.resolve(model.frames.filter((f) => f.ts >= from && f.ts < to)) : fetchAll(from, to),
       show: (f, i, n) => {
         const m = rec?.mag;
         if (!m) {
@@ -2993,7 +3023,7 @@ var VTCore = (() => {
           setCursor(s, s.cursorT, null, true);
         }
       }
-    });
+    }, !!s.backend.detail);
     const hoverAt = (e) => {
       const r = strip.getBoundingClientRect();
       if (!r.width) {

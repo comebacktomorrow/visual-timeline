@@ -23,6 +23,7 @@ import { DATASOURCE_ID } from '../shared/ids';
 import { FieldRoles, hostTableFromSeries, recordsBackend, recordsFromSeries } from '../shared/frameRecords';
 import { stateAnnotations, statesFromSeries } from '../shared/hostState';
 import { needsRebuild } from './resize';
+import { makeDetail } from './detail';
 import { chipLinkUrl, parseChips } from './chips';
 
 interface VisualTimelineOptions {
@@ -206,11 +207,19 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const tableKey = table.length ? JSON.stringify(table) : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const tableMemo = useMemo(() => table, [tableKey]);
+  /* A slot's frames at full resolution, by running the panel's queries again
+   * for just that slot (M10, detail.ts): read through refs, so the backend
+   * keeps its identity across refreshes. */
+  const requestRef = useRef(props.data?.request);
+  requestRef.current = props.data?.request;
+  const rolesRef = useRef(roles);
+  rolesRef.current = roles;
+  const detail = useMemo(() => makeDetail(() => requestRef.current as never, () => rolesRef.current), []);
   const backend = useMemo(
     () => (recordsMemo || statesMemo || tableMemo.length
-      ? recordsBackend(recordsMemo ?? [], tableMemo, statesMemo ?? [])
+      ? { ...recordsBackend(recordsMemo ?? [], tableMemo, statesMemo ?? []), detail }
       : null),
-    [recordsMemo, statesMemo, tableMemo]
+    [recordsMemo, statesMemo, tableMemo, detail]
   );
   /* Clicking a host, site or tag chip adds that filter to the dashboard's ad
    * hoc filter for this data source, as a table cell's "filter for value"

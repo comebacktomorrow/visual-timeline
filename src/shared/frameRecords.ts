@@ -52,6 +52,7 @@ export const ROLE_NAMES = {
   site: ['site'],
   preview: ['image_hi', 'url_hi', 'preview', 'preview_url', 'image_large'],
   cadence: ['cadence', 'cadence_ms'],
+  count: ['frame_count'],
   timezone: ['timezone', 'tz', 'time_zone'],
   location: ['location'],
   tags: ['tags'],
@@ -260,6 +261,8 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
     const site = fieldNamed(frame, roles.site, ROLE_NAMES.site);
     const preview = fieldNamed(frame, roles.preview, ROLE_NAMES.preview);
     const cadence = fieldNamed(frame, roles.cadence, ROLE_NAMES.cadence);
+    // how many frames a thinned row stands for (our data source sends it)
+    const counts = fieldNamed(frame, undefined, ROLE_NAMES.count);
     // a frame without a host field: one host, from a label or the query
     const fallbackHost = image.labels?.host ?? frame.name ?? frame.refId ?? 'host';
     const fallbackSite = image.labels?.site ?? '';
@@ -283,6 +286,8 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
       const f: Frame = { ts, url, source: id };
       const hi = preview ? imageLocator(preview.values[i]) : null;
       if (hi) {f.hi = hi;}
+      const n = counts ? Number(counts.values[i]) : NaN;
+      if (Number.isFinite(n) && n > 1) {f.count = n;}
       rec.frames.set(ts, f); // a repeated timestamp: the later row wins
       const c = cadence ? Number(cadence.values[i]) : NaN;
       // a frame's cadence is the promise it makes (docs/TIMELINE-MODEL.md)
@@ -356,6 +361,25 @@ export function framesPerStep(frames: Frame[], from: number, to: number, step: n
     if (!prev || Math.abs(f.ts - tick) < Math.abs(prev.ts - tick)) {best.set(idx, f);}
   }
   return [...best.values()].sort((a, b) => a.ts - b.ts);
+}
+
+/** framesPerStep, keeping how many frames each kept one stands for (its
+ * bucket's), as `count`: a thinned answer that still says how much was there. */
+export function thinWithCounts(frames: Frame[], from: number, to: number, step: number): Frame[] {
+  const kept = framesPerStep(frames, from, to, step);
+  if (!kept.length) {return kept;}
+  const lo = Math.floor(from / step) * step;
+  const start = Math.ceil(lo / step) * step;
+  const counts = new Map<number, number>();
+  for (const f of frames) {
+    if (f.ts < lo || f.ts > Math.ceil(to / step) * step) {continue;}
+    const idx = Math.round((f.ts - start) / step);
+    counts.set(idx, (counts.get(idx) ?? 0) + (f.count ?? 1));
+  }
+  return kept.map((f) => {
+    const n = counts.get(Math.round((f.ts - start) / step)) ?? 1;
+    return n > 1 ? { ...f, count: n } : f;
+  });
 }
 
 /** The core's data layer over frame records. `known` adds what a source list

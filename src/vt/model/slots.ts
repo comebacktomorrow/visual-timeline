@@ -148,7 +148,7 @@ function sample(built: Intervals, step: number, cadenceAt: (t: number) => number
       let count = 0, best: Frame | null = null;
       const last = k === ticks.length - 1;
       for (let m = fi; m < frames.length && (frames[m].ts < x1 || (last && frames[m].ts === x1)); m++) {
-        count++;
+        count += frames[m].count && frames[m].count! > 1 ? frames[m].count! : 1;
         if (!best || Math.abs(frames[m].ts - t) < Math.abs(best.ts - t)) {best = frames[m];}
       }
       // the last slot of a stretch reads its end (at the live edge: now)
