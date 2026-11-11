@@ -202,10 +202,12 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
         thumbs.appendChild(cell);
       }
       fs.forEach((f, i) => {
-        // as wide as it's shown: up to the next frame, or where it runs out
-        // (a broken promise, a hold that ends, a pause), so those show
-        const shownTo = ivs.find((iv) => (iv.kind === 'frame' || iv.kind === 'pending') && iv.frame?.ts === f.ts && iv.to > f.ts);
-        const end = Math.min(i + 1 < fs.length ? fs[i + 1].ts : slot.to, shownTo ? shownTo.to : slot.to);
+        // up to the next thumbnail drawn, or the first stretch without a
+        // frame before it (a broken promise, a hold that ends, a pause), so
+        // those show and nothing else does
+        const next = i + 1 < fs.length ? fs[i + 1].ts : slot.to;
+        const gap = ivs.find((iv) => (iv.kind === 'dropped' || iv.kind === 'nodata' || iv.kind === 'paused') && iv.from >= f.ts && iv.from < next);
+        const end = gap ? gap.from : next;
         const cell = document.createElement('div');
         cell.className = 'thumb';
         cell.style.left = xOf(f.ts) + '%';
@@ -252,7 +254,13 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     const i = f ? fs.indexOf(f) : -1;
     cap.textContent = (ctx.label ? ctx.label + ' — ' : '') + ctx.tt.time(t) + ctx.tt.sfx(t) +
       (f && f.ts !== t ? ' · frame ' + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : '') +
-      (fs.length > 1 && i >= 0 ? ' · ' + (i + 1) + '/' + fs.length + (all > fs.length ? ' of ' + all + ' frames: zoom for all' : ' in slot') : '');
+      (fs.length > 1 && i >= 0 ? ' · ' + (i + 1) + '/' + fs.length + (all > fs.length ? ' of ' + all : ' in slot') : '');
+    // more frames than drawn: Zoom shows them all
+    const zoom = el.querySelector<HTMLButtonElement>('button[data-a="zoom"]');
+    if (zoom) {
+      zoom.classList.toggle('hint', all > fs.length);
+      zoom.title = all > fs.length ? all + ' frames in this slot, ' + fs.length + ' drawn: zoom the dashboard to the slot to see them all' : 'Zoom the dashboard to this slot';
+    }
   }
 
   /* the playhead, within the slot: the crosshair doesn't move */

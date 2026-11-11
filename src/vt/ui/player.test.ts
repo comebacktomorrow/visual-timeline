@@ -158,9 +158,22 @@ describe('the preview player', () => {
     await flush();
     // 560 px wide (unlaid out), a tick per 2 px
     expect(el.querySelectorAll('.tick')).toHaveLength(280);
-    expect(cap()).toBe('site / cam — 10:30:00 · 1/280 of 300 frames: zoom for all');
+    expect(cap()).toBe('site / cam — 10:30:00 · 1/280 of 300');
+    expect(el.querySelector('button[data-a="zoom"]')).toBeNull();
     press('style');
     expect(el.querySelectorAll('.thumb')).toHaveLength(11);
+    // and they tile the slot: no blank space between the frames drawn
+    const total = [...el.querySelectorAll<HTMLElement>('.thumb')].reduce((a, c) => a + parseFloat(c.style.width), 0);
+    expect(total).toBeCloseTo(100, 5);
+  });
+
+  test('more frames than drawn: Zoom is highlighted, and says why', async () => {
+    const dense = Array.from({ length: 300 }, (_, i) => ({ ts: at(30) + i * 1000, url: `d${i}.jpg` }));
+    teardown = mountPlayer(el, dense[0], ctx({ fetch: async (from, to) => dense.filter((f) => f.ts >= from && f.ts <= to), onZoom: () => {} }), () => {});
+    await flush();
+    const zoom = el.querySelector('button[data-a="zoom"]') as HTMLButtonElement;
+    expect(zoom.classList.contains('hint')).toBe(true);
+    expect(zoom.title).toBe('300 frames in this slot, 280 drawn: zoom the dashboard to the slot to see them all');
   });
 
   test('Zoom sets the dashboard\'s range to the slot, and closes the player', async () => {

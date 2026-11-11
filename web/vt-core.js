@@ -1536,8 +1536,10 @@ var VTCore = (() => {
 /* the preview as a player (M10): stage, scrubber, controls */
 .ktl-pop.player { cursor:default; padding:6px; width:min(720px, 92vw); font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;
                   color:var(--ktl-text); display:flex; flex-direction:column; gap:6px; }
-.ktl-pop.player .stage { position:relative; display:flex; justify-content:center; background:var(--ktl-media); border-radius:2px; min-height:120px; }
-.ktl-pop.player .stage img { max-width:100%; max-height:60vh; }
+.ktl-pop.player .stage { position:relative; display:flex; align-items:center; justify-content:center; background:var(--ktl-media);
+                         border-radius:2px; height:min(55vh, 405px); }
+/* one size whatever the frame's shape: the popup doesn't change size as it plays */
+.ktl-pop.player .stage img { max-width:100%; max-height:100%; object-fit:contain; }
 .ktl-pop.player.off .stage img { opacity:.35; }
 .ktl-pop.player .stage .state { position:absolute; inset:auto 0 8px; text-align:center; font-weight:700; color:var(--ktl-off);
                                  text-transform:uppercase; letter-spacing:.04em; pointer-events:none; }
@@ -1558,8 +1560,12 @@ var VTCore = (() => {
 .ktl-pop.player .tick { position:absolute; bottom:0; height:40%; width:1px; background:var(--ktl-text); opacity:.55; }
 .ktl-pop.player.thumbs .tick { height:6px; }
 .ktl-pop.player .head { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--ktl-accent); pointer-events:none; }
-.ktl-pop.player .bar { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
-.ktl-pop.player .bar .cap { flex:1 1 auto; min-width:120px; padding:0 6px; text-align:center; }
+.ktl-pop.player .bar { display:flex; align-items:center; gap:4px; }
+/* one line: the caption gives way, so the bar never wraps and grows the popup */
+.ktl-pop.player .bar .cap { flex:1 1 auto; min-width:0; padding:0 6px; text-align:center;
+                            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ktl-pop.player button { flex:0 0 auto; }
+.ktl-pop.player button.hint { border-color:var(--ktl-accent); color:var(--ktl-accent); }
 .ktl-pop.player button { font:inherit; color:var(--ktl-text); background:transparent; border:1px solid var(--ktl-border);
                          border-radius:2px; padding:2px 7px; min-width:28px; cursor:pointer; line-height:18px; }
 .ktl-pop.player button:hover:not(:disabled) { border-color:var(--ktl-accent); }
@@ -2059,8 +2065,9 @@ var VTCore = (() => {
           thumbs.appendChild(cell);
         }
         fs.forEach((f, i) => {
-          const shownTo = ivs.find((iv) => (iv.kind === "frame" || iv.kind === "pending") && iv.frame?.ts === f.ts && iv.to > f.ts);
-          const end = Math.min(i + 1 < fs.length ? fs[i + 1].ts : slot.to, shownTo ? shownTo.to : slot.to);
+          const next = i + 1 < fs.length ? fs[i + 1].ts : slot.to;
+          const gap = ivs.find((iv) => (iv.kind === "dropped" || iv.kind === "nodata" || iv.kind === "paused") && iv.from >= f.ts && iv.from < next);
+          const end = gap ? gap.from : next;
           const cell = document.createElement("div");
           cell.className = "thumb";
           cell.style.left = xOf(f.ts) + "%";
@@ -2107,7 +2114,12 @@ var VTCore = (() => {
       const fs = shown();
       const all = inSlot().length;
       const i = f ? fs.indexOf(f) : -1;
-      cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : "") + (fs.length > 1 && i >= 0 ? " \xB7 " + (i + 1) + "/" + fs.length + (all > fs.length ? " of " + all + " frames: zoom for all" : " in slot") : "");
+      cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : "") + (fs.length > 1 && i >= 0 ? " \xB7 " + (i + 1) + "/" + fs.length + (all > fs.length ? " of " + all : " in slot") : "");
+      const zoom = el.querySelector('button[data-a="zoom"]');
+      if (zoom) {
+        zoom.classList.toggle("hint", all > fs.length);
+        zoom.title = all > fs.length ? all + " frames in this slot, " + fs.length + " drawn: zoom the dashboard to the slot to see them all" : "Zoom the dashboard to this slot";
+      }
     }
     function seek(to) {
       t = Math.max(slot.from, Math.min(slot.to - 1, to));
