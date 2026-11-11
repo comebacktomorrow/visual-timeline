@@ -1,5 +1,6 @@
 import { pauseInfo } from '../model/eras';
 import { Reel, type ReelSlot, type ReelSource } from '../model/reel';
+import { FRAME_WIDTH } from './frameWidth';
 import type { ZoneTexts } from '../zones/source';
 import type { Frame, TimeWindow } from '../types';
 
@@ -37,6 +38,8 @@ export interface PlayerContext extends ReelSource {
   label?: string;
   /** the panel's default scrubber style; the viewer's last choice wins */
   scrubber?: ScrubStyle;
+  /** the least width a frame gets (the panel's Frame width): the ticks' spacing */
+  frameWidth?: number;
 }
 
 interface Prefs { style: ScrubStyle; fps: number }
@@ -57,11 +60,10 @@ function savePrefs(p: Prefs): void {
 }
 
 /* A slot can hold more frames than its timeline can tell apart. It shows at
- * most a frame per TICK_PX, evenly through the slot, whichever the style:
- * those are its ticks, what it steps and plays through, and what it fetches
- * (no finer). As thumbnails, a picture per THUMB_PX of them. Zoom shows
- * them all. */
-const TICK_PX = 2;
+ * most a frame per Frame width (the strip's own rule, FRAME_WIDTH by default),
+ * evenly through the slot, whichever the style: those are its ticks, what it
+ * steps and plays through, and what it fetches (no finer). As thumbnails, a
+ * picture per THUMB_PX of them. Zoom shows them all. */
 const THUMB_PX = 48;
 /* the popup's size (size() in mountPlayer) */
 const STAGE_H = 405;
@@ -130,7 +132,8 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
 
   const width = () => scrub.clientWidth || 560;
   /* how many of the slot's frames it shows: the same in either style */
-  const most = () => Math.max(4, Math.floor(width() / TICK_PX));
+  const tickPx = ctx.frameWidth && ctx.frameWidth > 0 ? ctx.frameWidth : FRAME_WIDTH;
+  const most = () => Math.max(4, Math.floor(width() / tickPx));
   const slot = () => reel.slot;
   const span = () => Math.max(1, slot().to - slot().from);
   const xOf = (ts: number) => ((ts - slot().from) / span()) * 100;

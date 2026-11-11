@@ -265,6 +265,9 @@ export interface MountConfig {
   /* the preview player's default scrubber style (a viewer's own last choice
    * wins): 'ticks' (default) or 'thumbs' */
   playerScrubber?: string;
+  /* the least width a frame gets wherever it's drawn (px, default
+   * FRAME_WIDTH): the strip's slots and the preview player's ticks */
+  frameWidth?: number;
   onHover?: (t: number) => void;               // timeline: a local hover moved the cursor
   onHoverClear?: () => void;                   // timeline: the mouse left a strip
   onCursor?: (t: number) => void;              // timeline: every cursor move (host chrome)

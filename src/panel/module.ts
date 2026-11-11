@@ -24,6 +24,7 @@ import { FieldRoles, hostTableFromSeries, recordsBackend, recordsFromSeries } fr
 import { stateAnnotations, statesFromSeries } from '../shared/hostState';
 import { needsRebuild } from './resize';
 import { makeDetail } from './detail';
+import { FRAME_WIDTH, FRAME_WIDTH_MAX, FRAME_WIDTH_MIN } from '../vt/ui/frameWidth';
 import { chipLinkUrl, parseChips } from './chips';
 
 interface VisualTimelineOptions {
@@ -46,6 +47,8 @@ interface VisualTimelineOptions {
   expectedCadence?: string;
   /** The preview player's default scrubber style (M10). */
   playerScrubber?: 'ticks' | 'thumbs';
+  /** The least width a frame gets, px: the strip's slots and the player's ticks. */
+  frameWidth?: number;
   /** Header chips (#126): which, in order, and what a click does. */
   chips?: string;
   chipClick?: 'filter' | 'link' | 'none';
@@ -289,6 +292,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       hold, chips, ...(expectedCadence > 0 ? { expectedCadence } : {}),
       ...(sampleInterval > 0 ? { sampleInterval } : {}),
       playerScrubber: options.playerScrubber || 'ticks',
+      frameWidth: options.frameWidth || FRAME_WIDTH,
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
       timeZone,
@@ -317,7 +321,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, sampleInterval, options.playerScrubber, chipsKey]);
+  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, sampleInterval, options.playerScrubber, options.frameWidth, chipsKey]);
 
   useEffect(() => {
     const subs = [
@@ -538,6 +542,13 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       name: 'Hide hosts with no data',
       description: 'Leave out hosts with no frames in the time range, instead of showing them offline',
       defaultValue: false,
+    })
+    .addSliderInput({
+      path: 'frameWidth',
+      name: 'Frame width',
+      description: 'The least width a frame gets, in pixels, wherever it is drawn: the strip\'s slots, and the ticks in the player\'s timeline of a slot. Smaller shows more detail and loads more images; larger, fewer.',
+      defaultValue: FRAME_WIDTH,
+      settings: { min: FRAME_WIDTH_MIN, max: FRAME_WIDTH_MAX, step: 1 },
     })
     .addBooleanSwitch({
       path: 'showDetails',

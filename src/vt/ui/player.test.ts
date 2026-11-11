@@ -158,9 +158,9 @@ describe('the preview player', () => {
     const dense = Array.from({ length: 300 }, (_, i) => ({ ts: at(30) + i * 1000, url: `d${i}.jpg` }));
     teardown = mountPlayer(el, dense[0], ctx({ fetch: async (from, to) => dense.filter((f) => f.ts >= from && f.ts <= to) }), () => {});
     await flush();
-    // 560 px wide (unlaid out), a tick per 2 px
-    expect(el.querySelectorAll('.tick')).toHaveLength(280);
-    expect(cap()).toBe('site / cam (showing 280 of 300) — 10:30:00');
+    // 560 px wide (unlaid out), a tick per 7 px (the default Frame width)
+    expect(el.querySelectorAll('.tick')).toHaveLength(80);
+    expect(cap()).toBe('site / cam (showing 80 of 300) — 10:30:00');
     expect(el.querySelector('button[data-a="zoom"]')).toBeNull();
     press('style-thumbs');
     expect(el.querySelectorAll('.thumb')).toHaveLength(11);
@@ -178,14 +178,14 @@ describe('the preview player', () => {
       onZoom: () => {},
     }), () => {});
     await flush();
-    // ticks: a tick per 2 px of 560, for the slot and the one before it
-    expect(asked).toEqual([560]);
+    // a tick per 7 px of 560, for the slot and the one before it
+    expect(asked).toEqual([160]);
     expect(cap()).toBe('site / cam (showing 5 of 300) — 10:30:00');
     expect(el.querySelector('button[data-a="zoom"]')!.classList.contains('hint')).toBe(true);
     // thumbnails show the same frames, as pictures: nothing asked again
     press('style-thumbs');
     await flush();
-    expect(asked).toEqual([560]);
+    expect(asked).toEqual([160]);
   });
 
   test('a thinned slot is judged at the interval it was asked for at, not drawn offline between its rows', async () => {
@@ -199,7 +199,14 @@ describe('the preview player', () => {
     await flush();
     expect(el.querySelectorAll('.lane.dropped')).toHaveLength(0);
     // thinned: the title says how many of the slot's frames are shown
-    expect(el.querySelector('.title')!.textContent).toMatch(/^site \/ cam \(showing \d+ of 29\d\)$/);
+    expect(el.querySelector('.title')!.textContent).toMatch(/^site \/ cam \(showing 80 of (29\d|30\d)\)$/);
+  });
+
+  test('the panel\'s Frame width sets the ticks\' spacing', async () => {
+    const dense = Array.from({ length: 300 }, (_, i) => ({ ts: at(30) + i * 1000, url: `d${i}.jpg` }));
+    teardown = mountPlayer(el, dense[0], ctx({ frameWidth: 20, fetch: async (from, to) => dense.filter((f) => f.ts >= from && f.ts <= to) }), () => {});
+    await flush();
+    expect(el.querySelectorAll('.tick')).toHaveLength(28);
   });
 
   test('more frames than drawn: Zoom is highlighted, and says why', async () => {
@@ -208,7 +215,7 @@ describe('the preview player', () => {
     await flush();
     const zoom = el.querySelector('button[data-a="zoom"]') as HTMLButtonElement;
     expect(zoom.classList.contains('hint')).toBe(true);
-    expect(zoom.title).toBe('300 frames in this slot, 280 shown: zoom the dashboard to the slot to see them all');
+    expect(zoom.title).toBe('300 frames in this slot, 80 shown: zoom the dashboard to the slot to see them all');
   });
 
   test('Zoom sets the dashboard\'s range to the slot, and closes the player', async () => {

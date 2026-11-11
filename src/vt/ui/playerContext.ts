@@ -1,6 +1,7 @@
 import type { Backend, MountConfig, SourceDecl, SourceModel, TimeWindow } from '../types';
 import type { ZoneTexts } from '../zones/source';
 import type { PlayerContext } from './player';
+import { frameWidthOf } from './frameWidth';
 
 /* The most buckets one player fetch asks an API for (the reference worker
  * caps a request at 800). */
@@ -34,5 +35,6 @@ export function playerContext(
     // the timeline's drag-zoom (the grid has none)
     ...(onZoom ? { onZoom } : {}),
     scrubber: cfg.playerScrubber === 'thumbs' ? 'thumbs' : cfg.playerScrubber === 'ticks' ? 'ticks' : undefined,
+    frameWidth: frameWidthOf(cfg),
   };
 }

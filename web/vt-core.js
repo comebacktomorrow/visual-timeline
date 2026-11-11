@@ -1595,6 +1595,15 @@ var VTCore = (() => {
     document.head.appendChild(s);
   }
 
+  // src/vt/ui/frameWidth.ts
+  var FRAME_WIDTH = 7;
+  var FRAME_WIDTH_MIN = 3;
+  var FRAME_WIDTH_MAX = 48;
+  function frameWidthOf(cfg) {
+    const w = Number(cfg.frameWidth);
+    return Number.isFinite(w) && w > 0 ? Math.max(FRAME_WIDTH_MIN, Math.min(FRAME_WIDTH_MAX, Math.round(w))) : FRAME_WIDTH;
+  }
+
   // src/vt/model/pool.ts
   var MODEL_CONCURRENCY = 6;
   function limited(items, limit, fn) {
@@ -2082,7 +2091,6 @@ var VTCore = (() => {
     } catch {
     }
   }
-  var TICK_PX = 2;
   var THUMB_PX = 48;
   var STAGE_H = 405;
   var MIN_W = 400;
@@ -2117,7 +2125,8 @@ var VTCore = (() => {
     let hiTimer = null;
     let gone = false;
     const width = () => scrub.clientWidth || 560;
-    const most = () => Math.max(4, Math.floor(width() / TICK_PX));
+    const tickPx = ctx.frameWidth && ctx.frameWidth > 0 ? ctx.frameWidth : FRAME_WIDTH;
+    const most = () => Math.max(4, Math.floor(width() / tickPx));
     const slot = () => reel.slot;
     const span = () => Math.max(1, slot().to - slot().from);
     const xOf = (ts) => (ts - slot().from) / span() * 100;
@@ -2927,7 +2936,8 @@ var VTCore = (() => {
       onTime,
       // the timeline's drag-zoom (the grid has none)
       ...onZoom ? { onZoom } : {},
-      scrubber: cfg.playerScrubber === "thumbs" ? "thumbs" : cfg.playerScrubber === "ticks" ? "ticks" : void 0
+      scrubber: cfg.playerScrubber === "thumbs" ? "thumbs" : cfg.playerScrubber === "ticks" ? "ticks" : void 0,
+      frameWidth: frameWidthOf(cfg)
     };
   }
 
@@ -3430,7 +3440,7 @@ var VTCore = (() => {
     const TZ = resolveTimeZone(cfg.timeZone);
     const SPAN = Math.max(1, P.to - P.from);
     const LIVE = P.to > Date.now() - 2 * 60 * 1e3;
-    const MIN_SLICE_PX = 7;
+    const MIN_SLICE_PX = frameWidthOf(cfg);
     const hostWidth = cfg.width || root.clientWidth || 800;
     const pxBudget = Math.max(10, Math.floor((hostWidth - 20) / MIN_SLICE_PX));
     const backend = cfg.backend ?? (cfg.apiUrl || cfg.apiFetch ? makeApiBackend(cfg.apiUrl, cfg.apiKey, cfg.apiFetch) : makeBackend(P, SPAN, TZ));

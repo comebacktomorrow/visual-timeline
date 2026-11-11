@@ -1,3 +1,4 @@
+import { frameWidthOf } from '../ui/frameWidth';
 import { resolveTimeZone } from '../time/zones';
 import { wireFilters } from '../dom/html';
 import { buildSourceModel } from '../model/slots';
@@ -39,7 +40,8 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
   const TZ = resolveTimeZone(cfg.timeZone);
   const SPAN = Math.max(1, P.to - P.from);
   const LIVE = P.to > Date.now() - 2 * 60 * 1000;
-  const MIN_SLICE_PX = 7;
+  // the least width a slot gets: a frame per this many pixels at most
+  const MIN_SLICE_PX = frameWidthOf(cfg);
   const hostWidth = cfg.width || root.clientWidth || 800;   // plugin passes width; web mounts measure
   const pxBudget = Math.max(10, Math.floor((hostWidth - 20) / MIN_SLICE_PX));
   const backend: Backend =
