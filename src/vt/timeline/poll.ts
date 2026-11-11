@@ -27,7 +27,8 @@ async function pollOnce(s: TimelineState): Promise<void> {
     const last = m.frames.length ? m.frames[m.frames.length - 1].ts : s.P.from;
     let fresh;
     try {
-      fresh = await s.backend.frames(k.site, k.id, Math.max(last, s.P.from) + 1, Math.min(s.P.to, Date.now()), m.step);
+      const from = Math.max(last, s.P.from) + 1, to = Math.min(s.P.to, Date.now());
+      fresh = s.backend.allFrames ? await s.backend.allFrames(k.site, k.id, from, to) : await s.backend.frames(k.site, k.id, from, to, m.step);
     } catch (e) {
       // one source's failure must not stop the others' polls
       console.warn('[visual-timeline] live poll failed for ' + k.id + ':', e);

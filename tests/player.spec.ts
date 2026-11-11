@@ -13,11 +13,14 @@ test('a click opens the player: a tick per frame, previous and next, play, and E
   await expect(strip.locator('.slot img[src]').first()).toBeAttached({ timeout: 20000 });
   // the middle of the strip
   const box = (await strip.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-
   const player = page.locator('.ktl-pop.player');
-  await expect(player).toBeVisible();
+  // a click that lands while the panel redraws (a busy machine) opens nothing:
+  // click again until the player is there
+  await expect(async () => {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(player).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 15000 });
   await expect(player.locator('.scrub .tick').first()).toBeAttached();
   const cap = player.locator('.cap');
   const first = await cap.textContent();

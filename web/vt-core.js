@@ -637,7 +637,7 @@ var VTCore = (() => {
     const wanted = promised ? 1.5 * maxCadence + step : typeof hold === "number" ? hold : LOOKBACK_UNPROMISED;
     const lookback = Math.min(wanted, LOOKBACK_STEPS * step);
     const now0 = opts.now ?? Date.now();
-    const fetched = await backend.frames(decl.site, decl.id, P.from - lookback, Math.min(P.to, now0), step);
+    const fetched = backend.allFrames ? await backend.allFrames(decl.site, decl.id, P.from - lookback, Math.min(P.to, now0)) : await backend.frames(decl.site, decl.id, P.from - lookback, Math.min(P.to, now0), step);
     const promiseAt = (t) => {
       if (!promised) {
         return null;
@@ -1516,6 +1516,8 @@ var VTCore = (() => {
   background:repeating-linear-gradient(45deg,var(--ktl-tpause-a),var(--ktl-tpause-a) 7px,var(--ktl-tpause-b) 7px,var(--ktl-tpause-b) 14px); }
 .ktl .tile.offline .t-off { display:flex; }
 .ktl .tile.offline img, .ktl .tile.offline .t-ts { display:none; }
+.ktl .mag.flip::after { content:'\u25B6'; position:absolute; top:3px; left:5px; font-size:9px; line-height:1;
+                        color:var(--ktl-accent); text-shadow:0 0 3px rgba(0,0,0,.8); pointer-events:none; }
 .ktl-pop { position:fixed; z-index:1060; background:var(--ktl-float-bg); border:1px solid var(--ktl-accent);
            border-radius:4px; padding:4px; cursor:zoom-out;
            box-shadow:var(--ktl-shadow); }
@@ -2532,7 +2534,15 @@ var VTCore = (() => {
         c.mag.style.setProperty("--cap-lo", -(magL + magW / 2) + "px");
         c.mag.style.setProperty("--cap-hi", w - magL - magW / 2 + "px");
       }
-      const key = shownKey(slot);
+      if (external && c.flip && !s.wrap.classList.contains("strip-hover")) {
+        c.flip.stop();
+      }
+      if (c.flip?.playing()) {
+        continue;
+      }
+      const many = !!(slot && slot.frame && !slot.paused && !slot.beyond && slot.count > 1 && c.card.classList.contains("hovered"));
+      const base = shownKey(slot);
+      const key = base === null ? null : base + (many ? ":n" : "");
       if (key !== null && key === c.shown) {
         continue;
       }
@@ -2542,7 +2552,7 @@ var VTCore = (() => {
         c.mag.classList.remove("gap", "future", "off");
         clearPauseClasses(c.mag);
         setSrc(c.mag.querySelector("img"), slot.frame.url);
-        setText(c.mag.querySelector(".cap"), tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts));
+        setText(c.mag.querySelector(".cap"), tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts) + (many ? " \xB7 " + slot.count + " frames" : ""));
         setText(c.head, "");
         c.head.classList.remove("stale");
         clearPauseClasses(c.head);
@@ -2745,6 +2755,80 @@ var VTCore = (() => {
     };
   }
 
+  // src/vt/timeline/flipbook.ts
+  var DWELL_MS = 3e3;
+  var FLIP_FPS = 4;
+  function makeFlipbook(target) {
+    let current = null;
+    let dwell = null;
+    let timer = null;
+    let seq = 0;
+    function halt() {
+      seq++;
+      if (dwell) {
+        clearTimeout(dwell);
+        dwell = null;
+      }
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+        target.playingChanged(false);
+      }
+    }
+    async function start(sl) {
+      const mine = ++seq;
+      let frames = [];
+      try {
+        frames = await target.frames(sl.x0, sl.x0 + sl.span);
+      } catch {
+        return;
+      }
+      if (mine !== seq || !current || current.x0 !== sl.x0) {
+        return;
+      }
+      frames = frames.filter((f) => f.ts >= sl.x0 && f.ts < sl.x0 + sl.span).sort((a, b) => a.ts - b.ts);
+      if (frames.length < 2) {
+        return;
+      }
+      const preload = (i2) => {
+        for (let k = 1; k <= 3; k++) {
+          const p = new Image();
+          p.src = frames[(i2 + k) % frames.length].url;
+        }
+      };
+      let i = 0;
+      target.playingChanged(true);
+      target.show(frames[0], 0, frames.length);
+      preload(0);
+      timer = setInterval(() => {
+        i = (i + 1) % frames.length;
+        target.show(frames[i], i, frames.length);
+        preload(i);
+      }, 1e3 / FLIP_FPS);
+    }
+    return {
+      hover(slot) {
+        const sl = slot && !slot.paused && !slot.beyond && slot.count > 1 ? slot : null;
+        if (sl === current || sl && current && sl.x0 === current.x0 && sl.ts === current.ts) {
+          return;
+        }
+        halt();
+        current = sl;
+        if (sl) {
+          dwell = setTimeout(() => {
+            dwell = null;
+            void start(sl);
+          }, DWELL_MS);
+        }
+      },
+      stop() {
+        halt();
+        current = null;
+      },
+      playing: () => timer !== null
+    };
+  }
+
   // src/vt/timeline/card.ts
   function dressStrip(model) {
     for (const sl of model.slots) {
@@ -2864,6 +2948,33 @@ var VTCore = (() => {
     const strip = card.querySelector(".strip");
     renderStrip(s, model, strip, kiosk, tt);
     dressStrip(model);
+    let rec = null;
+    const fetchAll = playerContext(s.backend, s.cfg, s.P, decl, model, tt, () => {
+    }).fetch;
+    const flip = makeFlipbook({
+      frames: (from, to) => model.frames.length && s.backend.allFrames ? Promise.resolve(model.frames.filter((f) => f.ts >= from && f.ts < to)) : fetchAll(from, to),
+      show: (f, i, n) => {
+        const m = rec?.mag;
+        if (!m) {
+          return;
+        }
+        const im = m.querySelector("img");
+        if (im.getAttribute("src") !== f.url) {
+          im.src = f.url;
+        }
+        m.querySelector(".cap").textContent = tt.time(f.ts) + tt.sfx(f.ts) + " \xB7 " + (i + 1) + "/" + n;
+      },
+      playingChanged: (on) => {
+        if (!rec) {
+          return;
+        }
+        rec.mag.classList.toggle("flip", on);
+        if (!on && !s.destroyed) {
+          rec.shown = null;
+          setCursor(s, s.cursorT, null, true);
+        }
+      }
+    });
     const hoverAt = (e) => {
       const r = strip.getBoundingClientRect();
       if (!r.width) {
@@ -2871,6 +2982,7 @@ var VTCore = (() => {
       }
       const t = s.P.from + s.SPAN * ((e.clientX - r.left) / r.width);
       setCursor(s, t, card, false);
+      flip.hover(model.slotAt(s.cursorT));
     };
     strip.addEventListener("mousemove", hoverAt);
     strip.addEventListener("mouseenter", (e) => {
@@ -2878,12 +2990,14 @@ var VTCore = (() => {
       hoverAt(e);
     });
     strip.addEventListener("mouseleave", () => {
+      flip.stop();
       s.wrap.classList.remove("strip-hover");
       if (s.cfg.onHoverClear) {
         s.cfg.onHoverClear();
       }
     });
     strip.addEventListener("click", (e) => {
+      flip.stop();
       if (s.suppressClick) {
         s.suppressClick = false;
         return;
@@ -2913,6 +3027,7 @@ var VTCore = (() => {
       if (e.button !== 0) {
         return;
       }
+      flip.stop();
       e.preventDefault();
       const r = strip.getBoundingClientRect();
       const fracOf = (x) => Math.max(0, Math.min(1, (x - r.left) / r.width));
@@ -2949,11 +3064,12 @@ var VTCore = (() => {
     });
     q(s.wrap, ".cards").appendChild(card);
     attachZoneChip(zone, card);
-    return {
+    rec = {
       card,
       model,
       zone,
       tt,
+      flip,
       head: card.querySelector(".ft"),
       strip,
       cross: card.querySelector(".xh"),
@@ -2961,6 +3077,7 @@ var VTCore = (() => {
       mag: card.querySelector(".mag"),
       lane: card.querySelector(".card-lane")
     };
+    return rec;
   }
 
   // src/vt/timeline/annotations.ts
@@ -3092,7 +3209,8 @@ var VTCore = (() => {
       const last = m.frames.length ? m.frames[m.frames.length - 1].ts : s.P.from;
       let fresh;
       try {
-        fresh = await s.backend.frames(k.site, k.id, Math.max(last, s.P.from) + 1, Math.min(s.P.to, Date.now()), m.step);
+        const from = Math.max(last, s.P.from) + 1, to = Math.min(s.P.to, Date.now());
+        fresh = s.backend.allFrames ? await s.backend.allFrames(k.site, k.id, from, to) : await s.backend.frames(k.site, k.id, from, to, m.step);
       } catch (e) {
         console.warn("[visual-timeline] live poll failed for " + k.id + ":", e);
         continue;
@@ -3350,7 +3468,8 @@ var VTCore = (() => {
       const last = lastFrame(rec);
       let fresh;
       try {
-        fresh = await s.backend.frames(k.site, k.id, Math.max(last ? last.ts : s.P.from, s.P.from) + 1, Math.min(s.P.to, Date.now()), rec.model.step);
+        const from = Math.max(last ? last.ts : s.P.from, s.P.from) + 1, to = Math.min(s.P.to, Date.now());
+        fresh = s.backend.allFrames ? await s.backend.allFrames(k.site, k.id, from, to) : await s.backend.frames(k.site, k.id, from, to, rec.model.step);
       } catch (e) {
         console.warn("[visual-timeline] live poll failed for " + k.id + ":", e);
         continue;

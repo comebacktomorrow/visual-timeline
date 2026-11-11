@@ -27,7 +27,7 @@ export interface ModelOptions {
 }
 
 export async function buildSourceModel(
-  decl: SourceDecl, P: TimeWindow, backend: Pick<Backend, 'frames'>, budgetSlots: number, opts: ModelOptions = {}
+  decl: SourceDecl, P: TimeWindow, backend: Pick<Backend, 'frames' | 'allFrames'>, budgetSlots: number, opts: ModelOptions = {}
 ): Promise<SourceModel> {
   const expected = opts.expected && opts.expected > 0 ? opts.expected : undefined;
   // a source with an Expected cadence promises it, whatever it declared
@@ -47,7 +47,11 @@ export async function buildSourceModel(
   const lookback = Math.min(wanted, LOOKBACK_STEPS * step);
 
   const now0 = opts.now ?? Date.now();
-  const fetched = await backend.frames(decl.site, decl.id, P.from - lookback, Math.min(P.to, now0), step);
+  // every frame when the backend holds them all (records): slots then know
+  // how many frames they hold (the hover flipbook plays them); else one per step
+  const fetched = backend.allFrames
+    ? await backend.allFrames(decl.site, decl.id, P.from - lookback, Math.min(P.to, now0))
+    : await backend.frames(decl.site, decl.id, P.from - lookback, Math.min(P.to, now0), step);
 
   // the promise in force at a time: its era's pace (the first era's before
   // the window); none for a source whose cadence was only inferred

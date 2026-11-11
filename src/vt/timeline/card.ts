@@ -10,6 +10,7 @@ import type { Slot, SourceDecl, SourceModel } from '../types';
 import { ruleBeyond } from './axis';
 import { hideSelection, setCursor, showSelection } from './cursor';
 import { playerContext } from '../ui/playerContext';
+import { makeFlipbook } from './flipbook';
 import type { Card, TimelineState } from './state';
 
 /* Post-layout dressing, idempotent and re-runnable:
@@ -147,11 +148,34 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   // ~12px they read as zebra noise rather than structure
   renderStrip(s, model, strip, kiosk, tt);
   dressStrip(model);   // hatch alignment + band labels (re-run post-reveal)
+  // the hover flipbook: a slot of several frames plays them in the
+  // magnifier once the cursor has rested on it (flipbook.ts)
+  let rec: Card | null = null;
+  const fetchAll = playerContext(s.backend, s.cfg, s.P, decl, model, tt, () => {}).fetch;
+  const flip = makeFlipbook({
+    frames: (from, to) => (model.frames.length && s.backend.allFrames
+      ? Promise.resolve(model.frames.filter((f) => f.ts >= from && f.ts < to))
+      : fetchAll(from, to)),
+    show: (f, i, n) => {
+      const m = rec?.mag;
+      if (!m) {return;}
+      const im = m.querySelector('img')!;
+      if (im.getAttribute('src') !== f.url) {im.src = f.url;}
+      m.querySelector('.cap')!.textContent = tt.time(f.ts) + tt.sfx(f.ts) + ' · ' + (i + 1) + '/' + n;
+    },
+    playingChanged: (on) => {
+      if (!rec) {return;}
+      rec.mag.classList.toggle('flip', on);
+      // back to the slot's own frame
+      if (!on && !s.destroyed) { rec.shown = null; setCursor(s, s.cursorT, null, true); }
+    },
+  });
   const hoverAt = (e: MouseEvent) => {
     const r = strip.getBoundingClientRect();
     if (!r.width) {return;}   // stale wrapper mid-swap: no geometry, no cursor
     const t = s.P.from + s.SPAN * ((e.clientX - r.left) / r.width);
     setCursor(s, t, card, false);
+    flip.hover(model.slotAt(s.cursorT));
   };
   strip.addEventListener('mousemove', hoverAt);
   strip.addEventListener('mouseenter', e => {
@@ -163,10 +187,12 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     hoverAt(e);
   });
   strip.addEventListener('mouseleave', () => {
+    flip.stop();
     s.wrap.classList.remove('strip-hover');
     if (s.cfg.onHoverClear) {s.cfg.onHoverClear();}
   });
   strip.addEventListener('click', e => {
+    flip.stop();
     if (s.suppressClick) { s.suppressClick = false; return; }
     const sl = model.slotAt(s.cursorT);
     const f = sl && sl.frame;
@@ -188,6 +214,7 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   /* drag-select = zoom, grafana-style: band across all cards, release → onZoom */
   strip.addEventListener('mousedown', e => {
     if (e.button !== 0) {return;}
+    flip.stop();
     e.preventDefault();
     const r = strip.getBoundingClientRect();
     const fracOf = (x: number) => Math.max(0, Math.min(1, (x - r.left) / r.width));
@@ -218,8 +245,8 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   });
   q(s.wrap, '.cards').appendChild(card);
   attachZoneChip(zone, card);
-  return {
-    card, model, zone, tt,
+  rec = {
+    card, model, zone, tt, flip,
     head: card.querySelector<HTMLElement>('.ft')!,
     strip,
     cross: card.querySelector<HTMLElement>('.xh')!,
@@ -227,4 +254,5 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     mag: card.querySelector<HTMLElement>('.mag')!,
     lane: card.querySelector<HTMLElement>('.card-lane')!,
   };
+  return rec;
 }

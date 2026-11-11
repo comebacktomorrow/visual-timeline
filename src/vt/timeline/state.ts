@@ -2,6 +2,7 @@ import type { ImageQueue } from '../ui/imageQueue';
 import type { Preview } from '../ui/preview';
 import type { SourceZone, ZoneTexts } from '../zones/source';
 import type { Backend, MountConfig, MountWindow, SourceDecl, SourceModel } from '../types';
+import type { Flipbook } from './flipbook';
 
 /* One source's card: its model and the elements setCursor and the poll
  * update (all from buildCard's template). */
@@ -17,6 +18,7 @@ export interface Card {
   mag: HTMLElement;
   lane: HTMLElement;
   shown?: string | null; // what the magnifier and header show (setCursor's shownKey)
+  flip?: Flipbook;       // the hover flipbook (M10b)
 }
 
 /* Everything one mountTimeline call shares between its parts: what were

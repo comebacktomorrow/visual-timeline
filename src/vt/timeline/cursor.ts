@@ -105,14 +105,24 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
     // replaces the text node and costs a relayout of every card on each move
     // (the "offline — last seen" header made a gap 4-5x the layout of
     // frames; perf/README.md). Moves within one slot only move the crosshair.
-    const key = shownKey(slot);
+    // a crosshair moved from elsewhere, with the mouse off the strips, stops
+    // a playing flipbook (one moved by this strip's own hover keeps it)
+    if (external && c.flip && !s.wrap.classList.contains('strip-hover')) {c.flip.stop();}
+    if (c.flip?.playing()) {continue;}   // the flipbook has the magnifier
+    // a slot of several frames says so on the strip under the mouse, where
+    // resting on it plays them
+    const many = !!(slot && slot.frame && !slot.paused && !slot.beyond && slot.count > 1 && c.card.classList.contains('hovered'));
+    const base = shownKey(slot);
+    const key = base === null ? null : base + (many ? ':n' : '');
     if (key !== null && key === c.shown) {continue;}
     c.shown = key;
     c.mag.classList.remove('ghost');
     if (slot && slot.frame) {
       c.mag.classList.remove('gap', 'future', 'off'); clearPauseClasses(c.mag);
       setSrc(c.mag.querySelector('img')!, slot.frame.url);
-      setText(c.mag.querySelector('.cap')!, tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts));
+      // a slot of several frames says so: resting on it plays them
+      setText(c.mag.querySelector('.cap')!, tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts) +
+        (many ? ' · ' + slot.count + ' frames' : ''));
       setText(c.head, '');                 // healthy: time lives on the magnifier
       c.head.classList.remove('stale'); clearPauseClasses(c.head);
     } else if (slot && slot.paused) {
