@@ -29,7 +29,7 @@ describe('the preview player', () => {
     window: { from: at(0), to: at(120) },
     step: 5 * MIN,
     fetch: async (from, to) => { fetches.push([from, to]); return all.filter((f) => f.ts >= from && f.ts <= to); },
-    intervals: (frames, range) => buildIntervals({ frames, window: range, now: at(999), promiseAt: () => MIN }).intervals,
+    intervals: (frames, range, sample) => buildIntervals({ frames, window: range, now: at(999), promiseAt: () => MIN, sample }).intervals,
     slotAt: fiveMinuteSlots,
     onTime: (t) => times.push(t),
     tt: { time: (t: number) => new Date(t).toISOString().slice(11, 19), short: (t: number) => new Date(t).toISOString().slice(11, 16), sfx: () => '' } as never,
@@ -184,6 +184,19 @@ describe('the preview player', () => {
     press('style');
     await flush();
     expect(asked).toEqual([560, 22]);
+  });
+
+  test('a thinned slot is judged at the interval it was asked for at, not drawn offline between its rows', async () => {
+    localStorage.setItem('ktl-player', JSON.stringify({ style: 'thumbs' }));
+    // a frame a second promised; the slot asked for at 22 points (thumbnails
+    // over two slots): rows 25 s apart, as a thinning source answers
+    const rows = Array.from({ length: 12 }, (_, i) => ({ ts: at(30) + i * 25e3, url: `r${i}.jpg`, count: 25 }));
+    teardown = mountPlayer(el, rows[0], ctx({
+      intervals: (frames, range, sample) => buildIntervals({ frames, window: range, now: at(999), promiseAt: () => 1000, sample }).intervals,
+      detail: async (from, to) => rows.filter((f) => f.ts >= from && f.ts < to),
+    }), () => {});
+    await flush();
+    expect(el.querySelectorAll('.lane.dropped')).toHaveLength(0);
   });
 
   test('more frames than drawn: Zoom is highlighted, and says why', async () => {

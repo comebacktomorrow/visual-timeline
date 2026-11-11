@@ -81,10 +81,10 @@ export async function buildSourceModel(
   const model: SourceModel = {
     eras, step, promised, frames: [], intervals: [], slots: [], drops: [], lastActive: null,
     slotAt: () => null, intervalAt: () => null,
-    // frames for a span (the player's): exact when they were fetched at full
-    // resolution for it, else judged at the interval they were asked for at
-    intervalsFor: (frames, window, now, exact) => buildIntervals({
-      frames, promiseAt, pauses, hold, window, now, promiseOverride: expected, ...(exact ? {} : { sample: opts.sample }),
+    // frames for a span (the player's), judged at the interval they were
+    // asked for at: the span's own (0: every frame), else the panel's
+    intervalsFor: (frames, window, now, sample) => buildIntervals({
+      frames, promiseAt, pauses, hold, window, now, promiseOverride: expected, sample: sample ?? opts.sample,
     }).intervals,
     refresh(fresh: Frame[], now: number) {
       const byTs = new Map(model.frames.map((f) => [f.ts, f]));

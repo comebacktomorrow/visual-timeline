@@ -211,7 +211,7 @@ export interface SourceModel {
   refresh(fresh: Frame[], now: number): void;
   /* intervals for other frames over another range, by this host's promise,
    * pauses and hold (the preview player's scrubber) */
-  intervalsFor(frames: Frame[], window: TimeWindow, now: number, exact?: boolean): Interval[];
+  intervalsFor(frames: Frame[], window: TimeWindow, now: number, sample?: number): Interval[];
 }
 
 /* ---- mounts (mountTimeline, mountGrid) ---- */

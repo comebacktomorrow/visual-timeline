@@ -39,7 +39,7 @@ export interface PlayerContext {
    * by the source (with counts) */
   detail?(from: number, to: number, maxPoints?: number): Promise<Frame[]>;
   /** the intervals for frames over a range (the host's promise and pauses) */
-  intervals(frames: Frame[], range: TimeWindow): Interval[];
+  intervals(frames: Frame[], range: TimeWindow, sample?: number): Interval[];
   /** the strip's slot at a time */
   slotAt(t: number): PlayerSlot | null;
   /** the player moved to another slot: the mount moves its crosshair */
@@ -290,12 +290,16 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     const seq = ++loadSeq;
     const range = { from: slot.from, to: slot.to };
     let got: Frame[] = [];
+    let sample: number | undefined;
     try {
       // with the frame in force at the slot's start: at the same resolution as
       // the slot's (a thinned one from before would read as a broken promise)
       if (ctx.detail) {
-        // no more than the timeline can draw (and as many for the slot before)
-        const all = await ctx.detail(range.from - ctx.step, range.to, 2 * most());
+        // no more than the timeline can draw (and as many for the slot before);
+        // a source may answer one per interval, so promises are judged at it
+        const points = 2 * most();
+        const all = await ctx.detail(range.from - ctx.step, range.to, points);
+        sample = Math.ceil((range.to - range.from + ctx.step) / points);
         got = [...all.filter((f) => f.ts < range.from).slice(-1), ...all.filter((f) => f.ts >= range.from)];
       } else {
         const before = (await ctx.fetch(range.from - ctx.step * 2, range.from)).filter((f) => f.ts < range.from);
@@ -307,7 +311,7 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     for (const f of got) {byTs.set(f.ts, f);}
     if (start.ts >= range.from && start.ts < range.to && !byTs.has(start.ts)) {byTs.set(start.ts, start);}
     frames = [...byTs.values()].sort((x, y) => x.ts - y.ts);
-    ivs = ctx.intervals(frames, range);
+    ivs = ctx.intervals(frames, range, sample);
     drawScrub();
     labels();
     seek(at);

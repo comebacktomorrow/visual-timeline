@@ -682,9 +682,9 @@ var VTCore = (() => {
       lastActive: null,
       slotAt: () => null,
       intervalAt: () => null,
-      // frames for a span (the player's): exact when they were fetched at full
-      // resolution for it, else judged at the interval they were asked for at
-      intervalsFor: (frames, window2, now, exact) => buildIntervals({
+      // frames for a span (the player's), judged at the interval they were
+      // asked for at: the span's own (0: every frame), else the panel's
+      intervalsFor: (frames, window2, now, sample2) => buildIntervals({
         frames,
         promiseAt,
         pauses,
@@ -692,7 +692,7 @@ var VTCore = (() => {
         window: window2,
         now,
         promiseOverride: expected,
-        ...exact ? {} : { sample: opts.sample }
+        sample: sample2 ?? opts.sample
       }).intervals,
       refresh(fresh, now) {
         const byTs = new Map(model.frames.map((f) => [f.ts, f]));
@@ -2134,9 +2134,12 @@ var VTCore = (() => {
       const seq = ++loadSeq;
       const range = { from: slot.from, to: slot.to };
       let got = [];
+      let sample2;
       try {
         if (ctx.detail) {
-          const all = await ctx.detail(range.from - ctx.step, range.to, 2 * most());
+          const points = 2 * most();
+          const all = await ctx.detail(range.from - ctx.step, range.to, points);
+          sample2 = Math.ceil((range.to - range.from + ctx.step) / points);
           got = [...all.filter((f) => f.ts < range.from).slice(-1), ...all.filter((f) => f.ts >= range.from)];
         } else {
           const before = (await ctx.fetch(range.from - ctx.step * 2, range.from)).filter((f) => f.ts < range.from);
@@ -2156,7 +2159,7 @@ var VTCore = (() => {
         byTs.set(start.ts, start);
       }
       frames = [...byTs.values()].sort((x, y) => x.ts - y.ts);
-      ivs = ctx.intervals(frames, range);
+      ivs = ctx.intervals(frames, range, sample2);
       drawScrub();
       labels();
       seek(at);
@@ -2838,7 +2841,9 @@ var VTCore = (() => {
       fetch: (from, to) => backend.allFrames ? backend.allFrames(decl.site, decl.id, from, to) : backend.frames(decl.site, decl.id, from, to, Math.max(model.lastActive?.cadence ?? model.step, Math.ceil((to - from) / PLAYER_BUCKETS))),
       ...backend.detail ? { detail: (from, to, maxPoints) => backend.detail(decl.site, decl.id, from, to, maxPoints) } : {},
       // a slot fetched again at full resolution is judged exactly
-      intervals: (frames, range) => model.intervalsFor(frames, range, Date.now(), !!backend.detail),
+      // a slot asked for again is judged at the interval it was asked at; one
+      // from the panel's own frames, at the panel's
+      intervals: (frames, range, sample2) => model.intervalsFor(frames, range, Date.now(), backend.detail ? sample2 ?? 0 : void 0),
       // the strip's own slots, so the player's slots are the ones on screen
       slotAt: (t) => {
         const sl = model.slotAt(t);
