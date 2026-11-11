@@ -83,10 +83,11 @@ export interface Backend {
   /* every frame in [from, to], unthinned: a backend that holds them all
    * (frame records) offers it, for the preview player (M10) */
   allFrames?(site: string, id: string, from: number, to: number): Promise<Frame[]>;
-  /* one short span's frames at full resolution, asking for them again if
-   * need be (the panel re-runs its query for the span): what the preview
-   * player and the hover flipbook play (M10) */
-  detail?(site: string, id: string, from: number, to: number): Promise<Frame[]>;
+  /* one short span's frames, asking for them again if need be (the panel
+   * re-runs its query for the span): what the preview player and the hover
+   * flipbook play (M10). At most maxPoints, as a source thins them (each
+   * kept frame's count says how many it stands for); unset, all of them */
+  detail?(site: string, id: string, from: number, to: number, maxPoints?: number): Promise<Frame[]>;
   /* demo seam only; raw annotations, normalized by normAnnotations */
   annotations?(): RawAnnotation[];
 }

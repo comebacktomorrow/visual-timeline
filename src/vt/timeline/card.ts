@@ -155,8 +155,8 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   const flip = makeFlipbook({
     // a slot's frames: asked again at full resolution where the backend can
     // (the panel re-runs its query), else the frames the model holds
-    frames: (from, to) => (s.backend.detail
-      ? s.backend.detail(decl.site, decl.id, from, to)
+    frames: (from, to, maxPoints) => (s.backend.detail
+      ? s.backend.detail(decl.site, decl.id, from, to, maxPoints)
       : model.frames.length && s.backend.allFrames
         ? Promise.resolve(model.frames.filter((f) => f.ts >= from && f.ts < to))
         : fetchAll(from, to)),

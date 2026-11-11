@@ -2116,14 +2116,14 @@ var VTCore = (() => {
     function caption(f) {
       const fs = shown();
       const every = inSlot();
-      const all = every.length;
-      const i = f ? every.indexOf(f) : -1;
-      const place2 = all > 1 && i >= 0 ? i + 1 + " of " + all + " in this slot" : "";
+      const total = every.reduce((a, x) => a + (x.count && x.count > 1 ? x.count : 1), 0);
+      const i = f ? fs.indexOf(f) : -1;
+      const place2 = fs.length > 1 && i >= 0 ? i + 1 + " of " + fs.length + (total > fs.length ? " shown \xB7 " + total + " in this slot" : " in this slot") : total > 1 && f ? total + " in this slot" : "";
       cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) + (place2 ? " (" + place2 + ")" : "") : place2 ? " \xB7 frame " + place2 : "");
       const zoom = el.querySelector('button[data-a="zoom"]');
       if (zoom) {
-        zoom.classList.toggle("hint", all > fs.length);
-        zoom.title = all > fs.length ? all + " frames in this slot, " + fs.length + " drawn: zoom the dashboard to the slot to see them all" : "Zoom the dashboard to this slot";
+        zoom.classList.toggle("hint", total > fs.length);
+        zoom.title = total > fs.length ? total + " frames in this slot, " + fs.length + " shown: zoom the dashboard to the slot to see them all" : "Zoom the dashboard to this slot";
       }
     }
     function seek(to) {
@@ -2136,7 +2136,7 @@ var VTCore = (() => {
       let got = [];
       try {
         if (ctx.detail) {
-          const all = await ctx.detail(range.from - ctx.step, range.to);
+          const all = await ctx.detail(range.from - ctx.step, range.to, 2 * most());
           got = [...all.filter((f) => f.ts < range.from).slice(-1), ...all.filter((f) => f.ts >= range.from)];
         } else {
           const before = (await ctx.fetch(range.from - ctx.step * 2, range.from)).filter((f) => f.ts < range.from);
@@ -2245,12 +2245,14 @@ var VTCore = (() => {
           }
           labels();
           break;
+        // a style draws a different number of frames: ask for that many
         case "style":
           prefs.style = prefs.style === "ticks" ? "thumbs" : "ticks";
           savePrefs(prefs);
           labels();
           drawScrub();
           show();
+          void load(t);
           break;
         case "zoom":
           stop();
@@ -2834,7 +2836,7 @@ var VTCore = (() => {
       step: model.step,
       tt,
       fetch: (from, to) => backend.allFrames ? backend.allFrames(decl.site, decl.id, from, to) : backend.frames(decl.site, decl.id, from, to, Math.max(model.lastActive?.cadence ?? model.step, Math.ceil((to - from) / PLAYER_BUCKETS))),
-      ...backend.detail ? { detail: (from, to) => backend.detail(decl.site, decl.id, from, to) } : {},
+      ...backend.detail ? { detail: (from, to, maxPoints) => backend.detail(decl.site, decl.id, from, to, maxPoints) } : {},
       // a slot fetched again at full resolution is judged exactly
       intervals: (frames, range) => model.intervalsFor(frames, range, Date.now(), !!backend.detail),
       // the strip's own slots, so the player's slots are the ones on screen
@@ -2852,6 +2854,7 @@ var VTCore = (() => {
   // src/vt/timeline/flipbook.ts
   var DWELL_MS = 3e3;
   var FLIP_FPS = 4;
+  var FLIP_MAX = 100;
   function makeFlipbook(target, anySlot = false) {
     let current = null;
     let dwell = null;
@@ -2873,7 +2876,7 @@ var VTCore = (() => {
       const mine = ++seq;
       let frames = [];
       try {
-        frames = await target.frames(sl.x0, sl.x0 + sl.span);
+        frames = await target.frames(sl.x0, sl.x0 + sl.span, FLIP_MAX);
       } catch {
         return;
       }
@@ -3048,7 +3051,7 @@ var VTCore = (() => {
     const flip = makeFlipbook({
       // a slot's frames: asked again at full resolution where the backend can
       // (the panel re-runs its query), else the frames the model holds
-      frames: (from, to) => s.backend.detail ? s.backend.detail(decl.site, decl.id, from, to) : model.frames.length && s.backend.allFrames ? Promise.resolve(model.frames.filter((f) => f.ts >= from && f.ts < to)) : fetchAll(from, to),
+      frames: (from, to, maxPoints) => s.backend.detail ? s.backend.detail(decl.site, decl.id, from, to, maxPoints) : model.frames.length && s.backend.allFrames ? Promise.resolve(model.frames.filter((f) => f.ts >= from && f.ts < to)) : fetchAll(from, to),
       show: (f, i, n) => {
         const m = rec?.mag;
         if (!m) {

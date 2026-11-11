@@ -7,6 +7,7 @@ import { makeDetail } from './detail';
  * source, as Grafana's data source service hands them out */
 const calls: Array<{ uid: string; from: number; to: number; targets: string[]; vars: unknown }> = [];
 const parents: unknown[] = [];
+const limits: unknown[] = [];
 const T0 = Date.UTC(2026, 0, 1, 10);
 const MIN = 60e3;
 jest.mock('@grafana/runtime', () => ({
@@ -14,6 +15,7 @@ jest.mock('@grafana/runtime', () => ({
     get: async (ref: { uid: string } | undefined) => ({
       query: (req: any) => {
         parents.push([req.scopedVars.__vt_window_from?.value, req.scopedVars.__vt_window_to?.value]);
+        limits.push([req.maxDataPoints, req.intervalMs, req.scopedVars.__interval_ms?.value]);
         calls.push({ uid: ref?.uid ?? '', from: req.range.from.valueOf(), to: req.range.to.valueOf(), targets: req.targets.map((t: any) => t.refId), vars: req.scopedVars.__from });
         const ts = [0, 1, 2, 3, 4].map((m) => T0 + m * MIN).filter((t) => t >= req.range.from.valueOf() && t <= req.range.to.valueOf());
         const frame = toDataFrame({ refId: req.targets[0].refId, fields: [
@@ -53,6 +55,13 @@ describe('a slot\'s frames, by running the panel\'s queries again', () => {
     parents.length = 0;
     await makeDetail(() => request, () => ({}))('', 'cam-a', T0 + 5 * MIN, T0 + 6 * MIN);
     expect(parents).toEqual([[T0, T0 + 60 * MIN], [T0, T0 + 60 * MIN]]);
+  });
+
+  test('a limit asks for that many points, as Grafana would ask a panel that wide', async () => {
+    limits.length = 0;
+    await makeDetail(() => request, () => ({}))('', 'cam-a', T0, T0 + 10 * MIN, 20);
+    // 10 minutes in 20 points: 30 s apart, as max data points and $__interval_ms
+    expect(limits).toEqual([[20, 30e3, 30e3], [20, 30e3, 30e3]]);
   });
 
   test('a span asked twice is asked once', async () => {

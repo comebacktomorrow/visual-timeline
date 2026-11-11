@@ -35,8 +35,9 @@ export interface PlayerContext {
   step: number;
   /** the host's frames in [from, to], as the mount has them (perhaps thinned) */
   fetch(from: number, to: number): Promise<Frame[]>;
-  /** one slot's frames at full resolution, asking again if need be */
-  detail?(from: number, to: number): Promise<Frame[]>;
+  /** one slot's frames, asking again if need be: at most maxPoints, thinned
+   * by the source (with counts) */
+  detail?(from: number, to: number, maxPoints?: number): Promise<Frame[]>;
   /** the intervals for frames over a range (the host's promise and pauses) */
   intervals(frames: Frame[], range: TimeWindow): Interval[];
   /** the strip's slot at a time */
@@ -255,12 +256,16 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
 
   function caption(f: Frame | null): void {
     const fs = shown();
-    // the frame's place among all the slot's frames, drawn or not
+    // the frames the player has for the slot, and how many the slot holds:
+    // more, when the source thinned them (each row's count says how many)
     const every = inSlot();
-    const all = every.length;
-    const i = f ? every.indexOf(f) : -1;
-    // "frame 22 of 89 in this slot"; between frames, the one shown and its place
-    const place = all > 1 && i >= 0 ? (i + 1) + ' of ' + all + ' in this slot' : '';
+    const total = every.reduce((a, x) => a + (x.count && x.count > 1 ? x.count : 1), 0);
+    const i = f ? fs.indexOf(f) : -1;
+    // "frame 22 of 89 in this slot"; thinned or drawn sparser, "frame 12 of
+    // 280 shown · 455 in this slot"; between frames, the one shown and its place
+    const place = fs.length > 1 && i >= 0
+      ? (i + 1) + ' of ' + fs.length + (total > fs.length ? ' shown · ' + total + ' in this slot' : ' in this slot')
+      : total > 1 && f ? total + ' in this slot' : '';
     cap.textContent = (ctx.label ? ctx.label + ' — ' : '') + ctx.tt.time(t) + ctx.tt.sfx(t) +
       (f && f.ts !== t
         ? ' · frame ' + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) + (place ? ' (' + place + ')' : '')
@@ -268,8 +273,8 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     // more frames than drawn: Zoom shows them all
     const zoom = el.querySelector<HTMLButtonElement>('button[data-a="zoom"]');
     if (zoom) {
-      zoom.classList.toggle('hint', all > fs.length);
-      zoom.title = all > fs.length ? all + ' frames in this slot, ' + fs.length + ' drawn: zoom the dashboard to the slot to see them all' : 'Zoom the dashboard to this slot';
+      zoom.classList.toggle('hint', total > fs.length);
+      zoom.title = total > fs.length ? total + ' frames in this slot, ' + fs.length + ' shown: zoom the dashboard to the slot to see them all' : 'Zoom the dashboard to this slot';
     }
   }
 
@@ -289,7 +294,8 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
       // with the frame in force at the slot's start: at the same resolution as
       // the slot's (a thinned one from before would read as a broken promise)
       if (ctx.detail) {
-        const all = await ctx.detail(range.from - ctx.step, range.to);
+        // no more than the timeline can draw (and as many for the slot before)
+        const all = await ctx.detail(range.from - ctx.step, range.to, 2 * most());
         got = [...all.filter((f) => f.ts < range.from).slice(-1), ...all.filter((f) => f.ts >= range.from)];
       } else {
         const before = (await ctx.fetch(range.from - ctx.step * 2, range.from)).filter((f) => f.ts < range.from);
@@ -361,7 +367,8 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
       case 'prev-slot': stop(); toSlot(-1); break;
       case 'next-slot': stop(); toSlot(1); break;
       case 'fps': prefs.fps = FPS[(FPS.indexOf(prefs.fps) + 1) % FPS.length]; savePrefs(prefs); if (playing) { stop(); play(); } labels(); break;
-      case 'style': prefs.style = prefs.style === 'ticks' ? 'thumbs' : 'ticks'; savePrefs(prefs); labels(); drawScrub(); show(); break;
+      // a style draws a different number of frames: ask for that many
+      case 'style': prefs.style = prefs.style === 'ticks' ? 'thumbs' : 'ticks'; savePrefs(prefs); labels(); drawScrub(); show(); void load(t); break;
       case 'zoom': stop(); ctx.onZoom?.(slot.from, slot.to); close(); break;
     }
   };

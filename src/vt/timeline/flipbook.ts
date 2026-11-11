@@ -12,6 +12,8 @@ import type { Frame, Slot, TickSlot } from '../types';
 export const DWELL_MS = 3000;
 /** Frames a second while it plays. */
 export const FLIP_FPS = 4;
+/** At most this many frames for a slot it plays: the source thins the rest. */
+export const FLIP_MAX = 100;
 
 export interface Flipbook {
   /** the cursor is over this slot (or none) */
@@ -22,8 +24,8 @@ export interface Flipbook {
 }
 
 export interface FlipTarget {
-  /** the frames taken within [from, to) */
-  frames(from: number, to: number): Promise<Frame[]>;
+  /** the frames taken within [from, to), at most maxPoints */
+  frames(from: number, to: number, maxPoints: number): Promise<Frame[]>;
   /** show this frame in the magnifier, with its caption */
   show(f: Frame, i: number, n: number): void;
   /** playing started (true) or stopped (false): restore the magnifier */
@@ -48,7 +50,7 @@ export function makeFlipbook(target: FlipTarget, anySlot = false): Flipbook {
   async function start(sl: TickSlot): Promise<void> {
     const mine = ++seq;
     let frames: Frame[] = [];
-    try { frames = await target.frames(sl.x0, sl.x0 + sl.span); } catch { return; }
+    try { frames = await target.frames(sl.x0, sl.x0 + sl.span, FLIP_MAX); } catch { return; }
     if (mine !== seq || !current || current.x0 !== sl.x0) {return;}
     frames = frames.filter((f) => f.ts >= sl.x0 && f.ts < sl.x0 + sl.span).sort((a, b) => a.ts - b.ts);
     if (frames.length < 2) {return;}

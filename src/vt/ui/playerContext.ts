@@ -20,7 +20,7 @@ export function playerContext(
     fetch: (from, to) => backend.allFrames
       ? backend.allFrames(decl.site, decl.id, from, to)
       : backend.frames(decl.site, decl.id, from, to, Math.max(model.lastActive?.cadence ?? model.step, Math.ceil((to - from) / PLAYER_BUCKETS))),
-    ...(backend.detail ? { detail: (from: number, to: number) => backend.detail!(decl.site, decl.id, from, to) } : {}),
+    ...(backend.detail ? { detail: (from: number, to: number, maxPoints?: number) => backend.detail!(decl.site, decl.id, from, to, maxPoints) } : {}),
     // a slot fetched again at full resolution is judged exactly
     intervals: (frames, range) => model.intervalsFor(frames, range, Date.now(), !!backend.detail),
     // the strip's own slots, so the player's slots are the ones on screen

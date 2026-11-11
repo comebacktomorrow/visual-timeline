@@ -158,7 +158,7 @@ describe('the preview player', () => {
     await flush();
     // 560 px wide (unlaid out), a tick per 2 px
     expect(el.querySelectorAll('.tick')).toHaveLength(280);
-    expect(cap()).toBe('site / cam — 10:30:00 · frame 1 of 300 in this slot');
+    expect(cap()).toBe('site / cam — 10:30:00 · frame 1 of 280 shown · 300 in this slot');
     expect(el.querySelector('button[data-a="zoom"]')).toBeNull();
     press('style');
     expect(el.querySelectorAll('.thumb')).toHaveLength(11);
@@ -167,13 +167,32 @@ describe('the preview player', () => {
     expect(total).toBeCloseTo(100, 5);
   });
 
+  test('the slot is asked for no more frames than its timeline draws; a thinned answer\'s counts say how many it holds', async () => {
+    const asked: number[] = [];
+    // five rows, each standing for 60 frames
+    const thinned = [30, 31, 32, 33, 34].map((m) => ({ ...fr(m), count: 60 }));
+    teardown = mountPlayer(el, thinned[0], ctx({
+      detail: async (from, to, maxPoints) => { asked.push(maxPoints!); return thinned.filter((f) => f.ts >= from && f.ts < to); },
+      onZoom: () => {},
+    }), () => {});
+    await flush();
+    // ticks: a tick per 2 px of 560, for the slot and the one before it
+    expect(asked).toEqual([560]);
+    expect(cap()).toBe('site / cam — 10:30:00 · frame 1 of 5 shown · 300 in this slot');
+    expect(el.querySelector('button[data-a="zoom"]')!.classList.contains('hint')).toBe(true);
+    // thumbnails draw fewer: asked again for that many
+    press('style');
+    await flush();
+    expect(asked).toEqual([560, 22]);
+  });
+
   test('more frames than drawn: Zoom is highlighted, and says why', async () => {
     const dense = Array.from({ length: 300 }, (_, i) => ({ ts: at(30) + i * 1000, url: `d${i}.jpg` }));
     teardown = mountPlayer(el, dense[0], ctx({ fetch: async (from, to) => dense.filter((f) => f.ts >= from && f.ts <= to), onZoom: () => {} }), () => {});
     await flush();
     const zoom = el.querySelector('button[data-a="zoom"]') as HTMLButtonElement;
     expect(zoom.classList.contains('hint')).toBe(true);
-    expect(zoom.title).toBe('300 frames in this slot, 280 drawn: zoom the dashboard to the slot to see them all');
+    expect(zoom.title).toBe('300 frames in this slot, 280 shown: zoom the dashboard to the slot to see them all');
   });
 
   test('Zoom sets the dashboard\'s range to the slot, and closes the player', async () => {
