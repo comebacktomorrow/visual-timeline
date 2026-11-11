@@ -158,7 +158,7 @@ describe('the preview player', () => {
     await flush();
     // 560 px wide (unlaid out), a tick per 2 px
     expect(el.querySelectorAll('.tick')).toHaveLength(280);
-    expect(cap()).toBe('site / cam — 10:30:00 · 1/280 of 300');
+    expect(cap()).toBe('site / cam — 10:30:00 · 1/300 in slot');
     expect(el.querySelector('button[data-a="zoom"]')).toBeNull();
     press('style');
     expect(el.querySelectorAll('.thumb')).toHaveLength(11);

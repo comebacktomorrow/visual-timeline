@@ -1534,12 +1534,12 @@ var VTCore = (() => {
 .ktl-pop .cap { text-align:center; color:var(--ktl-text); font-size:11px; padding:3px 0 0;
                 font-variant-numeric:tabular-nums; }
 /* the preview as a player (M10): stage, scrubber, controls */
-.ktl-pop.player { cursor:default; padding:6px; width:min(720px, 92vw); font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;
+.ktl-pop.player { cursor:default; padding:6px; width:min(720px, 92vw); max-width:92vw; font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;
                   color:var(--ktl-text); display:flex; flex-direction:column; gap:6px; }
 .ktl-pop.player .stage { position:relative; display:flex; align-items:center; justify-content:center; background:var(--ktl-media);
                          border-radius:2px; height:min(55vh, 405px); }
 /* one size whatever the frame's shape: the popup doesn't change size as it plays */
-.ktl-pop.player .stage img { max-width:100%; max-height:100%; object-fit:contain; }
+.ktl-pop.player .stage img { width:100%; height:100%; object-fit:contain; }
 .ktl-pop.player.off .stage img { opacity:.35; }
 .ktl-pop.player .stage .state { position:absolute; inset:auto 0 8px; text-align:center; font-weight:700; color:var(--ktl-off);
                                  text-transform:uppercase; letter-spacing:.04em; pointer-events:none; }
@@ -1561,9 +1561,9 @@ var VTCore = (() => {
 .ktl-pop.player.thumbs .tick { height:6px; }
 .ktl-pop.player .head { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--ktl-accent); pointer-events:none; }
 .ktl-pop.player .bar { display:flex; align-items:center; gap:4px; }
-/* one line: the caption gives way, so the bar never wraps and grows the popup */
-.ktl-pop.player .bar .cap { flex:1 1 auto; min-width:0; padding:0 6px; text-align:center;
-                            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ktl-pop.player .bar .spacer { flex:1 1 auto; }
+/* the caption on its own line: it gives way rather than wrap and grow the popup */
+.ktl-pop.player > .cap { padding:0 4px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .ktl-pop.player button { flex:0 0 auto; }
 .ktl-pop.player button.hint { border-color:var(--ktl-accent); color:var(--ktl-accent); }
 .ktl-pop.player button { font:inherit; color:var(--ktl-text); background:transparent; border:1px solid var(--ktl-border);
@@ -1958,12 +1958,15 @@ var VTCore = (() => {
   }
   var TICK_PX = 2;
   var THUMB_PX = 48;
+  var STAGE_H = 405;
+  var MIN_W = 400;
+  var MAX_W = 960;
   var btn = (a, label, title) => `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
   function mountPlayer(el, start, ctx, place, close = () => {
   }) {
     const prefs = loadPrefs(ctx);
     el.classList.add("player");
-    el.innerHTML = '<div class="stage"><div class="state"></div></div><div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="bar">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame in this slot (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame in this slot (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '<span class="cap"></span>' + btn("fps", "", "Speed") + btn("style", "", "Scrubber: ticks or thumbnails") + (ctx.onZoom ? btn("zoom", "Zoom", "Zoom the dashboard to this slot") : "") + btn("close", "\u2715", "Close (Esc)") + "</div>";
+    el.innerHTML = '<div class="stage"><div class="state"></div></div><div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="cap"></div><div class="bar">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame in this slot (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame in this slot (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '<span class="spacer"></span>' + btn("fps", "", "Speed") + btn("style", "", "Scrubber: ticks or thumbnails") + (ctx.onZoom ? btn("zoom", "Zoom", "Zoom the dashboard to this slot") : "") + btn("close", "\u2715", "Close (Esc)") + "</div>";
     const img = document.createElement("img");
     img.alt = "frame";
     img.src = start.url;
@@ -2112,9 +2115,10 @@ var VTCore = (() => {
     }
     function caption(f) {
       const fs = shown();
-      const all = inSlot().length;
-      const i = f ? fs.indexOf(f) : -1;
-      cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : "") + (fs.length > 1 && i >= 0 ? " \xB7 " + (i + 1) + "/" + fs.length + (all > fs.length ? " of " + all : " in slot") : "");
+      const every = inSlot();
+      const all = every.length;
+      const i = f ? every.indexOf(f) : -1;
+      cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : "") + (all > 1 && i >= 0 ? " \xB7 " + (i + 1) + "/" + all + " in slot" : "");
       const zoom = el.querySelector('button[data-a="zoom"]');
       if (zoom) {
         zoom.classList.toggle("hint", all > fs.length);
@@ -2291,7 +2295,35 @@ var VTCore = (() => {
       }
     };
     document.addEventListener("keydown", keyH);
-    img.onload = place;
+    let sized = false;
+    const stage = el.querySelector(".stage");
+    function size() {
+      if (sized || !img.naturalWidth || !img.naturalHeight) {
+        return;
+      }
+      sized = true;
+      const aspect = img.naturalWidth / img.naturalHeight;
+      const pad = 12 + 2;
+      const maxW = Math.min(MAX_W, window.innerWidth * 0.92) - pad;
+      let h = Math.min(STAGE_H, window.innerHeight * 0.55);
+      let w = h * aspect;
+      if (w > maxW) {
+        w = maxW;
+        h = w / aspect;
+      }
+      if (w < MIN_W) {
+        h = Math.min(MIN_W / aspect, STAGE_H * 1.5, window.innerHeight * 0.7);
+        w = h * aspect;
+      }
+      el.style.width = Math.round(Math.max(MIN_W, w) + pad) + "px";
+      stage.style.height = Math.round(h) + "px";
+      drawScrub();
+      show();
+    }
+    img.onload = () => {
+      size();
+      place();
+    };
     img.onerror = () => {
       if (img.dataset.hiOf) {
         img.src = img.dataset.hiOf;
@@ -2299,6 +2331,7 @@ var VTCore = (() => {
       }
     };
     if (img.complete) {
+      size();
       place();
     }
     labels();
@@ -2406,16 +2439,16 @@ var VTCore = (() => {
     el.setAttribute("role", "dialog");
     el.setAttribute("aria-label", site ? site + " / " + kiosk : kiosk);
     document.body.appendChild(el);
-    let placed = false;
+    let placedW = -1;
     const place = () => {
       if (!el.isConnected) {
         return;
       }
       const r = el.getBoundingClientRect();
-      if (placed && r.right <= window.innerWidth && r.bottom <= window.innerHeight) {
+      if (placedW === Math.round(r.width) && r.right <= window.innerWidth && r.bottom <= window.innerHeight) {
         return;
       }
-      placed = true;
+      placedW = Math.round(r.width);
       el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x - r.width / 2)) + "px";
       el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y + 16)) + "px";
     };

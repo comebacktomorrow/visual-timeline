@@ -102,13 +102,14 @@ function openPlayer(root: HTMLElement, site: string, kiosk: string, frame: Frame
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', site ? site + ' / ' + kiosk : kiosk);
   document.body.appendChild(el);
-  let placed = false;
+  let placedW = -1;
   const place = () => {
     if (!el.isConnected) {return;}
     const r = el.getBoundingClientRect();
-    // anchored once, near the click: it doesn't jump as frames change size
-    if (placed && r.right <= window.innerWidth && r.bottom <= window.innerHeight) {return;}
-    placed = true;
+    // anchored near the click, again only when it takes its size from its
+    // first frame: it doesn't move as it plays
+    if (placedW === Math.round(r.width) && r.right <= window.innerWidth && r.bottom <= window.innerHeight) {return;}
+    placedW = Math.round(r.width);
     el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x - r.width / 2)) + 'px';
     el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y + 16)) + 'px';
   };

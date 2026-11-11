@@ -74,6 +74,10 @@ function savePrefs(p: Prefs): void {
  * slot, and steps and plays through those. Zoom shows them all. */
 const TICK_PX = 2;
 const THUMB_PX = 48;
+/* the popup's size (size() in mountPlayer) */
+const STAGE_H = 405;
+const MIN_W = 400;
+const MAX_W = 960;
 
 const btn = (a: string, label: string, title: string) =>
   `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
@@ -87,11 +91,12 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     '<div class="stage"><div class="state"></div></div>' +
     '<div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot">' +
     '<div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div>' +
+    '<div class="cap"></div>' +
     '<div class="bar">' +
     btn('prev-slot', '‹‹', 'Previous slot (Shift+←)') + btn('prev', '‹', 'Previous frame in this slot (←)') +
     btn('play', '▶', 'Play the frames in this slot (Space)') + btn('next', '›', 'Next frame in this slot (→)') +
     btn('next-slot', '››', 'Next slot (Shift+→)') +
-    '<span class="cap"></span>' +
+    '<span class="spacer"></span>' +
     btn('fps', '', 'Speed') + btn('style', '', 'Scrubber: ticks or thumbnails') +
     (ctx.onZoom ? btn('zoom', 'Zoom', 'Zoom the dashboard to this slot') : '') +
     btn('close', '✕', 'Close (Esc)') +
@@ -250,11 +255,13 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
 
   function caption(f: Frame | null): void {
     const fs = shown();
-    const all = inSlot().length;
-    const i = f ? fs.indexOf(f) : -1;
+    // the frame's place among all the slot's frames, drawn or not
+    const every = inSlot();
+    const all = every.length;
+    const i = f ? every.indexOf(f) : -1;
     cap.textContent = (ctx.label ? ctx.label + ' — ' : '') + ctx.tt.time(t) + ctx.tt.sfx(t) +
       (f && f.ts !== t ? ' · frame ' + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : '') +
-      (fs.length > 1 && i >= 0 ? ' · ' + (i + 1) + '/' + fs.length + (all > fs.length ? ' of ' + all : ' in slot') : '');
+      (all > 1 && i >= 0 ? ' · ' + (i + 1) + '/' + all + ' in slot' : '');
     // more frames than drawn: Zoom shows them all
     const zoom = el.querySelector<HTMLButtonElement>('button[data-a="zoom"]');
     if (zoom) {
@@ -384,9 +391,33 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   };
   document.addEventListener('keydown', keyH);
 
-  img.onload = place;
+  /* The popup takes the camera's shape, from its first frame: the image area
+   * a fixed height (STAGE_H, or 55% of the window), as wide as the frame
+   * needs, between what the controls need and MAX_W (or 92% of the window);
+   * a frame too wide for that gets a shorter area. Then it stays that size,
+   * whatever it shows. */
+  let sized = false;
+  const stage = el.querySelector<HTMLElement>('.stage')!;
+  function size(): void {
+    if (sized || !img.naturalWidth || !img.naturalHeight) {return;}
+    sized = true;
+    const aspect = img.naturalWidth / img.naturalHeight;
+    const pad = 12 + 2;   // the popup's padding and border
+    const maxW = Math.min(MAX_W, window.innerWidth * 0.92) - pad;
+    let h = Math.min(STAGE_H, window.innerHeight * 0.55);
+    let w = h * aspect;
+    if (w > maxW) { w = maxW; h = w / aspect; }
+    // a frame narrower than the controls (a portrait screen): taller, to
+    // fill more of the width they need
+    if (w < MIN_W) { h = Math.min(MIN_W / aspect, STAGE_H * 1.5, window.innerHeight * 0.7); w = h * aspect; }
+    el.style.width = Math.round(Math.max(MIN_W, w) + pad) + 'px';
+    stage.style.height = Math.round(h) + 'px';
+    drawScrub();   // as many thumbnails as the new width holds
+    show();
+  }
+  img.onload = () => { size(); place(); };
   img.onerror = () => { if (img.dataset.hiOf) { img.src = img.dataset.hiOf; delete img.dataset.hiOf; } };
-  if (img.complete) {place();}
+  if (img.complete) { size(); place(); }
   labels();
   caption(start);
   void load(start.ts);
