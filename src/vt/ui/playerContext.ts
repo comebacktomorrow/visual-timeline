@@ -20,6 +20,11 @@ export function playerContext(
       ? backend.allFrames(decl.site, decl.id, from, to)
       : backend.frames(decl.site, decl.id, from, to, Math.max(model.lastActive?.cadence ?? model.step, Math.ceil((to - from) / PLAYER_BUCKETS))),
     intervals: (frames, range) => model.intervalsFor(frames, range, Date.now()),
+    // the strip's own slots, so the player's slots are the ones on screen
+    slotAt: (t) => {
+      const sl = model.slotAt(t);
+      return sl ? { from: sl.x0, to: sl.x0 + sl.span, ts: sl.ts, ...(sl.frame ? { frameTs: sl.frame.ts } : {}) } : null;
+    },
     onTime,
     reach: cfg.playerReach === 'all' ? 'all' : cfg.playerReach === 'near' ? 'near' : undefined,
     scrubber: cfg.playerScrubber === 'thumbs' ? 'thumbs' : cfg.playerScrubber === 'ticks' ? 'ticks' : undefined,

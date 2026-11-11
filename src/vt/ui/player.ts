@@ -8,12 +8,25 @@ import type { Frame, TimeWindow } from '../types';
  * the host's frames. A non-visual scrubber (a tick per frame at its true
  * time, over the stretches the strip draws: dropped, no data, pauses) or
  * thumbnails; the clicked slot and NEAR_SLOTS either side, or the whole
- * range; previous and next frame and slot; play, at a speed, looping the
- * range or continuing past it, moving the dashboard's crosshair as it goes.
- * Only the frame under the playhead loads, and a few ahead while playing. */
+ * range; previous and next frame and slot.
+ *
+ * Play is for what a slot can't show: it loops the frames taken within the
+ * current slot, and the dashboard's crosshair stays where it is. The
+ * crosshair moves only when the playhead moves to another slot (previous
+ * and next slot, the scrubber, or stepping a frame past a slot's edge).
+ * Only the frame under the playhead loads, and the slot's frames while it
+ * plays. */
 
 export type ScrubStyle = 'ticks' | 'thumbs';
-export type PlayMode = 'loop' | 'continuous';
+
+/** A slot of the host's strip, as the player needs it: its span, its tick,
+ * and the frame the strip shows for it. */
+export interface PlayerSlot {
+  from: number;
+  to: number;
+  ts: number;
+  frameTs?: number;
+}
 
 /** What the player needs from the mount that opened it. */
 export interface PlayerContext {
@@ -25,7 +38,9 @@ export interface PlayerContext {
   fetch(from: number, to: number): Promise<Frame[]>;
   /** the intervals for frames over a range (the host's promise and pauses) */
   intervals(frames: Frame[], range: TimeWindow): Interval[];
-  /** the playhead moved: the mount moves its crosshair */
+  /** the strip's slot at a time */
+  slotAt(t: number): PlayerSlot | null;
+  /** the playhead moved to another slot: the mount moves its crosshair */
   onTime?(t: number): void;
   tt: ZoneTexts;
   /** what the caption names: "site / host" */
@@ -35,18 +50,17 @@ export interface PlayerContext {
   scrubber?: ScrubStyle;
 }
 
-interface Prefs { reach: Reach; style: ScrubStyle; fps: number; mode: PlayMode }
+interface Prefs { reach: Reach; style: ScrubStyle; fps: number }
 const PREFS_KEY = 'ktl-player';
 const FPS = [1, 2, 4, 8, 16];
 function loadPrefs(ctx: PlayerContext): Prefs {
-  const base: Prefs = { reach: ctx.reach ?? 'near', style: ctx.scrubber ?? 'ticks', fps: 4, mode: 'loop' };
+  const base: Prefs = { reach: ctx.reach ?? 'near', style: ctx.scrubber ?? 'ticks', fps: 4 };
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
     return {
       reach: p.reach === 'all' || p.reach === 'near' ? p.reach : base.reach,
       style: p.style === 'thumbs' || p.style === 'ticks' ? p.style : base.style,
       fps: FPS.includes(p.fps) ? p.fps : base.fps,
-      mode: p.mode === 'continuous' || p.mode === 'loop' ? p.mode : base.mode,
     };
   } catch { return base; }
 }
@@ -65,12 +79,12 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   el.innerHTML =
     '<div class="stage"><div class="state"></div></div>' +
     '<div class="scrub" role="slider" tabindex="0" aria-label="Scrub through frames">' +
-    '<div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div>' +
+    '<div class="lanes"></div><div class="thumbs"></div><div class="slotband"></div><div class="ticks"></div><div class="head"></div></div>' +
     '<div class="bar">' +
     btn('prev-slot', '‹‹', 'Previous slot (Shift+←)') + btn('prev', '‹', 'Previous frame (←)') +
-    btn('play', '▶', 'Play (Space)') + btn('next', '›', 'Next frame (→)') + btn('next-slot', '››', 'Next slot (Shift+→)') +
+    btn('play', '▶', 'Play the frames in this slot (Space)') + btn('next', '›', 'Next frame (→)') + btn('next-slot', '››', 'Next slot (Shift+→)') +
     '<span class="cap"></span>' +
-    btn('fps', '', 'Speed') + btn('mode', '', 'At the end: loop, or continue') +
+    btn('fps', '', 'Speed') +
     btn('reach', '', 'How far the scrubber reaches') + btn('style', '', 'Scrubber: ticks or thumbnails') +
     btn('close', '✕', 'Close (Esc)') +
     '</div>';
@@ -85,6 +99,7 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   const thumbs = el.querySelector<HTMLElement>('.thumbs')!;
   const ticks = el.querySelector<HTMLElement>('.ticks')!;
   const head = el.querySelector<HTMLElement>('.head')!;
+  const slotband = el.querySelector<HTMLElement>('.slotband')!;
   const cap = el.querySelector<HTMLElement>('.cap')!;
   const b = (a: string) => el.querySelector<HTMLButtonElement>(`button[data-a="${a}"]`)!;
 
@@ -92,6 +107,7 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   let range: TimeWindow = { from: start.ts, to: start.ts + 1 };
   let ivs: Interval[] = [];
   let t = start.ts;
+  let cur: PlayerSlot | null = ctx.slotAt(start.ts);
   let playing = false;
   let timer: ReturnType<typeof setInterval> | null = null;
   let hiTimer: ReturnType<typeof setTimeout> | null = null;
@@ -103,16 +119,29 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
 
   function labels(): void {
     b('fps').textContent = prefs.fps + ' fps';
-    b('mode').textContent = prefs.mode === 'loop' ? 'Loop' : 'Continue';
     b('reach').textContent = prefs.reach === 'near' ? '±' + NEAR_SLOTS + ' slots' : 'All';
     b('style').textContent = prefs.style === 'ticks' ? 'Ticks' : 'Thumbs';
     b('play').textContent = playing ? '❚❚' : '▶';
-    b('play').title = playing ? 'Pause (Space)' : 'Play (Space)';
+    const n = inSlot().length;
+    b('play').disabled = n < 2;
+    b('play').title = n < 2 ? 'One frame in this slot: nothing to play' : playing ? 'Pause (Space)' : 'Play the ' + n + ' frames in this slot (Space)';
     el.classList.toggle('thumbs', prefs.style === 'thumbs');
+  }
+
+  /* the frames taken within the current slot: what Play loops */
+  function inSlot(): Frame[] {
+    return cur ? frames.filter((f) => f.ts >= cur!.from && f.ts < cur!.to) : [];
+  }
+  function drawSlot(): void {
+    slotband.style.display = cur ? '' : 'none';
+    if (!cur) {return;}
+    slotband.style.left = xOf(cur.from) + '%';
+    slotband.style.width = Math.max(0, xOf(cur.to) - xOf(cur.from)) + '%';
   }
 
   /* the scrubber's stretches, ticks and (when chosen) thumbnails */
   function drawScrub(): void {
+    drawSlot();
     lanes.textContent = '';
     for (const iv of ivs) {
       if (iv.kind === 'frame' || iv.kind === 'pending') {continue;}
@@ -179,14 +208,22 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   }
 
   function caption(f: Frame | null): void {
+    const slotFrames = inSlot();
+    const i = f ? slotFrames.indexOf(f) : -1;
     cap.textContent = (ctx.label ? ctx.label + ' — ' : '') + ctx.tt.time(t) + ctx.tt.sfx(t) +
-      (f && f.ts !== t ? ' · frame ' + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : '');
+      (f && f.ts !== t ? ' · frame ' + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : '') +
+      (slotFrames.length > 1 && i >= 0 ? ' · ' + (i + 1) + '/' + slotFrames.length + ' in slot' : '');
   }
 
+  /* move the playhead; the crosshair follows only to another slot */
   function seek(to: number, publish = true): void {
     t = Math.max(range.from, Math.min(range.to, to));
+    const sl = ctx.slotAt(t);
+    const moved = !cur || !sl || sl.from !== cur.from;
+    cur = sl;
+    if (moved) { drawSlot(); labels(); }
     show();
-    if (publish && ctx.onTime) {ctx.onTime(t);}
+    if (publish && moved && sl && ctx.onTime) {ctx.onTime(sl.ts);}
   }
 
   /* load the range around a time (its frames and intervals), then show */
@@ -200,6 +237,7 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     ivs = ctx.intervals(frames, range);
     drawScrub();
     seek(keepT ? around : range.from, false);
+    labels();   // Play knows the slot's frames now
   }
 
   function stop(): void {
@@ -207,30 +245,20 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     if (timer) { clearInterval(timer); timer = null; }
     labels();
   }
+  /* the next frame within the slot, round and round: the crosshair stays */
   function tick(): void {
-    const f = stepFrame(frames, t, 1, range);
-    if (f) {
-      seek(f.ts);
-      // a few frames ahead, so playing doesn't wait on each one
-      const j = frames.indexOf(f);
-      for (const n of frames.slice(j + 1, j + 4)) { const p = new Image(); p.src = n.url; }
-      return;
-    }
-    if (prefs.mode === 'loop') {
-      const first = framesIn(frames, range)[0];
-      if (first) {seek(first.ts);}
-      return;
-    }
-    // continue: the next stretch of the same reach, until now or the window's end
-    const end = Math.min(ctx.window.to, now());
-    if (range.to >= end - 1) { stop(); return; }
-    // the next range starts where this one ended
-    const next = range.to + (range.to - range.from) / 2;
-    stop();
-    void load(next, false).then(() => { if (!gone) {play();} });
+    const fs = inSlot();
+    if (fs.length < 2) { stop(); return; }
+    const i = fs.findIndex((f) => f.ts > t);
+    const f = fs[i < 0 ? 0 : i];
+    t = f.ts;
+    show();
+    // the next few load ahead
+    const j = fs.indexOf(f);
+    for (let k = 1; k <= 3; k++) { const p = new Image(); p.src = fs[(j + k) % fs.length].url; }
   }
   function play(): void {
-    if (playing) {return;}
+    if (playing || inSlot().length < 2) {return;}
     playing = true;
     labels();
     timer = setInterval(tick, 1000 / prefs.fps);
@@ -247,13 +275,17 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
       }
       case 'prev-slot': case 'next-slot': {
         stop();
-        const to = t + (a === 'next-slot' ? 1 : -1) * ctx.step;
-        if (to < range.from || to > range.to) {void load(to).then(() => ctx.onTime?.(t));}
-        else {seek(to);}
+        // the neighbouring slot, at the frame the strip shows for it
+        const edge = cur ? (a === 'next-slot' ? cur.to : cur.from - 1) : t + (a === 'next-slot' ? 1 : -1) * ctx.step;
+        const sl = ctx.slotAt(edge);
+        if (!sl || (cur && sl.from === cur.from)) {break;}
+        const to = sl.frameTs !== undefined && sl.frameTs >= sl.from && sl.frameTs < sl.to ? sl.frameTs : sl.ts;
+        if (to < range.from || to > range.to) {
+          void load(to).then(() => { cur = null; seek(to); });
+        } else {seek(to);}
         break;
       }
       case 'fps': prefs.fps = FPS[(FPS.indexOf(prefs.fps) + 1) % FPS.length]; savePrefs(prefs); if (playing) { stop(); play(); } labels(); break;
-      case 'mode': prefs.mode = prefs.mode === 'loop' ? 'continuous' : 'loop'; savePrefs(prefs); labels(); break;
       case 'reach': prefs.reach = prefs.reach === 'near' ? 'all' : 'near'; savePrefs(prefs); labels(); void load(t); break;
       case 'style': prefs.style = prefs.style === 'ticks' ? 'thumbs' : 'ticks'; savePrefs(prefs); labels(); drawScrub(); show(); break;
     }

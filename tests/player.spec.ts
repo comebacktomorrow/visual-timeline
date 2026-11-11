@@ -1,10 +1,11 @@
 import { test, expect } from '@grafana/plugin-e2e';
 
 // The preview player (M10): clicking a frame opens it with its own scrubber
-// over the host's frames, previous and next, and play. Against the folder
-// fixture (tests/folder-fixture): a frame about every 3 minutes.
+// over the host's frames, and previous and next. Play loops the frames
+// within a slot; the folder fixture (tests/folder-fixture) has a frame about
+// every 3 minutes, one per slot, so there is nothing to play.
 
-test('a click opens the player: a tick per frame, previous and next, play, and Esc closes it', async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
+test('a click opens the player: a tick per frame, previous and next, and Esc closes it', async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
   await page.setViewportSize({ width: 1280, height: 1200 });
   const dashboard = await readProvisionedDashboard({ fileName: 'folder.json' });
   const dashboardPage = await gotoDashboardPage(dashboard);
@@ -30,8 +31,8 @@ test('a click opens the player: a tick per frame, previous and next, play, and E
   await expect(cap).toHaveText(first!);
   // the large image once it settles
   await expect(player.locator('.stage img')).toHaveAttribute('src', /_hi\.svg$/);
-  await player.locator('button[data-a="play"]').click();
-  await expect(cap).not.toHaveText(first!, { timeout: 5000 });
+  // one frame per slot: nothing to play
+  await expect(player.locator('button[data-a="play"]')).toBeDisabled();
   await page.keyboard.press('Escape');
   await expect(player).toHaveCount(0);
 });

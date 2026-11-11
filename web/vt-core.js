@@ -1547,12 +1547,14 @@ var VTCore = (() => {
 .ktl-pop.player .ticks { position:absolute; inset:0; pointer-events:none; }
 .ktl-pop.player .tick { position:absolute; bottom:0; height:40%; width:1px; background:var(--ktl-text); opacity:.55; }
 .ktl-pop.player.thumbs .tick { height:6px; }
+.ktl-pop.player .slotband { position:absolute; top:0; bottom:0; background:var(--ktl-accent); opacity:.2; pointer-events:none; }
 .ktl-pop.player .head { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--ktl-accent); pointer-events:none; }
 .ktl-pop.player .bar { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
 .ktl-pop.player .bar .cap { flex:1 1 auto; min-width:120px; padding:0 6px; text-align:center; }
 .ktl-pop.player button { font:inherit; color:var(--ktl-text); background:transparent; border:1px solid var(--ktl-border);
                          border-radius:2px; padding:2px 7px; min-width:28px; cursor:pointer; line-height:18px; }
-.ktl-pop.player button:hover { border-color:var(--ktl-accent); }
+.ktl-pop.player button:hover:not(:disabled) { border-color:var(--ktl-accent); }
+.ktl-pop.player button:disabled { opacity:.4; cursor:default; }
 .ktl-pop.player button:focus-visible { outline:2px solid var(--ktl-accent); outline-offset:1px; }
 .ktl-pop.player button[data-a="play"] { min-width:36px; }`;
   function injectStyles() {
@@ -1949,14 +1951,13 @@ var VTCore = (() => {
   var PREFS_KEY = "ktl-player";
   var FPS = [1, 2, 4, 8, 16];
   function loadPrefs(ctx) {
-    const base = { reach: ctx.reach ?? "near", style: ctx.scrubber ?? "ticks", fps: 4, mode: "loop" };
+    const base = { reach: ctx.reach ?? "near", style: ctx.scrubber ?? "ticks", fps: 4 };
     try {
       const p = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
       return {
         reach: p.reach === "all" || p.reach === "near" ? p.reach : base.reach,
         style: p.style === "thumbs" || p.style === "ticks" ? p.style : base.style,
-        fps: FPS.includes(p.fps) ? p.fps : base.fps,
-        mode: p.mode === "continuous" || p.mode === "loop" ? p.mode : base.mode
+        fps: FPS.includes(p.fps) ? p.fps : base.fps
       };
     } catch {
       return base;
@@ -1972,7 +1973,7 @@ var VTCore = (() => {
   function mountPlayer(el, start, ctx, place) {
     const prefs = loadPrefs(ctx);
     el.classList.add("player");
-    el.innerHTML = '<div class="stage"><div class="state"></div></div><div class="scrub" role="slider" tabindex="0" aria-label="Scrub through frames"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="bar">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame (\u2190)") + btn("play", "\u25B6", "Play (Space)") + btn("next", "\u203A", "Next frame (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '<span class="cap"></span>' + btn("fps", "", "Speed") + btn("mode", "", "At the end: loop, or continue") + btn("reach", "", "How far the scrubber reaches") + btn("style", "", "Scrubber: ticks or thumbnails") + btn("close", "\u2715", "Close (Esc)") + "</div>";
+    el.innerHTML = '<div class="stage"><div class="state"></div></div><div class="scrub" role="slider" tabindex="0" aria-label="Scrub through frames"><div class="lanes"></div><div class="thumbs"></div><div class="slotband"></div><div class="ticks"></div><div class="head"></div></div><div class="bar">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '<span class="cap"></span>' + btn("fps", "", "Speed") + btn("reach", "", "How far the scrubber reaches") + btn("style", "", "Scrubber: ticks or thumbnails") + btn("close", "\u2715", "Close (Esc)") + "</div>";
     const img = document.createElement("img");
     img.alt = "frame";
     img.src = start.url;
@@ -1983,12 +1984,14 @@ var VTCore = (() => {
     const thumbs = el.querySelector(".thumbs");
     const ticks = el.querySelector(".ticks");
     const head = el.querySelector(".head");
+    const slotband = el.querySelector(".slotband");
     const cap = el.querySelector(".cap");
     const b = (a) => el.querySelector(`button[data-a="${a}"]`);
     let frames = [];
     let range = { from: start.ts, to: start.ts + 1 };
     let ivs = [];
     let t = start.ts;
+    let cur = ctx.slotAt(start.ts);
     let playing = false;
     let timer = null;
     let hiTimer = null;
@@ -1998,14 +2001,27 @@ var VTCore = (() => {
     const now = () => Date.now();
     function labels() {
       b("fps").textContent = prefs.fps + " fps";
-      b("mode").textContent = prefs.mode === "loop" ? "Loop" : "Continue";
       b("reach").textContent = prefs.reach === "near" ? "\xB1" + NEAR_SLOTS + " slots" : "All";
       b("style").textContent = prefs.style === "ticks" ? "Ticks" : "Thumbs";
       b("play").textContent = playing ? "\u275A\u275A" : "\u25B6";
-      b("play").title = playing ? "Pause (Space)" : "Play (Space)";
+      const n = inSlot().length;
+      b("play").disabled = n < 2;
+      b("play").title = n < 2 ? "One frame in this slot: nothing to play" : playing ? "Pause (Space)" : "Play the " + n + " frames in this slot (Space)";
       el.classList.toggle("thumbs", prefs.style === "thumbs");
     }
+    function inSlot() {
+      return cur ? frames.filter((f) => f.ts >= cur.from && f.ts < cur.to) : [];
+    }
+    function drawSlot() {
+      slotband.style.display = cur ? "" : "none";
+      if (!cur) {
+        return;
+      }
+      slotband.style.left = xOf(cur.from) + "%";
+      slotband.style.width = Math.max(0, xOf(cur.to) - xOf(cur.from)) + "%";
+    }
     function drawScrub() {
+      drawSlot();
       lanes.textContent = "";
       for (const iv of ivs) {
         if (iv.kind === "frame" || iv.kind === "pending") {
@@ -2080,13 +2096,22 @@ var VTCore = (() => {
       }
     }
     function caption(f) {
-      cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : "");
+      const slotFrames = inSlot();
+      const i = f ? slotFrames.indexOf(f) : -1;
+      cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : "") + (slotFrames.length > 1 && i >= 0 ? " \xB7 " + (i + 1) + "/" + slotFrames.length + " in slot" : "");
     }
     function seek(to, publish = true) {
       t = Math.max(range.from, Math.min(range.to, to));
+      const sl = ctx.slotAt(t);
+      const moved = !cur || !sl || sl.from !== cur.from;
+      cur = sl;
+      if (moved) {
+        drawSlot();
+        labels();
+      }
       show();
-      if (publish && ctx.onTime) {
-        ctx.onTime(t);
+      if (publish && moved && sl && ctx.onTime) {
+        ctx.onTime(sl.ts);
       }
     }
     async function load(around, keepT = true) {
@@ -2105,6 +2130,7 @@ var VTCore = (() => {
       ivs = ctx.intervals(frames, range);
       drawScrub();
       seek(keepT ? around : range.from, false);
+      labels();
     }
     function stop() {
       playing = false;
@@ -2115,38 +2141,23 @@ var VTCore = (() => {
       labels();
     }
     function tick() {
-      const f = stepFrame(frames, t, 1, range);
-      if (f) {
-        seek(f.ts);
-        const j = frames.indexOf(f);
-        for (const n of frames.slice(j + 1, j + 4)) {
-          const p = new Image();
-          p.src = n.url;
-        }
-        return;
-      }
-      if (prefs.mode === "loop") {
-        const first = framesIn(frames, range)[0];
-        if (first) {
-          seek(first.ts);
-        }
-        return;
-      }
-      const end = Math.min(ctx.window.to, now());
-      if (range.to >= end - 1) {
+      const fs = inSlot();
+      if (fs.length < 2) {
         stop();
         return;
       }
-      const next = range.to + (range.to - range.from) / 2;
-      stop();
-      void load(next, false).then(() => {
-        if (!gone) {
-          play();
-        }
-      });
+      const i = fs.findIndex((f2) => f2.ts > t);
+      const f = fs[i < 0 ? 0 : i];
+      t = f.ts;
+      show();
+      const j = fs.indexOf(f);
+      for (let k = 1; k <= 3; k++) {
+        const p = new Image();
+        p.src = fs[(j + k) % fs.length].url;
+      }
     }
     function play() {
-      if (playing) {
+      if (playing || inSlot().length < 2) {
         return;
       }
       playing = true;
@@ -2174,9 +2185,17 @@ var VTCore = (() => {
         case "prev-slot":
         case "next-slot": {
           stop();
-          const to = t + (a === "next-slot" ? 1 : -1) * ctx.step;
+          const edge = cur ? a === "next-slot" ? cur.to : cur.from - 1 : t + (a === "next-slot" ? 1 : -1) * ctx.step;
+          const sl = ctx.slotAt(edge);
+          if (!sl || cur && sl.from === cur.from) {
+            break;
+          }
+          const to = sl.frameTs !== void 0 && sl.frameTs >= sl.from && sl.frameTs < sl.to ? sl.frameTs : sl.ts;
           if (to < range.from || to > range.to) {
-            void load(to).then(() => ctx.onTime?.(t));
+            void load(to).then(() => {
+              cur = null;
+              seek(to);
+            });
           } else {
             seek(to);
           }
@@ -2189,11 +2208,6 @@ var VTCore = (() => {
             stop();
             play();
           }
-          labels();
-          break;
-        case "mode":
-          prefs.mode = prefs.mode === "loop" ? "continuous" : "loop";
-          savePrefs(prefs);
           labels();
           break;
         case "reach":
@@ -2749,6 +2763,11 @@ var VTCore = (() => {
       tt,
       fetch: (from, to) => backend.allFrames ? backend.allFrames(decl.site, decl.id, from, to) : backend.frames(decl.site, decl.id, from, to, Math.max(model.lastActive?.cadence ?? model.step, Math.ceil((to - from) / PLAYER_BUCKETS))),
       intervals: (frames, range) => model.intervalsFor(frames, range, Date.now()),
+      // the strip's own slots, so the player's slots are the ones on screen
+      slotAt: (t) => {
+        const sl = model.slotAt(t);
+        return sl ? { from: sl.x0, to: sl.x0 + sl.span, ts: sl.ts, ...sl.frame ? { frameTs: sl.frame.ts } : {} } : null;
+      },
       onTime,
       reach: cfg.playerReach === "all" ? "all" : cfg.playerReach === "near" ? "near" : void 0,
       scrubber: cfg.playerScrubber === "thumbs" ? "thumbs" : cfg.playerScrubber === "ticks" ? "ticks" : void 0

@@ -312,12 +312,14 @@ const CSS = `
 .ktl-pop.player .ticks { position:absolute; inset:0; pointer-events:none; }
 .ktl-pop.player .tick { position:absolute; bottom:0; height:40%; width:1px; background:var(--ktl-text); opacity:.55; }
 .ktl-pop.player.thumbs .tick { height:6px; }
+.ktl-pop.player .slotband { position:absolute; top:0; bottom:0; background:var(--ktl-accent); opacity:.2; pointer-events:none; }
 .ktl-pop.player .head { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--ktl-accent); pointer-events:none; }
 .ktl-pop.player .bar { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
 .ktl-pop.player .bar .cap { flex:1 1 auto; min-width:120px; padding:0 6px; text-align:center; }
 .ktl-pop.player button { font:inherit; color:var(--ktl-text); background:transparent; border:1px solid var(--ktl-border);
                          border-radius:2px; padding:2px 7px; min-width:28px; cursor:pointer; line-height:18px; }
-.ktl-pop.player button:hover { border-color:var(--ktl-accent); }
+.ktl-pop.player button:hover:not(:disabled) { border-color:var(--ktl-accent); }
+.ktl-pop.player button:disabled { opacity:.4; cursor:default; }
 .ktl-pop.player button:focus-visible { outline:2px solid var(--ktl-accent); outline-offset:1px; }
 .ktl-pop.player button[data-a="play"] { min-width:36px; }`;
 

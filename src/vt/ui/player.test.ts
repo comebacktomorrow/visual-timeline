@@ -39,9 +39,11 @@ describe('the preview player', () => {
   let fetches: Array<[number, number]>;
   const ctx = (extra: Partial<PlayerContext> = {}): PlayerContext => ({
     window: { from: at(0), to: at(120) },
-    step: MIN,
+    step: 5 * MIN,
     fetch: async (from, to) => { fetches.push([from, to]); return all.filter((f) => f.ts >= from && f.ts <= to); },
     intervals: (frames, range) => buildIntervals({ frames, window: range, now: at(999), promiseAt: () => MIN }).intervals,
+    // slots of five minutes, as the strip would draw a minute feed zoomed out
+    slotAt: (t) => { const from = Math.floor((t - T0) / (5 * MIN)) * 5 * MIN + T0; return { from, to: from + 5 * MIN, ts: from, frameTs: from }; },
     onTime: (t) => times.push(t),
     tt: { time: (t: number) => new Date(t).toISOString().slice(11, 19), short: (t: number) => new Date(t).toISOString().slice(11, 16), sfx: () => '' } as never,
     label: 'site / cam',
@@ -71,10 +73,12 @@ describe('the preview player', () => {
     expect(cap()).toBe('site / cam — 10:30:00');
     await flush();
     expect(fetches).toHaveLength(1);
-    // 10 slots either side of the clicked one (10:20 to 10:40), a tick per
-    // frame: 10:20 to 10:25 are missing
-    expect(el.querySelectorAll('.tick')).toHaveLength(15);
+    // 10 five-minute slots either side (from the window's start to 11:45), a
+    // tick per frame: 10:20 to 10:25 are missing
+    expect(el.querySelectorAll('.tick')).toHaveLength(106 - 6);
     expect(el.querySelector('.stage img')!.getAttribute('src')).toBe('f30.jpg');
+    // the slot's frames, and which one this is
+    expect(cap()).toBe('site / cam — 10:30:00 · 1/5 in slot');
   });
 
   test('the missing frames are drawn as dropped on the scrubber', async () => {
@@ -83,40 +87,49 @@ describe('the preview player', () => {
     expect(el.querySelectorAll('.lane.dropped')).toHaveLength(1);
   });
 
-  test('previous and next frame; the crosshair follows', async () => {
+  test('previous and next frame; the crosshair moves only to another slot', async () => {
     teardown = mountPlayer(el, fr(30), ctx(), () => {});
     await flush();
+    for (let i = 0; i < 4; i++) {press('next');}
+    expect(cap()).toBe('site / cam — 10:34:00 · 5/5 in slot');
+    expect(times).toEqual([]);
     press('next');
-    expect(cap()).toBe('site / cam — 10:31:00');
-    press('prev'); press('prev');
-    expect(cap()).toBe('site / cam — 10:29:00');
-    expect(times).toEqual([at(31), at(30), at(29)]);
+    expect(cap()).toBe('site / cam — 10:35:00 · 1/5 in slot');
+    press('prev');
+    expect(times).toEqual([at(35), at(30)]);
   });
 
-  test('next slot past the scrubber moves its range', async () => {
+  test('next slot: the frame the strip shows for it; past the scrubber, its range moves', async () => {
     teardown = mountPlayer(el, fr(30), ctx(), () => {});
     await flush();
-    for (let i = 0; i < 11; i++) {press('next-slot');}
+    press('next-slot');
+    expect(cap()).toBe('site / cam — 10:35:00 · 1/5 in slot');
+    expect(times).toEqual([at(35)]);
+    for (let i = 0; i < 15; i++) {press('next-slot');}
     await flush();
     expect(fetches.length).toBeGreaterThan(1);
-    expect(cap()).toBe('site / cam — 10:41:00');
+    expect(cap()).toBe('site / cam — 11:50:00 · 1/5 in slot');
   });
 
-  test('play steps frame by frame at its speed, and loops the range', async () => {
-    teardown = mountPlayer(el, fr(118), ctx(), () => {});
+  test('play loops the frames within the slot, and the crosshair stays still', async () => {
+    teardown = mountPlayer(el, fr(30), ctx(), () => {});
     await flush();
     jest.useFakeTimers();
     press('play');
-    jest.advanceTimersByTime(250);
-    expect(cap()).toBe('site / cam — 11:59:00');
-    jest.advanceTimersByTime(250);
-    expect(cap()).toBe('site / cam — 12:00:00');
-    // the end of the range: back to its first frame
-    jest.advanceTimersByTime(250);
-    expect(cap()).toBe('site / cam — 11:39:00');
+    const seen: string[] = [];
+    for (let i = 0; i < 6; i++) { jest.advanceTimersByTime(250); seen.push(cap()!.match(/— (\d\d:\d\d)/)![1]); }
+    expect(seen).toEqual(['10:31', '10:32', '10:33', '10:34', '10:30', '10:31']);
+    expect(times).toEqual([]);
     press('play');
     jest.advanceTimersByTime(1000);
-    expect(cap()).toBe('site / cam — 11:39:00');
+    expect(cap()!.match(/— (\d\d:\d\d)/)![1]).toBe('10:31');
+  });
+
+  test('a slot of one frame has nothing to play', async () => {
+    const minuteSlots = (t: number) => { const from = Math.floor(t / MIN) * MIN; return { from, to: from + MIN, ts: from, frameTs: from }; };
+    teardown = mountPlayer(el, fr(30), ctx({ slotAt: minuteSlots }), () => {});
+    await flush();
+    expect((el.querySelector('button[data-a="play"]') as HTMLButtonElement).disabled).toBe(true);
   });
 
   test('the viewer\'s choices are remembered: whole range, thumbnails', async () => {
