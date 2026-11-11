@@ -557,7 +557,7 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
     })
     .addBooleanSwitch({
       path: 'showVideoLine',
-      name: 'Mark video on the strip',
+      name: 'Mark video on the strip (experimental)',
       description: 'A thin line along the foot of each strip where its host has video clips. Off: only the preview shows them.',
       defaultValue: false,
       showIf: (o) => o.mode !== 'grid',
@@ -637,9 +637,9 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
     })
     .addFieldNamePicker({
       path: 'videoField',
-      name: 'Video',
+      name: 'Video (experimental)',
       category: ['Frame fields'],
-      description: 'Optional: a video clip that starts at the row\'s time; the click-in preview plays it over the frames. Empty: a field named video. Its end: a video_end field, else a video_duration (ms), else the typical clip.',
+      description: 'Optional: a video clip that starts at the row\'s time; the click-in preview plays it over the frames. Empty: a field named video. Its end: a video_end field, else a video_duration (ms), else as long as the host\'s clips that say, else a frame\'s time.',
       settings: { filter: (f) => f.type === FieldType.string },
     })
     .addFieldNamePicker({

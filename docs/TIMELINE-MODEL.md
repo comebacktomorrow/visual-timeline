@@ -75,7 +75,7 @@ replaces today's Hold last frame:
 - **Until the next frame**: no limit.
 - **Up to a duration**, such as `10m`.
 
-A **video clip** (M10c) covers what would be **no data**: there's no frame
+A **video clip** (M10c, experimental) covers what would be **no data**: there's no frame
 in force, but there is video, so it's clip time, drawn as a plain band. A
 frame still wins where one is in force, and a broken promise is still
 dropped: a promise is about frames.

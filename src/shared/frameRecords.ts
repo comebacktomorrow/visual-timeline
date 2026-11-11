@@ -339,7 +339,8 @@ export function recordsFromSeries(series: DataFrame[] | undefined, roles: FieldR
     // the typical gap between them
     const cadence = history ? history[history.length - 1].cadence! : r.cadence
       ?? inferCadence(frames.length ? frames.map((f) => f.ts) : r.clips.map((c) => c.from).sort((a, b) => a - b));
-    const clips = r.clips.length ? resolveClips(r.clips, cadence) : null;
+    // a clip with no end lasts a frame's time, when the host has frames
+    const clips = r.clips.length ? resolveClips(r.clips, cadence, frames.length > 1 ? cadence : undefined) : null;
     return { ...r.meta, id: r.id, site: r.site, frames, cadence, ...(r.cadence ? {} : { inferred: true }), ...(history ? { history } : {}),
       ...(clips ? { clips } : {}) };
   });
@@ -356,9 +357,10 @@ export interface RawClip {
 /** Clips with their ends settled, in time order, one per start (the later
  * row wins). A clip with no end stated (a video_end or video_duration field)
  * lasts as long as its host's clips typically do (the ones that say), else
+ * the host's frame pacing (`pace`: a clip per frame, an assumption), else
  * the typical gap between their starts, else `fallback`; never past the
  * next clip's start. */
-export function resolveClips(raw: RawClip[], fallback: number): Clip[] {
+export function resolveClips(raw: RawClip[], fallback: number, pace?: number): Clip[] {
   const byFrom = new Map<number, RawClip>();
   for (const c of raw) {byFrom.set(c.from, c);}
   const cs = [...byFrom.values()].sort((a, b) => a.from - b.from);
@@ -366,7 +368,7 @@ export function resolveClips(raw: RawClip[], fallback: number): Clip[] {
   const lengths = cs.filter((c) => c.to !== undefined).map((c) => c.to! - c.from);
   const starts: number[] = [];
   for (let i = 1; i < cs.length; i++) {starts.push(cs[i].from - cs[i - 1].from);}
-  const typical = median(lengths) ?? median(starts) ?? fallback;
+  const typical = median(lengths) ?? (pace && pace > 0 ? pace : null) ?? median(starts) ?? fallback;
   return cs.map((c, i) => {
     const next = cs[i + 1]?.from ?? Infinity;
     const to = c.to !== undefined ? c.to : Math.min(next, c.from + typical);

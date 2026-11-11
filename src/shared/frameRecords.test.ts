@@ -413,3 +413,19 @@ describe('video clips (M10c)', () => {
     expect(hostTableFromSeries([t])).toEqual([]);
   });
 });
+
+describe('a clip with no end, on a host with frames (M10c)', () => {
+  test('lasts a frame\'s time: a frame a minute, a minute of video each (an assumption)', () => {
+    const rows = Array.from({ length: 20 }, (_, i) => T0 + i * MIN);
+    const t = createDataFrame({ fields: [
+      { name: 'time', type: FieldType.time, values: rows },
+      { name: 'host', type: FieldType.string, values: rows.map(() => 'cam') },
+      { name: 'image', type: FieldType.string, values: rows.map((_, i) => `https://img/${i}.jpg`) },
+      // a clip on every tenth frame only
+      { name: 'video', type: FieldType.string, values: rows.map((_, i) => (i % 10 ? '' : `https://vid/${i}.mp4`)) },
+    ] });
+    expect(recordsFromSeries([t])![0].clips!.map((c) => [(c.from - T0) / MIN, (c.to - T0) / MIN])).toEqual([[0, 1], [10, 11]]);
+    // lengths the rows state still win
+    expect(resolveClips([{ from: 0, to: 5, url: 'a' }, { from: 100, url: 'b' }], 60, 30).map((c) => c.to)).toEqual([5, 105]);
+  });
+});

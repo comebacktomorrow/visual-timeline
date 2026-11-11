@@ -147,7 +147,7 @@ stretches the strip draws.
   tick per Frame width) shows as many as fit, says so in the title
   ("showing 57 of 456"), and highlights Zoom.
 - The large image loads once the playhead settles; Esc or ✕ closes.
-- **Video** (below): where a clip covers the slot, it plays over the
+- **Video** (experimental, below): where a clip covers the slot, it plays over the
   frames. Its part of the timeline is a plain bar to hover or drag through,
   ▶ plays it (round again at the slot's end), and the bar gains sound
   (muted by default) and HD/SD (when the clip has a larger version), both
@@ -282,12 +282,16 @@ no image or state, so hosts that sent no frames still show). The details are in
 whose recipes work for any data source. The provisioned dashboard **Visual Timeline — any data
 source** shows a timeline and a grid drawn from TestData CSV rows.
 
-### Video clips
+### Video clips (experimental)
+
+Video is experimental: built and tested against test clips, not yet a real
+camera's feed, so how it works may change.
 
 A row can carry a **video** as well as its image: a clip that starts at the
 row's time and runs to its `video_end` (a time), or for `video_duration`
-milliseconds; with neither, as long as the host's clips typically last,
-never past the next one. `video_hi` is a larger version for the preview
+milliseconds. With neither, as long as the host's other clips say they
+last, else a frame's time: a host taking a frame a minute is taken to have
+a minute of video per clip (an assumption). Never past the next clip. `video_hi` is a larger version for the preview
 player. A clip of real time and a timelapse (a whole day in seconds) work
 alike: a time within the clip is found by its fraction of the way through
 it.
@@ -406,7 +410,7 @@ set how it draws them.
 | **Chip click**                    | What clicking a host or chip does: add an ad hoc filter (where the data source supports one), follow a **Chip link** (a URL with `${__chip.key}`, `${__chip.value}` and `${__host}`, plus dashboard variables), or nothing. |
 | **Expected cadence**              | How often every host promises a frame (`1m`, `30s`): a frame missing past it is red, as offline. Empty: each host's own cadence field or declared pace; a host with none promises nothing and is never red.                 |
 | **Hold frames without a promise** | How long a frame from a host that promises nothing is shown when no frame follows soon: Auto (three times the typical gap around it), Until the next frame, or Up to a duration such as `10m`. Past it: neutral "no data".  |
-| **Mark video on the strip**       | A thin line along the foot of each strip where its host has video clips. Off by default: only the preview shows them.                                                                                                       |
+| **Mark video on the strip**       | Experimental. A thin line along the foot of each strip where its host has video clips. Off by default: only the preview shows them.                                                                                         |
 | **Frame width**                   | The least width a frame gets, in pixels (default 7): the strip's slots, and the ticks in the preview player's timeline of a slot. Smaller shows more detail and loads more images; larger, fewer.                           |
 | **Scrubber style**                | The preview player's timeline: Ticks (a mark per frame) or Thumbnails (small pictures). Viewers can switch it in the player; their last choice is remembered in their browser.                                              |
 | **Show cadence details**          | Show each host's cadence (the promise, or `~` and "no promise" for a typical gap) and display resolution (for tuning).                                                                                                      |

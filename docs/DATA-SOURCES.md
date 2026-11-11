@@ -33,7 +33,7 @@ can load; `image_hi` (optional) is a larger one for the click-in preview;
 `site` (optional) groups hosts. Name the columns as you like and set them
 under the panel's **Frame fields** when they differ.
 
-Video clips (M10c) are columns too: `video` (a clip starting at the row's
+Video clips (M10c, experimental) are columns too: `video` (a clip starting at the row's
 time), `video_hi` (a larger version), and `video_end` (a time) or
 `video_duration` (ms). A row may have an image, a video or both:
 
