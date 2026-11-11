@@ -28,7 +28,9 @@ test('a click opens the player on the slot\'s own timeline; ‹‹ ›› move b
   // the large image once it settles
   await expect(player.locator('.stage img')).toHaveAttribute('src', /_hi\.svg$/);
   // ‹‹ ›› move to the neighbouring slot
-  const cap = player.locator('.cap');
+  // the title on top; the time of the frame shown below
+  await expect(player.locator('.title')).toHaveText(/cam-a/);
+  const cap = player.locator('.bar .time');
   const first = await cap.textContent();
   await player.locator('button[data-a="next-slot"]').click();
   await expect(cap).not.toHaveText(first!);

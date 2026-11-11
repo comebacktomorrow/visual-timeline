@@ -1560,14 +1560,22 @@ var VTCore = (() => {
 .ktl-pop.player .tick { position:absolute; bottom:0; height:40%; width:1px; background:var(--ktl-text); opacity:.55; }
 .ktl-pop.player.thumbs .tick { height:6px; }
 .ktl-pop.player .head { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--ktl-accent); pointer-events:none; }
-.ktl-pop.player .bar { display:flex; align-items:center; gap:4px; }
-.ktl-pop.player .bar .spacer { flex:1 1 auto; }
-/* the caption on its own line: it gives way rather than wrap and grow the popup */
-.ktl-pop.player > .cap { padding:0 4px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ktl-pop.player .top, .ktl-pop.player .bar { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:6px; }
+/* on top, what this is: the title gives way rather than wrap and grow the popup */
+.ktl-pop.player .top { grid-template-columns:auto minmax(0, 1fr) auto; }
+.ktl-pop.player .top .title { text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
+/* below, the playback: the frame's time, the transport centred, the options */
+.ktl-pop.player .bar .time { justify-self:start; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.ktl-pop.player .bar .transport, .ktl-pop.player .bar .opts { display:flex; gap:4px; align-items:center; }
+.ktl-pop.player .bar .opts { justify-self:end; }
+.ktl-pop.player button svg { display:block; }
+.ktl-pop.player button[aria-pressed="true"] { border-color:var(--ktl-accent); color:var(--ktl-accent); }
+.ktl-pop.player button[aria-pressed="false"] { opacity:.6; }
 .ktl-pop.player button { flex:0 0 auto; }
 .ktl-pop.player button.hint { border-color:var(--ktl-accent); color:var(--ktl-accent); }
 .ktl-pop.player button { font:inherit; color:var(--ktl-text); background:transparent; border:1px solid var(--ktl-border);
-                         border-radius:2px; padding:2px 7px; min-width:28px; cursor:pointer; line-height:18px; }
+                         border-radius:2px; padding:2px 7px; min-width:28px; height:24px; cursor:pointer; line-height:18px;
+                         display:inline-flex; align-items:center; justify-content:center; }
 .ktl-pop.player button:hover:not(:disabled) { border-color:var(--ktl-accent); }
 .ktl-pop.player button:disabled { opacity:.4; cursor:default; }
 .ktl-pop.player button:focus-visible { outline:2px solid var(--ktl-accent); outline-offset:1px; }
@@ -1961,12 +1969,14 @@ var VTCore = (() => {
   var STAGE_H = 405;
   var MIN_W = 400;
   var MAX_W = 960;
+  var ICON_TICKS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><path d="M2 2v8M5 4v6M8 1v9M11 5v5M14 3v7" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>';
+  var ICON_THUMBS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><rect x="1" y="2" width="4" height="8" fill="currentColor"/><rect x="6" y="2" width="4" height="8" fill="currentColor" opacity=".7"/><rect x="11" y="2" width="4" height="8" fill="currentColor" opacity=".45"/></svg>';
   var btn = (a, label, title) => `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
   function mountPlayer(el, start, ctx, place, close = () => {
   }) {
     const prefs = loadPrefs(ctx);
     el.classList.add("player");
-    el.innerHTML = '<div class="stage"><div class="state"></div></div><div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="cap"></div><div class="bar">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame in this slot (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame in this slot (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '<span class="spacer"></span>' + btn("fps", "", "Speed") + btn("style", "", "Scrubber: ticks or thumbnails") + (ctx.onZoom ? btn("zoom", "Zoom", "Zoom the dashboard to this slot") : "") + btn("close", "\u2715", "Close (Esc)") + "</div>";
+    el.innerHTML = '<div class="top">' + (ctx.onZoom ? btn("zoom", "Zoom", "Zoom the dashboard to this slot") : "<span></span>") + '<span class="title"></span>' + btn("close", "\u2715", "Close (Esc)") + '</div><div class="stage"><div class="state"></div></div><div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="bar"><span class="time"></span><span class="transport">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame in this slot (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame in this slot (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '</span><span class="opts">' + btn("style-ticks", ICON_TICKS, "Scrubber: a tick per frame") + btn("style-thumbs", ICON_THUMBS, "Scrubber: the frames themselves") + btn("fps", "", "Speed") + "</span></div>";
     const img = document.createElement("img");
     img.alt = "frame";
     img.src = start.url;
@@ -1977,7 +1987,8 @@ var VTCore = (() => {
     const thumbs = el.querySelector(".thumbs");
     const ticks = el.querySelector(".ticks");
     const head = el.querySelector(".head");
-    const cap = el.querySelector(".cap");
+    const titleEl = el.querySelector(".title");
+    const timeEl = el.querySelector(".time");
     const b = (a) => el.querySelector(`button[data-a="${a}"]`);
     let slot = ctx.slotAt(start.ts) ?? { from: start.ts - ctx.step / 2, to: start.ts + ctx.step / 2, ts: start.ts };
     let frames = [start];
@@ -2018,7 +2029,8 @@ var VTCore = (() => {
     };
     function labels() {
       b("fps").textContent = prefs.fps + " fps";
-      b("style").textContent = prefs.style === "ticks" ? "Ticks" : "Thumbs";
+      b("style-ticks").setAttribute("aria-pressed", String(prefs.style === "ticks"));
+      b("style-thumbs").setAttribute("aria-pressed", String(prefs.style === "thumbs"));
       b("play").textContent = playing ? "\u275A\u275A" : "\u25B6";
       const n = stops().length;
       b("play").disabled = n < 2;
@@ -2115,11 +2127,11 @@ var VTCore = (() => {
     }
     function caption(f) {
       const fs = shown();
-      const every = inSlot();
-      const total = every.reduce((a, x) => a + (x.count && x.count > 1 ? x.count : 1), 0);
-      const i = f ? fs.indexOf(f) : -1;
-      const place2 = fs.length > 1 && i >= 0 ? i + 1 + " of " + fs.length + (total > fs.length ? " shown \xB7 " + total + " in this slot" : " in this slot") : total > 1 && f ? total + " in this slot" : "";
-      cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) + (place2 ? " (" + place2 + ")" : "") : place2 ? " \xB7 frame " + place2 : "");
+      const total = inSlot().reduce((a, x) => a + (x.count && x.count > 1 ? x.count : 1), 0);
+      titleEl.textContent = (ctx.label ?? "") + (total > fs.length ? " (showing " + fs.length + " of " + total + ")" : "");
+      titleEl.title = titleEl.textContent;
+      const at = f && !el.classList.contains("off") ? f.ts : t;
+      timeEl.textContent = ctx.tt.time(at) + ctx.tt.sfx(at);
       const zoom = el.querySelector('button[data-a="zoom"]');
       if (zoom) {
         zoom.classList.toggle("hint", total > fs.length);
@@ -2249,14 +2261,20 @@ var VTCore = (() => {
           labels();
           break;
         // a style draws a different number of frames: ask for that many
-        case "style":
-          prefs.style = prefs.style === "ticks" ? "thumbs" : "ticks";
+        case "style-ticks":
+        case "style-thumbs": {
+          const style = a === "style-ticks" ? "ticks" : "thumbs";
+          if (style === prefs.style) {
+            break;
+          }
+          prefs.style = style;
           savePrefs(prefs);
           labels();
           drawScrub();
           show();
           void load(t);
           break;
+        }
         case "zoom":
           stop();
           ctx.onZoom?.(slot.from, slot.to);
@@ -2264,7 +2282,7 @@ var VTCore = (() => {
           break;
       }
     };
-    el.querySelector(".bar").addEventListener("click", (e) => {
+    el.addEventListener("click", (e) => {
       const a = e.target.closest("button")?.dataset.a;
       if (a && a !== "close") {
         act(a);

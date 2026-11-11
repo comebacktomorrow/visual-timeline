@@ -36,8 +36,9 @@ describe('the preview player', () => {
     label: 'site / cam',
     ...extra,
   });
-  const cap = () => el.querySelector('.cap')!.textContent!;
-  const hhmm = () => cap().match(/— (\d\d:\d\d)/)![1];
+  // the title on top, and the time of what's shown below
+  const cap = () => el.querySelector('.title')!.textContent! + ' — ' + el.querySelector('.time')!.textContent!;
+  const hhmm = () => el.querySelector('.time')!.textContent!.slice(0, 5);
   const press = (a: string) => (el.querySelector(`button[data-a="${a}"]`) as HTMLButtonElement).click();
   const flush = async () => { for (let i = 0; i < 4; i++) {await new Promise((r) => setTimeout(r, 0));} };
 
@@ -61,7 +62,7 @@ describe('the preview player', () => {
     expect(cap()).toBe('site / cam — 10:30:00');
     await flush();
     expect(el.querySelectorAll('.tick')).toHaveLength(5);
-    expect(cap()).toBe('site / cam — 10:30:00 · frame 1 of 5 in this slot');
+    expect(cap()).toBe('site / cam — 10:30:00');
     expect(el.querySelector('.stage img')!.getAttribute('src')).toBe('f30.jpg');
     expect(times).toEqual([]);
   });
@@ -78,7 +79,7 @@ describe('the preview player', () => {
     teardown = mountPlayer(el, fr(30), ctx(), () => {});
     await flush();
     for (let i = 0; i < 6; i++) {press('next');}
-    expect(cap()).toBe('site / cam — 10:34:00 · frame 5 of 5 in this slot');
+    expect(cap()).toBe('site / cam — 10:34:00');
     press('prev');
     expect(hhmm()).toBe('10:33');
     expect(times).toEqual([]);
@@ -89,7 +90,7 @@ describe('the preview player', () => {
     await flush();
     press('next-slot');
     await flush();
-    expect(cap()).toBe('site / cam — 10:35:00 · frame 1 of 5 in this slot');
+    expect(cap()).toBe('site / cam — 10:35:00');
     expect(times).toEqual([at(35)]);
     press('prev-slot'); press('prev-slot');
     await flush();
@@ -131,7 +132,7 @@ describe('the preview player', () => {
     const sparse = [...all.filter((f) => f.ts < at(30) || f.ts > at(33)), fr(30), fr(31)].sort((a, z) => a.ts - z.ts);
     teardown = mountPlayer(el, fr(30), ctx({ fetch: async (from, to) => sparse.filter((f) => f.ts >= from && f.ts <= to) }), () => {});
     await flush();
-    press('style');
+    press('style-thumbs');
     const widths = [...el.querySelectorAll<HTMLElement>('.thumb')].map((c) => c.style.width);
     expect(widths).toEqual(['20%', '20%', '20%']);
     expect(el.querySelectorAll('.lane.dropped')).toHaveLength(1);
@@ -158,9 +159,9 @@ describe('the preview player', () => {
     await flush();
     // 560 px wide (unlaid out), a tick per 2 px
     expect(el.querySelectorAll('.tick')).toHaveLength(280);
-    expect(cap()).toBe('site / cam — 10:30:00 · frame 1 of 280 shown · 300 in this slot');
+    expect(cap()).toBe('site / cam (showing 280 of 300) — 10:30:00');
     expect(el.querySelector('button[data-a="zoom"]')).toBeNull();
-    press('style');
+    press('style-thumbs');
     expect(el.querySelectorAll('.thumb')).toHaveLength(11);
     // and they tile the slot: no blank space between the frames drawn
     const total = [...el.querySelectorAll<HTMLElement>('.thumb')].reduce((a, c) => a + parseFloat(c.style.width), 0);
@@ -178,10 +179,10 @@ describe('the preview player', () => {
     await flush();
     // ticks: a tick per 2 px of 560, for the slot and the one before it
     expect(asked).toEqual([560]);
-    expect(cap()).toBe('site / cam — 10:30:00 · frame 1 of 5 shown · 300 in this slot');
+    expect(cap()).toBe('site / cam (showing 5 of 300) — 10:30:00');
     expect(el.querySelector('button[data-a="zoom"]')!.classList.contains('hint')).toBe(true);
     // thumbnails draw fewer: asked again for that many
-    press('style');
+    press('style-thumbs');
     await flush();
     expect(asked).toEqual([560, 22]);
   });
@@ -251,7 +252,7 @@ describe('the preview player', () => {
   test('thumbnails are the slot\'s frames, each as wide as it stands; the choice is remembered', async () => {
     teardown = mountPlayer(el, fr(30), ctx(), () => {});
     await flush();
-    press('style');
+    press('style-thumbs');
     expect(el.classList.contains('thumbs')).toBe(true);
     expect([...el.querySelectorAll('.thumb img')].map((i) => i.getAttribute('src'))).toEqual(['f30.jpg', 'f31.jpg', 'f32.jpg', 'f33.jpg', 'f34.jpg']);
     expect((el.querySelector('.thumb') as HTMLElement).style.width).toBe('20%');

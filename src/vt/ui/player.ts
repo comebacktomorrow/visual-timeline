@@ -80,6 +80,10 @@ const STAGE_H = 405;
 const MIN_W = 400;
 const MAX_W = 960;
 
+/* the scrubber's two styles, as icons */
+const ICON_TICKS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><path d="M2 2v8M5 4v6M8 1v9M11 5v5M14 3v7" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>';
+const ICON_THUMBS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><rect x="1" y="2" width="4" height="8" fill="currentColor"/><rect x="6" y="2" width="4" height="8" fill="currentColor" opacity=".7"/><rect x="11" y="2" width="4" height="8" fill="currentColor" opacity=".45"/></svg>';
+
 const btn = (a: string, label: string, title: string) =>
   `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
 
@@ -88,19 +92,28 @@ const btn = (a: string, label: string, title: string) =>
 export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, place: () => void, close: () => void = () => {}): () => void {
   const prefs = loadPrefs(ctx);
   el.classList.add('player');
+  // the static on top (what this is, Zoom, close); the playback below (the
+  // frame's time, the transport, how the timeline draws and its speed)
   el.innerHTML =
+    '<div class="top">' +
+    (ctx.onZoom ? btn('zoom', 'Zoom', 'Zoom the dashboard to this slot') : '<span></span>') +
+    '<span class="title"></span>' +
+    btn('close', '✕', 'Close (Esc)') +
+    '</div>' +
     '<div class="stage"><div class="state"></div></div>' +
     '<div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot">' +
     '<div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div>' +
-    '<div class="cap"></div>' +
     '<div class="bar">' +
+    '<span class="time"></span>' +
+    '<span class="transport">' +
     btn('prev-slot', '‹‹', 'Previous slot (Shift+←)') + btn('prev', '‹', 'Previous frame in this slot (←)') +
     btn('play', '▶', 'Play the frames in this slot (Space)') + btn('next', '›', 'Next frame in this slot (→)') +
     btn('next-slot', '››', 'Next slot (Shift+→)') +
-    '<span class="spacer"></span>' +
-    btn('fps', '', 'Speed') + btn('style', '', 'Scrubber: ticks or thumbnails') +
-    (ctx.onZoom ? btn('zoom', 'Zoom', 'Zoom the dashboard to this slot') : '') +
-    btn('close', '✕', 'Close (Esc)') +
+    '</span>' +
+    '<span class="opts">' +
+    btn('style-ticks', ICON_TICKS, 'Scrubber: a tick per frame') + btn('style-thumbs', ICON_THUMBS, 'Scrubber: the frames themselves') +
+    btn('fps', '', 'Speed') +
+    '</span>' +
     '</div>';
   // the image goes in with its source already set
   const img = document.createElement('img');
@@ -113,7 +126,8 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   const thumbs = el.querySelector<HTMLElement>('.thumbs')!;
   const ticks = el.querySelector<HTMLElement>('.ticks')!;
   const head = el.querySelector<HTMLElement>('.head')!;
-  const cap = el.querySelector<HTMLElement>('.cap')!;
+  const titleEl = el.querySelector<HTMLElement>('.title')!;
+  const timeEl = el.querySelector<HTMLElement>('.time')!;
   const b = (a: string) => el.querySelector<HTMLButtonElement>(`button[data-a="${a}"]`)!;
 
   /* the slot the player is in, and the frames taken within it (plus the one
@@ -158,7 +172,8 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
 
   function labels(): void {
     b('fps').textContent = prefs.fps + ' fps';
-    b('style').textContent = prefs.style === 'ticks' ? 'Ticks' : 'Thumbs';
+    b('style-ticks').setAttribute('aria-pressed', String(prefs.style === 'ticks'));
+    b('style-thumbs').setAttribute('aria-pressed', String(prefs.style === 'thumbs'));
     b('play').textContent = playing ? '❚❚' : '▶';
     const n = stops().length;
     b('play').disabled = n < 2;
@@ -254,23 +269,18 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     }
   }
 
+  /* the title (and how many of the slot's frames are shown, when not all),
+   * and the time of what's shown: the frame's own, or a gap's start */
   function caption(f: Frame | null): void {
     const fs = shown();
     // the frames the player has for the slot, and how many the slot holds:
     // more, when the source thinned them (each row's count says how many)
-    const every = inSlot();
-    const total = every.reduce((a, x) => a + (x.count && x.count > 1 ? x.count : 1), 0);
-    const i = f ? fs.indexOf(f) : -1;
-    // "frame 22 of 89 in this slot"; thinned or drawn sparser, "frame 12 of
-    // 280 shown · 455 in this slot"; between frames, the one shown and its place
-    const place = fs.length > 1 && i >= 0
-      ? (i + 1) + ' of ' + fs.length + (total > fs.length ? ' shown · ' + total + ' in this slot' : ' in this slot')
-      : total > 1 && f ? total + ' in this slot' : '';
-    cap.textContent = (ctx.label ? ctx.label + ' — ' : '') + ctx.tt.time(t) + ctx.tt.sfx(t) +
-      (f && f.ts !== t
-        ? ' · frame ' + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) + (place ? ' (' + place + ')' : '')
-        : place ? ' · frame ' + place : '');
-    // more frames than drawn: Zoom shows them all
+    const total = inSlot().reduce((a, x) => a + (x.count && x.count > 1 ? x.count : 1), 0);
+    titleEl.textContent = (ctx.label ?? '') + (total > fs.length ? ' (showing ' + fs.length + ' of ' + total + ')' : '');
+    titleEl.title = titleEl.textContent;
+    const at = f && !el.classList.contains('off') ? f.ts : t;
+    timeEl.textContent = ctx.tt.time(at) + ctx.tt.sfx(at);
+    // more frames than shown: Zoom shows them all
     const zoom = el.querySelector<HTMLButtonElement>('button[data-a="zoom"]');
     if (zoom) {
       zoom.classList.toggle('hint', total > fs.length);
@@ -372,11 +382,16 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
       case 'next-slot': stop(); toSlot(1); break;
       case 'fps': prefs.fps = FPS[(FPS.indexOf(prefs.fps) + 1) % FPS.length]; savePrefs(prefs); if (playing) { stop(); play(); } labels(); break;
       // a style draws a different number of frames: ask for that many
-      case 'style': prefs.style = prefs.style === 'ticks' ? 'thumbs' : 'ticks'; savePrefs(prefs); labels(); drawScrub(); show(); void load(t); break;
+      case 'style-ticks': case 'style-thumbs': {
+        const style: ScrubStyle = a === 'style-ticks' ? 'ticks' : 'thumbs';
+        if (style === prefs.style) {break;}
+        prefs.style = style; savePrefs(prefs); labels(); drawScrub(); show(); void load(t);
+        break;
+      }
       case 'zoom': stop(); ctx.onZoom?.(slot.from, slot.to); close(); break;
     }
   };
-  el.querySelector('.bar')!.addEventListener('click', (e) => {
+  el.addEventListener('click', (e) => {
     const a = (e.target as HTMLElement).closest('button')?.dataset.a;
     if (a && a !== 'close') {act(a);}
   });

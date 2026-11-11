@@ -316,14 +316,22 @@ const CSS = `
 .ktl-pop.player .tick { position:absolute; bottom:0; height:40%; width:1px; background:var(--ktl-text); opacity:.55; }
 .ktl-pop.player.thumbs .tick { height:6px; }
 .ktl-pop.player .head { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--ktl-accent); pointer-events:none; }
-.ktl-pop.player .bar { display:flex; align-items:center; gap:4px; }
-.ktl-pop.player .bar .spacer { flex:1 1 auto; }
-/* the caption on its own line: it gives way rather than wrap and grow the popup */
-.ktl-pop.player > .cap { padding:0 4px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ktl-pop.player .top, .ktl-pop.player .bar { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:6px; }
+/* on top, what this is: the title gives way rather than wrap and grow the popup */
+.ktl-pop.player .top { grid-template-columns:auto minmax(0, 1fr) auto; }
+.ktl-pop.player .top .title { text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
+/* below, the playback: the frame's time, the transport centred, the options */
+.ktl-pop.player .bar .time { justify-self:start; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.ktl-pop.player .bar .transport, .ktl-pop.player .bar .opts { display:flex; gap:4px; align-items:center; }
+.ktl-pop.player .bar .opts { justify-self:end; }
+.ktl-pop.player button svg { display:block; }
+.ktl-pop.player button[aria-pressed="true"] { border-color:var(--ktl-accent); color:var(--ktl-accent); }
+.ktl-pop.player button[aria-pressed="false"] { opacity:.6; }
 .ktl-pop.player button { flex:0 0 auto; }
 .ktl-pop.player button.hint { border-color:var(--ktl-accent); color:var(--ktl-accent); }
 .ktl-pop.player button { font:inherit; color:var(--ktl-text); background:transparent; border:1px solid var(--ktl-border);
-                         border-radius:2px; padding:2px 7px; min-width:28px; cursor:pointer; line-height:18px; }
+                         border-radius:2px; padding:2px 7px; min-width:28px; height:24px; cursor:pointer; line-height:18px;
+                         display:inline-flex; align-items:center; justify-content:center; }
 .ktl-pop.player button:hover:not(:disabled) { border-color:var(--ktl-accent); }
 .ktl-pop.player button:disabled { opacity:.4; cursor:default; }
 .ktl-pop.player button:focus-visible { outline:2px solid var(--ktl-accent); outline-offset:1px; }
