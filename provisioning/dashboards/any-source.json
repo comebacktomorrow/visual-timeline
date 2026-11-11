@@ -320,9 +320,10 @@
         }
       ],
       "options": {
-        "mode": "timeline"
+        "mode": "timeline",
+        "showVideoLine": true
       },
-      "description": "cam-v: a frame a minute, and a clip from 10:06 to 10:12 (with a larger version) that plays over them. cam-w: only clips, 10:00 to 10:20."
+      "description": "cam-v: a frame a minute, and a clip from 10:06 to 10:12 (with a larger version) that plays over them; video is marked on the strip. cam-w: only clips, 10:00 to 10:20 (works, but frames are recommended alongside)."
     }
   ]
 }

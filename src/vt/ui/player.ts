@@ -1,6 +1,7 @@
 import { pauseInfo } from '../model/eras';
 import { clipTime, playVideo, Reel, videoTime, type ClipSpan, type ReelSlot, type ReelSource } from '../model/reel';
 import { FRAME_WIDTH } from './frameWidth';
+import { measureReel, noteClipLength } from './clipLength';
 import type { ZoneTexts } from '../zones/source';
 import type { Clip, Frame, TimeWindow } from '../types';
 
@@ -19,7 +20,10 @@ import type { Clip, Frame, TimeWindow } from '../types';
  * A video clip over the slot (M10c) plays over its stills: its part of the
  * slot is a plain bar on the scrubber, hovering it seeks the video, and Play
  * plays it (round again at the slot's end), muted unless unmuted. HD plays
- * the clip's larger version when it has one. */
+ * the clip's larger version when it has one. A slot holding more video than
+ * plays in a few seconds (zoomed out) is played as a slot of frames is: its
+ * stills, sampled, and the video's own frames where it has none; Zoom shows
+ * the video. */
 
 export type ScrubStyle = 'ticks' | 'thumbs';
 
@@ -49,6 +53,10 @@ export interface PlayerContext extends ReelSource {
 interface Prefs { style: ScrubStyle; fps: number; hd: boolean; muted: boolean }
 const PREFS_KEY = 'ktl-player';
 const FPS = [1, 2, 4, 8, 16];
+/* a slot's video: its speed, from what fits it into a few seconds
+ * (Reel.videoRate) to the viewer's choice of these */
+const SPEEDS = [1, 2, 4, 8, 16];
+const fmtRate = (r: number) => (Math.round(r * 10) / 10) + '×';
 function loadPrefs(ctx: PlayerContext): Prefs {
   const base: Prefs = { style: ctx.scrubber ?? 'ticks', fps: 4, hd: true, muted: true };
   try {
@@ -154,6 +162,11 @@ export function mountPlayer(
   /* the video is playing, and moves the playhead (not the other way round) */
   let driving = false;
   let raf = 0;
+  /* the video's speed the viewer chose, for this slot; null: what fits it */
+  let speed: number | null = null;
+  /* the slot's video plays: the speed button sets how fast */
+  const videoMode = () => reel.watched().length > 0;
+  const rateNow = () => speed ?? reel.videoRate() ?? 1;
   let hiTimer: ReturnType<typeof setTimeout> | null = null;
   let gone = false;
 
@@ -166,7 +179,16 @@ export function mountPlayer(
   const xOf = (ts: number) => ((ts - slot().from) / span()) * 100;
 
   function labels(): void {
-    b('fps').textContent = prefs.fps + ' fps';
+    // with video, the speed is a multiple of real time, fitting the slot's
+    // video into a few seconds until the viewer picks another
+    if (videoMode()) {
+      b('fps').textContent = fmtRate(rateNow());
+      b('fps').title = 'Video speed' + (speed === null ? ' (fits this slot\'s video into about ten seconds)' : '') + ': click for faster';
+    } else {
+      b('fps').textContent = prefs.fps + ' fps';
+      b('fps').title = 'Speed';
+    }
+    b('fps').setAttribute('aria-label', b('fps').title);
     b('style-ticks').setAttribute('aria-pressed', String(prefs.style === 'ticks'));
     b('style-thumbs').setAttribute('aria-pressed', String(prefs.style === 'thumbs'));
     b('play').textContent = playing ? '❚❚' : '▶';
@@ -223,7 +245,7 @@ export function mountPlayer(
     if (prefs.style !== 'thumbs') {return;}
     const fs = reel.shown(Math.max(4, Math.floor(width() / THUMB_PX)));
     // where a picture stops: a gap or a clip
-    const gaps = [...reel.gaps(), ...reel.clipSpans()].sort((a, z) => a.from - z.from);
+    const gaps = [...reel.gaps(), ...reel.watched()].sort((a, z) => a.from - z.from);
     const cell = (f: Frame, from: number, to: number, prior = false) => {
       const c = document.createElement('div');
       c.className = 'thumb' + (prior ? ' prior' : '');
@@ -303,6 +325,7 @@ export function mountPlayer(
     if (gone) {return;}
     size(video.videoWidth, video.videoHeight);
     place();
+    if (vidClip) {noteClipLength(vidClip.url, video.duration);}
     if (vidClip && pendingT !== null && video.duration > 0) {video.currentTime = videoTime(vidClip, pendingT, video.duration);}
     pendingT = null;
   });
@@ -323,11 +346,13 @@ export function mountPlayer(
     titleEl.title = titleEl.textContent;
     const at = f ? f.ts : t;
     timeEl.textContent = ctx.tt.time(at) + ctx.tt.sfx(at);
-    // more frames than shown: Zoom shows them all
+    // more frames than shown, or more video than plays here: Zoom shows them
+    const sampled = reel.clips.length > 0 && reel.videoRate() === null;
     const zoom = el.querySelector<HTMLButtonElement>('button[data-a="zoom"]');
     if (zoom) {
-      zoom.classList.toggle('hint', total > shown);
-      const tip = total > shown ? total + ' frames in this slot, ' + shown + ' shown: zoom the dashboard to the slot to see them all' : 'Zoom the dashboard to this slot';
+      zoom.classList.toggle('hint', total > shown || sampled);
+      const tip = sampled ? 'More video in this slot than plays here: zoom the dashboard to the slot to watch it'
+        : total > shown ? total + ' frames in this slot, ' + shown + ' shown: zoom the dashboard to the slot to see them all' : 'Zoom the dashboard to this slot';
       zoom.title = tip;
       zoom.setAttribute('aria-label', tip);
     }
@@ -348,6 +373,14 @@ export function mountPlayer(
     drawScrub();
     labels();
     seek(at);
+    // how long the host's clips play decides whether the slot's video is
+    // watched or sampled: learned once per host
+    if (await measureReel(r, ctx.key)) {
+      if (gone || r !== reel) {return;}
+      drawScrub();
+      labels();
+      show();
+    }
   }
 
   function stopVideo(): void {
@@ -402,6 +435,8 @@ export function mountPlayer(
     const go = () => {
       if (!playing || gone || !driving) {return;}
       video.muted = prefs.muted;
+      // sped up to be watched in a few seconds, or as the viewer chose
+      video.playbackRate = rateNow();
       // sound needs a press: refused, it plays muted
       playVideo(video).catch(() => { video.muted = true; return playVideo(video); }).catch(() => stop());
       raf = requestAnimationFrame(follow);
@@ -422,6 +457,7 @@ export function mountPlayer(
     const next = ctx.slotAt(dir > 0 ? slot().to : slot().from - 1);
     if (!next || next.from === slot().from) {return;}
     reel = new Reel(ctx, next);
+    speed = null;
     const at = next.frameTs !== undefined && next.frameTs >= next.from && next.frameTs < next.to ? next.frameTs : next.ts;
     drawScrub();
     labels();
@@ -455,7 +491,15 @@ export function mountPlayer(
         labels();
         break;
       }
-      case 'fps': prefs.fps = FPS[(FPS.indexOf(prefs.fps) + 1) % FPS.length]; savePrefs(prefs); if (playing) { stop(); play(); } labels(); break;
+      case 'fps':
+        if (videoMode()) {
+          // the next speed up, round to real time
+          speed = SPEEDS.find((x) => x > rateNow() + 0.01) ?? SPEEDS[0];
+          if (driving) {video.playbackRate = speed;}
+          labels();
+          break;
+        }
+        prefs.fps = FPS[(FPS.indexOf(prefs.fps) + 1) % FPS.length]; savePrefs(prefs); if (playing) { stop(); play(); } labels(); break;
       // the same frames either way: only how they're drawn changes
       case 'style-ticks': case 'style-thumbs': {
         const style: ScrubStyle = a === 'style-ticks' ? 'ticks' : 'thumbs';

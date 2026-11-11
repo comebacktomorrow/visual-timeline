@@ -2,6 +2,7 @@ import { frameIndexAt } from '../model/playhead';
 import { buildIntervals } from '../model/intervals';
 import { thinWithCounts } from '../../shared/frameRecords';
 import { mountPlayer, type PlayerContext } from './player';
+import { noteClipLength } from './clipLength';
 import type { Clip, Frame } from '../types';
 
 const MIN = 60e3;
@@ -279,6 +280,11 @@ describe('the preview player', () => {
     let played: number;
     beforeEach(() => {
       played = 0;
+      // how long each clip plays, as its metadata would say (jsdom loads no video)
+      noteClipLength('c.webm', 30);      // 3 minutes in 30 s: sped up 3×
+      noteClipLength('w.webm', 7);       // 7 minutes in 7 s
+      noteClipLength('long.webm', 180);  // real time: zoomed out, too long to watch
+      noteClipLength('fast.webm', 60);   // 3 minutes in a minute: 6×
       jest.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => { played++; return Promise.resolve(); });
       jest.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
       jest.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
@@ -330,12 +336,45 @@ describe('the preview player', () => {
       expect(el.classList.contains('video')).toBe(true);
       expect(el.classList.contains('has-hi')).toBe(false);
       expect((el.querySelector('button[data-a="play"]') as HTMLButtonElement).disabled).toBe(false);
-      metadata(el.querySelector('video')!, 60);
+      metadata(el.querySelector('video')!, 7);
       press('play');
       await flush();
       expect(played).toBe(1);
       expect(el.querySelector('button[data-a="play"]')!.textContent).toBe('❚❚');
       expect(times).toEqual([]);
+    });
+
+    test('the speed button is the video\'s speed: what fits the slot\'s video in about ten seconds, then faster', async () => {
+      teardown = mountPlayer(el, fr(30), clipCtx([{ from: at(31), to: at(34), url: 'fast.webm' }]), () => {});
+      await flush();
+      const fps = el.querySelector('button[data-a="fps"]')!;
+      expect(fps.textContent).toBe('6×');
+      press('fps');
+      expect(fps.textContent).toBe('8×');
+      press('fps');
+      press('fps');
+      expect(fps.textContent).toBe('1×');
+      press('next');
+      metadata(el.querySelector('video')!, 60);
+      press('play');
+      await flush();
+      expect(el.querySelector('video')!.playbackRate).toBe(1);
+    });
+
+    test('zoomed out, more video than plays in a few seconds: the slot\'s stills, as frames are; Zoom to watch it', async () => {
+      const long = [{ from: at(31), to: at(34), url: 'long.webm' }];
+      teardown = mountPlayer(el, fr(30), { ...clipCtx(long), onZoom: () => {} }, () => {});
+      await flush();
+      // the stills under the clip are its ticks again; the clip a bar under them
+      expect(el.querySelectorAll('.tick')).toHaveLength(5);
+      expect(el.querySelectorAll('.lane.clip')).toHaveLength(1);
+      expect(el.querySelector('button[data-a="zoom"]')!.classList.contains('hint')).toBe(true);
+      expect(el.querySelector('button[data-a="fps"]')!.textContent).toBe('4 fps');
+      press('next');
+      press('next');
+      expect(hhmm()).toBe('10:32');
+      expect(el.classList.contains('video')).toBe(false);
+      expect(el.querySelector('.stage img')!.getAttribute('src')).toBe('f32.jpg');
     });
   });
 });

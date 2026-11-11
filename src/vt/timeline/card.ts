@@ -12,6 +12,7 @@ import { hideSelection, setCursor, showSelection } from './cursor';
 import { playerContext } from '../ui/playerContext';
 import { makeFlipbook } from './flipbook';
 import { clipTime, playVideo, Reel, videoTime } from '../model/reel';
+import { measureReel, noteClipLength } from '../ui/clipLength';
 import type { Card, TimelineState } from './state';
 
 /* Post-layout dressing, idempotent and re-runnable:
@@ -114,10 +115,10 @@ export function renderStrip(s: TimelineState, model: SourceModel, strip: HTMLEle
       drops.appendChild(m);
     }
   }
-  // where the host has video (M10c): a thin line along the strip's foot,
-  // over frames too (the preview plays the video there)
+  // where the host has video (M10c), when the panel asks: a thin line along
+  // the strip's foot, over frames too (the preview plays the video there)
   let clipsEl = strip.querySelector<HTMLElement>('.clips');
-  const inWindow = model.clips.filter((c) => c.to > s.P.from && c.from < s.P.to);
+  const inWindow = s.cfg.videoLine ? model.clips.filter((c) => c.to > s.P.from && c.from < s.P.to) : [];
   if (inWindow.length && !clipsEl) {
     clipsEl = document.createElement('div');
     clipsEl.className = 'clips';
@@ -183,15 +184,17 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
       if (!m) {return;}
       const im = m.querySelector('img')!;
       if (at.frame && im.getAttribute('src') !== at.frame.url) {im.src = at.frame.url;}
-      // a gap shows its reason over the last frame, dimmed, as the player does
-      m.classList.toggle('flip-gap', at.gap);
-      const reason = at.kind === 'dropped' ? 'offline' : at.kind === 'nodata' ? 'no frame'
+      // a gap shows its reason over the last frame, dimmed, as the player
+      // does; so does a stretch only video covers (zoomed out)
+      m.classList.toggle('flip-gap', at.gap || at.kind === 'clip');
+      const reason = at.kind === 'dropped' ? 'offline' : at.kind === 'nodata' ? 'no frame' : at.kind === 'clip' ? 'video'
         : at.kind === 'paused' ? pauseInfo({ paused: true, label: at.interval?.pause?.label }).label.toLowerCase() : '';
-      const ts = at.gap || !at.frame ? t : at.frame.ts;
+      const ts = at.gap || at.kind === 'clip' || !at.frame ? t : at.frame.ts;
       m.querySelector('.cap')!.textContent = tt.time(ts) + tt.sfx(ts) + (reason ? ' · ' + reason : '') + ' · ' + (i + 1) + '/' + n;
     },
+    measure: (r) => measureReel(r, source.key),
     // a clip's part of the slot, the smaller version, muted, round and round
-    clip: (span) => {
+    clip: (span, rate = 1) => {
       const m = rec?.mag;
       if (!m) {return;}
       let v = m.querySelector('video');
@@ -208,8 +211,9 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
       }
       const vid = v;
       const from = () => videoTime(span.clip, span.from, vid.duration), to = () => videoTime(span.clip, span.to, vid.duration);
-      const again = () => { vid.currentTime = from(); playVideo(vid).catch(() => {}); };
+      const again = () => { vid.currentTime = from(); vid.playbackRate = rate; playVideo(vid).catch(() => {}); };
       vid.onloadedmetadata = () => {
+        noteClipLength(span.clip.url, vid.duration);
         if (vid.videoWidth && vid.videoHeight) {m.style.aspectRatio = String(vid.videoWidth / vid.videoHeight);}
         again();
       };

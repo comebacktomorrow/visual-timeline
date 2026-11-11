@@ -16,6 +16,7 @@ export function playerContext(
 ): PlayerContext {
   return {
     window: { from: P.from, to: P.to },
+    key: decl.site + '/' + decl.id,
     step: model.step,
     tt,
     fetch: (from, to) => backend.allFrames

@@ -49,6 +49,8 @@ interface VisualTimelineOptions {
   playerScrubber?: 'ticks' | 'thumbs';
   /** The least width a frame gets, px: the strip's slots and the player's ticks. */
   frameWidth?: number;
+  /** A line along the strip's foot where a host has video (M10c). */
+  showVideoLine?: boolean;
   /** Header chips (#126): which, in order, and what a click does. */
   chips?: string;
   chipClick?: 'filter' | 'link' | 'none';
@@ -295,6 +297,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       ...(sampleInterval > 0 ? { sampleInterval } : {}),
       playerScrubber: options.playerScrubber || 'ticks',
       frameWidth: options.frameWidth || FRAME_WIDTH,
+      videoLine: !!options.showVideoLine,
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
       timeZone,
@@ -323,7 +326,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, sampleInterval, options.playerScrubber, options.frameWidth, chipsKey]);
+  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, sampleInterval, options.playerScrubber, options.frameWidth, options.showVideoLine, chipsKey]);
 
   useEffect(() => {
     const subs = [
@@ -551,6 +554,13 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       description: 'The least width a frame gets, in pixels, wherever it is drawn: the strip\'s slots, and the ticks in the player\'s timeline of a slot. Smaller shows more detail and loads more images; larger, fewer.',
       defaultValue: FRAME_WIDTH,
       settings: { min: FRAME_WIDTH_MIN, max: FRAME_WIDTH_MAX, step: 1 },
+    })
+    .addBooleanSwitch({
+      path: 'showVideoLine',
+      name: 'Mark video on the strip',
+      description: 'A thin line along the foot of each strip where its host has video clips. Off: only the preview shows them.',
+      defaultValue: false,
+      showIf: (o) => o.mode !== 'grid',
     })
     .addBooleanSwitch({
       path: 'showDetails',

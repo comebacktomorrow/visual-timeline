@@ -2040,6 +2040,8 @@ var VTCore = (() => {
     const f = duration > 0 ? seconds / duration : 0;
     return clip.from + Math.max(0, Math.min(1, f)) * (clip.to - clip.from);
   }
+  var PLAY_TARGET_S = 10;
+  var MAX_RATE = 16;
   var isGap = (k) => k === "dropped" || k === "nodata" || k === "paused";
   var Reel = class {
     /** `seed`: a frame to show until the reel loads (the one clicked); it's
@@ -2053,6 +2055,10 @@ var VTCore = (() => {
       this.intervals = [];
       /** the video clips over the slot */
       this.clips = [];
+      /** seconds of video per ms of the time a clip covers (a host's clips are
+       * alike: a timelapse's few, real time's a thousandth), once a clip's
+       * length is known; null until then */
+      this.ratio = null;
       this.seq = 0;
       if (seed) {
         this.frames = [seed];
@@ -2114,17 +2120,39 @@ var VTCore = (() => {
       });
       return out;
     }
-    /** the clip's part of the slot in force at t, if any */
+    /** how much video the slot holds (s), once a clip's length is known */
+    videoSeconds() {
+      if (this.ratio === null) {
+        return null;
+      }
+      return this.clipSpans().reduce((a, c) => a + (c.to - c.from) * this.ratio, 0);
+    }
+    /** how fast the slot's video plays to be watched in PLAY_TARGET_S: 1, or
+     * faster, up to MAX_RATE; null when it's longer than that (zoomed out:
+     * the slot is sampled, as frames are). Its length unknown yet, 1. */
+    videoRate() {
+      const v = this.videoSeconds();
+      if (v === null || v <= PLAY_TARGET_S) {
+        return 1;
+      }
+      return v <= PLAY_TARGET_S * MAX_RATE ? v / PLAY_TARGET_S : null;
+    }
+    /** the clips' parts that play over the stills: all, while the slot's
+     * video is short enough to watch; none when it's sampled */
+    watched() {
+      return this.videoRate() === null ? [] : this.clipSpans();
+    }
+    /** the watched clip's part of the slot in force at t, if any */
     clipAt(t) {
-      return this.clipSpans().find((c) => c.from <= t && t < c.to) ?? null;
+      return this.watched().find((c) => c.from <= t && t < c.to) ?? null;
     }
     /** what plays: more than one stop, or a clip */
     playable(n) {
-      return this.stops(n).length > 1 || this.clipSpans().length > 0;
+      return this.stops(n).length > 1 || this.watched().length > 0;
     }
     /** the frames taken within the slot, but for those a clip plays over */
     inSlot() {
-      const spans = this.clipSpans();
+      const spans = this.watched();
       return this.frames.filter((f) => f.ts >= this.slot.from && f.ts < this.slot.to && !spans.some((c) => c.from <= f.ts && f.ts < c.to));
     }
     /** the frame in force before the slot's first (from before it) */
@@ -2148,9 +2176,10 @@ var VTCore = (() => {
       }
       return out;
     }
-    /** the stretches without a frame, within the slot (a clip plays over them) */
+    /** the stretches without a frame, within the slot (but where a clip plays
+     * over them) */
     gaps() {
-      const spans = this.clipSpans();
+      const spans = this.watched();
       const out = [];
       for (const iv of this.intervals) {
         if (!isGap(iv.kind) || iv.to <= this.slot.from || iv.from >= this.slot.to) {
@@ -2167,14 +2196,28 @@ var VTCore = (() => {
       return out;
     }
     /** the stops: each of the n frames shown, the start of each gap, and the
-     * start of each clip's part */
+     * start of each watched clip's part; sampled, a share of n through each
+     * stretch only a clip covers (the video's own frames) */
     stops(n) {
       const out = new Set(this.shown(n).map((f) => f.ts));
       for (const g of this.gaps()) {
         out.add(Math.max(g.from, this.slot.from));
       }
-      for (const c of this.clipSpans()) {
+      for (const c of this.watched()) {
         out.add(c.from);
+      }
+      if (this.videoRate() === null) {
+        const { from, to } = this.slot;
+        for (const iv of this.intervals) {
+          if (iv.kind !== "clip" || iv.to <= from || iv.from >= to) {
+            continue;
+          }
+          const a = Math.max(iv.from, from), b = Math.min(iv.to, to);
+          const k = Math.max(1, Math.round(n * (b - a) / (to - from)));
+          for (let i = 0; i < k; i++) {
+            out.add(a + (b - a) * i / k);
+          }
+        }
       }
       return [...out].sort((a, z) => a - z);
     }
@@ -2187,6 +2230,12 @@ var VTCore = (() => {
         return { frame, interval: null, kind: "clip", gap: false, span };
       }
       const interval = this.intervals.find((x) => x.from <= t && t < x.to) || null;
+      if (interval?.kind === "clip") {
+        const c = this.clipSpans().find((x) => x.from <= t && t < x.to);
+        if (c) {
+          return { frame, interval, kind: "clip", gap: false, span: c };
+        }
+      }
       const kind = interval ? interval.kind : frame ? "frame" : "nodata";
       return { frame, interval, kind, gap: isGap(kind) };
     }
@@ -2202,16 +2251,83 @@ var VTCore = (() => {
     cycle(t, n) {
       const st = this.stops(n);
       if (st.length < 2) {
-        return st.length && this.clipSpans().length ? st[0] : null;
+        return st.length && this.watched().length ? st[0] : null;
       }
       const i = st.findIndex((x) => x > t);
       return st[i < 0 ? 0 : i];
     }
   };
 
+  // src/vt/ui/clipLength.ts
+  var PROBE_MS = 4e3;
+  var lengths = /* @__PURE__ */ new Map();
+  var ratios = /* @__PURE__ */ new Map();
+  function noteClipLength(url, seconds) {
+    if (Number.isFinite(seconds) && seconds > 0) {
+      lengths.set(url, seconds);
+    }
+  }
+  function clipLength(url) {
+    const known = lengths.get(url);
+    if (known) {
+      return Promise.resolve(known);
+    }
+    return new Promise((resolve2) => {
+      const v = document.createElement("video");
+      v.preload = "metadata";
+      v.muted = true;
+      let timer = null;
+      const done = (s) => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        } else {
+          return;
+        }
+        v.onloadedmetadata = v.onerror = null;
+        v.removeAttribute("src");
+        try {
+          v.load();
+        } catch {
+        }
+        resolve2(s);
+      };
+      v.onloadedmetadata = () => {
+        noteClipLength(url, v.duration);
+        done(lengths.get(url) ?? null);
+      };
+      v.onerror = () => done(null);
+      timer = setTimeout(() => done(null), PROBE_MS);
+      v.src = url;
+    });
+  }
+  async function measureReel(reel, key) {
+    if (reel.ratio !== null || !reel.clips.length) {
+      return false;
+    }
+    const known = key ? ratios.get(key) : void 0;
+    if (known) {
+      reel.ratio = known;
+      return true;
+    }
+    const c = reel.clips[0];
+    const s = await clipLength(c.url);
+    if (!s || reel.ratio !== null) {
+      return false;
+    }
+    const r = s / Math.max(1, c.to - c.from);
+    if (key) {
+      ratios.set(key, r);
+    }
+    reel.ratio = r;
+    return true;
+  }
+
   // src/vt/ui/player.ts
   var PREFS_KEY = "ktl-player";
   var FPS = [1, 2, 4, 8, 16];
+  var SPEEDS = [1, 2, 4, 8, 16];
+  var fmtRate = (r) => Math.round(r * 10) / 10 + "\xD7";
   function loadPrefs(ctx) {
     const base = { style: ctx.scrubber ?? "ticks", fps: 4, hd: true, muted: true };
     try {
@@ -2277,6 +2393,9 @@ var VTCore = (() => {
     let pendingT = null;
     let driving = false;
     let raf = 0;
+    let speed = null;
+    const videoMode = () => reel.watched().length > 0;
+    const rateNow = () => speed ?? reel.videoRate() ?? 1;
     let hiTimer = null;
     let gone = false;
     const width = () => scrub.clientWidth || 560;
@@ -2286,7 +2405,14 @@ var VTCore = (() => {
     const span = () => Math.max(1, slot().to - slot().from);
     const xOf = (ts) => (ts - slot().from) / span() * 100;
     function labels() {
-      b("fps").textContent = prefs.fps + " fps";
+      if (videoMode()) {
+        b("fps").textContent = fmtRate(rateNow());
+        b("fps").title = "Video speed" + (speed === null ? " (fits this slot's video into about ten seconds)" : "") + ": click for faster";
+      } else {
+        b("fps").textContent = prefs.fps + " fps";
+        b("fps").title = "Speed";
+      }
+      b("fps").setAttribute("aria-label", b("fps").title);
       b("style-ticks").setAttribute("aria-pressed", String(prefs.style === "ticks"));
       b("style-thumbs").setAttribute("aria-pressed", String(prefs.style === "thumbs"));
       b("play").textContent = playing ? "\u275A\u275A" : "\u25B6";
@@ -2340,7 +2466,7 @@ var VTCore = (() => {
         return;
       }
       const fs = reel.shown(Math.max(4, Math.floor(width() / THUMB_PX)));
-      const gaps = [...reel.gaps(), ...reel.clipSpans()].sort((a, z) => a.from - z.from);
+      const gaps = [...reel.gaps(), ...reel.watched()].sort((a, z) => a.from - z.from);
       const cell = (f, from, to, prior2 = false) => {
         const c = document.createElement("div");
         c.className = "thumb" + (prior2 ? " prior" : "");
@@ -2428,6 +2554,9 @@ var VTCore = (() => {
       }
       size(video.videoWidth, video.videoHeight);
       place();
+      if (vidClip) {
+        noteClipLength(vidClip.url, video.duration);
+      }
       if (vidClip && pendingT !== null && video.duration > 0) {
         video.currentTime = videoTime(vidClip, pendingT, video.duration);
       }
@@ -2448,10 +2577,11 @@ var VTCore = (() => {
       titleEl.title = titleEl.textContent;
       const at = f ? f.ts : t;
       timeEl.textContent = ctx.tt.time(at) + ctx.tt.sfx(at);
+      const sampled = reel.clips.length > 0 && reel.videoRate() === null;
       const zoom = el.querySelector('button[data-a="zoom"]');
       if (zoom) {
-        zoom.classList.toggle("hint", total > shown);
-        const tip = total > shown ? total + " frames in this slot, " + shown + " shown: zoom the dashboard to the slot to see them all" : "Zoom the dashboard to this slot";
+        zoom.classList.toggle("hint", total > shown || sampled);
+        const tip = sampled ? "More video in this slot than plays here: zoom the dashboard to the slot to watch it" : total > shown ? total + " frames in this slot, " + shown + " shown: zoom the dashboard to the slot to see them all" : "Zoom the dashboard to this slot";
         zoom.title = tip;
         zoom.setAttribute("aria-label", tip);
       }
@@ -2469,6 +2599,14 @@ var VTCore = (() => {
       drawScrub();
       labels();
       seek(at);
+      if (await measureReel(r, ctx.key)) {
+        if (gone || r !== reel) {
+          return;
+        }
+        drawScrub();
+        labels();
+        show();
+      }
     }
     function stopVideo() {
       driving = false;
@@ -2544,6 +2682,7 @@ var VTCore = (() => {
           return;
         }
         video.muted = prefs.muted;
+        video.playbackRate = rateNow();
         playVideo(video).catch(() => {
           video.muted = true;
           return playVideo(video);
@@ -2570,6 +2709,7 @@ var VTCore = (() => {
         return;
       }
       reel = new Reel(ctx, next);
+      speed = null;
       const at = next.frameTs !== void 0 && next.frameTs >= next.from && next.frameTs < next.to ? next.frameTs : next.ts;
       drawScrub();
       labels();
@@ -2622,6 +2762,14 @@ var VTCore = (() => {
           break;
         }
         case "fps":
+          if (videoMode()) {
+            speed = SPEEDS.find((x) => x > rateNow() + 0.01) ?? SPEEDS[0];
+            if (driving) {
+              video.playbackRate = speed;
+            }
+            labels();
+            break;
+          }
           prefs.fps = FPS[(FPS.indexOf(prefs.fps) + 1) % FPS.length];
           savePrefs(prefs);
           if (playing) {
@@ -3241,6 +3389,7 @@ var VTCore = (() => {
   function playerContext(backend, cfg, P, decl, model, tt, onTime, onZoom) {
     return {
       window: { from: P.from, to: P.to },
+      key: decl.site + "/" + decl.id,
       step: model.step,
       tt,
       fetch: (from, to) => backend.allFrames ? backend.allFrames(decl.site, decl.id, from, to) : backend.frames(decl.site, decl.id, from, to, Math.max(model.lastActive?.cadence ?? model.step, Math.ceil((to - from) / PLAYER_BUCKETS))),
@@ -3297,12 +3446,20 @@ var VTCore = (() => {
       if (!ok || mine !== seq || !current || current.x0 !== sl.x0) {
         return;
       }
-      const spans = reel.clipSpans().sort((a, z) => z.to - z.from - (a.to - a.from));
-      const span = reel.clipAt(sl.ts) ?? spans[0];
-      if (span && target.clip) {
+      if (reel.clips.length) {
+        await target.measure?.(reel);
+      }
+      if (mine !== seq || !current || current.x0 !== sl.x0) {
+        return;
+      }
+      const rate = reel.videoRate();
+      const all = reel.clipSpans();
+      const spans = (rate === null ? all : reel.watched()).sort((a, z) => z.to - z.from - (a.to - a.from));
+      const span = all.find((c) => c.from <= sl.ts && sl.ts < c.to) ?? spans[0];
+      if (span && target.clip && (rate !== null || !reel.inSlot().length)) {
         clipOn = true;
         target.playingChanged(true);
-        target.clip(span);
+        target.clip(span, rate ?? MAX_RATE);
         return;
       }
       const stops = reel.stops(FLIP_MAX);
@@ -3455,7 +3612,7 @@ var VTCore = (() => {
       }
     }
     let clipsEl = strip.querySelector(".clips");
-    const inWindow = model.clips.filter((c) => c.to > s.P.from && c.from < s.P.to);
+    const inWindow = s.cfg.videoLine ? model.clips.filter((c) => c.to > s.P.from && c.from < s.P.to) : [];
     if (inWindow.length && !clipsEl) {
       clipsEl = document.createElement("div");
       clipsEl.className = "clips";
@@ -3503,13 +3660,14 @@ var VTCore = (() => {
         if (at.frame && im.getAttribute("src") !== at.frame.url) {
           im.src = at.frame.url;
         }
-        m.classList.toggle("flip-gap", at.gap);
-        const reason = at.kind === "dropped" ? "offline" : at.kind === "nodata" ? "no frame" : at.kind === "paused" ? pauseInfo({ paused: true, label: at.interval?.pause?.label }).label.toLowerCase() : "";
-        const ts = at.gap || !at.frame ? t : at.frame.ts;
+        m.classList.toggle("flip-gap", at.gap || at.kind === "clip");
+        const reason = at.kind === "dropped" ? "offline" : at.kind === "nodata" ? "no frame" : at.kind === "clip" ? "video" : at.kind === "paused" ? pauseInfo({ paused: true, label: at.interval?.pause?.label }).label.toLowerCase() : "";
+        const ts = at.gap || at.kind === "clip" || !at.frame ? t : at.frame.ts;
         m.querySelector(".cap").textContent = tt.time(ts) + tt.sfx(ts) + (reason ? " \xB7 " + reason : "") + " \xB7 " + (i + 1) + "/" + n;
       },
+      measure: (r) => measureReel(r, source.key),
       // a clip's part of the slot, the smaller version, muted, round and round
-      clip: (span) => {
+      clip: (span, rate = 1) => {
         const m = rec?.mag;
         if (!m) {
           return;
@@ -3535,10 +3693,12 @@ var VTCore = (() => {
         const from = () => videoTime(span.clip, span.from, vid.duration), to = () => videoTime(span.clip, span.to, vid.duration);
         const again = () => {
           vid.currentTime = from();
+          vid.playbackRate = rate;
           playVideo(vid).catch(() => {
           });
         };
         vid.onloadedmetadata = () => {
+          noteClipLength(span.clip.url, vid.duration);
           if (vid.videoWidth && vid.videoHeight) {
             m.style.aspectRatio = String(vid.videoWidth / vid.videoHeight);
           }
