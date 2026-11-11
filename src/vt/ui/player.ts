@@ -82,6 +82,9 @@ function savePrefs(p: Prefs): void {
  * steps and plays through, and what it fetches (no finer). As thumbnails, a
  * picture per THUMB_PX of them. Zoom shows them all. */
 const THUMB_PX = 48;
+/* a wait for video shorter than this (ms) isn't called loading: a seek or
+ * a loop back within what's buffered only takes a moment */
+const LOADING_AFTER_MS = 600;
 /* a clip's part of a slot shorter than this (s of video) isn't played */
 const MIN_CLIP_S = 0.25;
 /* the popup's size (size() in mountPlayer) */
@@ -323,7 +326,7 @@ export function mountPlayer(
     }
     if (el.classList.contains('video')) {
       el.classList.remove('video');
-      loading(false);
+      waitFor(false);
       stopVideo();
     }
     const f = at.frame;
@@ -389,7 +392,8 @@ export function mountPlayer(
     spareClip = null;
     spareSrc = '';
     video.muted = prefs.muted;
-    loading(video.readyState < 3);
+    picture();
+    waitFor(video.readyState < 3 && video.seeking);
   }
   function wire(v: HTMLVideoElement): void {
     v.addEventListener('loadedmetadata', () => {
@@ -406,8 +410,12 @@ export function mountPlayer(
       if (vidClip && pendingT !== null && v.duration > 0) {v.currentTime = videoTime(vidClip, pendingT, v.duration);}
       pendingT = null;
     });
-    for (const e of ['waiting', 'seeking', 'loadstart']) {v.addEventListener(e, () => { if (v === video && v.readyState < 3) {loading(true);} });}
-    for (const e of ['canplay', 'playing', 'seeked']) {v.addEventListener(e, () => { if (v === video) {loading(v.readyState < 3 && v.seeking);} });}
+    // a picture once its first frame is in, until its source changes (a
+    // seek drops readyState too, but the last picture stays up)
+    v.addEventListener('loadstart', () => { delete v.dataset.pic; });
+    v.addEventListener('loadeddata', () => { v.dataset.pic = '1'; });
+    for (const e of ['waiting', 'seeking', 'loadstart']) {v.addEventListener(e, () => { if (v === video) { picture(); waitFor(v.readyState < 3); } });}
+    for (const e of ['loadeddata', 'canplay', 'playing', 'seeked']) {v.addEventListener(e, () => { if (v === video) { picture(); waitFor(v.readyState < 3 && v.seeking); } });}
     // a larger version that won't play: the smaller one
     v.addEventListener('error', () => {
       if (v !== video) { spareSrc = ''; return; }
@@ -419,8 +427,38 @@ export function mountPlayer(
   }
   wire(video);
   wire(spare);
-  // a video still on its way (a large file, a slow server, a seek that
-  // needs more of it) says so, over its last picture
+  /* A video with no picture yet (a clip's first load) shows the still under
+   * it; once it has one, it keeps showing its last picture while it seeks
+   * (a still swapped in for a moment flashed, black if it hadn't loaded). */
+  function picture(): void {
+    el.classList.toggle('no-picture', !video.dataset.pic);
+  }
+  /* A wait for video (a large file, a slow server, a seek that needs more of
+   * it) is called loading only once it's lasted a moment: seeks and loops
+   * within what's buffered don't flicker the message. */
+  let waitTimer: ReturnType<typeof setTimeout> | null = null;
+  function waitFor(on: boolean): void {
+    if (!on) {
+      if (waitTimer) { clearTimeout(waitTimer); waitTimer = null; }
+      loading(false);
+      return;
+    }
+    if (waitTimer || el.classList.contains('loading')) {return;}
+    waitTimer = setTimeout(() => {
+      waitTimer = null;
+      // a seek within what's downloaded is decoding, not loading (fast
+      // scrubbing keeps the video seeking all the time)
+      if (!gone && video.readyState < 3 && !buffered(video, video.currentTime)) {loading(true);}
+    }, LOADING_AFTER_MS);
+  }
+  /* whether a video has a time downloaded (with a little after it) */
+  function buffered(v: HTMLVideoElement, s: number): boolean {
+    for (let i = 0; i < v.buffered.length; i++) {
+      if (v.buffered.start(i) <= s && s < v.buffered.end(i) - 0.1) {return true;}
+    }
+    return false;
+  }
+  // a video still on its way says so, over its last picture
   function loading(on: boolean): void {
     if (el.classList.contains('loading') === on) {return;}
     el.classList.toggle('loading', on);
@@ -673,6 +711,7 @@ export function mountPlayer(
       v.load();
     }
     if (hiTimer) {clearTimeout(hiTimer);}
+    if (waitTimer) {clearTimeout(waitTimer);}
     document.removeEventListener('keydown', keyH);
   };
 }

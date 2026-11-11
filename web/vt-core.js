@@ -1609,8 +1609,8 @@ var VTCore = (() => {
 .ktl-pop.player .stage video { display:none; width:100%; height:100%; object-fit:contain; }
 .ktl-pop.player.video .stage video { display:block; }
 .ktl-pop.player.video .stage img { display:none; }
-.ktl-pop.player.video.loading .stage img[src] { display:block; }
-.ktl-pop.player.video.loading .stage video { display:none; }
+.ktl-pop.player.video.no-picture .stage img[src] { display:block; }
+.ktl-pop.player.video.no-picture .stage video { display:none; }
 .ktl-pop.player.video.loading .stage .state { color:var(--ktl-text); font-weight:500; opacity:.85; }
 .ktl-pop.player:not(.has-clip) button[data-a="mute"], .ktl-pop.player:not(.has-clip) button[data-a="hd"],
 .ktl-pop.player:not(.has-hi) button[data-a="hd"] { display:none; }
@@ -2382,6 +2382,7 @@ var VTCore = (() => {
     }
   }
   var THUMB_PX = 48;
+  var LOADING_AFTER_MS = 600;
   var MIN_CLIP_S = 0.25;
   var STAGE_H = 405;
   var MIN_W = 400;
@@ -2566,7 +2567,7 @@ var VTCore = (() => {
       }
       if (el.classList.contains("video")) {
         el.classList.remove("video");
-        loading(false);
+        waitFor(false);
         stopVideo();
       }
       const f = at.frame;
@@ -2642,7 +2643,8 @@ var VTCore = (() => {
       spareClip = null;
       spareSrc = "";
       video.muted = prefs.muted;
-      loading(video.readyState < 3);
+      picture();
+      waitFor(video.readyState < 3 && video.seeking);
     }
     function wire(v) {
       v.addEventListener("loadedmetadata", () => {
@@ -2668,17 +2670,25 @@ var VTCore = (() => {
         }
         pendingT = null;
       });
+      v.addEventListener("loadstart", () => {
+        delete v.dataset.pic;
+      });
+      v.addEventListener("loadeddata", () => {
+        v.dataset.pic = "1";
+      });
       for (const e of ["waiting", "seeking", "loadstart"]) {
         v.addEventListener(e, () => {
-          if (v === video && v.readyState < 3) {
-            loading(true);
+          if (v === video) {
+            picture();
+            waitFor(v.readyState < 3);
           }
         });
       }
-      for (const e of ["canplay", "playing", "seeked"]) {
+      for (const e of ["loadeddata", "canplay", "playing", "seeked"]) {
         v.addEventListener(e, () => {
           if (v === video) {
-            loading(v.readyState < 3 && v.seeking);
+            picture();
+            waitFor(v.readyState < 3 && v.seeking);
           }
         });
       }
@@ -2697,6 +2707,37 @@ var VTCore = (() => {
     }
     wire(video);
     wire(spare);
+    function picture() {
+      el.classList.toggle("no-picture", !video.dataset.pic);
+    }
+    let waitTimer = null;
+    function waitFor(on) {
+      if (!on) {
+        if (waitTimer) {
+          clearTimeout(waitTimer);
+          waitTimer = null;
+        }
+        loading(false);
+        return;
+      }
+      if (waitTimer || el.classList.contains("loading")) {
+        return;
+      }
+      waitTimer = setTimeout(() => {
+        waitTimer = null;
+        if (!gone && video.readyState < 3 && !buffered(video, video.currentTime)) {
+          loading(true);
+        }
+      }, LOADING_AFTER_MS);
+    }
+    function buffered(v, s) {
+      for (let i = 0; i < v.buffered.length; i++) {
+        if (v.buffered.start(i) <= s && s < v.buffered.end(i) - 0.1) {
+          return true;
+        }
+      }
+      return false;
+    }
     function loading(on) {
       if (el.classList.contains("loading") === on) {
         return;
@@ -3028,6 +3069,9 @@ var VTCore = (() => {
       }
       if (hiTimer) {
         clearTimeout(hiTimer);
+      }
+      if (waitTimer) {
+        clearTimeout(waitTimer);
       }
       document.removeEventListener("keydown", keyH);
     };

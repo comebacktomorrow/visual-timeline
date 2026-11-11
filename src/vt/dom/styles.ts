@@ -315,8 +315,8 @@ const CSS = `
 .ktl-pop.player .stage video { display:none; width:100%; height:100%; object-fit:contain; }
 .ktl-pop.player.video .stage video { display:block; }
 .ktl-pop.player.video .stage img { display:none; }
-.ktl-pop.player.video.loading .stage img[src] { display:block; }
-.ktl-pop.player.video.loading .stage video { display:none; }
+.ktl-pop.player.video.no-picture .stage img[src] { display:block; }
+.ktl-pop.player.video.no-picture .stage video { display:none; }
 .ktl-pop.player.video.loading .stage .state { color:var(--ktl-text); font-weight:500; opacity:.85; }
 .ktl-pop.player:not(.has-clip) button[data-a="mute"], .ktl-pop.player:not(.has-clip) button[data-a="hd"],
 .ktl-pop.player:not(.has-hi) button[data-a="hd"] { display:none; }
