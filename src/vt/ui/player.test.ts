@@ -1,4 +1,4 @@
-import { frameIndexAt, reachRange, stepFrame } from '../model/playhead';
+import { frameIndexAt } from '../model/playhead';
 import { buildIntervals } from '../model/intervals';
 import { mountPlayer, type PlayerContext } from './player';
 import type { Frame } from '../types';
@@ -8,50 +8,38 @@ const T0 = Date.UTC(2026, 0, 1, 10, 0, 0);
 const at = (m: number) => T0 + m * MIN;
 const fr = (m: number): Frame => ({ ts: at(m), url: `f${m}.jpg` });
 
-describe('playhead arithmetic', () => {
-  const P = { from: at(0), to: at(120) };
-  test('near: the slot and ten either side, slid to fit the window', () => {
-    expect(reachRange('near', at(60), MIN, P, at(999))).toEqual({ from: at(49.5), to: at(70.5) });
-    expect(reachRange('near', at(2), MIN, P, at(999))).toEqual({ from: at(0), to: at(21) });
-    // never past now
-    expect(reachRange('near', at(60), MIN, P, at(65)).to).toBe(at(65));
-  });
-  test('all: the whole window, up to now', () => {
-    expect(reachRange('all', at(60), MIN, P, at(90))).toEqual({ from: at(0), to: at(90) });
-  });
-  test('the frame in force, and stepping through frames within a range', () => {
-    const frames = [fr(0), fr(3), fr(7)];
-    expect(frameIndexAt(frames, at(5))).toBe(1);
-    expect(frameIndexAt(frames, at(-1))).toBe(-1);
-    expect(stepFrame(frames, at(5), 1, P)!.ts).toBe(at(7));
-    expect(stepFrame(frames, at(5), -1, P)!.ts).toBe(at(0));
-    expect(stepFrame(frames, at(7), 1, P)).toBeNull();
-    expect(stepFrame(frames, at(3), 1, { from: at(0), to: at(5) })).toBeNull();
-  });
+test('the frame in force at a time', () => {
+  const frames = [fr(0), fr(3), fr(7)];
+  expect(frameIndexAt(frames, at(5))).toBe(1);
+  expect(frameIndexAt(frames, at(-1))).toBe(-1);
+  expect(frameIndexAt(frames, at(7))).toBe(2);
 });
 
+/* The player shows the frames a slot holds but can't show: its scrubber is
+ * the slot's own timeline, and only ‹‹ ›› leave the slot. A frame a minute,
+ * in five-minute slots; 20 to 25 missing; the host promises a minute. */
 describe('the preview player', () => {
-  // a frame a minute, with 20 to 25 missing; the host promises a minute
   const all = Array.from({ length: 121 }, (_, i) => i).filter((m) => m < 20 || m > 25).map(fr);
   let el: HTMLElement;
   let teardown: () => void;
   let times: number[];
   let fetches: Array<[number, number]>;
+  const fiveMinuteSlots = (t: number) => { const from = Math.floor((t - T0) / (5 * MIN)) * 5 * MIN + T0; return { from, to: from + 5 * MIN, ts: from, frameTs: from }; };
   const ctx = (extra: Partial<PlayerContext> = {}): PlayerContext => ({
     window: { from: at(0), to: at(120) },
     step: 5 * MIN,
     fetch: async (from, to) => { fetches.push([from, to]); return all.filter((f) => f.ts >= from && f.ts <= to); },
     intervals: (frames, range) => buildIntervals({ frames, window: range, now: at(999), promiseAt: () => MIN }).intervals,
-    // slots of five minutes, as the strip would draw a minute feed zoomed out
-    slotAt: (t) => { const from = Math.floor((t - T0) / (5 * MIN)) * 5 * MIN + T0; return { from, to: from + 5 * MIN, ts: from, frameTs: from }; },
+    slotAt: fiveMinuteSlots,
     onTime: (t) => times.push(t),
     tt: { time: (t: number) => new Date(t).toISOString().slice(11, 19), short: (t: number) => new Date(t).toISOString().slice(11, 16), sfx: () => '' } as never,
     label: 'site / cam',
     ...extra,
   });
-  const cap = () => el.querySelector('.cap')!.textContent;
+  const cap = () => el.querySelector('.cap')!.textContent!;
+  const hhmm = () => cap().match(/— (\d\d:\d\d)/)![1];
   const press = (a: string) => (el.querySelector(`button[data-a="${a}"]`) as HTMLButtonElement).click();
-  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const flush = async () => { for (let i = 0; i < 4; i++) {await new Promise((r) => setTimeout(r, 0));} };
 
   beforeEach(() => {
     localStorage.clear();
@@ -68,97 +56,94 @@ describe('the preview player', () => {
     jest.restoreAllMocks();
   });
 
-  test('opens on the clicked frame: its caption at once, then the scrubber over the slots around it', async () => {
+  test('opens on the clicked frame; the scrubber is the slot: a tick per frame it holds', async () => {
     teardown = mountPlayer(el, fr(30), ctx(), () => {});
     expect(cap()).toBe('site / cam — 10:30:00');
     await flush();
-    expect(fetches).toHaveLength(1);
-    // 10 five-minute slots either side (from the window's start to 11:45), a
-    // tick per frame: 10:20 to 10:25 are missing
-    expect(el.querySelectorAll('.tick')).toHaveLength(106 - 6);
-    expect(el.querySelector('.stage img')!.getAttribute('src')).toBe('f30.jpg');
-    // the slot's frames, and which one this is
+    expect(el.querySelectorAll('.tick')).toHaveLength(5);
     expect(cap()).toBe('site / cam — 10:30:00 · 1/5 in slot');
+    expect(el.querySelector('.stage img')!.getAttribute('src')).toBe('f30.jpg');
+    expect(times).toEqual([]);
   });
 
-  test('the missing frames are drawn as dropped on the scrubber', async () => {
-    teardown = mountPlayer(el, fr(30), ctx(), () => {});
+  test('dropped time within the slot is drawn on its scrubber', async () => {
+    // slot 10:25-10:30: nothing from 10:20 (due) until 10:26
+    teardown = mountPlayer(el, fr(26), ctx(), () => {});
     await flush();
     expect(el.querySelectorAll('.lane.dropped')).toHaveLength(1);
+    expect(el.querySelectorAll('.tick')).toHaveLength(4);
   });
 
-  test('previous and next frame; the crosshair moves only to another slot', async () => {
+  test('previous and next frame stay within the slot, and the crosshair stays still', async () => {
     teardown = mountPlayer(el, fr(30), ctx(), () => {});
     await flush();
-    for (let i = 0; i < 4; i++) {press('next');}
+    for (let i = 0; i < 6; i++) {press('next');}
     expect(cap()).toBe('site / cam — 10:34:00 · 5/5 in slot');
-    expect(times).toEqual([]);
-    press('next');
-    expect(cap()).toBe('site / cam — 10:35:00 · 1/5 in slot');
     press('prev');
-    expect(times).toEqual([at(35), at(30)]);
+    expect(hhmm()).toBe('10:33');
+    expect(times).toEqual([]);
   });
 
-  test('next slot: the frame the strip shows for it; past the scrubber, its range moves', async () => {
+  test('next slot: the frame the strip shows for it, and the crosshair moves to it', async () => {
     teardown = mountPlayer(el, fr(30), ctx(), () => {});
     await flush();
     press('next-slot');
+    await flush();
     expect(cap()).toBe('site / cam — 10:35:00 · 1/5 in slot');
     expect(times).toEqual([at(35)]);
-    for (let i = 0; i < 15; i++) {press('next-slot');}
+    press('prev-slot'); press('prev-slot');
     await flush();
-    expect(fetches.length).toBeGreaterThan(1);
-    expect(cap()).toBe('site / cam — 11:50:00 · 1/5 in slot');
+    expect(hhmm()).toBe('10:25');
+    expect(times).toEqual([at(35), at(30), at(25)]);
   });
 
-  test('play loops the frames within the slot, and the crosshair stays still', async () => {
+  test('play loops the slot\'s frames; the crosshair stays still', async () => {
     teardown = mountPlayer(el, fr(30), ctx(), () => {});
     await flush();
     jest.useFakeTimers();
     press('play');
     const seen: string[] = [];
-    for (let i = 0; i < 6; i++) { jest.advanceTimersByTime(250); seen.push(cap()!.match(/— (\d\d:\d\d)/)![1]); }
+    for (let i = 0; i < 6; i++) { jest.advanceTimersByTime(250); seen.push(hhmm()); }
     expect(seen).toEqual(['10:31', '10:32', '10:33', '10:34', '10:30', '10:31']);
     expect(times).toEqual([]);
     press('play');
     jest.advanceTimersByTime(1000);
-    expect(cap()!.match(/— (\d\d:\d\d)/)![1]).toBe('10:31');
+    expect(hhmm()).toBe('10:31');
   });
 
-  test('a slot of one frame has nothing to play', async () => {
+  test('a slot of one frame has nothing to play or step through', async () => {
     const minuteSlots = (t: number) => { const from = Math.floor(t / MIN) * MIN; return { from, to: from + MIN, ts: from, frameTs: from }; };
-    teardown = mountPlayer(el, fr(30), ctx({ slotAt: minuteSlots }), () => {});
+    teardown = mountPlayer(el, fr(30), ctx({ slotAt: minuteSlots, step: MIN }), () => {});
     await flush();
-    expect((el.querySelector('button[data-a="play"]') as HTMLButtonElement).disabled).toBe(true);
+    for (const a of ['play', 'prev', 'next']) {
+      expect((el.querySelector(`button[data-a="${a}"]`) as HTMLButtonElement).disabled).toBe(true);
+    }
   });
 
-  test('a thinned answer: the slot\'s frames are fetched again at full resolution, and then Play has them', async () => {
+  test('a thinned answer: the slot\'s frames are fetched again at full resolution', async () => {
     const thinned = all.filter((f) => (f.ts - T0) % (5 * MIN) === 0);
     const asked: Array<[number, number]> = [];
     teardown = mountPlayer(el, fr(30), ctx({
       fetch: async (from, to) => thinned.filter((f) => f.ts >= from && f.ts <= to),
       detail: async (from, to) => { asked.push([from, to]); return all.filter((f) => f.ts >= from && f.ts < to); },
     }), () => {});
-    await flush(); await flush();
+    await flush();
     expect(asked).toEqual([[at(30), at(35)]]);
+    expect(el.querySelectorAll('.tick')).toHaveLength(5);
     expect((el.querySelector('button[data-a="play"]') as HTMLButtonElement).disabled).toBe(false);
-    expect(cap()).toBe('site / cam — 10:30:00 · 1/5 in slot');
-    // the next slot is asked for when the playhead gets there
     press('next-slot');
-    await flush(); await flush();
+    await flush();
     expect(asked).toEqual([[at(30), at(35)], [at(35), at(40)]]);
   });
 
-  test('the viewer\'s choices are remembered: whole range, thumbnails', async () => {
+  test('thumbnails are the slot\'s frames, each as wide as it stands; the choice is remembered', async () => {
     teardown = mountPlayer(el, fr(30), ctx(), () => {});
     await flush();
-    press('reach');
-    await flush();
-    expect(el.querySelectorAll('.tick')).toHaveLength(all.length);
     press('style');
     expect(el.classList.contains('thumbs')).toBe(true);
-    expect(el.querySelectorAll('.thumb').length).toBeGreaterThan(0);
-    expect(JSON.parse(localStorage.getItem('ktl-player')!)).toMatchObject({ reach: 'all', style: 'thumbs' });
+    expect([...el.querySelectorAll('.thumb img')].map((i) => i.getAttribute('src'))).toEqual(['f30.jpg', 'f31.jpg', 'f32.jpg', 'f33.jpg', 'f34.jpg']);
+    expect((el.querySelector('.thumb') as HTMLElement).style.width).toBe('20%');
+    expect(JSON.parse(localStorage.getItem('ktl-player')!)).toMatchObject({ style: 'thumbs' });
     teardown();
     el.textContent = '';
     teardown = mountPlayer(el, fr(30), ctx(), () => {});

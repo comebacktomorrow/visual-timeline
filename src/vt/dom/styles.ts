@@ -306,13 +306,13 @@ const CSS = `
 .ktl-pop.player .lane.nodata { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 4px,var(--ktl-pause-b) 4px,var(--ktl-pause-b) 8px); }
 .ktl-pop.player .lane.paused { background:var(--ktl-band, var(--ktl-pause-b)); opacity:.6; }
 .ktl-pop.player .lane.beyond { background:transparent; }
-.ktl-pop.player .thumbs { position:absolute; inset:0; display:flex; pointer-events:none; }
-.ktl-pop.player .thumb { flex:1 1 0; min-width:0; overflow:hidden; border-right:1px solid rgba(0,0,0,.4); }
+.ktl-pop.player .thumbs { position:absolute; inset:0; pointer-events:none; }
+.ktl-pop.player .thumb { position:absolute; top:0; bottom:0; overflow:hidden; border-right:1px solid rgba(0,0,0,.4); }
 .ktl-pop.player .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.ktl-pop.player .thumb.prior img { opacity:.4; }
 .ktl-pop.player .ticks { position:absolute; inset:0; pointer-events:none; }
 .ktl-pop.player .tick { position:absolute; bottom:0; height:40%; width:1px; background:var(--ktl-text); opacity:.55; }
 .ktl-pop.player.thumbs .tick { height:6px; }
-.ktl-pop.player .slotband { position:absolute; top:0; bottom:0; background:var(--ktl-accent); opacity:.2; pointer-events:none; }
 .ktl-pop.player .head { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--ktl-accent); pointer-events:none; }
 .ktl-pop.player .bar { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
 .ktl-pop.player .bar .cap { flex:1 1 auto; min-width:120px; padding:0 6px; text-align:center; }

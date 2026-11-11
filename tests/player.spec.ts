@@ -1,11 +1,11 @@
 import { test, expect } from '@grafana/plugin-e2e';
 
-// The preview player (M10): clicking a frame opens it with its own scrubber
-// over the host's frames, and previous and next. Play loops the frames
-// within a slot; the folder fixture (tests/folder-fixture) has a frame about
-// every 3 minutes, one per slot, so there is nothing to play.
+// The preview player (M10): clicking a frame opens it with the slot's own
+// timeline: the frames the slot holds. The folder fixture
+// (tests/folder-fixture) has a frame about every 3 minutes, one per slot, so
+// there is nothing to play or step through, only the neighbouring slots.
 
-test('a click opens the player: a tick per frame, previous and next, and Esc closes it', async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
+test('a click opens the player on the slot\'s own timeline; ‹‹ ›› move between slots; Esc closes it', async ({ gotoDashboardPage, readProvisionedDashboard, page }) => {
   await page.setViewportSize({ width: 1280, height: 1200 });
   const dashboard = await readProvisionedDashboard({ fileName: 'folder.json' });
   const dashboardPage = await gotoDashboardPage(dashboard);
@@ -22,17 +22,18 @@ test('a click opens the player: a tick per frame, previous and next, and Esc clo
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     await expect(player).toBeVisible({ timeout: 2000 });
   }).toPass({ timeout: 15000 });
-  await expect(player.locator('.scrub .tick').first()).toBeAttached();
-  const cap = player.locator('.cap');
-  const first = await cap.textContent();
-  await player.locator('button[data-a="next"]').click();
-  await expect(cap).not.toHaveText(first!);
-  await player.locator('button[data-a="prev"]').click();
-  await expect(cap).toHaveText(first!);
+  // the scrubber is the slot's own timeline: here, one frame
+  await expect(player.locator('.scrub .tick')).toHaveCount(1);
+  for (const a of ['play', 'prev', 'next']) {await expect(player.locator(`button[data-a="${a}"]`)).toBeDisabled();}
   // the large image once it settles
   await expect(player.locator('.stage img')).toHaveAttribute('src', /_hi\.svg$/);
-  // one frame per slot: nothing to play
-  await expect(player.locator('button[data-a="play"]')).toBeDisabled();
+  // ‹‹ ›› move to the neighbouring slot
+  const cap = player.locator('.cap');
+  const first = await cap.textContent();
+  await player.locator('button[data-a="next-slot"]').click();
+  await expect(cap).not.toHaveText(first!);
+  await player.locator('button[data-a="prev-slot"]').click();
+  await expect(cap).toHaveText(first!);
   await page.keyboard.press('Escape');
   await expect(player).toHaveCount(0);
 });

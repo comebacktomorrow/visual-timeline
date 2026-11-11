@@ -27,7 +27,6 @@ export function playerContext(
       return sl ? { from: sl.x0, to: sl.x0 + sl.span, ts: sl.ts, ...(sl.frame ? { frameTs: sl.frame.ts } : {}) } : null;
     },
     onTime,
-    reach: cfg.playerReach === 'all' ? 'all' : cfg.playerReach === 'near' ? 'near' : undefined,
     scrubber: cfg.playerScrubber === 'thumbs' ? 'thumbs' : cfg.playerScrubber === 'ticks' ? 'ticks' : undefined,
   };
 }

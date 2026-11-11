@@ -44,8 +44,7 @@ interface VisualTimelineOptions {
   /** A promise for every host in the panel ("1m"): a frame missing past it
    * is offline. Empty: what the data says. */
   expectedCadence?: string;
-  /** The preview player's defaults (M10): its scrubber's reach and style. */
-  playerReach?: 'near' | 'all';
+  /** The preview player's default scrubber style (M10). */
   playerScrubber?: 'ticks' | 'thumbs';
   /** Header chips (#126): which, in order, and what a click does. */
   chips?: string;
@@ -282,7 +281,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       from, to, width: buildWidth, fit, backend, showDetails, hideEmpty, onFilter,
       annotations, showAnnotations, annotationLanes: options.annotationLanes || 'shared',
       hold, chips, ...(expectedCadence > 0 ? { expectedCadence } : {}),
-      playerReach: options.playerReach || 'near', playerScrubber: options.playerScrubber || 'ticks',
+      playerScrubber: options.playerScrubber || 'ticks',
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
       timeZone,
@@ -311,7 +310,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, options.playerReach, options.playerScrubber, chipsKey]);
+  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, options.playerScrubber, chipsKey]);
 
   useEffect(() => {
     const subs = [
@@ -517,21 +516,10 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       showIf: (o) => o.holdFrames === 'limit' || o.holdFrames === 'threshold',
     })
     .addRadio({
-      path: 'playerReach',
-      name: 'Scrubber reach',
-      category: ['Preview player'],
-      description: 'Clicking a frame opens a player with its own scrubber. How far it reaches: the slot and 10 either side, or the whole time range. Viewers can change it in the player; their last choice is remembered.',
-      defaultValue: 'near',
-      settings: { options: [
-        { value: 'near', label: '±10 slots' },
-        { value: 'all', label: 'Whole range' },
-      ] },
-    })
-    .addRadio({
       path: 'playerScrubber',
       name: 'Scrubber style',
       category: ['Preview player'],
-      description: 'Ticks: a mark per frame at its true time (loads only the frame under the playhead). Thumbnails: small images along it.',
+      description: 'Clicking a frame opens a player with the slot\'s own timeline: the frames the slot holds but can\'t show. Ticks: a mark per frame at its true time (loads only the frame under the playhead). Thumbnails: the frames themselves. Viewers can change it in the player; their last choice is remembered.',
       defaultValue: 'ticks',
       settings: { options: [
         { value: 'ticks', label: 'Ticks' },

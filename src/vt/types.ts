@@ -257,10 +257,8 @@ export interface MountConfig {
   /* a promise for every host (ms), whatever its source says: the panel's
    * Expected cadence (docs/TIMELINE-MODEL.md); unset, the sources decide */
   expectedCadence?: number;
-  /* the preview player's defaults (a viewer's own last choices win): how far
-   * its scrubber reaches, 'near' (default) or 'all'; and its style, 'ticks'
-   * (default) or 'thumbs' */
-  playerReach?: string;
+  /* the preview player's default scrubber style (a viewer's own last choice
+   * wins): 'ticks' (default) or 'thumbs' */
   playerScrubber?: string;
   onHover?: (t: number) => void;               // timeline: a local hover moved the cursor
   onHoverClear?: () => void;                   // timeline: the mouse left a strip

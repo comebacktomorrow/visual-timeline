@@ -1541,13 +1541,13 @@ var VTCore = (() => {
 .ktl-pop.player .lane.nodata { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 4px,var(--ktl-pause-b) 4px,var(--ktl-pause-b) 8px); }
 .ktl-pop.player .lane.paused { background:var(--ktl-band, var(--ktl-pause-b)); opacity:.6; }
 .ktl-pop.player .lane.beyond { background:transparent; }
-.ktl-pop.player .thumbs { position:absolute; inset:0; display:flex; pointer-events:none; }
-.ktl-pop.player .thumb { flex:1 1 0; min-width:0; overflow:hidden; border-right:1px solid rgba(0,0,0,.4); }
+.ktl-pop.player .thumbs { position:absolute; inset:0; pointer-events:none; }
+.ktl-pop.player .thumb { position:absolute; top:0; bottom:0; overflow:hidden; border-right:1px solid rgba(0,0,0,.4); }
 .ktl-pop.player .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.ktl-pop.player .thumb.prior img { opacity:.4; }
 .ktl-pop.player .ticks { position:absolute; inset:0; pointer-events:none; }
 .ktl-pop.player .tick { position:absolute; bottom:0; height:40%; width:1px; background:var(--ktl-text); opacity:.55; }
 .ktl-pop.player.thumbs .tick { height:6px; }
-.ktl-pop.player .slotband { position:absolute; top:0; bottom:0; background:var(--ktl-accent); opacity:.2; pointer-events:none; }
 .ktl-pop.player .head { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--ktl-accent); pointer-events:none; }
 .ktl-pop.player .bar { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
 .ktl-pop.player .bar .cap { flex:1 1 auto; min-width:120px; padding:0 6px; text-align:center; }
@@ -1906,24 +1906,6 @@ var VTCore = (() => {
   }
 
   // src/vt/model/playhead.ts
-  var NEAR_SLOTS = 10;
-  function reachRange(reach, t, step, P, now) {
-    const end = Math.max(P.from + 1, Math.min(P.to, now));
-    if (reach === "all" || !(step > 0)) {
-      return { from: P.from, to: end };
-    }
-    const half = (NEAR_SLOTS + 0.5) * step;
-    let from = t - half, to = t + half;
-    if (from < P.from) {
-      to += P.from - from;
-      from = P.from;
-    }
-    if (to > end) {
-      from -= to - end;
-      to = end;
-    }
-    return { from: Math.max(P.from, from), to: Math.max(Math.max(P.from, from) + 1, to) };
-  }
   function frameIndexAt(frames, t) {
     let lo = 0, hi = frames.length - 1, out = -1;
     while (lo <= hi) {
@@ -1937,25 +1919,15 @@ var VTCore = (() => {
     }
     return out;
   }
-  function stepFrame(frames, t, dir, range) {
-    const i = frameIndexAt(frames, t);
-    const j = i < 0 ? dir > 0 ? 0 : -1 : i + dir;
-    const f = frames[j];
-    return f && f.ts >= range.from && f.ts <= range.to ? f : null;
-  }
-  function framesIn(frames, range) {
-    return frames.filter((f) => f.ts >= range.from && f.ts <= range.to);
-  }
 
   // src/vt/ui/player.ts
   var PREFS_KEY = "ktl-player";
   var FPS = [1, 2, 4, 8, 16];
   function loadPrefs(ctx) {
-    const base = { reach: ctx.reach ?? "near", style: ctx.scrubber ?? "ticks", fps: 4 };
+    const base = { style: ctx.scrubber ?? "ticks", fps: 4 };
     try {
       const p = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
       return {
-        reach: p.reach === "all" || p.reach === "near" ? p.reach : base.reach,
         style: p.style === "thumbs" || p.style === "ticks" ? p.style : base.style,
         fps: FPS.includes(p.fps) ? p.fps : base.fps
       };
@@ -1973,74 +1945,62 @@ var VTCore = (() => {
   function mountPlayer(el, start, ctx, place) {
     const prefs = loadPrefs(ctx);
     el.classList.add("player");
-    el.innerHTML = '<div class="stage"><div class="state"></div></div><div class="scrub" role="slider" tabindex="0" aria-label="Scrub through frames"><div class="lanes"></div><div class="thumbs"></div><div class="slotband"></div><div class="ticks"></div><div class="head"></div></div><div class="bar">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '<span class="cap"></span>' + btn("fps", "", "Speed") + btn("reach", "", "How far the scrubber reaches") + btn("style", "", "Scrubber: ticks or thumbnails") + btn("close", "\u2715", "Close (Esc)") + "</div>";
+    el.innerHTML = '<div class="stage"><div class="state"></div></div><div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="bar">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame in this slot (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame in this slot (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '<span class="cap"></span>' + btn("fps", "", "Speed") + btn("style", "", "Scrubber: ticks or thumbnails") + btn("close", "\u2715", "Close (Esc)") + "</div>";
     const img = document.createElement("img");
     img.alt = "frame";
     img.src = start.url;
-    const stateEl = el.querySelector(".stage .state");
     el.querySelector(".stage").prepend(img);
+    const stateEl = el.querySelector(".stage .state");
     const scrub = el.querySelector(".scrub");
     const lanes = el.querySelector(".lanes");
     const thumbs = el.querySelector(".thumbs");
     const ticks = el.querySelector(".ticks");
     const head = el.querySelector(".head");
-    const slotband = el.querySelector(".slotband");
     const cap = el.querySelector(".cap");
     const b = (a) => el.querySelector(`button[data-a="${a}"]`);
-    let frames = [];
-    let range = { from: start.ts, to: start.ts + 1 };
+    let slot = ctx.slotAt(start.ts) ?? { from: start.ts - ctx.step / 2, to: start.ts + ctx.step / 2, ts: start.ts };
+    let frames = [start];
     let ivs = [];
     let t = start.ts;
-    let cur = ctx.slotAt(start.ts);
     let playing = false;
     let timer = null;
     let hiTimer = null;
     let loadSeq = 0;
     let gone = false;
-    const xOf = (ts) => (ts - range.from) / Math.max(1, range.to - range.from) * 100;
-    const now = () => Date.now();
+    const span = () => Math.max(1, slot.to - slot.from);
+    const xOf = (ts) => (ts - slot.from) / span() * 100;
+    const inSlot = () => frames.filter((f) => f.ts >= slot.from && f.ts < slot.to);
     function labels() {
       b("fps").textContent = prefs.fps + " fps";
-      b("reach").textContent = prefs.reach === "near" ? "\xB1" + NEAR_SLOTS + " slots" : "All";
       b("style").textContent = prefs.style === "ticks" ? "Ticks" : "Thumbs";
       b("play").textContent = playing ? "\u275A\u275A" : "\u25B6";
       const n = inSlot().length;
       b("play").disabled = n < 2;
       b("play").title = n < 2 ? "One frame in this slot: nothing to play" : playing ? "Pause (Space)" : "Play the " + n + " frames in this slot (Space)";
+      b("prev").disabled = b("next").disabled = n < 2;
       el.classList.toggle("thumbs", prefs.style === "thumbs");
     }
-    function inSlot() {
-      return cur ? frames.filter((f) => f.ts >= cur.from && f.ts < cur.to) : [];
-    }
-    function drawSlot() {
-      slotband.style.display = cur ? "" : "none";
-      if (!cur) {
-        return;
-      }
-      slotband.style.left = xOf(cur.from) + "%";
-      slotband.style.width = Math.max(0, xOf(cur.to) - xOf(cur.from)) + "%";
-    }
     function drawScrub() {
-      drawSlot();
       lanes.textContent = "";
       for (const iv of ivs) {
-        if (iv.kind === "frame" || iv.kind === "pending") {
+        if (iv.kind === "frame" || iv.kind === "pending" || iv.kind === "beyond") {
           continue;
         }
         const d = document.createElement("div");
         d.className = "lane " + iv.kind;
-        if (iv.kind === "paused" && iv.pause?.color) {
-          d.style.setProperty("--ktl-band", iv.pause.color);
-        }
         if (iv.kind === "paused") {
+          if (iv.pause?.color) {
+            d.style.setProperty("--ktl-band", iv.pause.color);
+          }
           d.title = pauseInfo({ paused: true, label: iv.pause?.label, color: iv.pause?.color }).label.toLowerCase();
         }
-        d.style.left = xOf(iv.from) + "%";
-        d.style.width = Math.max(0, xOf(iv.to) - xOf(iv.from)) + "%";
+        d.style.left = Math.max(0, xOf(iv.from)) + "%";
+        d.style.width = Math.max(0, Math.min(100, xOf(iv.to)) - Math.max(0, xOf(iv.from))) + "%";
         lanes.appendChild(d);
       }
+      const fs = inSlot();
       ticks.textContent = "";
-      for (const f of framesIn(frames, range)) {
+      for (const f of fs) {
         const k = document.createElement("div");
         k.className = "tick";
         k.style.left = xOf(f.ts) + "%";
@@ -2048,21 +2008,31 @@ var VTCore = (() => {
       }
       thumbs.textContent = "";
       if (prefs.style === "thumbs") {
-        const n = Math.max(4, Math.floor((scrub.clientWidth || 560) / 56));
-        for (let i = 0; i < n; i++) {
-          const at = range.from + (i + 0.5) / n * (range.to - range.from);
-          const j = frameIndexAt(frames, at);
+        const prior = frames.filter((f) => f.ts < slot.from).pop();
+        const firstTs = fs.length ? fs[0].ts : slot.to;
+        if (prior && firstTs > slot.from) {
           const cell = document.createElement("div");
-          cell.className = "thumb";
-          if (j >= 0) {
-            const ti = document.createElement("img");
-            ti.alt = "";
-            ti.loading = "lazy";
-            ti.src = frames[j].url;
-            cell.appendChild(ti);
-          }
+          cell.className = "thumb prior";
+          cell.style.left = "0%";
+          cell.style.width = xOf(firstTs) + "%";
+          const ti = document.createElement("img");
+          ti.alt = "";
+          ti.src = prior.url;
+          cell.appendChild(ti);
           thumbs.appendChild(cell);
         }
+        fs.forEach((f, i) => {
+          const end = i + 1 < fs.length ? fs[i + 1].ts : slot.to;
+          const cell = document.createElement("div");
+          cell.className = "thumb";
+          cell.style.left = xOf(f.ts) + "%";
+          cell.style.width = Math.max(0, xOf(end) - xOf(f.ts)) + "%";
+          const ti = document.createElement("img");
+          ti.alt = "";
+          ti.src = f.url;
+          cell.appendChild(ti);
+          thumbs.appendChild(cell);
+        });
       }
     }
     function show() {
@@ -2096,68 +2066,40 @@ var VTCore = (() => {
       }
     }
     function caption(f) {
-      const slotFrames = inSlot();
-      const i = f ? slotFrames.indexOf(f) : -1;
-      cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : "") + (slotFrames.length > 1 && i >= 0 ? " \xB7 " + (i + 1) + "/" + slotFrames.length + " in slot" : "");
+      const fs = inSlot();
+      const i = f ? fs.indexOf(f) : -1;
+      cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : "") + (fs.length > 1 && i >= 0 ? " \xB7 " + (i + 1) + "/" + fs.length + " in slot" : "");
     }
-    const detailed = /* @__PURE__ */ new Set();
-    async function ensureDetail(sl) {
-      if (!ctx.detail || !sl || detailed.has(sl.from)) {
-        return;
-      }
-      detailed.add(sl.from);
-      let got = [];
-      try {
-        got = await ctx.detail(sl.from, sl.to);
-      } catch {
-        return;
-      }
-      if (gone || !got.length) {
-        return;
-      }
-      const byTs = new Map(frames.map((f) => [f.ts, f]));
-      for (const f of got) {
-        byTs.set(f.ts, f);
-      }
-      frames = [...byTs.values()].sort((x, y) => x.ts - y.ts);
-      ivs = ctx.intervals(frames, range);
-      drawScrub();
-      labels();
+    function seek(to) {
+      t = Math.max(slot.from, Math.min(slot.to - 1, to));
       show();
     }
-    function seek(to, publish = true) {
-      t = Math.max(range.from, Math.min(range.to, to));
-      const sl = ctx.slotAt(t);
-      const moved = !cur || !sl || sl.from !== cur.from;
-      cur = sl;
-      if (moved) {
-        drawSlot();
-        labels();
-        void ensureDetail(sl);
-      }
-      show();
-      if (publish && moved && sl && ctx.onTime) {
-        ctx.onTime(sl.ts);
-      }
-    }
-    async function load(around, keepT = true) {
+    async function load(at) {
       const seq = ++loadSeq;
-      range = reachRange(prefs.reach, around, ctx.step, ctx.window, now());
+      const range = { from: slot.from, to: slot.to };
       let got = [];
       try {
-        got = await ctx.fetch(range.from - 1, range.to);
+        const before = (await ctx.fetch(range.from - ctx.step * 2, range.from)).filter((f) => f.ts < range.from);
+        const within = ctx.detail ? await ctx.detail(range.from, range.to) : await ctx.fetch(range.from, range.to);
+        got = [...before.slice(-1), ...within];
       } catch (e) {
         console.warn("[visual-timeline] player fetch failed:", e);
       }
       if (gone || seq !== loadSeq) {
         return;
       }
-      frames = got.slice().sort((x, y) => x.ts - y.ts);
+      const byTs = /* @__PURE__ */ new Map();
+      for (const f of got) {
+        byTs.set(f.ts, f);
+      }
+      if (start.ts >= range.from && start.ts < range.to && !byTs.has(start.ts)) {
+        byTs.set(start.ts, start);
+      }
+      frames = [...byTs.values()].sort((x, y) => x.ts - y.ts);
       ivs = ctx.intervals(frames, range);
       drawScrub();
-      seek(keepT ? around : range.from, false);
       labels();
-      void ensureDetail(cur);
+      seek(at);
     }
     function stop() {
       playing = false;
@@ -2175,8 +2117,7 @@ var VTCore = (() => {
       }
       const i = fs.findIndex((f2) => f2.ts > t);
       const f = fs[i < 0 ? 0 : i];
-      t = f.ts;
-      show();
+      seek(f.ts);
       const j = fs.indexOf(f);
       for (let k = 1; k <= 3; k++) {
         const p = new Image();
@@ -2191,6 +2132,21 @@ var VTCore = (() => {
       labels();
       timer = setInterval(tick, 1e3 / prefs.fps);
     }
+    function toSlot(dir) {
+      const next = ctx.slotAt(dir > 0 ? slot.to : slot.from - 1);
+      if (!next || next.from === slot.from) {
+        return;
+      }
+      slot = next;
+      const at = next.frameTs !== void 0 && next.frameTs >= next.from && next.frameTs < next.to ? next.frameTs : next.ts;
+      frames = frames.filter((f) => f.ts < next.from).slice(-1);
+      ivs = [];
+      drawScrub();
+      labels();
+      seek(at);
+      ctx.onTime?.(next.ts);
+      void load(at);
+    }
     const act = (a) => {
       switch (a) {
         case "play":
@@ -2203,31 +2159,23 @@ var VTCore = (() => {
         case "prev":
         case "next": {
           stop();
-          const f = stepFrame(frames, t, a === "next" ? 1 : -1, range);
+          const fs = inSlot();
+          const i = fs.findIndex((f2) => f2.ts > t);
+          const cur = i < 0 ? fs.length - 1 : i - 1;
+          const f = fs[a === "next" ? cur + 1 : cur - 1];
           if (f) {
             seek(f.ts);
           }
           break;
         }
         case "prev-slot":
-        case "next-slot": {
           stop();
-          const edge = cur ? a === "next-slot" ? cur.to : cur.from - 1 : t + (a === "next-slot" ? 1 : -1) * ctx.step;
-          const sl = ctx.slotAt(edge);
-          if (!sl || cur && sl.from === cur.from) {
-            break;
-          }
-          const to = sl.frameTs !== void 0 && sl.frameTs >= sl.from && sl.frameTs < sl.to ? sl.frameTs : sl.ts;
-          if (to < range.from || to > range.to) {
-            void load(to).then(() => {
-              cur = null;
-              seek(to);
-            });
-          } else {
-            seek(to);
-          }
+          toSlot(-1);
           break;
-        }
+        case "next-slot":
+          stop();
+          toSlot(1);
+          break;
         case "fps":
           prefs.fps = FPS[(FPS.indexOf(prefs.fps) + 1) % FPS.length];
           savePrefs(prefs);
@@ -2236,12 +2184,6 @@ var VTCore = (() => {
             play();
           }
           labels();
-          break;
-        case "reach":
-          prefs.reach = prefs.reach === "near" ? "all" : "near";
-          savePrefs(prefs);
-          labels();
-          void load(t);
           break;
         case "style":
           prefs.style = prefs.style === "ticks" ? "thumbs" : "ticks";
@@ -2260,7 +2202,7 @@ var VTCore = (() => {
     });
     const tAt = (clientX) => {
       const r = scrub.getBoundingClientRect();
-      return range.from + Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width))) * (range.to - range.from);
+      return slot.from + Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width))) * span();
     };
     scrub.addEventListener("pointerdown", (e) => {
       stop();
@@ -2797,7 +2739,6 @@ var VTCore = (() => {
         return sl ? { from: sl.x0, to: sl.x0 + sl.span, ts: sl.ts, ...sl.frame ? { frameTs: sl.frame.ts } : {} } : null;
       },
       onTime,
-      reach: cfg.playerReach === "all" ? "all" : cfg.playerReach === "near" ? "near" : void 0,
       scrubber: cfg.playerScrubber === "thumbs" ? "thumbs" : cfg.playerScrubber === "ticks" ? "ticks" : void 0
     };
   }
