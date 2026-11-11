@@ -5,6 +5,7 @@ import { isObservable, lastValueFrom, type Observable } from 'rxjs';
 
 import { type FieldRoles, recordsFromSeries } from '../shared/frameRecords';
 import type { Frame } from '../vt/types';
+import { WINDOW_FROM, WINDOW_TO } from '../shared/ids';
 
 /* A slot's frames at full resolution, from any data source (M10): the panel
  * runs its own queries again, as Grafana handed them to it, for just the
@@ -48,11 +49,16 @@ export function makeDetail(latest: () => DataQueryRequest<DataQuery> | undefined
  * Mixed panel's queries name theirs); hidden ones are left out */
 async function runFor(request: DataQueryRequest<DataQuery>, from: number, to: number): Promise<DataFrame[]> {
   const range = { from: dateTime(from), to: dateTime(to), raw: { from: dateTime(from), to: dateTime(to) } };
-  // ${__from} and ${__to} in a query (Infinity's URLs, say) name the span too
+  // ${__from} and ${__to} in a query (Infinity's URLs, say) name the span
+  // too; the dashboard's own range rides along, for a source whose answer
+  // depends on it (our demo data places its outage and pauses in it)
+  const parentFrom = request.range.from.valueOf(), parentTo = request.range.to.valueOf();
   const scopedVars: ScopedVars = {
     ...request.scopedVars,
     __from: { text: String(from), value: from },
     __to: { text: String(to), value: to },
+    [WINDOW_FROM]: { text: String(parentFrom), value: parentFrom },
+    [WINDOW_TO]: { text: String(parentTo), value: parentTo },
   };
   const groups = new Map<string, DataQuery[]>();
   for (const t of request.targets) {

@@ -30,6 +30,7 @@ import {
 import { DemoBackend, makeBackend as makeDemoBackend } from '../vt/backends/demo';
 import { resolveTimeZone } from '../vt/time/zones';
 import { coreTimeZone } from '../timezone';
+import { WINDOW_FROM, WINDOW_TO } from '../shared/ids';
 import { limited, MODEL_CONCURRENCY } from '../vt/model/pool';
 import type { Frame, SourceDecl } from '../vt/types';
 import type { VisualTimelineOptions, VisualTimelineQuery, VisualTimelineVariableQuery } from './types';
@@ -106,12 +107,16 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
 
   async query(request: DataQueryRequest<VisualTimelineQuery>): Promise<DataQueryResponse> {
     const window = { from: request.range.from.valueOf(), to: request.range.to.valueOf() };
+    // the demo places its outage, pauses and pace change in the dashboard's
+    // range: a panel asking for one slot again (M10) says which range that was
+    const pf = Number(request.scopedVars?.[WINDOW_FROM]?.value), pt = Number(request.scopedVars?.[WINDOW_TO]?.value);
+    const demoWindow = Number.isFinite(pf) && Number.isFinite(pt) && pt > pf ? { from: pf, to: pt } : window;
     const data = await Promise.all(
       request.targets
         .filter((t) => !t.hide)
         .map(async (t): Promise<DataFrame | DataFrame[]> => {
           if (t.kind === 'annotations') {
-            return annotationsToFrame(this.demo ? this.demoBackend(window).annotations() : [], t.refId);
+            return annotationsToFrame(this.demo ? this.demoBackend(demoWindow).annotations() : [], t.refId);
           }
           const sites = interpolatedList(this.field(t.sites, request.scopedVars));
           const hosts = interpolatedList(this.field(t.hosts, request.scopedVars));
@@ -119,7 +124,7 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
           if (!this.demo && (this.folder || this.folderError)) {
             return this.folderQuery(t, window, request, { sites, hosts, tags });
           }
-          const sources = applySourceFilter(await this.sources(sites, window), {
+          const sources = applySourceFilter(await this.sources(sites, this.demo ? demoWindow : window), {
             sites,
             hosts,
             tags: /\$[{a-zA-Z_]/.test(tags) ? '' : tags,
@@ -132,7 +137,7 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
             const tz = resolveTimeZone(coreTimeZone(request.timezone));
             // and its pauses as state rows, so the panel reads them as it would anyone's (#126, M4)
             return this.demo
-              ? [list, await this.demoRecords(sources, window, request.maxDataPoints, t.refId, tz), pauseStatesToFrame(sources, t.refId)]
+              ? [list, await this.demoRecords(sources, window, request.maxDataPoints, t.refId, tz, demoWindow), pauseStatesToFrame(sources, t.refId)]
               : list;
           }
           // the last frame at the range's end, or now if the range runs past it
@@ -184,9 +189,10 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
    * or coarser for a long window, so there are never more rows per source
    * than the panel has pixels. */
   private async demoRecords(
-    sources: SourceDecl[], window: { from: number; to: number }, maxDataPoints: number | undefined, refId: string, timeZone: string
+    sources: SourceDecl[], window: { from: number; to: number }, maxDataPoints: number | undefined, refId: string, timeZone: string,
+    demoWindow: { from: number; to: number } = window
   ) {
-    const demo = this.demoBackend(window, timeZone);
+    const demo = this.demoBackend(demoWindow, timeZone);
     const span = Math.max(1, window.to - window.from);
     const rows: Array<{ ts: number; host: string; site: string; url: string; cadence: number; count?: number }> = [];
     for (const s of sources) {

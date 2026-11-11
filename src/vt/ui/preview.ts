@@ -30,13 +30,19 @@ interface PopState {
   downH: ((e: PointerEvent) => void) | null;
   teardown: (() => void) | null;
   retireTimer: ReturnType<typeof setTimeout> | null;
+  keyCapture?: boolean;
 }
 const popState: PopState = { el: null, keyH: null, downH: null, teardown: null, retireTimer: null };
 function closePreview(): void {
   if (popState.retireTimer) { clearTimeout(popState.retireTimer); popState.retireTimer = null; }
   if (popState.teardown) { popState.teardown(); popState.teardown = null; }
   if (popState.el) { popState.el.remove(); popState.el = null; }
-  if (popState.keyH) { document.removeEventListener('keydown', popState.keyH); popState.keyH = null; }
+  if (popState.keyH) {
+    if (popState.keyCapture) {window.removeEventListener('keydown', popState.keyH, true);}
+    else {document.removeEventListener('keydown', popState.keyH);}
+    popState.keyH = null;
+    popState.keyCapture = false;
+  }
   if (popState.downH) { document.removeEventListener('pointerdown', popState.downH, true); popState.downH = null; }
 }
 export function makePreview(root: HTMLElement, tz: string): Preview {
@@ -106,12 +112,15 @@ function openPlayer(root: HTMLElement, site: string, kiosk: string, frame: Frame
     el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x - r.width / 2)) + 'px';
     el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y + 16)) + 'px';
   };
-  popState.teardown = mountPlayer(el, frame, ctx, place);
+  popState.teardown = mountPlayer(el, frame, ctx, place, closePreview);
   el.querySelector('button[data-a="close"]')?.addEventListener('click', closePreview);
   place();
   popState.el = el;
-  popState.keyH = (e) => { if (e.key === 'Escape') {closePreview();} };
-  document.addEventListener('keydown', popState.keyH);
+  // Esc closes the player, and only the player: caught before Grafana's own
+  // Esc (leave panel view, kiosk mode) sees it
+  popState.keyH = (e) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); e.preventDefault(); closePreview(); } };
+  window.addEventListener('keydown', popState.keyH, true);
+  popState.keyCapture = true;
   // a press outside closes it (capture: before anything under it reacts)
   popState.downH = (e) => { if (!el.contains(e.target as Node)) {closePreview();} };
   setTimeout(() => {

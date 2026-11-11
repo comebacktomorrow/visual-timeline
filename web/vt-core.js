@@ -1950,11 +1950,14 @@ var VTCore = (() => {
     } catch {
     }
   }
+  var TICK_PX = 2;
+  var THUMB_PX = 48;
   var btn = (a, label, title) => `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
-  function mountPlayer(el, start, ctx, place) {
+  function mountPlayer(el, start, ctx, place, close = () => {
+  }) {
     const prefs = loadPrefs(ctx);
     el.classList.add("player");
-    el.innerHTML = '<div class="stage"><div class="state"></div></div><div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="bar">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame in this slot (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame in this slot (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '<span class="cap"></span>' + btn("fps", "", "Speed") + btn("style", "", "Scrubber: ticks or thumbnails") + btn("close", "\u2715", "Close (Esc)") + "</div>";
+    el.innerHTML = '<div class="stage"><div class="state"></div></div><div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="bar">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame in this slot (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame in this slot (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '<span class="cap"></span>' + btn("fps", "", "Speed") + btn("style", "", "Scrubber: ticks or thumbnails") + (ctx.onZoom ? btn("zoom", "Zoom", "Zoom the dashboard to this slot") : "") + btn("close", "\u2715", "Close (Esc)") + "</div>";
     const img = document.createElement("img");
     img.alt = "frame";
     img.src = start.url;
@@ -1979,8 +1982,21 @@ var VTCore = (() => {
     const span = () => Math.max(1, slot.to - slot.from);
     const xOf = (ts) => (ts - slot.from) / span() * 100;
     const inSlot = () => frames.filter((f) => f.ts >= slot.from && f.ts < slot.to);
+    const most = () => Math.max(4, Math.floor((scrub.clientWidth || 560) / (prefs.style === "thumbs" ? THUMB_PX : TICK_PX)));
+    const shown = () => {
+      const fs = inSlot();
+      const n = most();
+      if (fs.length <= n) {
+        return fs;
+      }
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        out.push(fs[Math.floor(i * fs.length / n)]);
+      }
+      return out;
+    };
     const stops = () => {
-      const out = new Set(inSlot().map((f) => f.ts));
+      const out = new Set(shown().map((f) => f.ts));
       for (const iv of ivs) {
         if (iv.kind === "dropped" || iv.kind === "nodata" || iv.kind === "paused") {
           const from = Math.max(iv.from, slot.from);
@@ -2019,7 +2035,7 @@ var VTCore = (() => {
         d.style.width = Math.max(0, Math.min(100, xOf(iv.to)) - Math.max(0, xOf(iv.from))) + "%";
         lanes.appendChild(d);
       }
-      const fs = inSlot();
+      const fs = shown();
       ticks.textContent = "";
       for (const f of fs) {
         const k = document.createElement("div");
@@ -2088,9 +2104,10 @@ var VTCore = (() => {
       }
     }
     function caption(f) {
-      const fs = inSlot();
+      const fs = shown();
+      const all = inSlot().length;
       const i = f ? fs.indexOf(f) : -1;
-      cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : "") + (fs.length > 1 && i >= 0 ? " \xB7 " + (i + 1) + "/" + fs.length + " in slot" : "");
+      cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : "") + (fs.length > 1 && i >= 0 ? " \xB7 " + (i + 1) + "/" + fs.length + (all > fs.length ? " of " + all + " frames: zoom for all" : " in slot") : "");
     }
     function seek(to) {
       t = Math.max(slot.from, Math.min(slot.to - 1, to));
@@ -2101,9 +2118,13 @@ var VTCore = (() => {
       const range = { from: slot.from, to: slot.to };
       let got = [];
       try {
-        const before = (await ctx.fetch(range.from - ctx.step * 2, range.from)).filter((f) => f.ts < range.from);
-        const within = ctx.detail ? await ctx.detail(range.from, range.to) : await ctx.fetch(range.from, range.to);
-        got = [...before.slice(-1), ...within];
+        if (ctx.detail) {
+          const all = await ctx.detail(range.from - ctx.step, range.to);
+          got = [...all.filter((f) => f.ts < range.from).slice(-1), ...all.filter((f) => f.ts >= range.from)];
+        } else {
+          const before = (await ctx.fetch(range.from - ctx.step * 2, range.from)).filter((f) => f.ts < range.from);
+          got = [...before.slice(-1), ...await ctx.fetch(range.from, range.to)];
+        }
       } catch (e) {
         console.warn("[visual-timeline] player fetch failed:", e);
       }
@@ -2139,7 +2160,7 @@ var VTCore = (() => {
       }
       const i = st.findIndex((x) => x > t);
       seek(st[i < 0 ? 0 : i]);
-      const fs = inSlot();
+      const fs = shown();
       const j = fs.findIndex((f) => f.ts > t);
       for (let k = 0; k < 3 && fs.length; k++) {
         const p = new Image();
@@ -2213,6 +2234,11 @@ var VTCore = (() => {
           labels();
           drawScrub();
           show();
+          break;
+        case "zoom":
+          stop();
+          ctx.onZoom?.(slot.from, slot.to);
+          close();
           break;
       }
     };
@@ -2292,8 +2318,13 @@ var VTCore = (() => {
       popState.el = null;
     }
     if (popState.keyH) {
-      document.removeEventListener("keydown", popState.keyH);
+      if (popState.keyCapture) {
+        window.removeEventListener("keydown", popState.keyH, true);
+      } else {
+        document.removeEventListener("keydown", popState.keyH);
+      }
       popState.keyH = null;
+      popState.keyCapture = false;
     }
     if (popState.downH) {
       document.removeEventListener("pointerdown", popState.downH, true);
@@ -2376,16 +2407,19 @@ var VTCore = (() => {
       el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x - r.width / 2)) + "px";
       el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y + 16)) + "px";
     };
-    popState.teardown = mountPlayer(el, frame, ctx, place);
+    popState.teardown = mountPlayer(el, frame, ctx, place, closePreview);
     el.querySelector('button[data-a="close"]')?.addEventListener("click", closePreview);
     place();
     popState.el = el;
     popState.keyH = (e) => {
       if (e.key === "Escape") {
+        e.stopImmediatePropagation();
+        e.preventDefault();
         closePreview();
       }
     };
-    document.addEventListener("keydown", popState.keyH);
+    window.addEventListener("keydown", popState.keyH, true);
+    popState.keyCapture = true;
     popState.downH = (e) => {
       if (!el.contains(e.target)) {
         closePreview();
@@ -2748,7 +2782,7 @@ var VTCore = (() => {
 
   // src/vt/ui/playerContext.ts
   var PLAYER_BUCKETS = 800;
-  function playerContext(backend, cfg, P, decl, model, tt, onTime) {
+  function playerContext(backend, cfg, P, decl, model, tt, onTime, onZoom) {
     return {
       window: { from: P.from, to: P.to },
       step: model.step,
@@ -2763,6 +2797,8 @@ var VTCore = (() => {
         return sl ? { from: sl.x0, to: sl.x0 + sl.span, ts: sl.ts, ...sl.frame ? { frameTs: sl.frame.ts } : {} } : null;
       },
       onTime,
+      // the timeline's drag-zoom (the grid has none)
+      ...onZoom ? { onZoom } : {},
       scrubber: cfg.playerScrubber === "thumbs" ? "thumbs" : cfg.playerScrubber === "ticks" ? "ticks" : void 0
     };
   }
@@ -3020,11 +3056,24 @@ var VTCore = (() => {
       const f = sl && sl.frame;
       const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
       if (f) {
-        const player = playerContext(s.backend, s.cfg, s.P, decl, model, tt, (t) => {
-          if (!s.destroyed) {
-            setCursor(s, t, null, false);
-          }
-        });
+        const player = playerContext(
+          s.backend,
+          s.cfg,
+          s.P,
+          decl,
+          model,
+          tt,
+          (t) => {
+            if (!s.destroyed) {
+              setCursor(s, t, null, false);
+            }
+          },
+          s.cfg.onZoom ? (from, to) => {
+            if (!s.destroyed) {
+              s.cfg.onZoom(Math.floor(from), Math.ceil(to));
+            }
+          } : void 0
+        );
         s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt, player);
       } else if (g) {
         s.pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl.ts, tt);

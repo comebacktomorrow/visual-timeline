@@ -36,4 +36,17 @@ test('a click opens the player on the slot\'s own timeline; ‹‹ ›› move b
   await expect(cap).toHaveText(first!);
   await page.keyboard.press('Escape');
   await expect(player).toHaveCount(0);
+  // Esc closed only the player: the dashboard is still there
+  await expect(strip).toBeVisible();
+
+  // Zoom: the dashboard's range becomes the slot, and the player closes
+  await expect(async () => {
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(player).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 15000 });
+  await player.locator('button[data-a="zoom"]').click();
+  await expect(player).toHaveCount(0);
+  // a few minutes of 2026-01-01, not the dashboard's 09:58 to 10:30
+  await expect(page).toHaveURL(/from=2026-01-01T10:\d\d:\d\d\.000Z&to=2026-01-01T10:\d\d:\d\d\.000Z/);
+  expect(page.url()).not.toContain('09:58');
 });

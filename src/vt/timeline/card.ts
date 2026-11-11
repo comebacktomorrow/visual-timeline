@@ -203,7 +203,8 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
     if (f) {
       // the preview is a player over this host's frames; it moves the crosshair
-      const player = playerContext(s.backend, s.cfg, s.P, decl, model, tt, (t) => { if (!s.destroyed) {setCursor(s, t, null, false);} });
+      const player = playerContext(s.backend, s.cfg, s.P, decl, model, tt, (t) => { if (!s.destroyed) {setCursor(s, t, null, false);} },
+        s.cfg.onZoom ? (from, to) => { if (!s.destroyed) {s.cfg.onZoom!(Math.floor(from), Math.ceil(to));} } : undefined);
       s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt, player);
     }
     else if (g) {s.pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl!.ts, tt);}   // g is only set from a slot

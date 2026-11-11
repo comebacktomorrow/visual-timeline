@@ -10,7 +10,8 @@ const PLAYER_BUCKETS = 800;
  * resolution (every one a records backend holds; an API's at the host's own
  * cadence), its intervals by its promise, and the mount's crosshair. */
 export function playerContext(
-  backend: Backend, cfg: MountConfig, P: TimeWindow, decl: SourceDecl, model: SourceModel, tt: ZoneTexts, onTime: (t: number) => void
+  backend: Backend, cfg: MountConfig, P: TimeWindow, decl: SourceDecl, model: SourceModel, tt: ZoneTexts, onTime: (t: number) => void,
+  onZoom?: (from: number, to: number) => void
 ): PlayerContext {
   return {
     window: { from: P.from, to: P.to },
@@ -28,6 +29,8 @@ export function playerContext(
       return sl ? { from: sl.x0, to: sl.x0 + sl.span, ts: sl.ts, ...(sl.frame ? { frameTs: sl.frame.ts } : {}) } : null;
     },
     onTime,
+    // the timeline's drag-zoom (the grid has none)
+    ...(onZoom ? { onZoom } : {}),
     scrubber: cfg.playerScrubber === 'thumbs' ? 'thumbs' : cfg.playerScrubber === 'ticks' ? 'ticks' : undefined,
   };
 }

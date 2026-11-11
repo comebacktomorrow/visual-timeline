@@ -12,8 +12,9 @@ import type { Frame, TimeWindow } from '../types';
  * clicking, dragging, previous and next and Play all stay within the slot,
  * and the dashboard's crosshair stays still; stepping and playing stop on a
  * gap too, showing its reason. Only ‹‹ ›› (Shift+←/→) move to the
- * neighbouring slot, and the crosshair with it. Only the frame under the
- * playhead loads, and the slot's frames while it plays. */
+ * neighbouring slot, and the crosshair with it; Zoom sets the dashboard's
+ * range to the slot. Only the frame under the playhead loads, and the slot's
+ * frames while it plays. */
 
 export type ScrubStyle = 'ticks' | 'thumbs';
 
@@ -42,6 +43,8 @@ export interface PlayerContext {
   slotAt(t: number): PlayerSlot | null;
   /** the player moved to another slot: the mount moves its crosshair */
   onTime?(t: number): void;
+  /** set the dashboard's time range to a span (the timeline's drag-zoom) */
+  onZoom?(from: number, to: number): void;
   tt: ZoneTexts;
   /** what the caption names: "site / host" */
   label?: string;
@@ -66,12 +69,18 @@ function savePrefs(p: Prefs): void {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* private mode: the choice lasts this preview */ }
 }
 
+/* A slot can hold more frames than its timeline can tell apart: it draws at
+ * most a tick per TICK_PX and a thumbnail per THUMB_PX, evenly through the
+ * slot, and steps and plays through those. Zoom shows them all. */
+const TICK_PX = 2;
+const THUMB_PX = 48;
+
 const btn = (a: string, label: string, title: string) =>
   `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
 
 /** Builds the player into `el` (the popup) for a frame at `start`; returns
  * its teardown. `place` re-positions the popup once the image has a size. */
-export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, place: () => void): () => void {
+export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, place: () => void, close: () => void = () => {}): () => void {
   const prefs = loadPrefs(ctx);
   el.classList.add('player');
   el.innerHTML =
@@ -84,6 +93,7 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     btn('next-slot', '››', 'Next slot (Shift+→)') +
     '<span class="cap"></span>' +
     btn('fps', '', 'Speed') + btn('style', '', 'Scrubber: ticks or thumbnails') +
+    (ctx.onZoom ? btn('zoom', 'Zoom', 'Zoom the dashboard to this slot') : '') +
     btn('close', '✕', 'Close (Esc)') +
     '</div>';
   // the image goes in with its source already set
@@ -115,11 +125,22 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   const span = () => Math.max(1, slot.to - slot.from);
   const xOf = (ts: number) => ((ts - slot.from) / span()) * 100;
   const inSlot = () => frames.filter((f) => f.ts >= slot.from && f.ts < slot.to);
+  /* the slot's frames the timeline draws: all of them, or evenly through
+   * the slot when there are more than it can tell apart */
+  const most = () => Math.max(4, Math.floor((scrub.clientWidth || 560) / (prefs.style === 'thumbs' ? THUMB_PX : TICK_PX)));
+  const shown = (): Frame[] => {
+    const fs = inSlot();
+    const n = most();
+    if (fs.length <= n) {return fs;}
+    const out: Frame[] = [];
+    for (let i = 0; i < n; i++) {out.push(fs[Math.floor((i * fs.length) / n)]);}
+    return out;
+  };
   /* the slot's stops, in time order: each frame, and the start of each
    * stretch without one (dropped, no data, a pause), so stepping and playing
    * show a gap with its reason instead of skipping it */
   const stops = (): number[] => {
-    const out = new Set(inSlot().map((f) => f.ts));
+    const out = new Set(shown().map((f) => f.ts));
     for (const iv of ivs) {
       if (iv.kind === 'dropped' || iv.kind === 'nodata' || iv.kind === 'paused') {
         const from = Math.max(iv.from, slot.from);
@@ -156,7 +177,7 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
       d.style.width = Math.max(0, Math.min(100, xOf(iv.to)) - Math.max(0, xOf(iv.from))) + '%';
       lanes.appendChild(d);
     }
-    const fs = inSlot();
+    const fs = shown();
     ticks.textContent = '';
     for (const f of fs) {
       const k = document.createElement('div');
@@ -226,11 +247,12 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   }
 
   function caption(f: Frame | null): void {
-    const fs = inSlot();
+    const fs = shown();
+    const all = inSlot().length;
     const i = f ? fs.indexOf(f) : -1;
     cap.textContent = (ctx.label ? ctx.label + ' — ' : '') + ctx.tt.time(t) + ctx.tt.sfx(t) +
       (f && f.ts !== t ? ' · frame ' + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : '') +
-      (fs.length > 1 && i >= 0 ? ' · ' + (i + 1) + '/' + fs.length + ' in slot' : '');
+      (fs.length > 1 && i >= 0 ? ' · ' + (i + 1) + '/' + fs.length + (all > fs.length ? ' of ' + all + ' frames: zoom for all' : ' in slot') : '');
   }
 
   /* the playhead, within the slot: the crosshair doesn't move */
@@ -246,10 +268,15 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     const range = { from: slot.from, to: slot.to };
     let got: Frame[] = [];
     try {
-      // the frame in force at the slot's start comes from the mount's frames
-      const before = (await ctx.fetch(range.from - ctx.step * 2, range.from)).filter((f) => f.ts < range.from);
-      const within = ctx.detail ? await ctx.detail(range.from, range.to) : await ctx.fetch(range.from, range.to);
-      got = [...before.slice(-1), ...within];
+      // with the frame in force at the slot's start: at the same resolution as
+      // the slot's (a thinned one from before would read as a broken promise)
+      if (ctx.detail) {
+        const all = await ctx.detail(range.from - ctx.step, range.to);
+        got = [...all.filter((f) => f.ts < range.from).slice(-1), ...all.filter((f) => f.ts >= range.from)];
+      } else {
+        const before = (await ctx.fetch(range.from - ctx.step * 2, range.from)).filter((f) => f.ts < range.from);
+        got = [...before.slice(-1), ...(await ctx.fetch(range.from, range.to))];
+      }
     } catch (e) { console.warn('[visual-timeline] player fetch failed:', e); }
     if (gone || seq !== loadSeq) {return;}
     const byTs = new Map<number, Frame>();
@@ -274,7 +301,7 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     const i = st.findIndex((x) => x > t);
     seek(st[i < 0 ? 0 : i]);
     // the next few frames load ahead
-    const fs = inSlot();
+    const fs = shown();
     const j = fs.findIndex((f) => f.ts > t);
     for (let k = 0; k < 3 && fs.length; k++) { const p = new Image(); p.src = fs[((j < 0 ? 0 : j) + k) % fs.length].url; }
   }
@@ -317,6 +344,7 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
       case 'next-slot': stop(); toSlot(1); break;
       case 'fps': prefs.fps = FPS[(FPS.indexOf(prefs.fps) + 1) % FPS.length]; savePrefs(prefs); if (playing) { stop(); play(); } labels(); break;
       case 'style': prefs.style = prefs.style === 'ticks' ? 'thumbs' : 'ticks'; savePrefs(prefs); labels(); drawScrub(); show(); break;
+      case 'zoom': stop(); ctx.onZoom?.(slot.from, slot.to); close(); break;
     }
   };
   el.querySelector('.bar')!.addEventListener('click', (e) => {

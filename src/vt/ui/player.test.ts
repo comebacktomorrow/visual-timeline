@@ -151,6 +151,33 @@ describe('the preview player', () => {
     expect(times).toEqual([]);
   });
 
+  test('more frames than the slot\'s timeline can tell apart: it draws some, evenly, and says how many there are', async () => {
+    // a frame every second for the slot 10:30-10:35: 300
+    const dense = Array.from({ length: 300 }, (_, i) => ({ ts: at(30) + i * 1000, url: `d${i}.jpg` }));
+    teardown = mountPlayer(el, dense[0], ctx({ fetch: async (from, to) => dense.filter((f) => f.ts >= from && f.ts <= to) }), () => {});
+    await flush();
+    // 560 px wide (unlaid out), a tick per 2 px
+    expect(el.querySelectorAll('.tick')).toHaveLength(280);
+    expect(cap()).toBe('site / cam — 10:30:00 · 1/280 of 300 frames: zoom for all');
+    press('style');
+    expect(el.querySelectorAll('.thumb')).toHaveLength(11);
+  });
+
+  test('Zoom sets the dashboard\'s range to the slot, and closes the player', async () => {
+    const zooms: Array<[number, number]> = [];
+    let closed = 0;
+    teardown = mountPlayer(el, fr(30), ctx({ onZoom: (from, to) => zooms.push([from, to]) }), () => {}, () => { closed++; });
+    await flush();
+    press('zoom');
+    expect(zooms).toEqual([[at(30), at(35)]]);
+    expect(closed).toBe(1);
+  });
+
+  test('no Zoom where the mount can\'t zoom (the grid)', async () => {
+    teardown = mountPlayer(el, fr(30), ctx(), () => {});
+    expect(el.querySelector('button[data-a="zoom"]')).toBeNull();
+  });
+
   test('a slot of one frame has nothing to play or step through', async () => {
     const minuteSlots = (t: number) => { const from = Math.floor(t / MIN) * MIN; return { from, to: from + MIN, ts: from, frameTs: from }; };
     teardown = mountPlayer(el, fr(30), ctx({ slotAt: minuteSlots, step: MIN }), () => {});
@@ -168,12 +195,12 @@ describe('the preview player', () => {
       detail: async (from, to) => { asked.push([from, to]); return all.filter((f) => f.ts >= from && f.ts < to); },
     }), () => {});
     await flush();
-    expect(asked).toEqual([[at(30), at(35)]]);
+    expect(asked).toEqual([[at(25), at(35)]]);
     expect(el.querySelectorAll('.tick')).toHaveLength(5);
     expect((el.querySelector('button[data-a="play"]') as HTMLButtonElement).disabled).toBe(false);
     press('next-slot');
     await flush();
-    expect(asked).toEqual([[at(30), at(35)], [at(35), at(40)]]);
+    expect(asked).toEqual([[at(25), at(35)], [at(30), at(40)]]);
   });
 
   test('thumbnails are the slot\'s frames, each as wide as it stands; the choice is remembered', async () => {
