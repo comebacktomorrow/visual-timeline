@@ -98,7 +98,8 @@ cadence ([docs/TIMELINE-MODEL.md](https://github.com/comebacktomorrow/visual-tim
   sends frames at uneven times draws as one continuous strip.
 
 The timeline doesn't fetch every frame in the range. Each host gets about
-one slot per 7 pixels of panel width (about 190 on a full-width panel):
+one slot per **Frame width** of panel width (7 px by default, about 190
+slots on a full-width panel):
 
 - **The step is a whole number of the host's cadence.** A host that uploads
   every minute shows one frame per minute at short ranges, and one in every
@@ -112,7 +113,11 @@ one slot per 7 pixels of panel width (about 190 on a full-width panel):
   hide a short outage.
 - **A slot shows a slice.** Each slot shows a vertical slice from the middle
   of its frame. Hover for the whole frame in the magnifier; click for the
-  high-resolution frame, when the host uploads one.
+  preview player (below).
+- **The frames a slot can't show.** A slot zoomed out over many frames shows
+  one. Its magnifier says how many it holds ("· 4 frames"); rest the cursor
+  on it for three seconds and the magnifier plays them. Click it for the
+  preview player.
 - **Images load newest first.** Across all the hosts in a panel, the
   thumbnails load from the live edge backwards, a few at a time, so on a
   slow connection the most recent frames appear first. Browsers keep the
@@ -124,6 +129,30 @@ one slot per 7 pixels of panel width (about 190 on a full-width panel):
   it near live. It doesn't use Grafana Live streaming.
 - **The time axis matches Grafana's own time series panel:** the same tick
   spacing, steps and label formats.
+
+### The preview player
+
+Clicking a frame opens it large, with the slot's own timeline underneath:
+the frames the slot holds, at their true times, as ticks or as small
+pictures, over the same red (offline), neutral (no data) and pause
+stretches the strip draws.
+
+- **Within the slot** (the dashboard's crosshair stays still): hover or drag
+  the timeline; ‹ › step frame by frame (← →); ▶ plays the slot's frames
+  round and round, stopping on a gap long enough to show its reason.
+- **To the next slot:** ‹‹ ›› (Shift+← →), and the dashboard's crosshair
+  follows.
+- **Zoom** (the magnifying glass) sets the dashboard's time range to the
+  slot. A slot holding more frames than its timeline can tell apart (a
+  tick per Frame width) shows as many as fit, says so in the title
+  ("showing 57 of 456"), and highlights Zoom.
+- The large image loads once the playhead settles; Esc or ✕ closes.
+
+The player asks for one slot's frames when it needs them, by running the
+panel's own query again for just that slot, no finer than it can draw.
+Any data source that filters by the dashboard's time range (SQL with
+`$__timeFilter`, Loki, Infinity with `${__from}`, the HTTP folder) answers
+it.
 
 Times follow the dashboard's time zone. A host can also say where it is,
 with the `X-Timezone` upload header (an IANA name such as
@@ -335,6 +364,8 @@ set how it draws them.
 | **Chip click**                    | What clicking a host or chip does: add an ad hoc filter (where the data source supports one), follow a **Chip link** (a URL with `${__chip.key}`, `${__chip.value}` and `${__host}`, plus dashboard variables), or nothing. |
 | **Expected cadence**              | How often every host promises a frame (`1m`, `30s`): a frame missing past it is red, as offline. Empty: each host's own cadence field or declared pace; a host with none promises nothing and is never red.                 |
 | **Hold frames without a promise** | How long a frame from a host that promises nothing is shown when no frame follows soon: Auto (three times the typical gap around it), Until the next frame, or Up to a duration such as `10m`. Past it: neutral "no data".  |
+| **Frame width**                   | The least width a frame gets, in pixels (default 7): the strip's slots, and the ticks in the preview player's timeline of a slot. Smaller shows more detail and loads more images; larger, fewer.                           |
+| **Scrubber style**                | The preview player's timeline: Ticks (a mark per frame) or Thumbnails (small pictures). Viewers can switch it in the player; their last choice is remembered in their browser.                                              |
 | **Show cadence details**          | Show each host's cadence (the promise, or `~` and "no promise" for a typical gap) and display resolution (for tuning).                                                                                                      |
 | **Header**                        | Bar (a header row per host), Inline (the header floats over the image), or Inline with a gradient behind them for busy frames.                                                                                              |
 | **Thumbnail times**               | Dashboard time, or Host local time: a host that declares a time zone shows its frame times in that zone, marked with the offset, e.g. `07:31:00 (+3h)`. The axis and crosshair stay in dashboard time.                      |
