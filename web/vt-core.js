@@ -1970,13 +1970,25 @@ var VTCore = (() => {
     const span = () => Math.max(1, slot.to - slot.from);
     const xOf = (ts) => (ts - slot.from) / span() * 100;
     const inSlot = () => frames.filter((f) => f.ts >= slot.from && f.ts < slot.to);
+    const stops = () => {
+      const out = new Set(inSlot().map((f) => f.ts));
+      for (const iv of ivs) {
+        if (iv.kind === "dropped" || iv.kind === "nodata" || iv.kind === "paused") {
+          const from = Math.max(iv.from, slot.from);
+          if (from < slot.to) {
+            out.add(from);
+          }
+        }
+      }
+      return [...out].sort((a, z) => a - z);
+    };
     function labels() {
       b("fps").textContent = prefs.fps + " fps";
       b("style").textContent = prefs.style === "ticks" ? "Ticks" : "Thumbs";
       b("play").textContent = playing ? "\u275A\u275A" : "\u25B6";
-      const n = inSlot().length;
+      const n = stops().length;
       b("play").disabled = n < 2;
-      b("play").title = n < 2 ? "One frame in this slot: nothing to play" : playing ? "Pause (Space)" : "Play the " + n + " frames in this slot (Space)";
+      b("play").title = n < 2 ? "One frame in this slot: nothing to play" : playing ? "Pause (Space)" : "Play this slot (Space)";
       b("prev").disabled = b("next").disabled = n < 2;
       el.classList.toggle("thumbs", prefs.style === "thumbs");
     }
@@ -2022,7 +2034,8 @@ var VTCore = (() => {
           thumbs.appendChild(cell);
         }
         fs.forEach((f, i) => {
-          const end = i + 1 < fs.length ? fs[i + 1].ts : slot.to;
+          const shownTo = ivs.find((iv) => (iv.kind === "frame" || iv.kind === "pending") && iv.frame?.ts === f.ts && iv.to > f.ts);
+          const end = Math.min(i + 1 < fs.length ? fs[i + 1].ts : slot.to, shownTo ? shownTo.to : slot.to);
           const cell = document.createElement("div");
           cell.className = "thumb";
           cell.style.left = xOf(f.ts) + "%";
@@ -2110,22 +2123,22 @@ var VTCore = (() => {
       labels();
     }
     function tick() {
-      const fs = inSlot();
-      if (fs.length < 2) {
+      const st = stops();
+      if (st.length < 2) {
         stop();
         return;
       }
-      const i = fs.findIndex((f2) => f2.ts > t);
-      const f = fs[i < 0 ? 0 : i];
-      seek(f.ts);
-      const j = fs.indexOf(f);
-      for (let k = 1; k <= 3; k++) {
+      const i = st.findIndex((x) => x > t);
+      seek(st[i < 0 ? 0 : i]);
+      const fs = inSlot();
+      const j = fs.findIndex((f) => f.ts > t);
+      for (let k = 0; k < 3 && fs.length; k++) {
         const p = new Image();
-        p.src = fs[(j + k) % fs.length].url;
+        p.src = fs[((j < 0 ? 0 : j) + k) % fs.length].url;
       }
     }
     function play() {
-      if (playing || inSlot().length < 2) {
+      if (playing || stops().length < 2) {
         return;
       }
       playing = true;
@@ -2159,12 +2172,12 @@ var VTCore = (() => {
         case "prev":
         case "next": {
           stop();
-          const fs = inSlot();
-          const i = fs.findIndex((f2) => f2.ts > t);
-          const cur = i < 0 ? fs.length - 1 : i - 1;
-          const f = fs[a === "next" ? cur + 1 : cur - 1];
-          if (f) {
-            seek(f.ts);
+          const st = stops();
+          const i = st.findIndex((x) => x > t);
+          const cur = i < 0 ? st.length - 1 : i - 1;
+          const to = st[a === "next" ? cur + 1 : cur - 1];
+          if (to !== void 0) {
+            seek(to);
           }
           break;
         }
@@ -2204,17 +2217,18 @@ var VTCore = (() => {
       const r = scrub.getBoundingClientRect();
       return slot.from + Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width))) * span();
     };
+    scrub.addEventListener("pointermove", (e) => {
+      if (playing) {
+        stop();
+      }
+      seek(tAt(e.clientX));
+    });
     scrub.addEventListener("pointerdown", (e) => {
-      stop();
+      if (playing) {
+        stop();
+      }
       scrub.setPointerCapture?.(e.pointerId);
       seek(tAt(e.clientX));
-      const move = (ev) => seek(tAt(ev.clientX));
-      const up = () => {
-        scrub.removeEventListener("pointermove", move);
-        scrub.removeEventListener("pointerup", up);
-      };
-      scrub.addEventListener("pointermove", move);
-      scrub.addEventListener("pointerup", up);
     });
     const keyH = (e) => {
       const k = e.key;

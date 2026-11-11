@@ -111,6 +111,46 @@ describe('the preview player', () => {
     expect(hhmm()).toBe('10:31');
   });
 
+  test('playing stops on a gap too, and shows its reason', async () => {
+    // slot 10:25-10:30: dropped until 10:26, then 10:26 to 10:29
+    teardown = mountPlayer(el, fr(26), ctx(), () => {});
+    await flush();
+    jest.useFakeTimers();
+    press('play');
+    const seen: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      jest.advanceTimersByTime(250);
+      seen.push(hhmm() + ' ' + el.querySelector('.stage .state')!.textContent);
+    }
+    expect(seen).toEqual(['10:27 ', '10:28 ', '10:29 ', '10:25 offline', '10:26 ']);
+    expect(times).toEqual([]);
+  });
+
+  test('a thumbnail ends where its frame stops being shown, so a gap after it shows', async () => {
+    // 10:30 and 10:31, then nothing until 10:34: 10:31's promise breaks at 10:32
+    const sparse = [...all.filter((f) => f.ts < at(30) || f.ts > at(33)), fr(30), fr(31)].sort((a, z) => a.ts - z.ts);
+    teardown = mountPlayer(el, fr(30), ctx({ fetch: async (from, to) => sparse.filter((f) => f.ts >= from && f.ts <= to) }), () => {});
+    await flush();
+    press('style');
+    const widths = [...el.querySelectorAll<HTMLElement>('.thumb')].map((c) => c.style.width);
+    expect(widths).toEqual(['20%', '20%', '20%']);
+    expect(el.querySelectorAll('.lane.dropped')).toHaveLength(1);
+  });
+
+  test('the scrubber follows the mouse, within the slot, and pauses playing', async () => {
+    teardown = mountPlayer(el, fr(32), ctx(), () => {});
+    await flush();
+    const scrub = el.querySelector('.scrub') as HTMLElement;
+    scrub.getBoundingClientRect = () => ({ left: 0, width: 500, top: 0, height: 20, right: 500, bottom: 20, x: 0, y: 0, toJSON: () => ({}) });
+    press('play');
+    scrub.dispatchEvent(new MouseEvent('pointermove', { clientX: 120 }));
+    expect(hhmm()).toBe('10:31');
+    expect(el.querySelector('button[data-a="play"]')!.textContent).toBe('▶');
+    scrub.dispatchEvent(new MouseEvent('pointermove', { clientX: 499 }));
+    expect(hhmm()).toBe('10:34');
+    expect(times).toEqual([]);
+  });
+
   test('a slot of one frame has nothing to play or step through', async () => {
     const minuteSlots = (t: number) => { const from = Math.floor(t / MIN) * MIN; return { from, to: from + MIN, ts: from, frameTs: from }; };
     teardown = mountPlayer(el, fr(30), ctx({ slotAt: minuteSlots, step: MIN }), () => {});

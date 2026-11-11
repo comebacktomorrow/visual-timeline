@@ -8,9 +8,10 @@ import type { Frame, TimeWindow } from '../types';
  * timeline under it. A slot of the strip can show one frame; the player shows
  * the rest. Its scrubber spans just the current slot: a tick per frame taken
  * within it, at its true time (or the frames themselves, as thumbnails),
- * over the stretches the strip draws (dropped, no data, pauses). Clicking,
- * dragging, previous and next frame and Play all stay within the slot, and
- * the dashboard's crosshair stays still. Only ‹‹ ›› (Shift+←/→) move to the
+ * over the stretches the strip draws (dropped, no data, pauses). Hovering,
+ * clicking, dragging, previous and next and Play all stay within the slot,
+ * and the dashboard's crosshair stays still; stepping and playing stop on a
+ * gap too, showing its reason. Only ‹‹ ›› (Shift+←/→) move to the
  * neighbouring slot, and the crosshair with it. Only the frame under the
  * playhead loads, and the slot's frames while it plays. */
 
@@ -114,14 +115,27 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
   const span = () => Math.max(1, slot.to - slot.from);
   const xOf = (ts: number) => ((ts - slot.from) / span()) * 100;
   const inSlot = () => frames.filter((f) => f.ts >= slot.from && f.ts < slot.to);
+  /* the slot's stops, in time order: each frame, and the start of each
+   * stretch without one (dropped, no data, a pause), so stepping and playing
+   * show a gap with its reason instead of skipping it */
+  const stops = (): number[] => {
+    const out = new Set(inSlot().map((f) => f.ts));
+    for (const iv of ivs) {
+      if (iv.kind === 'dropped' || iv.kind === 'nodata' || iv.kind === 'paused') {
+        const from = Math.max(iv.from, slot.from);
+        if (from < slot.to) {out.add(from);}
+      }
+    }
+    return [...out].sort((a, z) => a - z);
+  };
 
   function labels(): void {
     b('fps').textContent = prefs.fps + ' fps';
     b('style').textContent = prefs.style === 'ticks' ? 'Ticks' : 'Thumbs';
     b('play').textContent = playing ? '❚❚' : '▶';
-    const n = inSlot().length;
+    const n = stops().length;
     b('play').disabled = n < 2;
-    b('play').title = n < 2 ? 'One frame in this slot: nothing to play' : playing ? 'Pause (Space)' : 'Play the ' + n + ' frames in this slot (Space)';
+    b('play').title = n < 2 ? 'One frame in this slot: nothing to play' : playing ? 'Pause (Space)' : 'Play this slot (Space)';
     b('prev').disabled = b('next').disabled = n < 2;
     el.classList.toggle('thumbs', prefs.style === 'thumbs');
   }
@@ -167,7 +181,10 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
         thumbs.appendChild(cell);
       }
       fs.forEach((f, i) => {
-        const end = i + 1 < fs.length ? fs[i + 1].ts : slot.to;
+        // as wide as it's shown: up to the next frame, or where it runs out
+        // (a broken promise, a hold that ends, a pause), so those show
+        const shownTo = ivs.find((iv) => (iv.kind === 'frame' || iv.kind === 'pending') && iv.frame?.ts === f.ts && iv.to > f.ts);
+        const end = Math.min(i + 1 < fs.length ? fs[i + 1].ts : slot.to, shownTo ? shownTo.to : slot.to);
         const cell = document.createElement('div');
         cell.className = 'thumb';
         cell.style.left = xOf(f.ts) + '%';
@@ -250,18 +267,19 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     if (timer) { clearInterval(timer); timer = null; }
     labels();
   }
-  /* the next frame in the slot, round and round */
+  /* the next stop in the slot (a frame, or a gap with its reason), round and round */
   function tick(): void {
+    const st = stops();
+    if (st.length < 2) { stop(); return; }
+    const i = st.findIndex((x) => x > t);
+    seek(st[i < 0 ? 0 : i]);
+    // the next few frames load ahead
     const fs = inSlot();
-    if (fs.length < 2) { stop(); return; }
-    const i = fs.findIndex((f) => f.ts > t);
-    const f = fs[i < 0 ? 0 : i];
-    seek(f.ts);
-    const j = fs.indexOf(f);
-    for (let k = 1; k <= 3; k++) { const p = new Image(); p.src = fs[(j + k) % fs.length].url; }
+    const j = fs.findIndex((f) => f.ts > t);
+    for (let k = 0; k < 3 && fs.length; k++) { const p = new Image(); p.src = fs[((j < 0 ? 0 : j) + k) % fs.length].url; }
   }
   function play(): void {
-    if (playing || inSlot().length < 2) {return;}
+    if (playing || stops().length < 2) {return;}
     playing = true;
     labels();
     timer = setInterval(tick, 1000 / prefs.fps);
@@ -288,11 +306,11 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
       case 'play': if (playing) {stop();} else {play();} break;
       case 'prev': case 'next': {
         stop();
-        const fs = inSlot();
-        const i = fs.findIndex((f) => f.ts > t);
-        const cur = i < 0 ? fs.length - 1 : i - 1;
-        const f = fs[a === 'next' ? cur + 1 : cur - 1];
-        if (f) {seek(f.ts);}
+        const st = stops();
+        const i = st.findIndex((x) => x > t);
+        const cur = i < 0 ? st.length - 1 : i - 1;
+        const to = st[a === 'next' ? cur + 1 : cur - 1];
+        if (to !== undefined) {seek(to);}
         break;
       }
       case 'prev-slot': stop(); toSlot(-1); break;
@@ -306,19 +324,20 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     if (a && a !== 'close') {act(a);}
   });
 
-  // the scrubber: press and drag, within the slot
+  // the scrubber follows the mouse, as the strip does (pausing playback);
+  // a press and drag holds on to it
   const tAt = (clientX: number) => {
     const r = scrub.getBoundingClientRect();
     return slot.from + Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width))) * span();
   };
+  scrub.addEventListener('pointermove', (e) => {
+    if (playing) {stop();}
+    seek(tAt(e.clientX));
+  });
   scrub.addEventListener('pointerdown', (e) => {
-    stop();
+    if (playing) {stop();}
     scrub.setPointerCapture?.(e.pointerId);
     seek(tAt(e.clientX));
-    const move = (ev: PointerEvent) => seek(tAt(ev.clientX));
-    const up = () => { scrub.removeEventListener('pointermove', move); scrub.removeEventListener('pointerup', up); };
-    scrub.addEventListener('pointermove', move);
-    scrub.addEventListener('pointerup', up);
   });
 
   const keyH = (e: KeyboardEvent) => {
