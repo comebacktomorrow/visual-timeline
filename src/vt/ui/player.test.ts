@@ -61,7 +61,7 @@ describe('the preview player', () => {
     expect(cap()).toBe('site / cam — 10:30:00');
     await flush();
     expect(el.querySelectorAll('.tick')).toHaveLength(5);
-    expect(cap()).toBe('site / cam — 10:30:00 · 1/5 in slot');
+    expect(cap()).toBe('site / cam — 10:30:00 · frame 1 of 5 in this slot');
     expect(el.querySelector('.stage img')!.getAttribute('src')).toBe('f30.jpg');
     expect(times).toEqual([]);
   });
@@ -78,7 +78,7 @@ describe('the preview player', () => {
     teardown = mountPlayer(el, fr(30), ctx(), () => {});
     await flush();
     for (let i = 0; i < 6; i++) {press('next');}
-    expect(cap()).toBe('site / cam — 10:34:00 · 5/5 in slot');
+    expect(cap()).toBe('site / cam — 10:34:00 · frame 5 of 5 in this slot');
     press('prev');
     expect(hhmm()).toBe('10:33');
     expect(times).toEqual([]);
@@ -89,7 +89,7 @@ describe('the preview player', () => {
     await flush();
     press('next-slot');
     await flush();
-    expect(cap()).toBe('site / cam — 10:35:00 · 1/5 in slot');
+    expect(cap()).toBe('site / cam — 10:35:00 · frame 1 of 5 in this slot');
     expect(times).toEqual([at(35)]);
     press('prev-slot'); press('prev-slot');
     await flush();
@@ -158,7 +158,7 @@ describe('the preview player', () => {
     await flush();
     // 560 px wide (unlaid out), a tick per 2 px
     expect(el.querySelectorAll('.tick')).toHaveLength(280);
-    expect(cap()).toBe('site / cam — 10:30:00 · 1/300 in slot');
+    expect(cap()).toBe('site / cam — 10:30:00 · frame 1 of 300 in this slot');
     expect(el.querySelector('button[data-a="zoom"]')).toBeNull();
     press('style');
     expect(el.querySelectorAll('.thumb')).toHaveLength(11);

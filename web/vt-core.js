@@ -2118,7 +2118,8 @@ var VTCore = (() => {
       const every = inSlot();
       const all = every.length;
       const i = f ? every.indexOf(f) : -1;
-      cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : "") + (all > 1 && i >= 0 ? " \xB7 " + (i + 1) + "/" + all + " in slot" : "");
+      const place2 = all > 1 && i >= 0 ? i + 1 + " of " + all + " in this slot" : "";
+      cap.textContent = (ctx.label ? ctx.label + " \u2014 " : "") + ctx.tt.time(t) + ctx.tt.sfx(t) + (f && f.ts !== t ? " \xB7 frame " + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) + (place2 ? " (" + place2 + ")" : "") : place2 ? " \xB7 frame " + place2 : "");
       const zoom = el.querySelector('button[data-a="zoom"]');
       if (zoom) {
         zoom.classList.toggle("hint", all > fs.length);

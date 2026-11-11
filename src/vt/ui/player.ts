@@ -259,9 +259,12 @@ export function mountPlayer(el: HTMLElement, start: Frame, ctx: PlayerContext, p
     const every = inSlot();
     const all = every.length;
     const i = f ? every.indexOf(f) : -1;
+    // "frame 22 of 89 in this slot"; between frames, the one shown and its place
+    const place = all > 1 && i >= 0 ? (i + 1) + ' of ' + all + ' in this slot' : '';
     cap.textContent = (ctx.label ? ctx.label + ' — ' : '') + ctx.tt.time(t) + ctx.tt.sfx(t) +
-      (f && f.ts !== t ? ' · frame ' + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) : '') +
-      (all > 1 && i >= 0 ? ' · ' + (i + 1) + '/' + all + ' in slot' : '');
+      (f && f.ts !== t
+        ? ' · frame ' + ctx.tt.time(f.ts) + ctx.tt.sfx(f.ts) + (place ? ' (' + place + ')' : '')
+        : place ? ' · frame ' + place : '');
     // more frames than drawn: Zoom shows them all
     const zoom = el.querySelector<HTMLButtonElement>('button[data-a="zoom"]');
     if (zoom) {
