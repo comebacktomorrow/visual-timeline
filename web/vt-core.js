@@ -3638,11 +3638,14 @@ var VTCore = (() => {
       if (mine !== seq || !current || current.x0 !== sl.x0) {
         return;
       }
+      if (!reel.clips.some((c) => c.hi)) {
+        reel.capacity = 0;
+      }
       const rate = reel.videoRate();
       const all = reel.clipSpans();
       const spans = (rate === null ? all : reel.watched()).sort((a, z) => z.to - z.from - (a.to - a.from));
       const span = all.find((c) => c.from <= sl.ts && sl.ts < c.to) ?? spans[0];
-      if (span && target.clip && (rate !== null || !reel.inSlot().length)) {
+      if (span && span.clip.hi && target.clip && (rate !== null || !reel.inSlot().length)) {
         clipOn = true;
         target.playingChanged(true);
         target.clip(span, rate ?? MAX_RATE);

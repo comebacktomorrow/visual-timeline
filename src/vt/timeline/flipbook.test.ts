@@ -87,7 +87,7 @@ describe('the hover flipbook', () => {
 
   test('a slot a clip covers plays the clip\'s part of it, not its stills; stopping stops it', async () => {
     const spans: Array<[string, number, number] | null> = [];
-    const clipSource = { ...source, clips: async () => [{ from: 15, to: 45, url: 'c.webm' }] };
+    const clipSource = { ...source, clips: async () => [{ from: 15, to: 45, url: 'c.webm', hi: 'c-hi.webm' }] };
     const fb = makeFlipbook({
       ...target(),
       reel: (sl) => new Reel(clipSource, sl),
@@ -107,24 +107,38 @@ describe('the hover flipbook', () => {
 
   test('zoomed out, more video than plays in a few seconds: it flips the stills; with none, the video as fast as it goes', async () => {
     const rates: Array<number | undefined> = [];
-    const make = (clips: Array<{ from: number; to: number; url: string }>, fs: Frame[]) => makeFlipbook({
+    const make = (clips: Array<{ from: number; to: number; url: string; hi?: string }>, fs: Frame[]) => makeFlipbook({
       ...target(),
       reel: (sl) => new Reel({ ...source, fetch: async (from: number, to: number) => fs.filter((f) => f.ts >= from && f.ts < to), clips: async () => clips }, sl),
       clip: (sp, rate) => { if (sp) {rates.push(rate);} },
       // ten minutes of video in the slot: more than plays in ten seconds at 16×
       measure: async (r) => { r.ratio = 10; },
     }, false, () => true);
-    const withStills = make([{ from: 0, to: 60, url: 'c.webm' }], frames);
+    const withStills = make([{ from: 0, to: 60, url: 'c.webm', hi: 'c-hi.webm' }], frames);
     withStills.hover(slot(0, 6));
     jest.advanceTimersByTime(DWELL_MS);
     await settle();
     expect(rates).toEqual([]);
     expect(shown[0]).toBe('f0');
     withStills.stop();
-    const only = make([{ from: 0, to: 60, url: 'c.webm' }], []);
+    const only = make([{ from: 0, to: 60, url: 'c.webm', hi: 'c-hi.webm' }], []);
     only.hover(slot(0, 1));
     jest.advanceTimersByTime(DWELL_MS);
     await settle();
     expect(rates).toEqual([16]);
+  });
+
+  test('a clip in one size only (no smaller version for a hover): it flips the stills', async () => {
+    const spans: unknown[] = [];
+    const fb = makeFlipbook({
+      ...target(),
+      reel: (sl) => new Reel({ ...source, clips: async () => [{ from: 0, to: 60, url: 'big.mp4' }] }, sl),
+      clip: (sp) => spans.push(sp),
+    }, false, () => true);
+    fb.hover(slot(0, 6));
+    jest.advanceTimersByTime(DWELL_MS);
+    await settle();
+    expect(spans).toEqual([]);
+    expect(shown[0]).toBe('f0');
   });
 });

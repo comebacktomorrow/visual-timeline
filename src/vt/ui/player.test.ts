@@ -382,6 +382,33 @@ describe('the preview player', () => {
       expect(spare.preload).toBe('auto');
     });
 
+    test('stepping slot to slot through video: each slot\'s clips, at its place in them', async () => {
+      noteClipLength('d1.webm', 7);
+      noteClipLength('d2.webm', 7);
+      // two clips, the second starting mid-slot (10:37)
+      const days = [{ from: at(20), to: at(37), url: 'd1.webm' }, { from: at(37), to: at(60), url: 'd2.webm' }];
+      teardown = mountPlayer(el, fr(30), clipCtx(days), () => {});
+      await flush();
+      const src = () => (el.querySelector('.stage video:not(.spare)') as HTMLVideoElement).getAttribute('src');
+      expect(src()).toBe('d1.webm');
+      expect(el.querySelectorAll('.lane.clip')).toHaveLength(1);
+      press('next-slot');
+      await flush();
+      // 10:35 to 10:40: the end of the first and the start of the second
+      expect(el.querySelectorAll('.lane.clip')).toHaveLength(2);
+      expect(el.querySelectorAll('.tick.clip-start')).toHaveLength(2);
+      expect(src()).toBe('d1.webm');
+      press('next-slot');
+      await flush();
+      expect(el.querySelectorAll('.lane.clip')).toHaveLength(1);
+      expect(src()).toBe('d2.webm');
+      expect(times).toEqual([at(35), at(40)]);
+      press('prev-slot');
+      press('prev-slot');
+      await flush();
+      expect(src()).toBe('d1.webm');
+    });
+
     test('video it can\'t show at this scale: a bubble over the picture, which zooms to the slot', async () => {
       const zoomed: Array<[number, number]> = [];
       const long = [{ from: at(31), to: at(34), url: 'long.webm' }];

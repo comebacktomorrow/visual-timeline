@@ -33,7 +33,8 @@
   remembered. Its speed starts at what plays the slot's video in about ten
   seconds and steps up to 16×; zoomed out, a slot with more video than
   that plays its frames, as a busy slot does, with Zoom to watch it. The
-  hover flipbook plays the smaller version. The strip keeps its frames
+  hover flipbook plays the smaller version (only for a clip in two sizes;
+  otherwise it flips the frames). The strip keeps its frames
   (**Mark video on the strip**, off by default, draws a line where there's
   video); a host with only clips draws them as bands with ▶, though frames
   alongside are recommended. A new **Video** field option names the field.

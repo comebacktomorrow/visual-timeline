@@ -11,9 +11,10 @@ import type { Slot, TickSlot } from '../types';
  * magnifier goes back to the slot's own frame.
  * A slot a video clip covers (M10c) plays the clip's part of it instead,
  * the smaller version, muted, round and round, sped up to be watched in a
- * few seconds. Zoomed out, a slot holding more video than that flips
- * through its stills as any other; one with only video plays it as fast as
- * it goes. */
+ * few seconds. Only a clip that comes in two sizes has a smaller one: with
+ * one size (a 13 MB daily movie, say), resting flips the stills, as it does
+ * zoomed out, where a slot holds more video than that; one with only video
+ * plays it as fast as it goes. */
 
 /** How long the cursor rests on one slot before it plays: long enough that
  * it has to be meant. */
@@ -74,6 +75,8 @@ export function makeFlipbook(target: FlipTarget, anySlot = false, hasClip: (sl: 
     if (!ok || mine !== seq || !current || current.x0 !== sl.x0) {return;}
     if (reel.clips.length) {await target.measure?.(reel);}
     if (mine !== seq || !current || current.x0 !== sl.x0) {return;}
+    // no clip with a smaller version: none to play here, so the stills
+    if (!reel.clips.some((c) => c.hi)) {reel.capacity = 0;}
     // a clip plays over stills: the one at the slot's tick (the one the
     // strip shows), else the longest part of one in the slot. Too much video
     // to watch: the stills, unless there are none
@@ -81,7 +84,9 @@ export function makeFlipbook(target: FlipTarget, anySlot = false, hasClip: (sl: 
     const all = reel.clipSpans();
     const spans = (rate === null ? all : reel.watched()).sort((a, z) => (z.to - z.from) - (a.to - a.from));
     const span = all.find((c) => c.from <= sl.ts && sl.ts < c.to) ?? spans[0];
-    if (span && target.clip && (rate !== null || !reel.inSlot().length)) {
+    // a clip with a larger version: its url is the smaller one, fit for a
+    // hover; one of a single size isn't loaded for one
+    if (span && span.clip.hi && target.clip && (rate !== null || !reel.inSlot().length)) {
       clipOn = true;
       target.playingChanged(true);
       target.clip(span, rate ?? MAX_RATE);

@@ -310,7 +310,9 @@ way to set one up.
   strip** (a panel option, off by default) draws a thin line along its foot
   where the host has video.
 - **The preview player plays the clip over the frames** (above). The hover
-  flipbook plays the smaller version in the magnifier, muted.
+  flipbook plays a clip in the magnifier, muted, only when it comes in two
+  sizes (`video` and `video_hi`): the smaller one. A clip of one size isn't
+  loaded for a hover; the flipbook flips the frames instead.
 - **Formats:** whatever the viewer's browser plays: MP4 (H.264) or WebM
   (VP9) are safe. Serve them with range requests, and for MP4 put the index
   at the front (`ffmpeg -movflags +faststart`): a file with it at the end
