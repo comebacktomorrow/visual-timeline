@@ -24,6 +24,8 @@ export interface ModelOptions {
   /** a promise for every frame (ms), whatever the source says: the panel's
    * Expected cadence */
   expected?: number;
+  /** the interval the frames were asked for at (ms): Grafana's $__interval */
+  sample?: number;
 }
 
 export async function buildSourceModel(
@@ -38,8 +40,10 @@ export async function buildSourceModel(
   // without a promise), coarsened to the pixel budget in whole paces
   const active = eras.filter((e) => !e.paused);
   const base = Math.max(1000, Math.min(...(active.length ? active : eras).map((e) => e.cadence)));
-  // the budget is for active time: a pause is one band, however long
-  const activeSpan = Math.max(1, active.reduce((a, e) => a + (e.to - e.from), 0) || P.to - P.from);
+  // the budget is for active time: a closed pause is one band, however long.
+  // An open one (the last era) counts as active: frames may end it anywhere
+  const closedPaused = eras.slice(0, -1).filter((e) => e.paused).reduce((a, e) => a + (e.to - e.from), 0);
+  const activeSpan = Math.max(1, (P.to - P.from) - closedPaused);
   const step = base * Math.max(1, Math.ceil(activeSpan / base / Math.max(4, budgetSlots)));
   const maxCadence = Math.max(...eras.map((e) => e.cadence));
   const wanted = promised ? 1.5 * maxCadence + step
@@ -77,8 +81,10 @@ export async function buildSourceModel(
   const model: SourceModel = {
     eras, step, promised, frames: [], intervals: [], slots: [], drops: [], lastActive: null,
     slotAt: () => null, intervalAt: () => null,
-    intervalsFor: (frames, window, now) => buildIntervals({
-      frames, promiseAt, pauses, hold, window, now, promiseOverride: expected,
+    // frames for a span (the player's): exact when they were fetched at full
+    // resolution for it, else judged at the interval they were asked for at
+    intervalsFor: (frames, window, now, exact) => buildIntervals({
+      frames, promiseAt, pauses, hold, window, now, promiseOverride: expected, ...(exact ? {} : { sample: opts.sample }),
     }).intervals,
     refresh(fresh: Frame[], now: number) {
       const byTs = new Map(model.frames.map((f) => [f.ts, f]));
@@ -92,7 +98,7 @@ export async function buildSourceModel(
       const thinned = model.frames.length <= 1.1 * buckets;
       const built = buildIntervals({
         frames: model.frames, promiseAt, pauses, hold, window: P, now, step: promised && thinned ? step : undefined,
-        promiseOverride: expected,
+        promiseOverride: expected, sample: opts.sample,
       });
       // each slot's cadence: the promise in force at its tick, or the typical gap
       const { slots, drops } = sample(built, step, (t) => promiseAt(t) ?? base);

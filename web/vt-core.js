@@ -459,9 +459,13 @@ var VTCore = (() => {
     const tol = input.tolerance ?? 0.5;
     const hold = input.hold ?? "auto";
     const declared = input.promiseAt ?? (() => null);
+    const sampled = (p) => {
+      const s = input.sample && input.sample > p ? Math.ceil(input.sample / p - 1e-9) * p : p;
+      return Math.max(s, input.step ?? 0);
+    };
     const promiseAt = (t) => {
       const p = input.promiseOverride && input.promiseOverride > 0 ? input.promiseOverride : declared(t);
-      return p && p > 0 ? Math.max(p, input.step ?? 0) : null;
+      return p && p > 0 ? sampled(p) : null;
     };
     const horizon = Math.max(W.from, Math.min(W.to, now));
     const byTs = /* @__PURE__ */ new Map();
@@ -481,7 +485,7 @@ var VTCore = (() => {
     const shown = frames.slice(offset);
     const promiseOf = (f) => {
       const own = input.promiseOverride && input.promiseOverride > 0 ? input.promiseOverride : f.cadence;
-      return typeof own === "number" && own > 0 ? Math.max(own, input.step ?? 0) : promiseAt(f.ts);
+      return typeof own === "number" && own > 0 ? sampled(own) : promiseAt(f.ts);
     };
     const holdFor = (i) => {
       if (hold === "none") {
@@ -556,7 +560,7 @@ var VTCore = (() => {
         if (t > W.from) {
           follow(null, t, firstTs, promiseAt(t), 0, false);
         } else {
-          push(t, firstTs, p ? "dropped" : "nodata");
+          push(t, firstTs, p && firstTs - W.from > (1 + tol) * p ? "dropped" : "nodata");
         }
       }
       cursor = firstTs;
@@ -631,7 +635,8 @@ var VTCore = (() => {
     const hold = opts.hold ?? "auto";
     const active = eras.filter((e) => !e.paused);
     const base = Math.max(1e3, Math.min(...(active.length ? active : eras).map((e) => e.cadence)));
-    const activeSpan = Math.max(1, active.reduce((a, e) => a + (e.to - e.from), 0) || P.to - P.from);
+    const closedPaused = eras.slice(0, -1).filter((e) => e.paused).reduce((a, e) => a + (e.to - e.from), 0);
+    const activeSpan = Math.max(1, P.to - P.from - closedPaused);
     const step = base * Math.max(1, Math.ceil(activeSpan / base / Math.max(4, budgetSlots)));
     const maxCadence = Math.max(...eras.map((e) => e.cadence));
     const wanted = promised ? 1.5 * maxCadence + step : typeof hold === "number" ? hold : LOOKBACK_UNPROMISED;
@@ -677,14 +682,17 @@ var VTCore = (() => {
       lastActive: null,
       slotAt: () => null,
       intervalAt: () => null,
-      intervalsFor: (frames, window2, now) => buildIntervals({
+      // frames for a span (the player's): exact when they were fetched at full
+      // resolution for it, else judged at the interval they were asked for at
+      intervalsFor: (frames, window2, now, exact) => buildIntervals({
         frames,
         promiseAt,
         pauses,
         hold,
         window: window2,
         now,
-        promiseOverride: expected
+        promiseOverride: expected,
+        ...exact ? {} : { sample: opts.sample }
       }).intervals,
       refresh(fresh, now) {
         const byTs = new Map(model.frames.map((f) => [f.ts, f]));
@@ -702,7 +710,8 @@ var VTCore = (() => {
           window: P,
           now,
           step: promised && thinned ? step : void 0,
-          promiseOverride: expected
+          promiseOverride: expected,
+          sample: opts.sample
         });
         const { slots, drops } = sample(built, step, (t) => promiseAt(t) ?? base);
         model.intervals = built.intervals;
@@ -2746,7 +2755,8 @@ var VTCore = (() => {
       tt,
       fetch: (from, to) => backend.allFrames ? backend.allFrames(decl.site, decl.id, from, to) : backend.frames(decl.site, decl.id, from, to, Math.max(model.lastActive?.cadence ?? model.step, Math.ceil((to - from) / PLAYER_BUCKETS))),
       ...backend.detail ? { detail: (from, to) => backend.detail(decl.site, decl.id, from, to) } : {},
-      intervals: (frames, range) => model.intervalsFor(frames, range, Date.now()),
+      // a slot fetched again at full resolution is judged exactly
+      intervals: (frames, range) => model.intervalsFor(frames, range, Date.now(), !!backend.detail),
       // the strip's own slots, so the player's slots are the ones on screen
       slotAt: (t) => {
         const sl = model.slotAt(t);
@@ -3285,7 +3295,7 @@ var VTCore = (() => {
         await revealWrapper(root, wrap);
         return;
       }
-      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence }).catch((e) => {
+      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence, sample: s.cfg.sampleInterval }).catch((e) => {
         console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
         return null;
       }));
@@ -3531,7 +3541,7 @@ var VTCore = (() => {
         await revealWrapper(root, wrap);
         return;
       }
-      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence }).catch((e) => {
+      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence, sample: s.cfg.sampleInterval }).catch((e) => {
         console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
         return null;
       }));

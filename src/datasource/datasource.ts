@@ -188,7 +188,7 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
   ) {
     const demo = this.demoBackend(window, timeZone);
     const span = Math.max(1, window.to - window.from);
-    const rows: Array<{ ts: number; host: string; site: string; url: string; cadence: number }> = [];
+    const rows: Array<{ ts: number; host: string; site: string; url: string; cadence: number; count?: number }> = [];
     for (const s of sources) {
       const cadences = [s.cadence, ...(s.history || []).map((h) => h.cadence)].filter((c): c is number => !!c && c > 0);
       const finest = Math.min(...cadences);
@@ -198,7 +198,10 @@ export class VisualTimelineDataSource extends DataSourceApi<VisualTimelineQuery,
       const paces = (s.history || []).filter((h) => h.cadence && (h.variant || 'lo') === 'lo').sort((a, b) => a.since - b.since);
       const paceAt = (ts: number) => paces.filter((h) => h.since <= ts).pop()?.cadence ?? s.cadence;
       for (const f of await demo.frames(s.site, s.id, window.from, window.to, step)) {
-        rows.push({ ts: f.ts, host: s.id, site: s.site, url: f.url, cadence: paceAt(f.ts) });
+        // a row a step apart stands for the frames the host took in it
+        const pace = paceAt(f.ts);
+        const count = Math.max(1, Math.round(step / pace));
+        rows.push({ ts: f.ts, host: s.id, site: s.site, url: f.url, cadence: pace, ...(count > 1 ? { count } : {}) });
       }
     }
     return recordsToFrame(rows, refId);

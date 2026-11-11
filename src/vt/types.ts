@@ -210,7 +210,7 @@ export interface SourceModel {
   refresh(fresh: Frame[], now: number): void;
   /* intervals for other frames over another range, by this host's promise,
    * pauses and hold (the preview player's scrubber) */
-  intervalsFor(frames: Frame[], window: TimeWindow, now: number): Interval[];
+  intervalsFor(frames: Frame[], window: TimeWindow, now: number, exact?: boolean): Interval[];
 }
 
 /* ---- mounts (mountTimeline, mountGrid) ---- */
@@ -257,6 +257,10 @@ export interface MountConfig {
   /* a promise for every host (ms), whatever its source says: the panel's
    * Expected cadence (docs/TIMELINE-MODEL.md); unset, the sources decide */
   expectedCadence?: number;
+  /* the interval the host's queries were asked for at (ms; Grafana's
+   * $__interval): a source may answer one frame per it, so promises are
+   * judged no finer */
+  sampleInterval?: number;
   /* the preview player's default scrubber style (a viewer's own last choice
    * wins): 'ticks' (default) or 'thumbs' */
   playerScrubber?: string;

@@ -64,6 +64,10 @@ export interface IntervalInput {
   /** a promise for every frame, ahead of their own and the source's (the
    * panel's Expected cadence) */
   promiseOverride?: number;
+  /** the interval the frames were asked for at (Grafana's $__interval): a
+   * data source may answer one frame per it, so a finer promise counts as the
+   * whole multiple of itself that covers it */
+  sample?: number;
 }
 
 /** Auto hold: this many times the typical gap around a frame. */
@@ -88,10 +92,15 @@ export function buildIntervals(input: IntervalInput): Intervals {
   const tol = input.tolerance ?? 0.5;
   const hold = input.hold ?? 'auto';
   const declared = input.promiseAt ?? (() => null);
-  // a promise can't be judged finer than the frames were sampled
+  // a promise can't be judged finer than the frames were sampled: the step
+  // they were thinned to, or the interval they were asked for at
+  const sampled = (p: number): number => {
+    const s = input.sample && input.sample > p ? Math.ceil(input.sample / p - 1e-9) * p : p;
+    return Math.max(s, input.step ?? 0);
+  };
   const promiseAt = (t: number): number | null => {
     const p = input.promiseOverride && input.promiseOverride > 0 ? input.promiseOverride : declared(t);
-    return p && p > 0 ? Math.max(p, input.step ?? 0) : null;
+    return p && p > 0 ? sampled(p) : null;
   };
   const horizon = Math.max(W.from, Math.min(W.to, now));
 
@@ -115,7 +124,7 @@ export function buildIntervals(input: IntervalInput): Intervals {
 
   const promiseOf = (f: Frame): number | null => {
     const own = input.promiseOverride && input.promiseOverride > 0 ? input.promiseOverride : f.cadence;
-    return typeof own === 'number' && own > 0 ? Math.max(own, input.step ?? 0) : promiseAt(f.ts);
+    return typeof own === 'number' && own > 0 ? sampled(own) : promiseAt(f.ts);
   };
   const holdFor = (i: number): number => {
     if (hold === 'none') {return Infinity;}
@@ -179,7 +188,9 @@ export function buildIntervals(input: IntervalInput): Intervals {
   // events in time order: frames, pause starts and ends
   let cursor = W.from;
   // before the first frame in force: a declared promise with no frame within
-  // the look-back has broken; otherwise there's nothing to say
+  // the look-back has broken, unless the first frame comes within it (a
+  // query's rows start inside the window, so the one before is unseen);
+  // otherwise there's nothing to say
   const firstTs = shown.length ? shown[0].ts : horizon;
   if (firstTs > W.from) {
     const p = promiseAt(W.from);
@@ -192,7 +203,7 @@ export function buildIntervals(input: IntervalInput): Intervals {
     }
     if (t < firstTs) {
       if (t > W.from) {follow(null, t, firstTs, promiseAt(t), 0, false);}
-      else {push(t, firstTs, p ? 'dropped' : 'nodata');}
+      else {push(t, firstTs, p && firstTs - W.from > (1 + tol) * p ? 'dropped' : 'nodata');}
     }
     cursor = firstTs;
   }

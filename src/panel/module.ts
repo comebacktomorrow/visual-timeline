@@ -155,6 +155,12 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const showDetails = options.showDetails === true;
   const hideEmpty = options.hideEmpty === true;
   const showAnnotations = options.showAnnotations !== false;
+  // the interval Grafana asked the queries for at: a data source may answer
+  // one frame per it (the reference worker's step=$__interval_ms), or per
+  // the range over max data points (ours), before Grafana rounds it
+  const req = props.data?.request;
+  const reqSpan = req ? req.range.to.valueOf() - req.range.from.valueOf() : 0;
+  const sampleInterval = Math.max(req?.intervalMs ?? 0, req?.maxDataPoints ? Math.ceil(reqSpan / req.maxDataPoints) : 0);
   // a promise for every host, whatever its data says (ms; 0: none)
   const expectedCadence = options.expectedCadence ? safeInterval(options.expectedCadence) : 0;
   // frames without a promise: how long one is shown when none follows soon
@@ -281,6 +287,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       from, to, width: buildWidth, fit, backend, showDetails, hideEmpty, onFilter,
       annotations, showAnnotations, annotationLanes: options.annotationLanes || 'shared',
       hold, chips, ...(expectedCadence > 0 ? { expectedCadence } : {}),
+      ...(sampleInterval > 0 ? { sampleInterval } : {}),
       playerScrubber: options.playerScrubber || 'ticks',
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
@@ -310,7 +317,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, options.playerScrubber, chipsKey]);
+  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, sampleInterval, options.playerScrubber, chipsKey]);
 
   useEffect(() => {
     const subs = [
