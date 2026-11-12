@@ -75,9 +75,15 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   /* Host state (#126, M4): rows with a time, a host and a state value, from
    * any query; labels and colours from the field's value mappings. A state
    * field set to "Pauses frames" explains the frames a host doesn't send;
-   * the others ride along as annotations on their host (M4b). */
-  const states = statesFromSeries(props.data?.series, theme, { time: options.timeField, host: options.hostField, site: options.siteField, state: options.stateField });
-  const statesKey = states ? JSON.stringify(states) : '';
+   * the others ride along as annotations on their host (M4b).
+   * Parsed, and keyed, only when the series or the field roles change, not
+   * on every render (a resize renders at each width step: L4). */
+  const series = props.data?.series;
+  const states = useMemo(
+    () => statesFromSeries(series, theme, { time: options.timeField, host: options.hostField, site: options.siteField, state: options.stateField }),
+    [series, theme, options.timeField, options.hostField, options.siteField, options.stateField]
+  );
+  const statesKey = useMemo(() => (states ? JSON.stringify(states) : ''), [states]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const statesMemo = useMemo(() => states, [statesKey]);
   const annotations = showAnnotations
@@ -97,18 +103,18 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
    * source (#126). When the query returns any, they are what the panel
    * draws; a Visual Timeline source list in the same result adds what it
    * knows about each host (history, time zone, tags). */
-  const roles: FieldRoles = {
+  const roles = useMemo<FieldRoles>(() => ({
     time: options.timeField, image: options.imageField, host: options.hostField,
     site: options.siteField, preview: options.previewField, cadence: options.cadenceField, video: options.videoField,
-  };
-  const records = recordsFromSeries(props.data?.series, roles);
+  }), [options.timeField, options.imageField, options.hostField, options.siteField, options.previewField, options.cadenceField, options.videoField]);
+  const records = useMemo(() => recordsFromSeries(series, roles), [series, roles]);
   // keyed on content, as above: a host's frames only ever grow, so its count
   // and newest frame say whether anything changed
-  const recordsKey = records
+  const recordsKey = useMemo(() => (records
     ? JSON.stringify(records.map((h) => [h.site, h.id, h.cadence, h.frames.length, h.frames[0]?.ts, h.frames.at(-1)?.ts, h.frames.at(-1)?.url,
       // and its clips (M10c): a new one can come with no new frame
       h.clips?.length ?? 0, h.clips?.at(-1)?.from, h.clips?.at(-1)?.to]))
-    : '';
+    : ''), [records]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const recordsMemo = useMemo(() => records, [recordsKey]);
   // a source list without records (no frames in the window) still draws its
@@ -116,8 +122,8 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   /* A host table (M4c): rows of a host and what's known about it (time
    * zone, location, tags, cadence) from any query, such as the worker's
    * /sources through Infinity. Its hosts are drawn even without frames. */
-  const table = hostTableFromSeries(props.data?.series, roles);
-  const tableKey = table.length ? JSON.stringify(table) : '';
+  const table = useMemo(() => hostTableFromSeries(series, roles), [series, roles]);
+  const tableKey = useMemo(() => (table.length ? JSON.stringify(table) : ''), [table]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const tableMemo = useMemo(() => table, [tableKey]);
   /* A slot's frames at full resolution, by running the panel's queries again
