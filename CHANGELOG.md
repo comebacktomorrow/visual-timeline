@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0 (2026-11-11)
+## 2.0.0 (2026-11-12)
 
 ### Highlights
 
@@ -14,8 +14,20 @@
   ([docs/FOLDERS.md](docs/FOLDERS.md)). Private buckets are planned for 2.1.
 - **Host state and details from any query,** labelled and coloured by value
   mappings: states that pause frames as bands, others as annotations.
-- **Fewer assumptions about feeds:** Hold last frame, Gaps mean, eras from a
-  changing cadence, wide tables, and header chips you choose.
+- **A cadence is a promise.** A frame is shown until the next one; only a
+  host that promises a cadence (a field, the folder's Expected every, the
+  panel's Expected cadence) is ever drawn offline, and only where a promised
+  frame didn't come. A host that promises nothing is never red
+  ([docs/TIMELINE-MODEL.md](docs/TIMELINE-MODEL.md)).
+- **The preview player and the hover flipbook.** Clicking a frame opens the
+  slot's own timeline: the frames it holds but can't show, as ticks or
+  thumbnails, played within the slot. Resting on a slot plays them in the
+  magnifier.
+- **Video clips, experimental.** A `video` field, or the folder's Video path
+  template, gives hosts clips the player plays over their frames (NASA's
+  daily Sun movies on the demo).
+- **Fewer assumptions about feeds:** irregular feeds, eras from a changing
+  cadence, wide tables, and header chips you choose.
 - **Two live demo dashboards** on public data: USGS river cameras and NASA's
   Sun.
 - **Breaking:** the data source's frames API mode is gone. Read the reference

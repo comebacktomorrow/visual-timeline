@@ -6,7 +6,8 @@ completes them, and delete this file once the plugin is published and signed.
 Submitting is the maintainer's call: an agent prepares, the maintainer
 submits.
 
-**State as of 2026-11-11:** 2.0's code and docs are merged (#130 to #151).
+**State as of 2026-11-12:** 2.0's code and docs are merged (#130 to #158).
+Video clips (#157, #158) are labelled experimental.
 Grafana's review declined 1.2.3 because using it meant running this
 project's backend or building one to its API; 2.0 removes that: the panel
 reads frames from any data source, and the Visual Timeline data source reads
@@ -118,13 +119,13 @@ offers one):
 
      Provisioned data sources:
      - Visual Timeline (demo): Demo data.
-     - Visual Timeline (folder, HTML) and (folder, JSON): the HTTP folder connection on the nginx folder, one per listing format.
+     - Visual Timeline (folder, HTML) and (folder, JSON): the HTTP folder connection on the nginx folder, one per listing format; Visual Timeline (folder, expected): the same folder, promising a frame every 3 minutes.
      - PostgreSQL (frames), Loki (frames), TestData DB: stock data sources holding frames.
 
      Provisioned dashboards:
      - Provisioned Visual Timeline dashboard: a timeline and a multiview grid on demo data.
-     - Visual Timeline — any data source: timelines and grids from TestData CSV rows, including host states that pause frames, an irregular feed, header chips and a wide table.
-     - Visual Timeline — HTTP folder: the same frames through each listing format.
+     - Visual Timeline — any data source: timelines and grids from TestData CSV rows, including host states that pause frames, an irregular feed, header chips, a wide table, and video clips (experimental; small WebM files from the nginx folder).
+     - Visual Timeline — HTTP folder: the same frames through each listing format, and a folder that promises a frame every 3 minutes (a missing one is drawn offline).
      - Visual Timeline — existing data sources (PostgreSQL) and Visual Timeline — Loki: frames from stock data sources.
      - Visual Timeline — filters: Site and Host variables and an ad hoc filter bar.
      - Visual Timeline — last frame table: a stock Table and a stock Canvas fed by the data source's Last frame option.
@@ -136,14 +137,16 @@ offers one):
   3. CONFIGURE
      - Connections > Data sources > Add new data source > Visual Timeline.
      - Demo data: choose Demo data as the Connection and click Save & test. Expected: "Demo data is on: queries return built-in demo hosts and frames." On the data source's Dashboards tab, import the "Visual Timeline" starter dashboard.
-     - HTTP folder: choose HTTP folder, set the folder URL, listing format and path template (docs/FOLDERS.md), and click Save & test, which reports the frames and hosts found in the last 24 hours. A public example: folder URL https://sdo.gsfc.nasa.gov/assets/img/browse, listing HTML links, template {YYYY}/{MM}/{DD}/{YYYY}{MM}{DD}_{HH}{mm}{ss}_{variant}_{host}.jpg, small images 512, large 2048 (NASA's Sun images).
+     - HTTP folder: choose HTTP folder, set the folder URL, listing format and path template (docs/FOLDERS.md), and click Save & test, which reports the frames and hosts found in the last 24 hours. A public example: folder URL https://sdo.gsfc.nasa.gov/assets/img, listing HTML links, template browse/{YYYY}/{MM}/{DD}/{YYYY}{MM}{DD}_{HH}{mm}{ss}_{variant}_{host}.jpg, small images 512, large 2048 (NASA's Sun images); optionally, video path template dailymov/{YYYY}/{MM}/{DD}/{YYYY}{MM}{DD}_1024_{host}.mp4 (a movie of each day, experimental).
      - Any other data source: add a Visual Timeline panel and query a data source whose rows have a time, an image URL and a host (docs/DATA-SOURCES.md).
 
   4. USE
-     - Timeline: hover a strip to scrub its frames (the crosshair is shared across panels), drag across a strip to zoom the dashboard's time range, click a frame for a larger preview. Gaps show missing frames at their true width; host states draw as bands or annotations, labelled and coloured by their value mappings.
+     - Timeline: hover a strip to scrub its frames (the crosshair is shared across panels), drag across a strip to zoom the dashboard's time range. A frame is shown until the next one; red (offline) only where a host promised a frame and it didn't come, neutral "no data" otherwise. Host states draw as bands or annotations, labelled and coloured by their value mappings.
+     - Preview player: click a frame. It opens with the slot's own timeline (the frames the slot holds, as ticks or thumbnails): hover, ‹ › and ▶ stay within the slot; ‹‹ ›› move to the next slot; Zoom sets the dashboard's range to the slot; Esc or ✕ closes. Rest the cursor on a slot for three seconds and its frames play in the magnifier.
+     - Video (experimental): on the "Video clips from TestData" panel, click cam-v between 10:06 and 10:12, or one of cam-w's bands: the clip plays over the frames, muted, with sound and HD/SD buttons.
      - Multiview grids: "follows crosshair" shows each host's frame at the hovered time; "latest only" shows the newest frames.
      - Filtering: the Site and Host dropdowns, the Filters bar, or a click on a host, site or tag chip in a panel header (also reachable with Tab and Enter).
-     - Panel options: Display mode, Frame fields (which fields are the time, image, host and so on), Hold last frame, Gaps mean, Header chips and Chip click, Thumbnail times, Image fit.
+     - Panel options: Display mode, Frame fields (which fields are the time, image, host, video and so on), Expected cadence, Hold frames without a promise, Frame width, Scrubber style, Speed up video to fit, Mark video on the strip, Header chips and Chip click, Thumbnail times, Image fit.
 
   docs/DATA-SOURCES.md, docs/FOLDERS.md and docs/INFINITY.md in the repository have the recipes. The repository's demo/ stack also has two dashboards on live public data (USGS river cameras, NASA's Sun); they need internet access and aren't part of the provisioned test environment.
   ```
