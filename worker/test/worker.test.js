@@ -203,6 +203,17 @@ test('?k= carries the viewer token on /frame/ image URLs only, never on API call
   }
 });
 
+test('frame images, and their 404s, are sent with nosniff', async () => {
+  const FRAMES = memR2(frameKeys(1));
+  const ok = await call(`/frame/lo/site-a/source-1/${NOW}.jpg`, { FRAMES });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.headers.get('content-type'), 'image/jpeg');
+  assert.equal(ok.headers.get('x-content-type-options'), 'nosniff');
+  const missing = await call(`/frame/lo/site-a/source-1/${NOW + 1}.jpg`, { FRAMES });
+  assert.equal(missing.status, 404);
+  assert.equal(missing.headers.get('x-content-type-options'), 'nosniff');
+});
+
 test('signed image URLs authorize their own source and nothing else', async () => {
   const env = { FRAMES: memR2(frameKeys(1)), VIEWER_TOKEN: 'v-all', IMG_SIGN_KEY: 'sign-key' };
   const res = await call(framesPath(NOW - 3600e3, NOW, MIN), env, { headers: { authorization: 'Bearer v-all' } });
@@ -614,6 +625,7 @@ test('authenticated JSON is private to clients, while the edge cache still keeps
     // images keep their immutable public caching
     const img = await call(`/frame/lo/site-a/cam-1/${NOW}.jpg?k=v`, env);
     assert.equal(img.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    assert.equal(img.headers.get('x-content-type-options'), 'nosniff');
   });
 });
 

@@ -1065,10 +1065,12 @@ async function handleFrame(url, env, ctx, viewer) {
   const obj = await env.FRAMES.get(url.pathname.slice('/frame/'.length));
   if (!obj) {
     // cache misses briefly so a gap-heavy window doesn't hammer R2
-    return new Response('not found', { status: 404, headers: { 'cache-control': 'public, max-age=30', ...CORS } });
+    return new Response('not found', { status: 404, headers: { 'cache-control': 'public, max-age=30', 'x-content-type-options': 'nosniff', ...CORS } });
   }
   const res = new Response(obj.body, {
-    headers: { 'content-type': 'image/jpeg', 'cache-control': FRAME_CACHE, etag: obj.httpEtag, ...CORS },
+    // nosniff: the browser takes it as the image/jpeg it says it is, never
+    // as markup, whatever bytes an older upload stored
+    headers: { 'content-type': 'image/jpeg', 'cache-control': FRAME_CACHE, 'x-content-type-options': 'nosniff', etag: obj.httpEtag, ...CORS },
   });
   ctx.waitUntil(cache.put(cacheKey, res.clone()));
   return res;
