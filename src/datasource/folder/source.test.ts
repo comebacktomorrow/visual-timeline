@@ -70,3 +70,62 @@ describe('FolderSource video clips (M11)', () => {
     expect(() => new FolderSource(sdo({ videoTemplate: 'dailymov/{YYYY}.mp4' }), fetchSdo).videoTemplate).toThrow('The video path template needs {host}');
   });
 });
+
+/* M5: a date folder whose time has ended is listed again only after an
+ * hour; the current day's after a minute, as before. */
+describe('FolderSource listing cache', () => {
+  const NOW = Date.UTC(2026, 0, 2, 12, 0, 0);
+  afterEach(() => jest.restoreAllMocks());
+
+  const counting = () => {
+    const asked: string[] = [];
+    const fetch = async (path: string) => {
+      asked.push(path);
+      return path.startsWith('/cam-a/') ? { status: 200, text: listing } : { status: 404, text: '' };
+    };
+    return { asked, fetch };
+  };
+  const at = (ts: number) => jest.spyOn(Date, 'now').mockReturnValue(ts);
+  const count = (asked: string[], day: string) => asked.filter((p) => p === `/cam-a/${day}/`).length;
+
+  test('yesterday is reused for an hour, today for a minute', async () => {
+    const { asked, fetch } = counting();
+    const src = new FolderSource(opts(), fetch);
+    const from = Date.UTC(2026, 0, 1, 6), to = NOW;
+    at(NOW);
+    await src.hosts(from, to, { hosts: ['cam-a'] });
+    expect([count(asked, '2026-01-01'), count(asked, '2026-01-02')]).toEqual([1, 1]);
+    at(NOW + 2 * MIN);
+    await src.hosts(from, to, { hosts: ['cam-a'] });
+    expect([count(asked, '2026-01-01'), count(asked, '2026-01-02')]).toEqual([1, 2]);
+    at(NOW + 61 * MIN);
+    await src.hosts(from, to, { hosts: ['cam-a'] });
+    expect([count(asked, '2026-01-01'), count(asked, '2026-01-02')]).toEqual([2, 3]);
+  });
+
+  test('a folder whose time ended moments ago is still reused for only a minute, for uploads on their way', async () => {
+    const { asked, fetch } = counting();
+    const src = new FolderSource(opts(), fetch);
+    const midnight = Date.UTC(2026, 0, 2);
+    at(midnight + 5 * MIN);
+    await src.hosts(midnight - 3600e3, midnight + 5 * MIN, { hosts: ['cam-a'] });
+    at(midnight + 7 * MIN);
+    await src.hosts(midnight - 3600e3, midnight + 5 * MIN, { hosts: ['cam-a'] });
+    expect(count(asked, '2026-01-01')).toBe(2);
+  });
+
+  test('an S3 day folder inside the range is one listing, whatever the range\'s start', async () => {
+    const asked: string[] = [];
+    const s3 = new FolderSource(opts({ listing: 's3' }), async (path: string) => {
+      asked.push(path);
+      return { status: 200, text: '<ListBucketResult></ListBucketResult>' };
+    });
+    at(NOW);
+    await s3.hosts(Date.UTC(2025, 11, 30, 6), NOW, { hosts: ['cam-a'] });
+    at(NOW + 2 * MIN);
+    // a relative range: its start has moved on
+    await s3.hosts(Date.UTC(2025, 11, 30, 6, 2), NOW + 2 * MIN, { hosts: ['cam-a'] });
+    const of = (day: string) => asked.filter((p) => p.includes(encodeURIComponent(`cam-a/${day}/`))).length;
+    expect([of('2025-12-31'), of('2026-01-01')]).toEqual([1, 1]);
+  });
+});

@@ -1,5 +1,5 @@
 import { listingPath, parseHtmlListing, parseJsonListing, parseS3Listing } from './listings';
-import { compileTemplate, finestUnit, parsePath, startAfterName, unitEnd } from './template';
+import { compileTemplate, fillSegment, finestUnit, matchSegment, parsePath, startAfterName, unitEnd } from './template';
 import { Lister, walkFrames } from './walk';
 
 const T = (iso: string) => Date.parse(iso);
@@ -77,6 +77,27 @@ describe('listings', () => {
     expect(() => parseS3Listing('<Error><Code>AccessDenied</Code></Error>', '')).toThrow('AccessDenied');
   });
 
+  test('dot segments and slashes are no entry, once decoded, in all three formats (L1)', () => {
+    // HTML: the parent spelled with escapes, "." spelled so, and names that
+    // decode to a slash or a backslash
+    const html = '<a href="%2E%2E/">up</a><a href="%2e%2E/">up</a><a href="%2E/">here</a><a href="a%2Fb.jpg">x</a><a href="a%5Cb.jpg">x</a>' +
+      '<a href="..%2F..%2Fetc/">x</a><a href="cam-1/">cam-1/</a><a href="ok.jpg">ok</a>';
+    expect(parseHtmlListing(html)).toEqual({ dirs: ['cam-1'], files: ['ok.jpg'] });
+    // JSON
+    const json = JSON.stringify([
+      { name: '..', type: 'directory' }, { name: './', is_dir: true }, { name: 'a/b', type: 'directory' },
+      { name: 'a\\b.jpg', type: 'file' }, { name: '../x.jpg', type: 'file' }, { name: 'cam-1', type: 'directory' }, { name: 'ok.jpg', type: 'file' },
+    ]);
+    expect(parseJsonListing(json)).toEqual({ dirs: ['cam-1'], files: ['ok.jpg'] });
+    // S3: a "../" prefix, at the root and below one; keys that climb
+    const xml = '<ListBucketResult><Prefix>thumbnail/</Prefix>' +
+      '<Contents><Key>thumbnail/../x.jpg</Key></Contents><Contents><Key>thumbnail/a\\b.jpg</Key></Contents><Contents><Key>thumbnail/ok.jpg</Key></Contents>' +
+      '<CommonPrefixes><Prefix>thumbnail/../</Prefix></CommonPrefixes><CommonPrefixes><Prefix>thumbnail/./</Prefix></CommonPrefixes>' +
+      '<CommonPrefixes><Prefix>thumbnail/AK/</Prefix></CommonPrefixes></ListBucketResult>';
+    expect(parseS3Listing(xml, 'thumbnail/')).toEqual({ dirs: ['AK'], files: ['ok.jpg'] });
+    expect(parseS3Listing('<ListBucketResult><CommonPrefixes><Prefix>../</Prefix></CommonPrefixes></ListBucketResult>', '')).toEqual({ dirs: [], files: [] });
+  });
+
   test('listing URLs: a folder\'s own for JSON and HTML, a ListObjectsV2 query for S3', () => {
     expect(listingPath('html', '2026/11/10')).toBe('/2026/11/10/');
     expect(listingPath('json', '')).toBe('/');
@@ -87,12 +108,14 @@ describe('listings', () => {
 /* a folder tree as a lister: folder → names (a trailing "/" is a folder) */
 function treeLister(tree: Record<string, string[]>) {
   const calls: Array<{ folder: string; startAfter?: string }> = [];
+  const ends: Record<string, number | undefined> = {};
   const list: Lister = async (folder, opts) => {
     calls.push({ folder, ...(opts?.startAfter ? { startAfter: opts.startAfter } : {}) });
+    ends[folder] = opts?.ends;
     const names = tree[folder] ?? [];
     return { dirs: names.filter((n) => n.endsWith('/')).map((n) => n.slice(0, -1)), files: names.filter((n) => !n.endsWith('/')) };
   };
-  return { list, calls };
+  return { list, calls, ends };
 }
 
 describe('walking a folder tree for a time range', () => {
@@ -151,6 +174,105 @@ describe('walking a folder tree for a time range', () => {
     const { list } = treeLister({ '': hosts });
     const { truncated } = await walkFrames(tpl, list, { from: 0, to: 1, tz: 'UTC', maxListings: 3 });
     expect(truncated).toBe(true);
+  });
+
+  /* five days of three hosts, a frame each noon: {host}/{YYYY}/{MM}/{DD}/ */
+  const days = ['2026-11-06', '2026-11-07', '2026-11-08', '2026-11-09', '2026-11-10'];
+  const daily = () => {
+    const tree: Record<string, string[]> = { '': ['cam-a/', 'cam-b/', 'cam-c/'] };
+    for (const h of ['cam-a', 'cam-b', 'cam-c']) {
+      for (const d of days) {tree[`${h}/${d.replace(/-/g, '/')}`] = [`${d.replace(/-/g, '')}_1200.jpg`];}
+    }
+    return treeLister(tree);
+  };
+  const dailyTpl = compileTemplate('{host}/{YYYY}/{MM}/{DD}/{YYYY}{MM}{DD}_{HH}{mm}.jpg');
+  const range = { from: T('2026-11-06T00:00:00Z'), to: T('2026-11-10T23:59:00Z'), tz: 'UTC' };
+
+  test('folders are listed newest first: the cap cuts the oldest days, of every host, never a whole host (M5)', async () => {
+    const { list, calls } = daily();
+    // the hosts' folder, then two days of all three hosts
+    const { frames, truncated } = await walkFrames(dailyTpl, list, { ...range, maxListings: 7 });
+    expect(truncated).toBe(true);
+    expect(calls.slice(1, 4).map((c) => c.folder)).toEqual(['cam-a/2026/11/10', 'cam-b/2026/11/10', 'cam-c/2026/11/10']);
+    // still in time order, oldest first
+    expect(frames.map((f) => [f.host, f.ts])).toEqual([
+      ['cam-a', T('2026-11-09T12:00:00Z')], ['cam-b', T('2026-11-09T12:00:00Z')], ['cam-c', T('2026-11-09T12:00:00Z')],
+      ['cam-a', T('2026-11-10T12:00:00Z')], ['cam-b', T('2026-11-10T12:00:00Z')], ['cam-c', T('2026-11-10T12:00:00Z')],
+    ]);
+    // hosts given: no host listing, the same newest-first order
+    const given = daily();
+    const some = await walkFrames(dailyTpl, given.list, { ...range, hosts: ['cam-a', 'cam-b', 'cam-c'], maxListings: 3 });
+    expect(some.frames.map((f) => f.host)).toEqual(['cam-a', 'cam-b', 'cam-c']);
+    expect(new Set(some.frames.map((f) => f.ts))).toEqual(new Set([T('2026-11-10T12:00:00Z')]));
+  });
+
+  test('without the cap, everything in time order', async () => {
+    const { list } = daily();
+    const { frames, truncated } = await walkFrames(dailyTpl, list, range);
+    expect(truncated).toBe(false);
+    expect(frames).toHaveLength(15);
+    expect(frames.map((f) => f.ts)).toEqual([...frames.map((f) => f.ts)].sort((a, b) => a - b));
+  });
+
+  test('each date folder\'s listing says when its time ends, in the walk\'s zone; a folder of no time says nothing (M5)', async () => {
+    const { list, ends } = daily();
+    await walkFrames(dailyTpl, list, range);
+    expect(ends['']).toBeUndefined();
+    expect(ends['cam-a/2026/11/09']).toBe(T('2026-11-10T00:00:00Z'));
+    const syd = daily();
+    await walkFrames(dailyTpl, syd.list, { ...range, tz: 'Australia/Sydney' });
+    // Sydney's 9 November ends at its midnight, UTC+11
+    expect(syd.ends['cam-a/2026/11/09']).toBe(T('2026-11-09T13:00:00Z'));
+    // an hour's folder ends with the hour
+    const hourly = treeLister({});
+    await walkFrames(compileTemplate('{host}/{YYYY}{MM}{DD}{HH}/{mm}{ss}.jpg'), hourly.list, { from: T('2026-11-10T05:10:00Z'), to: T('2026-11-10T05:20:00Z'), tz: 'UTC', hosts: ['cam'] });
+    expect(hourly.ends['cam/2026111005']).toBe(T('2026-11-10T06:00:00Z'));
+  });
+
+  test('a date folder inside the range is listed whole: no start-after bound that moves with the range', async () => {
+    const tpl = compileTemplate('{host}/{YYYY}-{MM}-{DD}/{HH}{mm}{ss}.jpg');
+    const { list, calls } = treeLister({});
+    await walkFrames(tpl, list, { from: T('2026-11-09T08:00:00Z'), to: T('2026-11-10T08:00:00Z'), tz: 'UTC', hosts: ['cam'] });
+    // the first day holds the range's start, so it's bounded; the next is whole
+    expect(calls).toEqual([{ folder: 'cam/2026-11-10' }, { folder: 'cam/2026-11-09', startAfter: '080000' }]);
+  });
+});
+
+describe('no placeholder is "." or ".." (L1)', () => {
+  test('matching: a host or any other placeholder never takes a dot segment', () => {
+    const [host] = compileTemplate('{host}/{epoch_ms}.jpg').segments;
+    expect(matchSegment(host, '..')).toBeNull();
+    expect(matchSegment(host, '.')).toBeNull();
+    expect(matchSegment(host, 'a\\b')).toBeNull();
+    expect(matchSegment(host, 'cam-1')).toEqual({ host: 'cam-1' });
+    // a placeholder inside a longer name
+    const [dotted] = compileTemplate('{site}.d/{host}/{epoch_ms}.jpg').segments;
+    expect(matchSegment(dotted, '...d')).toBeNull();
+    expect(matchSegment(dotted, 'x.d')).toEqual({ site: 'x' });
+    expect(parsePath(compileTemplate('{host}/{epoch_ms}.jpg'), '../1794300000000.jpg', 'UTC')).toBeNull();
+  });
+
+  test('filling: a host asked for as "..", or with a slash, makes no folder', () => {
+    const [host] = compileTemplate('{host}/{epoch_ms}.jpg').segments;
+    expect(fillSegment(host, { host: '..' })).toBeNull();
+    expect(fillSegment(host, { host: 'a/../b' })).toBeNull();
+    expect(fillSegment(host, { host: 'cam-1' })).toBe('cam-1');
+  });
+
+  test('a template can\'t name a dot folder itself', () => {
+    expect(() => compileTemplate('../{host}/{epoch_ms}.jpg')).toThrow('".."');
+    expect(() => compileTemplate('{host}/./{epoch_ms}.jpg')).toThrow('".."');
+  });
+
+  test('walking: a hostile listing\'s ".." is never listed or drawn, nor a host asked for as ".."', async () => {
+    const tpl = compileTemplate('{host}/{epoch_ms}.jpg');
+    const { list, calls } = treeLister({ '': ['../', './', 'cam-1/'], 'cam-1': ['1794300000000.jpg'], '..': ['1794300000000.jpg'] });
+    const { frames } = await walkFrames(tpl, list, { from: 0, to: 2e12, tz: 'UTC' });
+    expect(frames.map((f) => [f.host, f.path])).toEqual([['cam-1', 'cam-1/1794300000000.jpg']]);
+    expect(calls.map((c) => c.folder)).toEqual(['', 'cam-1']);
+    const asked = treeLister({ '..': ['1794300000000.jpg'] });
+    expect((await walkFrames(tpl, asked.list, { from: 0, to: 2e12, tz: 'UTC', hosts: ['..', '.'] })).frames).toEqual([]);
+    expect(asked.calls).toEqual([]);
   });
 });
 
