@@ -29,7 +29,8 @@ same code.
 
 ```bash
 cd worker && npm install
-npx wrangler dev --port 8787        # local Worker + local R2, dev tokens in .dev.vars
+cp .dev.vars.example .dev.vars      # throwaway local-dev settings (gitignored)
+npx wrangler dev --port 8787        # local Worker + local R2, settings from .dev.vars
 ```
 
 Then open:
@@ -40,9 +41,11 @@ Then open:
    outage and a hi-res variant.
 2. `http://localhost:8787/app.html`: the standalone app on that data.
 
-`.dev.vars` holds throwaway upload tokens for `site-a` and `site-b`, and
-leaves reads open (no viewer token). To upload real frames with curl, see
-"Try it with curl" in [docs/API.md](../docs/API.md).
+`.dev.vars.example` holds throwaway upload tokens for `site-a` and `site-b`,
+and leaves reads open (no viewer token). Copy it rather than renaming it:
+`.dev.vars` is gitignored, so your local values stay out of the repository.
+To upload real frames with curl, see "Try it with curl" in
+[docs/API.md](../docs/API.md).
 
 To read it from a local Grafana, use the Infinity data source with the URL
 `http://localhost:8787` (no token: reads are open locally), as in

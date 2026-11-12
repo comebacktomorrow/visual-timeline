@@ -1,0 +1,5 @@
+# Local development only (wrangler dev). Copy it to .dev.vars, which is
+# gitignored:  cp .dev.vars.example .dev.vars
+# Throwaway values: web/sim.html and the curl examples in docs/API.md use
+# them. Production sets secrets with `wrangler secret put` instead.
+UPLOAD_TOKENS='{"site-a":"dev-token","site-b":"dev-token"}'

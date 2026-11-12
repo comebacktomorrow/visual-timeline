@@ -12,7 +12,8 @@
 		{ "binding": "FRAMES", "bucket_name": "visual-timeline-frames" }
 	],
 	// UPLOAD_TOKENS is a secret in production (wrangler secret put UPLOAD_TOKENS);
-	// local dev reads .dev.vars. IMG_BASE overrides the frame URL origin once the
-	// bucket sits behind an R2 custom domain (images bypass the Worker entirely).
+	// local dev reads .dev.vars (cp .dev.vars.example .dev.vars). IMG_BASE
+	// overrides the frame URL origin once the bucket sits behind an R2 custom
+	// domain (images bypass the Worker entirely).
 	"observability": { "enabled": true }
 }
