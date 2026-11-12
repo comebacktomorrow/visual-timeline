@@ -147,6 +147,7 @@ function json(body, status = 200, extra = {}) {
  * map of named consumers, so a leaked dashboard costs one revocable entry:
  *   {"grafana-cloud": "tok...",
  *    "lobby-wall": {"token": "tok...", "sites": ["site-a"]}}
+ * Only a string entry means every site; see viewerEntry.
  */
 async function viewerFor(request, env, url) {
   // a signed image URL is its own authorization: scoped to one source,
@@ -172,14 +173,35 @@ async function viewerFor(request, env, url) {
   }
   let map;
   try { map = JSON.parse(raw); } catch { return null; }
-  for (const entry of Object.values(map)) {
-    const token = typeof entry === 'string' ? entry : entry && entry.token;
-    if (token && (await timingSafeEqual(token, got))) {
-      const sites = entry && typeof entry === 'object' && Array.isArray(entry.sites) && entry.sites.length
-        ? entry.sites.map((s) => String(s).toLowerCase())
-        : null;
-      return { sites };
-    }
+  for (const [name, entry] of Object.entries(map)) {
+    const consumer = viewerEntry(name, entry);
+    if (consumer && (await timingSafeEqual(consumer.token, got))) {return { sites: consumer.sites };}
+  }
+  return null;
+}
+
+/* One VIEWER_TOKEN map entry as {token, sites}, or null when it grants
+ * nothing. A string is a token for every site. An object must carry a token
+ * and a non-empty array of valid site ids: an entry whose sites are missing,
+ * empty, a string or misspelled ("site") is refused rather than read as
+ * "every site", which is what an operator who meant one site least wants.
+ * A refused entry is logged once per isolate, by name, never by token. */
+const viewerWarned = new Set();
+function viewerEntry(name, entry) {
+  if (typeof entry === 'string' && entry) {return { token: entry, sites: null };}
+  const token = entry && typeof entry === 'object' ? entry.token : undefined;
+  const sites = entry && typeof entry === 'object' ? entry.sites : undefined;
+  const ids = Array.isArray(sites) && sites.every((s) => typeof s === 'string')
+    ? sites.map((s) => s.toLowerCase()) : [];
+  if (typeof token === 'string' && token && ids.length && ids.every((s) => ID_RE.test(s))) {
+    return { token, sites: ids };
+  }
+  if (!viewerWarned.has(name)) {
+    viewerWarned.add(name);
+    console.warn(JSON.stringify({
+      msg: 'VIEWER_TOKEN entry refused: give it a non-empty string token, or an object with a token and a non-empty "sites" array of site ids',
+      consumer: name,
+    }));
   }
   return null;
 }

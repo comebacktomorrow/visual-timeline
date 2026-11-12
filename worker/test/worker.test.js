@@ -107,6 +107,41 @@ test('with VIEWER_TOKEN set, reads need it and scoped consumers stay in scope', 
   assert.equal((await call(path, env, { headers: { authorization: 'Bearer v-b' } })).status, 403);
 });
 
+test('a VIEWER_TOKEN entry whose sites are missing, empty, a string or misspelled grants nothing', async () => {
+  const entries = {
+    'w1-empty': { token: 't-empty', sites: [] },
+    'w1-string': { token: 't-string', sites: 'site-a' },
+    'w1-misspelled': { token: 't-misspelled', site: ['site-a'] },
+    'w1-missing': { token: 't-missing' },
+    'w1-bad-id': { token: 't-bad-id', sites: ['site-a', 'Not A Site!'] },
+    'w1-not-string': { token: 't-not-string', sites: [42] },
+    'w1-no-token': { sites: ['site-a'] },
+    'w1-blank': '',
+  };
+  const env = {
+    FRAMES: memR2(frameKeys(1)),
+    VIEWER_TOKEN: JSON.stringify({ ...entries, 'w1-all': 't-all', 'w1-scoped': { token: 't-scoped', sites: ['SITE-A'] } }),
+  };
+  const path = framesPath(NOW - 3600e3, NOW, MIN);
+  const warns = [];
+  const orig = console.warn; console.warn = (m) => warns.push(m);
+  try {
+    for (const name of Object.keys(entries)) {
+      const token = entries[name] && entries[name].token;
+      if (token) {assert.equal((await call(path, env, { headers: { authorization: 'Bearer ' + token } })).status, 401, name);}
+    }
+    // the deliberate forms still work: a string is every site, sites scope (case-insensitively)
+    assert.equal((await call(path, env, { headers: { authorization: 'Bearer t-all' } })).status, 200);
+    assert.equal((await call(path, env, { headers: { authorization: 'Bearer t-scoped' } })).status, 200);
+    assert.equal((await call(path.replace('site=site-a', 'site=site-b'), env, { headers: { authorization: 'Bearer t-scoped' } })).status, 403);
+  } finally { console.warn = orig; }
+  // each refused entry is logged by name, once, and never with its token
+  for (const name of Object.keys(entries)) {
+    assert.equal(warns.filter((w) => JSON.parse(w).consumer === name).length, 1, name);
+  }
+  assert.ok(warns.every((w) => !/"t-/.test(w) && !w.includes("'t-")), 'no token in the log');
+});
+
 test('signed image URLs authorize their own source and nothing else', async () => {
   const env = { FRAMES: memR2(frameKeys(1)), VIEWER_TOKEN: 'v-all', IMG_SIGN_KEY: 'sign-key' };
   const res = await call(framesPath(NOW - 3600e3, NOW, MIN), env, { headers: { authorization: 'Bearer v-all' } });
