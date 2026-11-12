@@ -45,8 +45,10 @@ docker compose -f selfhost/docker-compose.yml up -d
 ```
 
 The backend and Grafana refuse to start while a token, key or password in
-`.env` is still the example's `replace-with-...` placeholder;
-`docker compose -f selfhost/docker-compose.yml logs` names which one.
+`.env` is missing, empty, or still the example's `replace-with-...`
+placeholder; `docker compose -f selfhost/docker-compose.yml logs` names
+which one. `VIEWER_TOKEN` is one of them: the backend refuses every read
+without a viewer token, and Grafana reads with this one.
 
 The first run builds the backend image and the plugin, so it takes a few
 minutes. Then open Grafana (user `admin`, password `GF_SECURITY_ADMIN_PASSWORD`
