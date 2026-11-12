@@ -243,6 +243,9 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
       if (!on && !s.destroyed) { rec.shown = null; setCursor(s, s.cursorT, null, true); }
     },
   }, !!s.backend.detail, (sl) => model.clips.some((c) => c.to > sl.x0 && c.from < sl.x0 + sl.span), !!s.cfg.videoAutoSpeed);
+  // the preview is a player over this host's frames; it moves the crosshair
+  const player = () => playerContext(s.backend, s.cfg, s.P, decl, model, tt, (t) => { if (!s.destroyed) {setCursor(s, t, null, false);} },
+    s.cfg.onZoom ? (from, to) => { if (!s.destroyed) {s.cfg.onZoom!(Math.floor(from), Math.ceil(to));} } : undefined);
   const hoverAt = (e: MouseEvent) => {
     const r = strip.getBoundingClientRect();
     if (!r.width) {return;}   // stale wrapper mid-swap: no geometry, no cursor
@@ -270,9 +273,6 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     const sl = model.slotAt(s.cursorT);
     const f = sl && sl.frame;
     const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
-    // the preview is a player over this host's frames; it moves the crosshair
-    const player = () => playerContext(s.backend, s.cfg, s.P, decl, model, tt, (t) => { if (!s.destroyed) {setCursor(s, t, null, false);} },
-      s.cfg.onZoom ? (from, to) => { if (!s.destroyed) {s.cfg.onZoom!(Math.floor(from), Math.ceil(to));} } : undefined);
     if (f) {s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt, player());}
     // a slot a video clip covers: the player, at the slot's time (M10c)
     else if (sl && !sl.paused && !sl.beyond && sl.clip) {s.pv.play(decl.site, kiosk, sl.ts, e.clientX, e.clientY, tt, player());}
@@ -320,7 +320,7 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   q(s.wrap, '.cards').appendChild(card);
   attachZoneChip(zone, card);
   rec = {
-    card, model, zone, tt, flip,
+    card, model, zone, tt, flip, player,
     // the mount's teardown: no flipbook, no video, left running
     teardown: () => { flip.stop(); releaseVideo(magEl); },
     head: card.querySelector<HTMLElement>('.ft')!,

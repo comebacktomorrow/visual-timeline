@@ -102,6 +102,12 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
       s.cards[k.id] = buildCard(s, k, model);
     }
     s.kiosks = s.kiosks.filter((k) => s.cards[k.id]);
+    // a player this mount adopted from the one before (a refresh) steps
+    // through these cards' slots and moves this crosshair from now on
+    s.pv.rebind((site, id) => {
+      const k = s.kiosks.find((d) => d.site === site && d.id === id);
+      return k ? s.cards[k.id].player?.() ?? null : null;
+    });
     buildAxis(s);
     ruleAllBeyond(s);
     // host-provided annotations (Grafana: the dashboard's own annotation

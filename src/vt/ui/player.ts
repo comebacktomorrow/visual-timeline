@@ -104,13 +104,18 @@ const ICON_ZOOM = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="
 const btn = (a: string, label: string, title: string) =>
   `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
 
+/** A player's teardown; rebind() hands it the context of the mount that
+ * adopted it (a refresh remount: preview.ts), so ‹‹ ›› step that mount's
+ * slots and onTime moves its crosshair. */
+export type PlayerTeardown = (() => void) & { rebind(ctx: PlayerContext): void };
+
 /** Builds the player into `el` (the popup) at `startTs`, showing `start`
  * (the frame clicked; null for a clip's slot, M10c) until the slot loads;
  * returns its teardown. `place` re-positions the popup once the image or
  * video has a size. */
 export function mountPlayer(
   el: HTMLElement, start: Frame | null, ctx: PlayerContext, place: () => void, close: () => void = () => {}, startTs = start?.ts ?? 0
-): () => void {
+): PlayerTeardown {
   const prefs = loadPrefs(ctx);
   el.classList.add('player');
   // the static on top (what this is, Zoom, close); the playback below (the
@@ -202,8 +207,8 @@ export function mountPlayer(
 
   const width = () => scrub.clientWidth || 560;
   /* how many of the slot's frames it shows: the same in either style */
-  const tickPx = ctx.frameWidth && ctx.frameWidth > 0 ? ctx.frameWidth : FRAME_WIDTH;
-  const most = () => Math.max(4, Math.floor(width() / tickPx));
+  const tickPx = () => (ctx.frameWidth && ctx.frameWidth > 0 ? ctx.frameWidth : FRAME_WIDTH);
+  const most = () => Math.max(4, Math.floor(width() / tickPx()));
   const slot = () => reel.slot;
   const span = () => Math.max(1, slot().to - slot().from);
   const xOf = (ts: number) => ((ts - slot().from) / span()) * 100;
@@ -725,7 +730,15 @@ export function mountPlayer(
   caption(start);
   void load(startTs);
 
-  return () => {
+  // the slot on screen stays as it is (no fetch again); what comes next is
+  // the new mount's
+  const rebind = (next: PlayerContext): void => {
+    if (gone) {return;}
+    ctx = next;
+    drawScrub();
+    labels();
+  };
+  return Object.assign(() => {
     gone = true;
     stop();
     // let go of the videos' downloads
@@ -736,5 +749,5 @@ export function mountPlayer(
     if (hiTimer) {clearTimeout(hiTimer);}
     if (waitTimer) {clearTimeout(waitTimer);}
     document.removeEventListener('keydown', keyH);
-  };
+  }, { rebind });
 }

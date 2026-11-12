@@ -1,5 +1,6 @@
 import type { ImageQueue } from '../ui/imageQueue';
 import type { Preview } from '../ui/preview';
+import type { PlayerContext } from '../ui/player';
 import type { SourceZone, ZoneTexts } from '../zones/source';
 import type { Backend, MountConfig, MountWindow, SourceDecl, SourceModel } from '../types';
 import type { Flipbook } from './flipbook';
@@ -20,6 +21,7 @@ export interface Card {
   shown?: string | null; // what the magnifier and header show (setCursor's shownKey)
   flip?: Flipbook;       // the hover flipbook (M10b)
   teardown?: () => void; // the mount's destroy(): stops the flipbook and the magnifier's video
+  player?: () => PlayerContext; // the preview player's context for this host (ui/playerContext.ts)
 }
 
 /* Everything one mountTimeline call shares between its parts: what were
