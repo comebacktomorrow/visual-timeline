@@ -108,7 +108,10 @@ const CSS = `
               cursor:crosshair; background:var(--ktl-media); }
 /* a strip has focus only from the keyboard (a press doesn't focus it) */
 .ktl .strip:focus { outline:none; }
-.ktl .strip:focus-visible { outline:2px solid var(--ktl-accent); outline-offset:-2px; }
+/* its keyboard focus ring, drawn over the slots (an outline is painted
+ * under the slot images, out of sight) */
+.ktl .strip:focus-visible::after { content:""; position:absolute; inset:0; border:2px solid var(--ktl-accent);
+  pointer-events:none; z-index:5; }
 .ktl .slot { flex:1 1 0; min-width:0; position:relative; overflow:hidden; }
 /* Frame delineation tints the FRAME: overflow clips the img to the padding
    box, so a border column would expose the #111 strip bg underneath and
