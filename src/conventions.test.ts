@@ -30,3 +30,15 @@ test('the core and the panel name none of the reference worker\'s conventions', 
   }
   expect(hits).toEqual([]);
 });
+
+/* The README is the catalog page. Grafana's plugin validator fails a
+ * submission whose README has a relative link (it can't resolve one on
+ * grafana.com), so every link and image is absolute or an in-page anchor. */
+test('the README links only absolutely', () => {
+  const readme = readFileSync(join(ROOT, '..', 'README.md'), 'utf8');
+  const relativeLinks = [
+    ...[...readme.matchAll(/\]\(([^)\s]+)/g)].map((m) => m[1]),
+    ...[...readme.matchAll(/(?:src|href)="([^"]+)"/g)].map((m) => m[1]),
+  ].filter((u) => !/^(https?:|#|mailto:)/.test(u));
+  expect(relativeLinks).toEqual([]);
+});
