@@ -1,4 +1,5 @@
 import type { Reel } from '../model/reel';
+import { makeVideo, releaseVideo } from './media';
 
 /* How long a host's clips play (M10c): what decides whether a slot's video
  * is watched or sampled (Reel.videoRate). A row says when a clip starts and
@@ -43,15 +44,12 @@ export function clipLength(url: string): Promise<number | null> {
   const known = lengths.get(url);
   if (known) {return Promise.resolve(known);}
   return new Promise((resolve) => {
-    const v = document.createElement('video');
-    v.preload = 'metadata';
-    v.muted = true;
+    const v = makeVideo(true, 'metadata');
     let timer: ReturnType<typeof setTimeout> | null = null;
     const done = (s: number | null) => {
       if (timer) { clearTimeout(timer); timer = null; } else {return;}
       v.onloadedmetadata = v.onerror = null;
-      v.removeAttribute('src');
-      try { v.load(); } catch { /* nothing to let go of */ }
+      releaseVideo(v);
       resolve(s);
     };
     v.onloadedmetadata = () => { noteClipLength(url, v.duration); done(lengths.get(url) ?? null); };

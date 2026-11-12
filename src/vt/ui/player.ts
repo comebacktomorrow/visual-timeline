@@ -2,6 +2,7 @@ import { pauseInfo } from '../model/eras';
 import { clipTime, playVideo, Reel, videoTime, type ClipSpan, type ReelSlot, type ReelSource } from '../model/reel';
 import { FRAME_WIDTH } from './frameWidth';
 import { measureReel, noteClipLength } from './clipLength';
+import { loadImage, makeVideo, preloadAfter, releaseVideo } from './media';
 import type { ZoneTexts } from '../zones/source';
 import type { Clip, Frame, TimeWindow } from '../types';
 
@@ -159,16 +160,9 @@ export function mountPlayer(
   img.referrerPolicy = 'no-referrer';
   if (start) {img.src = start.url;}
   // a clip plays here, over the image (M10c)
-  const makeVideo = (): HTMLVideoElement => {
-    const v = document.createElement('video');
-    v.muted = prefs.muted;
-    v.playsInline = true;
-    v.preload = 'metadata';
-    return v;
-  };
-  let video = makeVideo();
+  let video = makeVideo(prefs.muted, 'metadata');
   // the next clip, loading out of sight while this one plays
-  let spare = makeVideo();
+  let spare = makeVideo(prefs.muted, 'metadata');
   spare.classList.add('spare');
   el.querySelector('.stage')!.prepend(img, video, spare);
   const stateEl = el.querySelector<HTMLElement>('.stage .state')!;
@@ -370,10 +364,7 @@ export function mountPlayer(
     if (f && f.hi && !playing) {
       const hi = f.hi, lo = f.url;
       hiTimer = setTimeout(() => {
-        const pre = new Image();
-        pre.referrerPolicy = 'no-referrer';
-        pre.onload = () => { if (!gone && reel.at(t).frame === f) { img.src = hi; img.dataset.hiOf = lo; } };
-        pre.src = hi;
+        loadImage(hi, () => { if (!gone && reel.at(t).frame === f) { img.src = hi; img.dataset.hiOf = lo; } });
       }, 300);
     }
   }
@@ -576,9 +567,7 @@ export function mountPlayer(
     if (next === null) { stop(); return; }
     seek(next);
     // the next few frames load ahead
-    const fs = reel.shown(most());
-    const j = fs.findIndex((f) => f.ts > t);
-    for (let k = 0; k < 3 && fs.length; k++) { const p = new Image(); p.referrerPolicy = 'no-referrer'; p.src = fs[((j < 0 ? 0 : j) + k) % fs.length].url; }
+    preloadAfter(reel.shown(most()), t);
     run();
   }
   /* the video plays its part of the slot, and the playhead follows it */
@@ -781,10 +770,7 @@ export function mountPlayer(
     gone = true;
     stop();
     // let go of the videos' downloads
-    for (const v of [video, spare]) {
-      v.removeAttribute('src');
-      v.load();
-    }
+    for (const v of [video, spare]) {releaseVideo(v);}
     if (hiTimer) {clearTimeout(hiTimer);}
     if (waitTimer) {clearTimeout(waitTimer);}
     document.removeEventListener('keydown', keyH);

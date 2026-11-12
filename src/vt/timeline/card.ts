@@ -11,7 +11,8 @@ import { ruleBeyond } from './axis';
 import { hideSelection, setCursor, showSelection } from './cursor';
 import { playerContext } from '../ui/playerContext';
 import { makeFlipbook } from './flipbook';
-import { clipTime, playVideo, Reel, videoTime } from '../model/reel';
+import { Reel } from '../model/reel';
+import { loopClipSpan, makeVideo, releaseVideo } from '../ui/media';
 import { measureReel, noteClipLength } from '../ui/clipLength';
 import type { Card, TimelineState } from './state';
 
@@ -187,14 +188,14 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   const source = playerContext(s.backend, s.cfg, s.P, decl, model, tt, () => {});
   // the magnifier's video (a clip's part, round and round): stopped, and its
   // download let go of
-  const releaseVideo = (m: HTMLElement) => {
+  let unloop: (() => void) | null = null;
+  const dropVideo = (m: HTMLElement) => {
     m.classList.remove('flip-video');
+    unloop?.();
+    unloop = null;
     const v = m.querySelector('video');
     if (!v) {return;}
-    v.onloadedmetadata = v.ontimeupdate = v.onended = null;
-    v.pause();
-    v.removeAttribute('src');
-    v.load();
+    releaseVideo(v);
     v.remove();
   };
   const flip = makeFlipbook({
@@ -218,30 +219,21 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     clip: (span, rate = 1) => {
       const m = rec?.mag;
       if (!m) {return;}
-      if (!span || s.destroyed) { releaseVideo(m); return; }
+      if (!span || s.destroyed) { dropVideo(m); return; }
       let v = m.querySelector('video');
       if (!v) {
-        v = document.createElement('video');
-        v.muted = true;
-        v.playsInline = true;
+        v = makeVideo(true);
         m.insertBefore(v, m.querySelector('.cap'));
       }
-      const vid = v;
-      const from = () => videoTime(span.clip, span.from, vid.duration), to = () => videoTime(span.clip, span.to, vid.duration);
-      const again = () => { vid.currentTime = from(); vid.playbackRate = rate; playVideo(vid).catch(() => {}); };
-      vid.onloadedmetadata = () => {
-        noteClipLength(span.clip.url, vid.duration);
-        if (vid.videoWidth && vid.videoHeight) {m.style.aspectRatio = String(vid.videoWidth / vid.videoHeight);}
-        again();
-      };
-      vid.ontimeupdate = () => {
-        const at = clipTime(span.clip, vid.currentTime, vid.duration);
-        m.querySelector('.cap')!.textContent = '▶ ' + tt.time(at) + tt.sfx(at) + ' · video';
-        if (vid.currentTime >= to() - 0.05) {again();}
-      };
-      vid.onended = again;
+      unloop?.();
       m.classList.add('flip-video');
-      vid.src = span.clip.url;
+      unloop = loopClipSpan(v, span, rate, {
+        metadata: (vid) => {
+          noteClipLength(span.clip.url, vid.duration);
+          if (vid.videoWidth && vid.videoHeight) {m.style.aspectRatio = String(vid.videoWidth / vid.videoHeight);}
+        },
+        time: (at) => { m.querySelector('.cap')!.textContent = '▶ ' + tt.time(at) + tt.sfx(at) + ' · video'; },
+      });
     },
     playingChanged: (on) => {
       if (!rec) {return;}
@@ -354,7 +346,7 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   rec = {
     card, model, zone, tt, flip, player,
     // the mount's teardown: no flipbook, no video, left running
-    teardown: () => { flip.stop(); releaseVideo(magEl); },
+    teardown: () => { flip.stop(); dropVideo(magEl); },
     head: card.querySelector<HTMLElement>('.ft')!,
     strip,
     cross: card.querySelector<HTMLElement>('.xh')!,

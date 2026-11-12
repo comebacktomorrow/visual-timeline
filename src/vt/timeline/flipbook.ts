@@ -1,5 +1,6 @@
 import { MAX_RATE, type ClipSpan, type Reel, type ReelAt, type ReelSlot } from '../model/reel';
 import type { Slot, TickSlot } from '../types';
+import { preloadAfter } from '../ui/media';
 
 /* The hover flipbook (M10b): a slot that holds more than one frame plays
  * them through the magnifier once the cursor has rested on it for DWELL_MS:
@@ -107,13 +108,9 @@ export function makeFlipbook(
     const stops = reel.stops(FLIP_MAX);
     if (stops.length < 2) {return;}
     const frames = reel.shown(FLIP_MAX);
-    // the next few frames load ahead of the one shown
-    const preload = (t: number) => {
-      const j = Math.max(0, frames.findIndex((f) => f.ts > t));
-      for (let k = 0; k < 3 && frames.length; k++) { const p = new Image(); p.referrerPolicy = 'no-referrer'; p.src = frames[(j + k) % frames.length].url; }
-    };
     let i = 0;
-    const showAt = () => { target.show(reel.at(stops[i]), stops[i], i, stops.length); preload(stops[i]); };
+    // the next few frames load ahead of the one shown
+    const showAt = () => { target.show(reel.at(stops[i]), stops[i], i, stops.length); preloadAfter(frames, stops[i]); };
     target.playingChanged(true);
     showAt();
     timer = setInterval(() => {
