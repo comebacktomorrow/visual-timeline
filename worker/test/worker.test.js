@@ -142,6 +142,19 @@ test('a VIEWER_TOKEN entry whose sites are missing, empty, a string or misspelle
   assert.ok(warns.every((w) => !/"t-/.test(w) && !w.includes("'t-")), 'no token in the log');
 });
 
+test('?k= carries the viewer token on /frame/ image URLs only, never on API calls', async () => {
+  const FRAMES = indexedR2(keysFor('site-a', 'cam-1', MIN, 1), { 'site-a': { 'cam-1': { cadence: MIN } } });
+  const env = { FRAMES, VIEWER_TOKEN: 'v-all' };
+  const img = `/frame/lo/site-a/cam-1/${NOW}.jpg`;
+  assert.equal((await call(img + '?k=v-all', env)).status, 200, 'an <img> URL may carry the key');
+  assert.equal((await call(img + '?k=wrong', env)).status, 401);
+  for (const api of ['/sources', '/kiosks', '/states', framesPath(NOW - 3600e3, NOW, MIN, 'cam-1'), `/frames?from=${NOW - 3600e3}&to=${NOW}&step=${MIN}`]) {
+    const sep = api.includes('?') ? '&' : '?';
+    assert.equal((await call(api + sep + 'k=v-all', env)).status, 401, api + ' refuses ?k=');
+    assert.equal((await call(api, env, { headers: { authorization: 'Bearer v-all' } })).status, 200, api + ' takes Bearer');
+  }
+});
+
 test('signed image URLs authorize their own source and nothing else', async () => {
   const env = { FRAMES: memR2(frameKeys(1)), VIEWER_TOKEN: 'v-all', IMG_SIGN_KEY: 'sign-key' };
   const res = await call(framesPath(NOW - 3600e3, NOW, MIN), env, { headers: { authorization: 'Bearer v-all' } });
@@ -433,7 +446,7 @@ test('/frames without source: site= narrows, and a site-scoped viewer sees only 
     { 'site-a': { 'cam-1': { cadence: MIN } }, 'site-b': { lobby: { cadence: MIN } } }
   );
   const q = `from=${NOW - 3600e3}&to=${NOW}&step=${MIN}`;
-  const sitesOf = async (path, env) => [...new Set((await (await call(path, env)).json()).map((r) => r.site))];
+  const sitesOf = async (path, env, init) => [...new Set((await (await call(path, env, init)).json()).map((r) => r.site))];
   assert.deepEqual(await sitesOf(allPath(`site=site-b&${q}`), { FRAMES }), ['site-b']);
   assert.deepEqual(await sitesOf(allPath(`site=All&${q}`), { FRAMES }), ['site-a', 'site-b']);
   // sources= keeps only those ids, as a Host variable would ask
@@ -442,8 +455,9 @@ test('/frames without source: site= narrows, and a site-scoped viewer sees only 
   assert.equal((await call(allPath(`sources=All&${q}`), { FRAMES })).status, 200);
   const VIEWER_TOKEN = JSON.stringify({ wall: { token: 'w', sites: ['site-a'] } });
   const scoped = { FRAMES, VIEWER_TOKEN };
-  assert.deepEqual(await sitesOf(allPath(`${q}&k=w`), scoped), ['site-a']);
-  assert.deepEqual(await (await call(allPath(`site=site-b&${q}&k=w`), scoped)).json(), []);
+  const w = { headers: { authorization: 'Bearer w' } };
+  assert.deepEqual(await sitesOf(allPath(q), scoped, w), ['site-a']);
+  assert.deepEqual(await (await call(allPath(`site=site-b&${q}`), scoped, w)).json(), []);
   assert.equal((await call(allPath(q), scoped)).status, 401);
 });
 
@@ -720,6 +734,7 @@ test('/states answers each source\'s pauses as state rows, and the end of each a
   assert.deepEqual((await get('?site=site-a&sources=cam-1&to=2500')).map((r) => r.time), [2000]);
   // a site-scoped viewer sees only its sites
   const VIEWER_TOKEN = JSON.stringify({ wall: { token: 'w', sites: ['site-b'] } });
-  assert.deepEqual((await get('?k=w', { VIEWER_TOKEN })).map((r) => r.site), ['site-b']);
+  const w = { headers: { authorization: 'Bearer w' } };
+  assert.deepEqual((await (await call('/states', { FRAMES, VIEWER_TOKEN }, w)).json()).map((r) => r.site), ['site-b']);
   assert.equal((await call('/states', { FRAMES, VIEWER_TOKEN })).status, 401);
 });

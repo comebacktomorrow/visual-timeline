@@ -115,7 +115,8 @@ export default {
                      url.pathname === '/frames' || url.pathname.startsWith('/frame/');
       if (isData && request.method === 'GET') {
         // viewer auth: when VIEWER_TOKEN is set, all data reads require it
-        // (?k= for <img> URLs, Bearer for API calls). Unset = open (dev/demo).
+        // (Bearer for API calls; ?k= accepted on /frame/ image URLs only).
+        // Unset = open (dev/demo).
         const viewer = await viewerFor(request, env, url);
         if (!viewer) {return json({ error: 'unauthorized' }, 401);}
         if (url.pathname === '/frames') {return await handleFrames(url, env, ctx, viewer);}
@@ -164,7 +165,9 @@ async function viewerFor(request, env, url) {
     }
   }
   if (!env.VIEWER_TOKEN) {return { sites: null };}
-  const got = url.searchParams.get('k') ||
+  // ?k= only on image routes, where <img> can't send a header; anywhere else
+  // a key in the URL would only end up in logs and Referer headers
+  const got = (url.pathname.startsWith('/frame/') && url.searchParams.get('k')) ||
     (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
   if (!got) {return null;}
   const raw = env.VIEWER_TOKEN.trim();
