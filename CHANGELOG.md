@@ -24,12 +24,87 @@
 
 ### Changes
 
+- **The preview player** (M10). Clicking a frame opens it large with the
+  slot's own timeline: the frames the slot holds, at their true times, as
+  ticks or small pictures, over its offline, no-data and pause stretches.
+  Hover, drag, ‹ › and ▶ stay within the slot (the dashboard's crosshair
+  stays still; playing stops on a gap to show its reason); ‹‹ ›› move to the
+  next slot, and Zoom sets the dashboard's range to the slot. The popup
+  takes the camera's shape.
+- **The hover flipbook** (M10). Resting the cursor on a slot that holds
+  several frames for three seconds plays them there. Nothing loads while
+  the cursor moves.
+- **A slot's frames on demand.** The panel runs its own query again for one
+  slot, no finer than it can draw, when the player or the flipbook needs
+  it: any data source that filters by the time range answers. The HTTP
+  folder thins to the panel's width again, each row carrying `frame_count`
+  (how many frames it stands for).
+- **Frame width** (panel option, default 7 px): the least width a frame
+  gets, in the strip and in the player's timeline.
+- Fixed: on long ranges, rows thinned by a data source (ours, or the
+  reference worker's `step=$__interval_ms`) were drawn as broken promises,
+  red between every frame. Promises are judged no finer than the interval
+  the query was asked for.
+- Esc closes the player only, not Grafana's panel view or kiosk mode.
+- **Video clips** (M10c, experimental until tried against a real camera's
+  feed). A `video` field (with `video_hi`, and
+  `video_end` or `video_duration`) gives a host clips beside, or instead
+  of, its frames. The preview player plays a clip over the frames it
+  covers: a plain bar on its timeline, ▶ round again at the slot's end,
+  muted unless unmuted, HD/SD when there's a larger version, both
+  remembered. Its speed starts at 1× and steps ¼× to 16× (**Speed up video
+  to fit**, off by default, starts it at what plays the slot's video in
+  about ten seconds); zoomed out, a slot with more video than
+  that plays its frames, as a busy slot does, with Zoom to watch it. The
+  hover flipbook plays the smaller version (only for a clip in two sizes;
+  otherwise it flips the frames). The strip keeps its frames
+  (**Mark video on the strip**, off by default, draws a line where there's
+  video); a host with only clips draws them as bands with ▶, though frames
+  alongside are recommended. A new **Video** field option names the field.
+  A clip with no end lasts a frame's time (one a minute: a minute of video).
+  While a clip loads, the player shows the frame underneath and says so.
+  Video plays whole or not at all: a slot with more clips than its timeline
+  shows, or more video than 16× plays in ten seconds, plays its frames, with
+  a "Zoom in for the video" bubble. Several clips in a slot play as
+  segments, the next preloading; each has a tick and a thumbnail (the frame
+  nearest its start).
+- **Video from a folder** (M11, experimental). The HTTP folder connection's
+  **Video path template** finds clips beside the frames; each spans its
+  name's finest time (a day with `{DD}`, an hour with `{HH}`). The demo's
+  **The Sun** plays NASA SDO's daily movies over its stills.
+- Fixed: a panel whose query brought new clips but no new frames kept its
+  old clips.
+
+- **A cadence is a promise** (M9, [docs/TIMELINE-MODEL.md](docs/TIMELINE-MODEL.md)).
+  The timeline no longer infers a heartbeat and holds every host to it. A
+  frame is shown until the next one; a host that declares a cadence (a
+  `cadence` field, a host table, its source's declared pace, the panel's new
+  **Expected cadence**, or the HTTP folder's new **Expected every**)
+  promises its next frame within it, and only a broken promise is drawn red,
+  from when the frame was due. A host that declares nothing promises nothing:
+  its frames are shown until the next one, up to **Hold frames without a
+  promise** (Auto: three times the typical gap around it), then a neutral "no
+  data", never offline. A camera with uneven but regular gaps (USGS's
+  Kīlauea F1, 20 and 10 minutes) draws as one continuous strip instead of a
+  false outage every other frame.
+- Slots showing the same frame are one wider cell; dropped time shorter than
+  a slot is marked at its true place; the strip tiles the time range
+  exactly; and the live poll redraws only what changed. The live edge keeps
+  a due frame "expected" for a cadence before calling it dropped.
+- The last-frame status gains `nodata`: a host with no promise is never
+  `offline`.
+- **Hold last frame** and **Gaps mean**, new in 2.0, are replaced by **Hold
+  frames without a promise** and **Expected cadence**; dashboards saved with
+  the old values still read.
+
 - **Public demo dashboards** (M6). The demo stack
   (`docker compose -f demo/docker-compose.yml up`) adds **Rivers** (USGS
   river cameras from a public bucket, with gauge heights) and **The Sun**
   (NASA SDO images from a web folder, with GOES X-ray flux and flares as
-  annotations), read through the HTTP folder connection and Infinity. They
-  need internet access and are not in CI.
+  annotations), read through the HTTP folder connection and Infinity, and
+  **Volcanoes** (six USGS AshCam volcano cameras through Infinity, each at
+  its own pace, with night as a state). They need internet access and are
+  not in CI.
 - A grid tile with no frame under `missingFrames: nodata` is the neutral
   hatch, as the strip's gap is, rather than the offline red.
 
@@ -75,13 +150,6 @@
   screen asleep, and so on) are translated at the edges, by the standalone
   viewer's API backend and our data source, in the colours they had. A CI
   check keeps the worker's conventions out of the core and the panel.
-- **Missing frames options** (#126). Not every feed sends a frame on every
-  tick, and the panel no longer has to assume it does. **Hold last frame**
-  (Never, Always, or Up to a duration) shows a slot with no frame as the last
-  frame before it, dimmed, as Grafana's "Connect null values" does for
-  lines. **Gaps mean** (Offline or No data) chooses whether a gap is the red
-  offline hatch or a neutral "no frame" one, in the strip, magnifier, header
-  and grid tile. The defaults keep the heartbeat behaviour.
 - **Host details from any query** (#126, M4c). Each host's time zone,
   location and tags come from fields on its frame rows (`timezone`,
   `location`, `tags`), from labels on the image field (as tags), or from a
@@ -176,7 +244,7 @@ Release process only: the plugin itself is unchanged.
 - Release zips carry build provenance: the release workflow attests each
   zip with GitHub's artifact attestations, so anyone can check that this
   repository's workflow built it (`gh attestation verify <zip> --repo
-  comebacktomorrow/visual-timeline`). The catalog's validator looks for it.
+comebacktomorrow/visual-timeline`). The catalog's validator looks for it.
 
 ## 1.2.2 (2026-10-16)
 
@@ -611,6 +679,7 @@ Build tooling only: the plugin itself is unchanged.
 ## 0.9.20 (2026-09-25)
 
 ### Fixes
+
 - The viewer key stays out of image URLs that don't need it. Since 0.9.18
   the reference worker signs its image URLs so the long-lived key can be
   left out of them, but the client kept appending `?k=` to every frame
@@ -629,6 +698,7 @@ Build tooling only: the plugin itself is unchanged.
   worker logs a warning, instead of dropping frames silently.
 
 ### Dependencies
+
 - `@grafana/*` 13.2.2 with React 19, as dev dependencies (#40). Grafana
   supplies React to the panel at runtime. `grafanaDependency` stays
   `>=10.4.0`, and e2e passes on every Grafana from 10.4 to nightly.
@@ -643,6 +713,7 @@ Build tooling only: the plugin itself is unchanged.
   #23, #24, #34, #37, #41).
 
 ### CI
+
 - Installs run on npm 11, so Dependabot-built lockfiles install (#27,
   #28).
 - The monthly scaffold-update workflow runs on Node 24 and opens its PR
@@ -652,6 +723,7 @@ Build tooling only: the plugin itself is unchanged.
   `npm run test:ci` runs it.
 
 ### Demo and docs
+
 - The fleet simulator and the local dev tokens use the built-in demo's
   names (`site-a`/`site-b`, `source-1` to `source-5`), so the curl
   examples in docs/API.md work against a fresh `wrangler dev`. The
@@ -809,7 +881,7 @@ Four fixes from live fleet use:
   attachment so the diagonals run continuously across adjacent slots —
   per-slot gradients restarted at every slot edge, and narrow-slot runs
   showed only the first stripe color (a solid block).
-- Slots ahead of *now* are `future`, not offline: plain dark instead of
+- Slots ahead of _now_ are `future`, not offline: plain dark instead of
   red hatch, "upcoming" instead of "offline — last seen", and they age
   into real gaps only a full step past their tick with no frame.
 

@@ -10,7 +10,7 @@
   },
   "refresh": "30m",
   "tags": ["visual-timeline", "public-feeds"],
-  "description": "Live public data: four NASA SDO channels through the HTTP folder connection (NASA's daily browse folders), with NOAA's X-ray flux and its flare list through Infinity.",
+  "description": "Live public data: four NASA SDO channels through the HTTP folder connection (NASA's daily browse folders and movies), with NOAA's X-ray flux and its flare list through Infinity.",
   "annotations": {
     "list": [
       {
@@ -91,7 +91,7 @@
         "type": "savvycocoa1919-visualtimeline-datasource",
         "uid": "vt-nasa-sdo"
       },
-      "description": "NASA SDO's browse images, a channel per strip. Click a frame for the 2048 px image. Flares are the orange regions.",
+      "description": "NASA SDO's browse images, a channel per strip. Click a frame for the 2048 px image. Flares are the orange regions. Where NASA has published a day's movie (the day after), the preview plays it over the stills.",
       "targets": [
         {
           "refId": "A",
@@ -104,9 +104,8 @@
       ],
       "options": {
         "mode": "timeline",
-        "holdFrames": "threshold",
+        "holdFrames": "limit",
         "holdFor": "30m",
-        "missingFrames": "nodata",
         "annotationLanes": "shared"
       }
     },

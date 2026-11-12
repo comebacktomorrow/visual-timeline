@@ -118,6 +118,7 @@ const STATUS_CONFIG: FieldConfig = {
       live: { color: 'green', index: 0 },
       offline: { color: 'red', index: 1 },
       paused: { color: 'blue', index: 2 },
+      nodata: { text: 'no data', color: 'text', index: 3 },
     },
   }],
 };
@@ -159,7 +160,8 @@ export function sourcesToFrame(
       { name: 'site', type: FieldType.string, values: sources.map((s) => s.site) },
       { name: 'location', type: FieldType.string, values: sources.map((s) => s.location ?? '') },
       { name: 'timezone', type: FieldType.string, values: sources.map((s) => s.timezone ?? '') },
-      { name: 'cadence', type: FieldType.number, values: sources.map((s) => s.cadence), config: { unit: 'ms' } },
+      // a promise (docs/TIMELINE-MODEL.md): none for a source whose cadence was only inferred
+      { name: 'cadence', type: FieldType.number, values: sources.map((s) => (s.inferred ? null : s.cadence)), config: { unit: 'ms' } },
       { name: 'hiCadence', type: FieldType.number, values: sources.map((s) => s.hiCadence ?? null), config: { unit: 'ms' } },
       { name: 'tags', type: FieldType.other, values: sources.map((s) => s.tags ?? {}) },
       // the panel's input, not something to read in a table. Grafana 12.0
@@ -195,7 +197,21 @@ export function lastFramesByHost(sources: SourceDecl[], last: Array<LastFrame | 
 
 /** Frame records as rows the panel reads like any source's (#126): one row
  * per frame, with its time, host, site and image locator. */
-export function recordsToFrame(rows: Array<{ ts: number; host: string; site: string; url: string; hi?: string; cadence?: number }>, refId: string): DataFrame {
+/** A row of frame records: a frame (url), or a video clip (video, M11), or both. */
+export interface RecordRow {
+  ts: number;
+  host: string;
+  site: string;
+  url?: string | null;
+  hi?: string;
+  cadence?: number;
+  count?: number;
+  video?: string;
+  videoHi?: string;
+  videoEnd?: number;
+}
+
+export function recordsToFrame(rows: RecordRow[], refId: string): DataFrame {
   return createDataFrame({
     refId,
     name: 'frames',
@@ -203,11 +219,19 @@ export function recordsToFrame(rows: Array<{ ts: number; host: string; site: str
       { name: 'time', type: FieldType.time, values: rows.map((r) => r.ts) },
       { name: 'host', type: FieldType.string, values: rows.map((r) => r.host) },
       { name: 'site', type: FieldType.string, values: rows.map((r) => r.site) },
-      { name: 'image', type: FieldType.string, values: rows.map((r) => r.url) },
+      { name: 'image', type: FieldType.string, values: rows.map((r) => r.url ?? null) },
       // the larger image for the click-in preview, when there is one
       ...(rows.some((r) => r.hi) ? [{ name: 'image_hi', type: FieldType.string, values: rows.map((r) => r.hi ?? null) }] : []),
       // the pace in force at each frame: where it changes, the panel draws eras
       ...(rows.some((r) => r.cadence) ? [{ name: 'cadence', type: FieldType.number, values: rows.map((r) => r.cadence ?? null), config: { unit: 'ms' } }] : []),
+      // how many frames a thinned row stands for
+      ...(rows.some((r) => r.count && r.count > 1) ? [{ name: 'frame_count', type: FieldType.number, values: rows.map((r) => r.count ?? 1) }] : []),
+      // video clips (M11): a row's clip, its larger version and its end
+      ...(rows.some((r) => r.video) ? [
+        { name: 'video', type: FieldType.string, values: rows.map((r) => r.video ?? null) },
+        { name: 'video_end', type: FieldType.time, values: rows.map((r) => r.videoEnd ?? null) },
+      ] : []),
+      ...(rows.some((r) => r.videoHi) ? [{ name: 'video_hi', type: FieldType.string, values: rows.map((r) => r.videoHi ?? null) }] : []),
     ],
   });
 }

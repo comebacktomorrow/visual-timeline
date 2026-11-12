@@ -21,7 +21,9 @@ datasources:
       largeVariant: '720'
 
   # NASA SDO: the Sun, a folder per day with an HTML listing; the channel and
-  # the image size are in each file's name.
+  # the image size are in each file's name. Stills under browse/, and a movie
+  # of each whole UTC day under dailymov/ (about 7 s, 1024 px; published once
+  # the day is over): the video template's {DD} makes each clip span its day.
   - name: NASA SDO
     type: savvycocoa1919-visualtimeline-datasource
     uid: vt-nasa-sdo
@@ -29,14 +31,16 @@ datasources:
     editable: true
     jsonData:
       connection: folder
-      folderUrl: https://sdo.gsfc.nasa.gov/assets/img/browse
+      folderUrl: https://sdo.gsfc.nasa.gov/assets/img
       listing: html
-      template: '{YYYY}/{MM}/{DD}/{YYYY}{MM}{DD}_{HH}{mm}{ss}_{variant}_{host}.jpg'
+      template: 'browse/{YYYY}/{MM}/{DD}/{YYYY}{MM}{DD}_{HH}{mm}{ss}_{variant}_{host}.jpg'
+      videoTemplate: 'dailymov/{YYYY}/{MM}/{DD}/{YYYY}{MM}{DD}_1024_{host}.mp4'
       smallVariant: '512'
       largeVariant: '2048'
 
   # Infinity, for the measurements beside the images: USGS water levels and
-  # camera records, NOAA SWPC's X-ray flux and flares. Public APIs, no keys.
+  # camera records, NOAA SWPC's X-ray flux and flares, and the volcano
+  # cameras' images from USGS AshCam. Public APIs, no keys.
   - name: Public APIs
     type: yesoreyeram-infinity-datasource
     uid: vt-public-api

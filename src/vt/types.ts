@@ -1,4 +1,5 @@
 import type { AxisFormatter } from './time/ticks';
+import type { HoldLimit, Interval } from './model/intervals';
 /* Shared shapes of the Visual Timeline core: what the frames API (and the
  * built-in demo backend) hands over, and the per-source model the timeline
  * and grid render from. Types only: no runtime code. Field sets follow what
@@ -34,6 +35,10 @@ export interface SourceDecl {
   location?: string;
   tags?: Record<string, string>;
   cadence: number;
+  /* the cadence is only the typical gap between frames, worked out from
+   * them, not one the source declared: its frames make no promise
+   * (docs/TIMELINE-MODEL.md) */
+  inferred?: boolean;
   history?: HistoryEvent[];
   timezone?: string; // only when the source declared one (X-Timezone)
 }
@@ -47,6 +52,24 @@ export interface Frame {
   kiosk?: string;
   /* the larger image for the click-in preview, when the source gives one:
    * a preview field in frame records (#126), or the API's url_hi (#129) */
+  hi?: string;
+  /* the promise this frame makes: the next frame within this many ms
+   * (docs/TIMELINE-MODEL.md); unset, the source's declaration decides */
+  cadence?: number;
+  /* how many frames this one stands for, when a data source thinned them
+   * (a frame_count field); unset, one */
+  count?: number;
+}
+
+/* A video clip (M10c): a stretch of a host's time recorded as one video,
+ * from a video field in frame records. It runs from its start to its end,
+ * however long it plays: a clip of real time or a timelapse (a day in
+ * seconds) alike, a time within it found by its fraction of the way
+ * through. `hi`: a larger version for the preview player. */
+export interface Clip {
+  from: number;
+  to: number;
+  url: string;
   hi?: string;
 }
 
@@ -69,6 +92,17 @@ export interface Era {
 export interface Backend {
   kiosks(sites?: string[] | null): Promise<SourceDecl[]> | SourceDecl[];
   frames(site: string, id: string, from: number, to: number, step: number): Promise<Frame[]>;
+  /* every frame in [from, to], unthinned: a backend that holds them all
+   * (frame records) offers it, for the preview player (M10) */
+  allFrames?(site: string, id: string, from: number, to: number): Promise<Frame[]>;
+  /* one short span's frames, asking for them again if need be (the panel
+   * re-runs its query for the span): what the preview player and the hover
+   * flipbook play (M10). At most maxPoints, as a source thins them (each
+   * kept frame's count says how many it stands for); unset, all of them */
+  detail?(site: string, id: string, from: number, to: number, maxPoints?: number): Promise<Frame[]>;
+  /* the host's video clips that overlap [from, to] (M10c), in time order:
+   * a backend whose source has a video field offers it */
+  clips?(site: string, id: string, from: number, to: number): Promise<Clip[]>;
   /* demo seam only; raw annotations, normalized by normAnnotations */
   annotations?(): RawAnnotation[];
 }
@@ -109,25 +143,36 @@ export interface ApiResponse {
 }
 export type ApiFetch = (path: string) => Promise<ApiResponse>;
 
-/* ---- slots: one flat list across a source's eras (buildSourceModel) ----
- * Every slot has a time span (its width on the strip). The kinds are told
- * apart by `paused` / `beyond`: a tick slot has neither. `el` is the slot's
- * strip element, set by the DOM layer once it renders the slot. */
+/* ---- slots: a host's intervals sampled for the strip (buildSourceModel) ----
+ * The slots tile the window in order: each covers [x0, x0 + span), its
+ * width on the strip. The kinds are told apart by `paused` / `beyond`: a
+ * tick slot has neither. `el` is the slot's strip element, set by the DOM
+ * layer once it renders the slot (slots showing the same frame share one). */
 interface SlotBase {
   ts: number;
+  x0: number;
   span: number;
   el?: HTMLElement;
 }
-/* a grid tick of an active era: centered on ts; its frame, or pending
- * (`future`) until a step past its tick, else offline */
+/* a sample of an active stretch at its tick `ts`: the frame it shows (one
+ * taken within the slot, else the one in force at the tick), or pending
+ * (`future`: the live edge's promise is due), dropped (a broken promise:
+ * offline) or no data (`nodata`: nothing promised) */
 export interface TickSlot extends SlotBase {
   frame: Frame | null;
+  /* the promise in force, or the typical gap for a source with none */
   cadence: number;
   step: number;
   future: boolean;
-  /* the frame is an earlier one, held over a slot that got none
-   * (MountConfig.holdFrames) */
-  held?: boolean;
+  nodata?: boolean;
+  /* how many frames were taken within the slot (more than one: a slot to
+   * play through) */
+  count: number;
+  /* the video clip in force, for a slot with no frame that a clip covers
+   * (M10c): drawn as a clip band, and played by the preview */
+  clip?: Clip;
+  /* kept so code that tests it still reads; the interval model never holds */
+  held?: undefined;
   paused?: undefined;
   beyond?: undefined;
 }
@@ -143,6 +188,8 @@ export interface PauseSlot extends SlotBase {
   frame?: undefined;
   future?: undefined;
   step?: undefined;
+  nodata?: undefined;
+  clip?: undefined;
 }
 /* the one inert spacer past now: [ts, ts + span) */
 export interface BeyondSlot extends SlotBase {
@@ -152,15 +199,42 @@ export interface BeyondSlot extends SlotBase {
   future?: undefined;
   step?: undefined;
   held?: undefined;
+  nodata?: undefined;
+  clip?: undefined;
 }
 export type Slot = TickSlot | PauseSlot | BeyondSlot;
 
-/* what buildSourceModel returns */
+/* a stretch of dropped time inside slots that show a frame: drawn at its
+ * true place, so an outage shorter than a slot still shows */
+export interface DropMark {
+  from: number;
+  to: number;
+}
+
+/* what buildSourceModel returns: rebuilt in place by refresh() as the live
+ * poll brings frames and time passes */
 export interface SourceModel {
   eras: Era[];
+  /* the slot duration: the step frames are fetched and sampled at */
+  step: number;
+  /* whether the source's cadence is a promise (not inferred) */
+  promised: boolean;
+  /* every frame fetched, in time order */
+  frames: Frame[];
+  /* the host's video clips over the window, in time order (M10c) */
+  clips: Clip[];
+  intervals: Interval[];
   slots: Slot[];
+  drops: DropMark[];
   slotAt(t: number): Slot | null;
+  intervalAt(t: number): Interval | null;
   lastActive: TickSlot | null;
+  /* add frames (the live poll's), and clips when it brings any, and
+   * rebuild for `now` */
+  refresh(fresh: Frame[], now: number, clips?: Clip[]): void;
+  /* intervals for other frames (and clips) over another range, by this
+   * host's promise, pauses and hold (the preview player's scrubber) */
+  intervalsFor(frames: Frame[], window: TimeWindow, now: number, sample?: number, clips?: Clip[]): Interval[];
 }
 
 /* ---- mounts (mountTimeline, mountGrid) ---- */
@@ -201,13 +275,27 @@ export interface MountConfig {
   annotations?: RawAnnotation[];   // timeline: host annotations (else the demo seam's)
   showAnnotations?: boolean;       // timeline: false hides them
   annotationLanes?: string;        // timeline: 'shared' (default) | 'per-source'
-  /* a slot that got no frame shows the last one for up to this long (ms;
-   * Infinity: always; 0 or unset: never), for feeds that don't send a frame
-   * on every tick */
-  holdFrames?: number;
-  /* what a gap means: 'offline' (default: the red hatch, "offline — last
-   * seen") or 'nodata' (neutral: nothing says the host should have sent one) */
-  missingFrames?: string;
+  /* how long a frame that makes no promise is shown when no frame follows
+   * it soon: 'auto' (default), 'none' (until the next frame) or ms */
+  hold?: HoldLimit;
+  /* a promise for every host (ms), whatever its source says: the panel's
+   * Expected cadence (docs/TIMELINE-MODEL.md); unset, the sources decide */
+  expectedCadence?: number;
+  /* the interval the host's queries were asked for at (ms; Grafana's
+   * $__interval): a source may answer one frame per it, so promises are
+   * judged no finer */
+  sampleInterval?: number;
+  /* the preview player's default scrubber style (a viewer's own last choice
+   * wins): 'ticks' (default) or 'thumbs' */
+  playerScrubber?: string;
+  /* the least width a frame gets wherever it's drawn (px, default
+   * FRAME_WIDTH): the strip's slots and the preview player's ticks */
+  frameWidth?: number;
+  /* a line along the strip's foot where the host has video clips (M10c) */
+  videoLine?: boolean;
+  /* video starts at the speed that plays a slot's video in about ten
+   * seconds; unset, at 1x (the viewer picks another) */
+  videoAutoSpeed?: boolean;
   onHover?: (t: number) => void;               // timeline: a local hover moved the cursor
   onHoverClear?: () => void;                   // timeline: the mouse left a strip
   onCursor?: (t: number) => void;              // timeline: every cursor move (host chrome)

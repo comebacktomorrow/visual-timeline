@@ -179,7 +179,6 @@
       ],
       "options": {
         "mode": "timeline",
-        "missingFrames": "nodata",
         "thumbTimes": "source",
         "chips": "location"
       }
@@ -509,7 +508,6 @@
       "options": {
         "mode": "grid",
         "followCrosshair": true,
-        "missingFrames": "nodata",
         "chips": "location"
       }
     },

@@ -9,9 +9,7 @@
     "to": "2026-01-01T10:30:00.000Z"
   },
   "timezone": "utc",
-  "tags": [
-    "visual-timeline"
-  ],
+  "tags": ["visual-timeline"],
   "description": "Frames from a web folder (#125): the seeded fixture nginx serves in the dev stack, through each listing format.",
   "panels": [
     {
@@ -61,6 +59,33 @@
           "datasource": {
             "type": "savvycocoa1919-visualtimeline-datasource",
             "uid": "vt-folder-json"
+          }
+        }
+      ],
+      "options": {
+        "mode": "timeline"
+      }
+    },
+    {
+      "id": 3,
+      "type": "savvycocoa1919-visualtimeline-panel",
+      "title": "Folder that expects a frame every 3 minutes",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "savvycocoa1919-visualtimeline-datasource",
+        "uid": "vt-folder-expected"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "savvycocoa1919-visualtimeline-datasource",
+            "uid": "vt-folder-expected"
           }
         }
       ],

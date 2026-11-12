@@ -16,12 +16,15 @@ import { config, getDataSourceSrv, locationService } from '@grafana/runtime';
 import { usePanelContext, useTheme2 } from '@grafana/ui';
 import { mountTimeline, mountGrid } from '../core';
 import type { AxisFormatter } from '../vt/time/ticks';
+import type { HoldLimit } from '../vt/model/intervals';
 import { themeVars } from '../theme';
 import { coreTimeZone } from '../timezone';
 import { DATASOURCE_ID } from '../shared/ids';
 import { FieldRoles, hostTableFromSeries, recordsBackend, recordsFromSeries } from '../shared/frameRecords';
 import { stateAnnotations, statesFromSeries } from '../shared/hostState';
 import { needsRebuild } from './resize';
+import { makeDetail } from './detail';
+import { FRAME_WIDTH, FRAME_WIDTH_MAX, FRAME_WIDTH_MIN } from '../vt/ui/frameWidth';
 import { chipLinkUrl, parseChips } from './chips';
 
 interface VisualTimelineOptions {
@@ -34,11 +37,22 @@ interface VisualTimelineOptions {
   annotationLanes?: 'shared' | 'per-source';
   headerMode?: 'bar' | 'inline' | 'inline-gradient';
   thumbTimes?: 'panel' | 'source';
-  /** Missing frames (#126): hold the last frame over slots that got none
-   * (never, always, or up to holdFor), and what a gap means. */
-  holdFrames?: 'never' | 'always' | 'threshold';
+  /** Frames without a promise (docs/TIMELINE-MODEL.md): how long one is
+   * shown when no frame follows it soon. Auto, until the next frame, or up
+   * to holdFor. ('never', 'always' and 'threshold' are the pre-M9 values.) */
+  holdFrames?: 'auto' | 'next' | 'limit' | 'never' | 'always' | 'threshold';
   holdFor?: string;
-  missingFrames?: 'offline' | 'nodata';
+  /** A promise for every host in the panel ("1m"): a frame missing past it
+   * is offline. Empty: what the data says. */
+  expectedCadence?: string;
+  /** The preview player's default scrubber style (M10). */
+  playerScrubber?: 'ticks' | 'thumbs';
+  /** The least width a frame gets, px: the strip's slots and the player's ticks. */
+  frameWidth?: number;
+  /** A line along the strip's foot where a host has video (M10c). */
+  showVideoLine?: boolean;
+  /** Video starts at the speed that fits a slot's video into ~10 s (M10c). */
+  videoAutoSpeed?: boolean;
   /** Header chips (#126): which, in order, and what a click does. */
   chips?: string;
   chipClick?: 'filter' | 'link' | 'none';
@@ -50,6 +64,8 @@ interface VisualTimelineOptions {
   hostField?: string;
   siteField?: string;
   previewField?: string;
+  /** A video clip's URL (M10c). */
+  videoField?: string;
   /** State fields (#126, M4): which field holds each host's state. */
   stateField?: string;
   cadenceField?: string;
@@ -148,9 +164,17 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const showDetails = options.showDetails === true;
   const hideEmpty = options.hideEmpty === true;
   const showAnnotations = options.showAnnotations !== false;
-  // missing frames: how long a frame is held over slots that got none (ms)
-  const holdFrames = options.holdFrames === 'always' ? Infinity
-    : options.holdFrames === 'threshold' ? safeInterval(options.holdFor || '10m') : 0;
+  // the interval Grafana asked the queries for at: a data source may answer
+  // one frame per it (the reference worker's step=$__interval_ms), or per
+  // the range over max data points (ours), before Grafana rounds it
+  const req = props.data?.request;
+  const reqSpan = req ? req.range.to.valueOf() - req.range.from.valueOf() : 0;
+  const sampleInterval = Math.max(req?.intervalMs ?? 0, req?.maxDataPoints ? Math.ceil(reqSpan / req.maxDataPoints) : 0);
+  // a promise for every host, whatever its data says (ms; 0: none)
+  const expectedCadence = options.expectedCadence ? safeInterval(options.expectedCadence) : 0;
+  // frames without a promise: how long one is shown when none follows soon
+  const hold: HoldLimit = options.holdFrames === 'next' || options.holdFrames === 'always' ? 'none'
+    : options.holdFrames === 'limit' || options.holdFrames === 'threshold' ? safeInterval(options.holdFor || '10m') || 'auto' : 'auto';
   /* Host state (#126, M4): rows with a time, a host and a state value, from
    * any query; labels and colours from the field's value mappings. A state
    * field set to "Pauses frames" explains the frames a host doesn't send;
@@ -178,13 +202,15 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
    * knows about each host (history, time zone, tags). */
   const roles: FieldRoles = {
     time: options.timeField, image: options.imageField, host: options.hostField,
-    site: options.siteField, preview: options.previewField, cadence: options.cadenceField,
+    site: options.siteField, preview: options.previewField, cadence: options.cadenceField, video: options.videoField,
   };
   const records = recordsFromSeries(props.data?.series, roles);
   // keyed on content, as above: a host's frames only ever grow, so its count
   // and newest frame say whether anything changed
   const recordsKey = records
-    ? JSON.stringify(records.map((h) => [h.site, h.id, h.cadence, h.frames.length, h.frames[0]?.ts, h.frames.at(-1)?.ts, h.frames.at(-1)?.url]))
+    ? JSON.stringify(records.map((h) => [h.site, h.id, h.cadence, h.frames.length, h.frames[0]?.ts, h.frames.at(-1)?.ts, h.frames.at(-1)?.url,
+      // and its clips (M10c): a new one can come with no new frame
+      h.clips?.length ?? 0, h.clips?.at(-1)?.from, h.clips?.at(-1)?.to]))
     : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const recordsMemo = useMemo(() => records, [recordsKey]);
@@ -197,11 +223,19 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
   const tableKey = table.length ? JSON.stringify(table) : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const tableMemo = useMemo(() => table, [tableKey]);
+  /* A slot's frames at full resolution, by running the panel's queries again
+   * for just that slot (M10, detail.ts): read through refs, so the backend
+   * keeps its identity across refreshes. */
+  const requestRef = useRef(props.data?.request);
+  requestRef.current = props.data?.request;
+  const rolesRef = useRef(roles);
+  rolesRef.current = roles;
+  const detail = useMemo(() => makeDetail(() => requestRef.current as never, () => rolesRef.current), []);
   const backend = useMemo(
     () => (recordsMemo || statesMemo || tableMemo.length
-      ? recordsBackend(recordsMemo ?? [], tableMemo, statesMemo ?? [])
+      ? { ...recordsBackend(recordsMemo ?? [], tableMemo, statesMemo ?? []), detail }
       : null),
-    [recordsMemo, statesMemo, tableMemo]
+    [recordsMemo, statesMemo, tableMemo, detail]
   );
   /* Clicking a host, site or tag chip adds that filter to the dashboard's ad
    * hoc filter for this data source, as a table cell's "filter for value"
@@ -263,7 +297,12 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
     const common = {
       from, to, width: buildWidth, fit, backend, showDetails, hideEmpty, onFilter,
       annotations, showAnnotations, annotationLanes: options.annotationLanes || 'shared',
-      holdFrames, missingFrames: options.missingFrames || 'offline', chips,
+      hold, chips, ...(expectedCadence > 0 ? { expectedCadence } : {}),
+      ...(sampleInterval > 0 ? { sampleInterval } : {}),
+      playerScrubber: options.playerScrubber || 'ticks',
+      frameWidth: options.frameWidth || FRAME_WIDTH,
+      videoLine: !!options.showVideoLine,
+      videoAutoSpeed: !!options.videoAutoSpeed,
       headerMode: options.headerMode || 'bar',
       thumbTimes: options.thumbTimes === 'source' ? 'source' : 'panel',
       timeZone,
@@ -292,7 +331,7 @@ const TimelinePanel: React.FC<PanelProps<VisualTimelineOptions>> = (props) => {
       inst.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, holdFrames, options.missingFrames, chipsKey]);
+  }, [showFrames, backend, onFilter, mode, fit, showDetails, hideEmpty, from, to, buildWidth, annKey, options.annotationLanes, options.headerMode, options.thumbTimes, timeZone, axisFormat, hold, expectedCadence, sampleInterval, options.playerScrubber, options.frameWidth, options.showVideoLine, options.videoAutoSpeed, chipsKey]);
 
   useEffect(() => {
     const subs = [
@@ -470,42 +509,70 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       defaultValue: '',
       showIf: (o) => o.chipClick === 'link',
     })
+    .addTextInput({
+      path: 'expectedCadence',
+      name: 'Expected cadence',
+      category: ['Missing frames'],
+      description: 'How often every host promises a frame: 1m, 30s, 15m. A frame missing past it is drawn red, as offline. Empty: each host\'s own cadence field or declared pace, if any; a host with none promises nothing and is never red.',
+      defaultValue: '',
+    })
     .addRadio({
       path: 'holdFrames',
-      name: 'Hold last frame',
+      name: 'Hold frames without a promise',
       category: ['Missing frames'],
-      description: 'For feeds that don\'t send a frame on every tick (motion-triggered cameras, irregular uploads): a slot with no frame shows the last one, dimmed. Never: every missing frame is a gap.',
-      defaultValue: 'never',
+      description: 'A frame whose source promises no cadence (no cadence field, Expected cadence or declared pace) is shown until the next one, up to this limit; past it the strip is a neutral "no data", never red. Auto: three times the typical gap around that frame.',
+      defaultValue: 'auto',
       settings: { options: [
-        { value: 'never', label: 'Never' },
-        { value: 'always', label: 'Always' },
-        { value: 'threshold', label: 'Up to' },
+        { value: 'auto', label: 'Auto' },
+        { value: 'next', label: 'Until the next frame' },
+        { value: 'limit', label: 'Up to' },
       ] },
     })
     .addTextInput({
       path: 'holdFor',
       name: 'Hold for',
       category: ['Missing frames'],
-      description: 'How long after a frame it is held: 90s, 10m, 1h. Longer silences are gaps.',
+      description: 'How long after a frame it is shown: 90s, 10m, 1h. Longer silences are no data.',
       defaultValue: '10m',
-      showIf: (o) => o.holdFrames === 'threshold',
+      showIf: (o) => o.holdFrames === 'limit' || o.holdFrames === 'threshold',
     })
     .addRadio({
-      path: 'missingFrames',
-      name: 'Gaps mean',
-      category: ['Missing frames'],
-      description: 'Offline: a host should send a frame every tick, so a missing one is drawn red, as offline. No data: nothing says it should, so a gap is drawn neutral.',
-      defaultValue: 'offline',
+      path: 'playerScrubber',
+      name: 'Scrubber style',
+      category: ['Preview player'],
+      description: 'Clicking a frame opens a player with the slot\'s own timeline: the frames the slot holds but can\'t show. Ticks: a mark per frame at its true time (loads only the frame under the playhead). Thumbnails: the frames themselves. Viewers can change it in the player; their last choice is remembered.',
+      defaultValue: 'ticks',
       settings: { options: [
-        { value: 'offline', label: 'Offline' },
-        { value: 'nodata', label: 'No data' },
+        { value: 'ticks', label: 'Ticks' },
+        { value: 'thumbs', label: 'Thumbnails' },
       ] },
+    })
+    .addBooleanSwitch({
+      path: 'videoAutoSpeed',
+      name: 'Speed up video to fit (experimental)',
+      category: ['Preview player'],
+      description: 'Video starts at the speed that plays a slot\'s video in about ten seconds (up to 16x). Off: it starts at 1x; viewers pick another speed (1/4x to 16x) in the player.',
+      defaultValue: false,
     })
     .addBooleanSwitch({
       path: 'hideEmpty',
       name: 'Hide hosts with no data',
       description: 'Leave out hosts with no frames in the time range, instead of showing them offline',
       defaultValue: false,
+    })
+    .addSliderInput({
+      path: 'frameWidth',
+      name: 'Frame width',
+      description: 'The least width a frame gets, in pixels, wherever it is drawn: the strip\'s slots, and the ticks in the player\'s timeline of a slot. Smaller shows more detail and loads more images; larger, fewer.',
+      defaultValue: FRAME_WIDTH,
+      settings: { min: FRAME_WIDTH_MIN, max: FRAME_WIDTH_MAX, step: 1 },
+    })
+    .addBooleanSwitch({
+      path: 'showVideoLine',
+      name: 'Mark video on the strip (experimental)',
+      description: 'A thin line along the foot of each strip where its host has video clips. Off: only the preview shows them.',
+      defaultValue: false,
+      showIf: (o) => o.mode !== 'grid',
     })
     .addBooleanSwitch({
       path: 'showDetails',
@@ -578,6 +645,13 @@ export const plugin = new PanelPlugin<VisualTimelineOptions>(TimelinePanel)
       name: 'Preview image',
       category: ['Frame fields'],
       description: 'Optional: a larger image for the click-in preview. Empty: a field named image_hi or preview; without one, the image itself.',
+      settings: { filter: (f) => f.type === FieldType.string },
+    })
+    .addFieldNamePicker({
+      path: 'videoField',
+      name: 'Video (experimental)',
+      category: ['Frame fields'],
+      description: 'Optional: a video clip that starts at the row\'s time; the click-in preview plays it over the frames. Empty: a field named video. Its end: a video_end field, else a video_duration (ms), else as long as the host\'s clips that say, else a frame\'s time.',
       settings: { filter: (f) => f.type === FieldType.string },
     })
     .addFieldNamePicker({

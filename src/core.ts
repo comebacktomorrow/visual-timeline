@@ -11,7 +11,8 @@
 export { fmtShort, fmtTime, resolveTimeZone, zonedParts, zonedTime } from './vt/time/zones';
 export { alignedStart, axisTicks, kindFormat, nextTick, pickTickStep, TICK_STEPS, tickFormat, tickKind } from './vt/time/ticks';
 export { clearPauseClasses, erasFor, PAUSE_CLASSES, pauseInfo } from './vt/model/eras';
-export { buildSourceModel, ghostFor, missedHeartbeat, slotClass } from './vt/model/slots';
+export { buildSourceModel, ghostFor, slotClass } from './vt/model/slots';
+export { buildIntervals } from './vt/model/intervals';
 export { matchesTags, parseTagFilter } from './vt/model/filters';
 export { fmtOffset, sourceTimeZone, zoneHeadText, zoneLabel, zoneOffsetText } from './vt/zones/source';
 export { ApiError, bootErrorText, framesPath, hiUrlFor, imageUrlWithKey, makeApiBackend, resolveFrameUrl, sourcesPath } from './vt/backends/api';

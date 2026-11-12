@@ -33,6 +33,30 @@ can load; `image_hi` (optional) is a larger one for the click-in preview;
 `site` (optional) groups hosts. Name the columns as you like and set them
 under the panel's **Frame fields** when they differ.
 
+Video clips (M10c, experimental) are columns too: `video` (a clip starting at the row's
+time), `video_hi` (a larger version), and `video_end` (a time) or
+`video_duration` (ms). A row may have an image, a video or both:
+
+```sql
+SELECT time, host, image, video, video_end
+FROM frames
+WHERE $__timeFilter(time)
+   OR (video IS NOT NULL AND video_end > $__timeFrom())   -- the clip in force at the start
+ORDER BY time
+```
+
+A large table can return fewer rows over long ranges: one per host per
+`$__interval` (with a `frame_count` column saying how many frames each row
+stands for, if you like). The panel draws what it gets, and when its preview
+player or hover flipbook needs one slot's frames, it runs the query again
+for just that slot, so `$__timeFilter` and `$__interval` there narrow to
+it.
+
+To have missing frames drawn as offline, add a `cadence` column (ms): how
+often the host promises a frame, such as `60000 AS cadence`. Without one, a
+host promises nothing, and its silences are neutral "no data" (the panel's
+**Expected cadence** sets a promise for every host instead).
+
 A host's pauses, from a second query in the same panel:
 
 ```sql

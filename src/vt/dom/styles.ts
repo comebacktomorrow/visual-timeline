@@ -119,10 +119,21 @@ const CSS = `
 .ktl .slot img { position:absolute; top:0; left:50%; transform:translateX(-50%); height:100%; width:auto; }
 .ktl .slot img:not([src]) { visibility:hidden; }   /* queued (ui/imageQueue.ts): no alt text or broken-image icon meanwhile */
 .ktl .slot.gap { background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 5px,var(--ktl-gap-b) 5px,var(--ktl-gap-b) 10px); }
-/* a gap that only means "no frame" (missingFrames: nodata): the neutral
- * hatch, not the red one; a held slot shows the last frame, dimmed */
+/* no data (no promise in force, or none kept past its hold limit): the
+ * neutral hatch, not the red one (docs/TIMELINE-MODEL.md) */
 .ktl .slot.gap.nodata { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 5px,var(--ktl-pause-b) 5px,var(--ktl-pause-b) 10px); }
-.ktl .slot.held img { opacity:.55; }
+/* dropped time inside cells that show a frame, at its true place: at least
+ * a pixel, so an outage shorter than a slot still shows */
+.ktl .strip .drops { position:absolute; inset:0; pointer-events:none; z-index:2; }
+.ktl .strip .drop { position:absolute; top:0; bottom:0; min-width:1px; background:var(--ktl-off); opacity:.8; }
+/* video clips (M10c): a slot with no frame that a clip covers is a plain
+ * band with a play mark, and a line along the strip's foot shows where the
+ * host has video, over frames too */
+.ktl .slot.clip { background:var(--ktl-pause-a); }
+.ktl .slot.clip::before { content:'▶'; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  font-size:10px; line-height:1; color:var(--ktl-link); opacity:.85; pointer-events:none; }
+.ktl .strip .clips { position:absolute; left:0; right:0; bottom:0; height:3px; pointer-events:none; z-index:2; }
+.ktl .strip .cliplane { position:absolute; top:0; bottom:0; min-width:1px; background:var(--ktl-link); opacity:.8; }
 .ktl .slot.paused { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 7px,var(--ktl-pause-b) 7px,var(--ktl-pause-b) 14px); }
 .ktl.filterable [data-fk] { cursor:pointer; }
 .ktl.filterable [data-fk]:hover { text-decoration:underline; text-underline-offset:2px; }
@@ -200,6 +211,13 @@ const CSS = `
 .ktl .mag.gap.nodata { border-color:var(--ktl-dim);
                 background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 5px,var(--ktl-pause-b) 5px,var(--ktl-pause-b) 10px), var(--ktl-mag-bg); }
 .ktl .mag.gap img { display:none; }
+.ktl .mag.clip { border-color:var(--ktl-link); }
+.ktl .mag.clip img { display:none; }
+.ktl .mag video { display:none; width:100%; height:100%; object-fit:contain; background:var(--ktl-mag-bg); }
+.ktl .mag.flip-video video { display:block; }
+.ktl .mag.flip-video img { display:none; }
+.ktl .tile.clip { cursor:pointer; }
+.ktl .tile.clip .t-off { color:var(--ktl-link); }
 /* The caption spans the magnifier, centred on it. A narrow magnifier (a
  * portrait source's is ~30px wide) wrapped and clipped even a time with a
  * zone offset, "16:15:00 (+5h45m)" (~85px), so the caption may grow to
@@ -278,12 +296,83 @@ const CSS = `
   background:repeating-linear-gradient(45deg,var(--ktl-tpause-a),var(--ktl-tpause-a) 7px,var(--ktl-tpause-b) 7px,var(--ktl-tpause-b) 14px); }
 .ktl .tile.offline .t-off { display:flex; }
 .ktl .tile.offline img, .ktl .tile.offline .t-ts { display:none; }
+.ktl .mag.flip::after { content:'▶'; position:absolute; top:3px; left:5px; font-size:9px; line-height:1;
+                        color:var(--ktl-accent); text-shadow:0 0 3px rgba(0,0,0,.8); pointer-events:none; }
+.ktl .mag.flip-gap img { opacity:.35; }
 .ktl-pop { position:fixed; z-index:1060; background:var(--ktl-float-bg); border:1px solid var(--ktl-accent);
            border-radius:4px; padding:4px; cursor:zoom-out;
            box-shadow:var(--ktl-shadow); }
 .ktl-pop img { display:block; max-width:min(560px, 50vw); max-height:55vh; border-radius:2px; }
 .ktl-pop .cap { text-align:center; color:var(--ktl-text); font-size:11px; padding:3px 0 0;
-                font-variant-numeric:tabular-nums; }`;
+                font-variant-numeric:tabular-nums; }
+/* the preview as a player (M10): stage, scrubber, controls */
+.ktl-pop.player { cursor:default; padding:6px; width:min(720px, 92vw); max-width:92vw; font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;
+                  color:var(--ktl-text); display:flex; flex-direction:column; gap:6px; }
+.ktl-pop.player .stage { position:relative; display:flex; align-items:center; justify-content:center; background:var(--ktl-media);
+                         border-radius:2px; height:min(55vh, 405px); }
+/* one size whatever the frame's shape: the popup doesn't change size as it plays */
+.ktl-pop.player .stage img { width:100%; height:100%; object-fit:contain; }
+.ktl-pop.player .stage video { display:none; width:100%; height:100%; object-fit:contain; }
+.ktl-pop.player.video .stage video { display:block; }
+.ktl-pop.player.video .stage img { display:none; }
+.ktl-pop.player.video.no-picture .stage img[src] { display:block; }
+.ktl-pop.player.video.no-picture .stage video { display:none; }
+.ktl-pop.player.video.loading .stage .state { color:var(--ktl-text); font-weight:500; opacity:.85; }
+.ktl-pop.player:not(.has-clip) button[data-a="mute"], .ktl-pop.player:not(.has-clip) button[data-a="hd"],
+.ktl-pop.player:not(.has-hi) button[data-a="hd"] { display:none; }
+.ktl-pop.player.off .stage img { opacity:.35; }
+.ktl-pop.player .stage .state { position:absolute; inset:auto 0 8px; text-align:center; font-weight:700; color:var(--ktl-off);
+                                 text-transform:uppercase; letter-spacing:.04em; pointer-events:none; }
+.ktl-pop.player .scrub { position:relative; height:22px; border-radius:2px; background:var(--ktl-pause-a); cursor:pointer;
+                         touch-action:none; overflow:hidden; outline:none; }
+.ktl-pop.player.thumbs .scrub { height:40px; }
+.ktl-pop.player .scrub:focus-visible { box-shadow:0 0 0 2px var(--ktl-accent); }
+.ktl-pop.player .lane { position:absolute; top:0; bottom:0; }
+.ktl-pop.player .lane.dropped { background:repeating-linear-gradient(45deg,var(--ktl-gap-a),var(--ktl-gap-a) 4px,var(--ktl-gap-b) 4px,var(--ktl-gap-b) 8px); }
+.ktl-pop.player .lane.nodata { background:repeating-linear-gradient(45deg,var(--ktl-pause-a),var(--ktl-pause-a) 4px,var(--ktl-pause-b) 4px,var(--ktl-pause-b) 8px); }
+.ktl-pop.player .lane.paused { background:var(--ktl-band, var(--ktl-pause-b)); opacity:.6; }
+.ktl-pop.player .lane.beyond { background:transparent; }
+.ktl-pop.player .lane.clip { background:var(--ktl-link); opacity:.45; }
+.ktl-pop.player .stage video.spare { display:none !important; }
+.ktl-pop.player .tick.clip-start { height:100%; width:2px; background:var(--ktl-link); opacity:.9; }
+.ktl-pop.player .thumb.clip { border-left:2px solid var(--ktl-link); }
+.ktl-pop.player.no-stills button[data-a="style-ticks"], .ktl-pop.player.no-stills button[data-a="style-thumbs"] { display:none; }
+/* video this scale can't show: a bubble over the picture, just above the
+ * timeline; pressed, it zooms the dashboard to the slot as Zoom does */
+.ktl-pop.player .zoom-video { display:none; position:absolute; left:50%; bottom:8px; transform:translateX(-50%); z-index:2;
+  padding:3px 10px; border-radius:12px; border:1px solid var(--ktl-link); background:var(--ktl-float-bg); color:var(--ktl-link);
+  font:500 11px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif; white-space:nowrap; }
+.ktl-pop.player button.zoom-video { cursor:pointer; }
+.ktl-pop.player.video-far .zoom-video { display:block; }
+.ktl-pop.player.video-far .stage .state { bottom:36px; }
+.ktl-pop.player .thumbs { position:absolute; inset:0; pointer-events:none; }
+.ktl-pop.player .thumb { position:absolute; top:0; bottom:0; overflow:hidden; border-right:1px solid rgba(0,0,0,.4); }
+.ktl-pop.player .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.ktl-pop.player .thumb.prior img { opacity:.4; }
+.ktl-pop.player .ticks { position:absolute; inset:0; pointer-events:none; }
+.ktl-pop.player .tick { position:absolute; bottom:0; height:40%; width:1px; background:var(--ktl-text); opacity:.55; }
+.ktl-pop.player.thumbs .tick { height:6px; }
+.ktl-pop.player .head { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--ktl-accent); pointer-events:none; }
+.ktl-pop.player .top, .ktl-pop.player .bar { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:6px; }
+/* on top, what this is: the title gives way rather than wrap and grow the popup */
+.ktl-pop.player .top { grid-template-columns:auto minmax(0, 1fr) auto; }
+.ktl-pop.player .top .title { text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
+/* below, the playback: the frame's time, the transport centred, the options */
+.ktl-pop.player .bar .time { justify-self:start; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.ktl-pop.player .bar .transport, .ktl-pop.player .bar .opts { display:flex; gap:4px; align-items:center; }
+.ktl-pop.player .bar .opts { justify-self:end; }
+.ktl-pop.player button svg { display:block; }
+.ktl-pop.player button[aria-pressed="true"] { border-color:var(--ktl-accent); color:var(--ktl-accent); }
+.ktl-pop.player button[aria-pressed="false"] { opacity:.6; }
+.ktl-pop.player button { flex:0 0 auto; }
+.ktl-pop.player button.hint { border-color:var(--ktl-accent); color:var(--ktl-accent); }
+.ktl-pop.player button { font:inherit; color:var(--ktl-text); background:transparent; border:1px solid var(--ktl-border);
+                         border-radius:2px; padding:2px 7px; min-width:28px; height:24px; cursor:pointer; line-height:18px;
+                         display:inline-flex; align-items:center; justify-content:center; }
+.ktl-pop.player button:hover:not(:disabled) { border-color:var(--ktl-accent); }
+.ktl-pop.player button:disabled { opacity:.4; cursor:default; }
+.ktl-pop.player button:focus-visible { outline:2px solid var(--ktl-accent); outline-offset:1px; }
+.ktl-pop.player button[data-a="play"] { min-width:36px; }`;
 
 export function injectStyles(): void {
   const existing = document.getElementById(STYLE_ID);

@@ -30,20 +30,21 @@ The app is enabled on install and has no pages of its own.
 
 ## What it shows
 
-Each host is a strip of its frames over time. By default the panel treats a
-host's typical spacing between frames (its _cadence_, from a cadence field or
-the frames themselves) as a heartbeat, so the _absence_ of a frame carries
-meaning. For feeds that don't send a frame on every tick, the **Missing
-frames** options hold the last frame instead, or draw gaps as neutral "no
-data" rather than offline.
+Each host is a strip of its frames over time, each frame shown until the
+next. A host that declares its _cadence_ (a cadence field, its source's
+declared pace, or the panel's **Expected cadence**) promises a frame on that
+heartbeat, so the _absence_ of a frame carries meaning: a broken promise is
+drawn as offline. A host that declares nothing promises nothing, and its
+silences are neutral "no data", never offline.
 
-- **Offline gaps at their true width.** A missing frame is drawn as a hatched
-  gap on the timeline, as wide as the outage really was, and as an offline
-  tile in the multiview. Hosts drop failed frames rather than queueing them:
+- **Offline gaps at their true width.** A promised frame that doesn't come is
+  drawn as a hatched gap on the timeline, as wide as the outage really was
+  (even when it's shorter than a slot), and as an offline tile in the
+  multiview. Hosts drop failed frames rather than queueing them:
   the gap **is** the signal.
-- **Eras.** When a host changes its cadence (slowing down for quiet hours,
-  say), the timeline renders each era on its own grid, so a slow stretch isn't
-  a wall of false gaps.
+- **Changes of pace.** Each frame's promise is its own: when a host changes
+  its cadence (slowing down for quiet hours, say), its frames promise the new
+  pace, so a slow stretch isn't a wall of false gaps.
 - **Pauses.** A host that goes quiet on purpose (from a state query whose
   field is set to **Pauses frames**) shows the pause as a band, labelled and
   coloured by its value mappings, instead of as missing frames. A host that
@@ -75,28 +76,94 @@ and scrubbing stays smooth with many hosts.
 
 ### How a time range is drawn
 
-The timeline doesn't fetch every frame in the range. Each host gets about
-one slot per 7 pixels of panel width (about 190 on a full-width panel), and
-the API returns one frame per slot.
+A frame is shown from its own time until the next frame replaces it. What
+happens when the next one is late depends on whether the host **promised** a
+cadence ([docs/TIMELINE-MODEL.md](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/TIMELINE-MODEL.md)):
 
-- **The step is a whole number of uploads.** A host that uploads every
-  minute shows one frame per minute at short ranges, and one in every N
-  minutes at longer ones: 2 minutes over 6 hours, about 54 minutes over 7
+- **A host that promises a cadence** (a `cadence` field on its rows, a host
+  table's, the panel's **Expected cadence**, the folder's **Expected every**,
+  or the reference worker's declared pace) promises its next frame within
+  it. A frame more than half a cadence late breaks the promise, and the
+  time from when it was due until the next frame is **dropped**: red, as
+  offline. That is the only red.
+- **A host that promises nothing** is never red. Its frame is shown until
+  the next one, up to **Hold frames without a promise** (Auto: three times
+  the typical gap around it); past that, a neutral "no data". A camera that
+  sends frames at uneven times draws as one continuous strip.
+
+The timeline doesn't fetch every frame in the range. Each host gets about
+one slot per **Frame width** of panel width (7 px by default, about 190
+slots on a full-width panel):
+
+- **The step is a whole number of the host's cadence.** A host that uploads
+  every minute shows one frame per minute at short ranges, and one in every
+  N minutes at longer ones: 2 minutes over 6 hours, about 54 minutes over 7
   days. Turn on **Show cadence details** to see it, for example `⏱ 1m ·
-1/2m ↓`. Each era of a host gets its own step.
-- **Each slot shows the frame nearest its time.** A slot with no frame is
-  drawn as offline. When frames are thinned out, an outage shorter than one
-  step can be hidden by a frame on either side of it, so zoom in to see
-  short outages.
+1/2m ↓` (`~10m · no promise` for a host that promises nothing).
+- **A slot shows a frame taken within it,** the one nearest its tick, or
+  else the frame in force. Slots showing the same frame side by side are one
+  cell: a frame that stood for 20 minutes is 20 minutes wide. Dropped time
+  shorter than a slot is marked at its true place, so zooming out doesn't
+  hide a short outage.
 - **A slot shows a slice.** Each slot shows a vertical slice from the middle
   of its frame. Hover for the whole frame in the magnifier; click for the
-  high-resolution frame, when the host uploads one.
+  preview player (below).
+- **The frames a slot can't show.** A slot zoomed out over many frames shows
+  one. Rest the cursor on it for three seconds and the magnifier plays them;
+  click it for the preview player.
 - **Images load newest first.** Across all the hosts in a panel, the
   thumbnails load from the live edge backwards, a few at a time, so on a
   slow connection the most recent frames appear first. Browsers keep the
   frames cached, so a dashboard refresh doesn't download them again.
+- **The live edge follows the dashboard's refresh.** New frames arrive with
+  each refresh; between refreshes the panel slides the strip along on its
+  own: a promised frame that comes due is "expected" for one more cadence,
+  then dropped. A short auto-refresh keeps
+  it near live. It doesn't use Grafana Live streaming.
 - **The time axis matches Grafana's own time series panel:** the same tick
   spacing, steps and label formats.
+
+### The preview player
+
+Clicking a frame opens it large, with the slot's own timeline underneath:
+the frames the slot holds, at their true times, as ticks or as small
+pictures, over the same red (offline), neutral (no data) and pause
+stretches the strip draws.
+
+- **Within the slot** (the dashboard's crosshair stays still): hover or drag
+  the timeline; ‹ › step frame by frame (← →); ▶ plays the slot's frames
+  round and round, stopping on a gap long enough to show its reason.
+- **To the next slot:** ‹‹ ›› (Shift+← →), and the dashboard's crosshair
+  follows.
+- **Zoom** (the magnifying glass) sets the dashboard's time range to the
+  slot. A slot holding more frames than its timeline can tell apart (a
+  tick per Frame width) shows as many as fit, says so in the title
+  ("showing 57 of 456"), and highlights Zoom.
+- The large image loads once the playhead settles; Esc or ✕ closes.
+- **Video** (experimental, below): where a clip covers the slot, it plays over the
+  frames. Its part of the timeline is a plain bar to hover or drag through,
+  ▶ plays it (round again at the slot's end), and the bar gains sound
+  (muted by default) and HD/SD (when the clip has a larger version), both
+  remembered. The speed button becomes the video's speed: 1× to start (scrub
+  near, then play), and a click steps up through 2×, 4×, 8× and 16×, then
+  round from ¼× and ½× for short clips. **Speed up video to fit** (a panel
+  option, off by default) starts it instead at whatever plays the slot's
+  video in about ten seconds.
+- **Several clips in a slot** play one after another, the next loading
+  while one plays, like a stream's segments. Each has a tick where it starts
+  and, as thumbnails, the frame nearest its start.
+- **Zoomed out**, video is played whole or not at all: never with clips left
+  out, which would break its flow. A slot holding more video than plays in
+  ten seconds at 16×, or more clips than its timeline can show, plays its
+  frames as a slot of many frames does, with the video as a bar under them.
+  A "Zoom in for the video" bubble over the picture zooms the dashboard to
+  the slot, as Zoom does.
+
+The player asks for one slot's frames when it needs them, by running the
+panel's own query again for just that slot, no finer than it can draw.
+Any data source that filters by the dashboard's time range (SQL with
+`$__timeFilter`, Loki, Infinity with `${__from}`, the HTTP folder) answers
+it.
 
 Times follow the dashboard's time zone. A host can also say where it is,
 with the `X-Timezone` upload header (an IANA name such as
@@ -133,7 +200,7 @@ a timeline, two multiview grids and a time series panel to show the shared
 crosshair, all on the built-in demo data. Port 3300 taken? Prefix the command
 with `DEMO_PORT=3301`.
 
-Two more dashboards there read real, public feeds (they need internet access):
+Three more dashboards there read real, public feeds (they need internet access):
 
 - **Rivers** (`/d/vt-rivers`): four USGS river cameras, each a day's light
   and night gap in its own time zone, beside the rivers' gauge heights. The
@@ -143,9 +210,13 @@ Two more dashboards there read real, public feeds (they need internet access):
 - **The Sun** (`/d/vt-sun`): NASA SDO's images of the Sun in four channels,
   read from its web folder, above GOES X-ray flux, with solar flares as
   annotations across both.
+- **Volcanoes** (`/d/vt-volcanoes`): six USGS volcano cameras (Kīlauea, Mauna
+  Loa, Mount St. Helens, Spurr, Yellowstone), each at its own pace from every
+  2 minutes to hourly, read from USGS's AshCam API through Infinity, with
+  night from the same API as a state.
 
-Both are examples of the panel on data it knows nothing about: a folder, a
-bucket and two JSON APIs, none of them made for it.
+They are examples of the panel on data it knows nothing about: a folder, a
+bucket and three JSON APIs, none of them made for it.
 
 ## Filter by site, host and tag
 
@@ -188,6 +259,7 @@ or Base64 image data. The panel never signs or proxies images itself.
 | Preview image | `image_hi`, `preview`                                              | optional, for the click-in preview                                                                                           |
 | Cadence       | `cadence` (milliseconds)                                           | optional; otherwise the typical gap between frames. A value that changes over time draws each pace on its own grid (an era). |
 | Host details  | `timezone`, `location`, `tags`; or labels on the image field       | optional, shown in the host's header                                                                                         |
+| Video         | `video`, with `video_hi`, `video_end` or `video_duration` (ms)     | optional: a clip from the row's time, played in the preview (below)                                                          |
 
 A **wide table** works too, as a SQL pivot returns it: one time column and an
 image column per host, each column named for its host (or carrying a `host`
@@ -209,6 +281,41 @@ no image or state, so hosts that sent no frames still show). The details are in
 whose recipes work for any data source. The provisioned dashboard **Visual Timeline — any data
 source** shows a timeline and a grid drawn from TestData CSV rows.
 
+### Video clips (experimental)
+
+Video is experimental: built and tested against test clips, not yet a real
+camera's feed, so how it works may change.
+
+A row can carry a **video** as well as its image: a clip that starts at the
+row's time and runs to its `video_end` (a time), or for `video_duration`
+milliseconds. With neither, as long as the host's other clips say they
+last, else a frame's time: a host taking a frame a minute is taken to have
+a minute of video per clip (an assumption). Never past the next clip. `video_hi` is a larger version for the preview
+player. A clip of real time and a timelapse (a whole day in seconds) work
+alike: a time within the clip is found by its fraction of the way through
+it.
+
+**Keep the frames coming alongside the video.** They fill the strip and the
+player's thumbnails, and they're what a zoomed-out slot shows. A host with
+only clips works (they draw as plain bands with ▶, and a zoomed-out slot
+shows frames taken from the video itself, which is slower), but isn't the
+way to set one up.
+
+- **The strip doesn't change**: frames still fill it. **Mark video on the
+  strip** (a panel option, off by default) draws a thin line along its foot
+  where the host has video.
+- **The preview player plays the clip over the frames** (above). The hover
+  flipbook plays a clip in the magnifier, muted, only when it comes in two
+  sizes (`video` and `video_hi`): the smaller one. A clip of one size isn't
+  loaded for a hover; the flipbook flips the frames instead.
+- **Formats:** whatever the viewer's browser plays: MP4 (H.264) or WebM
+  (VP9) are safe. Serve them with range requests, and for MP4 put the index
+  at the front (`ffmpeg -movflags +faststart`): a file with it at the end
+  can't seek until the browser has fetched its tail.
+- A clip that began before the dashboard's range is only found if the query
+  returns it: include the clip in force at the range's start, as you would
+  the frame before it.
+
 ## Show the last frame in a table
 
 Turn on **Last frame** in a query and the data source also answers with each
@@ -218,7 +325,7 @@ host's last frame in the dashboard's time range, for a stock **Table** panel
 | Column           | What it holds                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------------------ |
 | **Last frame**   | The frame's image, set to show as one in a Table. Give the table a taller **Cell height** to see more. |
-| **Status**       | `live`, `offline` or `paused`: the host's state at the end of the time range.                          |
+| **Status**       | `live`, `offline`, `paused` or `nodata`: the host's state at the end of the time range.                |
 | **Frame time**   | When the frame was taken.                                                                              |
 | **Pause reason** | Why a paused host said it was pausing (`screen-sleep`, `quiet`, …).                                    |
 
@@ -227,9 +334,10 @@ last value: while the range ends now, it's the live frame, and auto-refresh
 keeps it current; for a past range, or after zooming in on a timeline, it's
 each host's frame at the end of that range. A host offline at that moment
 shows the last frame it took before, and one with no frame in the range has
-an empty cell. Status follows the timeline's rules: offline once a tick is a
-full cadence overdue, paused from a declared pause until a frame a tick or
-more into it.
+an empty cell. Status follows the timeline's rules: offline once a promised
+frame is a full cadence overdue, paused from a declared pause until a frame a
+tick or more into it. A host that promises no cadence is never offline: it's
+`nodata` once its last frame is older than three typical gaps.
 
 Leave it off in the queries of Visual Timeline panels, which draw every
 frame anyway. The starter dashboard has a **Last frame per host** table.
@@ -240,12 +348,12 @@ A **Canvas** panel can put each host's last frame where the host is, on a
 floor plan or site map, with its status and time. Set the query's **Format**
 to **Per host**. The answer is then one row with fields named by host:
 
-| Field                | Holds                                           |
-| -------------------- | ----------------------------------------------- |
-| `cam-1`              | The last frame's image                          |
-| `cam-1 status`       | `live`, `offline` or `paused`, already coloured |
-| `cam-1 time`         | When the frame was taken                        |
-| `cam-1 pause reason` | A paused host's reason                          |
+| Field                | Holds                                                     |
+| -------------------- | --------------------------------------------------------- |
+| `cam-1`              | The last frame's image                                    |
+| `cam-1 status`       | `live`, `offline`, `paused` or `nodata`, already coloured |
+| `cam-1 time`         | When the frame was taken                                  |
+| `cam-1 pause reason` | A paused host's reason                                    |
 
 For each element (a rectangle, say), bind what you want to its host's fields:
 
@@ -292,21 +400,25 @@ Which hosts a panel shows is set in its Query tab (see
 [Filter by site, host and tag](#filter-by-site-host-and-tag)). These options
 set how it draws them.
 
-| Option                      | What it does                                                                                                                                                                                                                |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Display mode**            | Timeline or Multiview grid.                                                                                                                                                                                                 |
-| **Follow shared crosshair** | Grid mode only. Show the frame at the crosshair time from other panels; off shows the most recent frame in range.                                                                                                           |
-| **Show annotations**        | Timeline mode only. Draw the dashboard's annotations on the timeline (on by default).                                                                                                                                       |
-| **Annotation lanes**        | Timeline mode, with annotations on. A single shared lane above the axis, or one lane per host carrying its own events plus the global ones.                                                                                 |
-| **Hide hosts with no data** | Omit hosts with no frames in the current time range instead of showing them as offline.                                                                                                                                     |
-| **Header chips**            | Which chips follow each host's name, in order: `site`, `location`, or tag keys (for example `site, env`). Empty: the site and location, and every tag.                                                                      |
-| **Chip click**              | What clicking a host or chip does: add an ad hoc filter (where the data source supports one), follow a **Chip link** (a URL with `${__chip.key}`, `${__chip.value}` and `${__host}`, plus dashboard variables), or nothing. |
-| **Hold last frame**         | For feeds that don't send a frame on every tick (motion-triggered cameras, irregular uploads): a slot with no frame shows the last one, dimmed. Never (the default), Always, or Up to a duration such as `10m`.             |
-| **Gaps mean**               | Offline (the default): a host should send a frame every tick, so a missing one is red. No data: nothing says it should, so a gap is neutral.                                                                                |
-| **Show cadence details**    | Show each host's capture cadence and display resolution (for tuning).                                                                                                                                                       |
-| **Header**                  | Bar (a header row per host), Inline (the header floats over the image), or Inline with a gradient behind them for busy frames.                                                                                              |
-| **Thumbnail times**         | Dashboard time, or Host local time: a host that declares a time zone shows its frame times in that zone, marked with the offset, e.g. `07:31:00 (+3h)`. The axis and crosshair stay in dashboard time.                      |
-| **Image fit**               | Fit letterboxes the whole frame; Fill crops to cover. Never stretches.                                                                                                                                                      |
+| Option                            | What it does                                                                                                                                                                                                                |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Display mode**                  | Timeline or Multiview grid.                                                                                                                                                                                                 |
+| **Follow shared crosshair**       | Grid mode only. Show the frame at the crosshair time from other panels; off shows the most recent frame in range.                                                                                                           |
+| **Show annotations**              | Timeline mode only. Draw the dashboard's annotations on the timeline (on by default).                                                                                                                                       |
+| **Annotation lanes**              | Timeline mode, with annotations on. A single shared lane above the axis, or one lane per host carrying its own events plus the global ones.                                                                                 |
+| **Hide hosts with no data**       | Omit hosts with no frames in the current time range instead of showing them as offline.                                                                                                                                     |
+| **Header chips**                  | Which chips follow each host's name, in order: `site`, `location`, or tag keys (for example `site, env`). Empty: the site and location, and every tag.                                                                      |
+| **Chip click**                    | What clicking a host or chip does: add an ad hoc filter (where the data source supports one), follow a **Chip link** (a URL with `${__chip.key}`, `${__chip.value}` and `${__host}`, plus dashboard variables), or nothing. |
+| **Expected cadence**              | How often every host promises a frame (`1m`, `30s`): a frame missing past it is red, as offline. Empty: each host's own cadence field or declared pace; a host with none promises nothing and is never red.                 |
+| **Hold frames without a promise** | How long a frame from a host that promises nothing is shown when no frame follows soon: Auto (three times the typical gap around it), Until the next frame, or Up to a duration such as `10m`. Past it: neutral "no data".  |
+| **Mark video on the strip**       | Experimental. A thin line along the foot of each strip where its host has video clips. Off by default: only the preview shows them.                                                                                         |
+| **Frame width**                   | The least width a frame gets, in pixels (default 7): the strip's slots, and the ticks in the preview player's timeline of a slot. Smaller shows more detail and loads more images; larger, fewer.                           |
+| **Speed up video to fit**         | Experimental. Video in the preview player starts at the speed that plays a slot's video in about ten seconds (up to 16×). Off (default): it starts at 1×; viewers pick another speed (¼× to 16×) in the player.             |
+| **Scrubber style**                | The preview player's timeline: Ticks (a mark per frame) or Thumbnails (small pictures). Viewers can switch it in the player; their last choice is remembered in their browser.                                              |
+| **Show cadence details**          | Show each host's cadence (the promise, or `~` and "no promise" for a typical gap) and display resolution (for tuning).                                                                                                      |
+| **Header**                        | Bar (a header row per host), Inline (the header floats over the image), or Inline with a gradient behind them for busy frames.                                                                                              |
+| **Thumbnail times**               | Dashboard time, or Host local time: a host that declares a time zone shows its frame times in that zone, marked with the offset, e.g. `07:31:00 (+3h)`. The axis and crosshair stay in dashboard time.                      |
+| **Image fit**                     | Fit letterboxes the whole frame; Fill crops to cover. Never stretches.                                                                                                                                                      |
 
 ## Self-hosting (experimental)
 
