@@ -8,8 +8,15 @@
  *
  * Images the viewer asks for directly don't queue: the magnifier and the
  * preview set their own src, and the live poll's new frames are the newest
- * anyway. */
-export const IMAGE_CONCURRENCY = 4;
+ * anyway.
+ *
+ * An image whose host takes the connection and never answers would hold its
+ * slot until the browser gave up (minutes), and a few of them would stop
+ * every other host's images: a slot is let go after IMAGE_TIMEOUT_MS, and
+ * the image left to finish on its own. */
+export const IMAGE_CONCURRENCY = 6;
+/** How long an image holds its place in the queue (ms). */
+export const IMAGE_TIMEOUT_MS = 15_000;
 
 export interface ImageQueue {
   add(img: HTMLImageElement, url: string, ts: number): void;
@@ -21,7 +28,7 @@ export interface ImageQueue {
 
 interface Job { img: HTMLImageElement; url: string; ts: number }
 
-export function makeImageQueue(concurrency = IMAGE_CONCURRENCY): ImageQueue {
+export function makeImageQueue(concurrency = IMAGE_CONCURRENCY, timeoutMs = IMAGE_TIMEOUT_MS): ImageQueue {
   let pending: Job[] = [];   // kept sorted oldest → newest, so pop() takes the newest
   let sorted = true;
   let active = 0;
@@ -29,6 +36,8 @@ export function makeImageQueue(concurrency = IMAGE_CONCURRENCY): ImageQueue {
   let scheduled = false;
   let pumping = false;
   let idleWaiters: Array<() => void> = [];
+  // the in-flight images' timeouts, cleared on stop()
+  const timers = new Set<ReturnType<typeof setTimeout>>();
 
   function settleIdle() {
     if (active === 0 && pending.length === 0) {
@@ -54,9 +63,12 @@ export function makeImageQueue(concurrency = IMAGE_CONCURRENCY): ImageQueue {
       const job = pending.pop()!;
       active++;
       let finished = false;
+      // a hung image lets go of its slot; it may still load later
+      let timer: ReturnType<typeof setTimeout> | null = null;
       const done = () => {
         if (finished) {return;}
         finished = true;
+        if (timer) { clearTimeout(timer); timers.delete(timer); }
         job.img.removeEventListener('load', done);
         job.img.removeEventListener('error', done);
         active--;
@@ -67,6 +79,7 @@ export function makeImageQueue(concurrency = IMAGE_CONCURRENCY): ImageQueue {
       job.img.src = job.url;
       // already in the browser's cache: some engines complete synchronously
       if (job.img.complete && job.img.naturalWidth) {done();}
+      else if (!finished) { timer = setTimeout(done, timeoutMs); timers.add(timer); }
     }
     pumping = false;
     settleIdle();
@@ -90,6 +103,9 @@ export function makeImageQueue(concurrency = IMAGE_CONCURRENCY): ImageQueue {
     stop() {
       stopped = true;
       pending = [];
+      // torn down: no timer left behind (the images finish or not on their own)
+      for (const t of timers) {clearTimeout(t);}
+      timers.clear();
       const w = idleWaiters;
       idleWaiters = [];
       w.forEach((r) => r());

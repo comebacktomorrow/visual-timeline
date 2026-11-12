@@ -30,10 +30,10 @@ export function sourcesPath(sites?: string[] | null): string {
   const qs = q.toString();
   return '/sources' + (qs ? '?' + qs : '');
 }
-export function framesPath(site: string, kiosk: string, from: number, to: number, step: number): string {
+export function framesPath(site: string, host: string, from: number, to: number, step: number): string {
   const q = new URLSearchParams();
   q.set('site', site);
-  q.set('source', kiosk);
+  q.set('source', host);
   q.set('from', String(Math.round(from)));
   q.set('to', String(Math.round(to)));
   q.set('step', String(step));
@@ -146,11 +146,11 @@ export function makeApiBackend(apiUrl?: string, apiKey?: string, apiFetch?: ApiF
       for (const d of list) {decls.set(d.site + '/' + d.id, d);}
       return list;
     },
-    async frames(site, kiosk, from, to, step) {
-      const r = await get(framesPath(site, kiosk, from, to, step));
+    async frames(site, host, from, to, step) {
+      const r = await get(framesPath(site, host, from, to, step));
       if (!r.ok) {throw await apiError('frames', r, !!apiFetch);}
       const rows = (await r.json()) as Array<Frame & { url_hi?: string }>;   // the API's contract; not validated
-      const decl = decls.get(site + '/' + kiosk);
+      const decl = decls.get(site + '/' + host);
       for (const f of rows) {
         f.url = image(f.url);
         // the preview: the worker's own url_hi (#129), else derived from the

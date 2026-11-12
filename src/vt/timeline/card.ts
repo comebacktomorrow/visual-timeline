@@ -11,7 +11,8 @@ import { ruleBeyond } from './axis';
 import { hideSelection, setCursor, showSelection } from './cursor';
 import { playerContext } from '../ui/playerContext';
 import { makeFlipbook } from './flipbook';
-import { clipTime, playVideo, Reel, videoTime } from '../model/reel';
+import { Reel } from '../model/reel';
+import { loopClipSpan, makeVideo, releaseVideo } from '../ui/media';
 import { measureReel, noteClipLength } from '../ui/clipLength';
 import type { Card, TimelineState } from './state';
 
@@ -25,24 +26,28 @@ import type { Card, TimelineState } from './state';
  * reveal with retries (panels that mount before they have a size), and by
  * the live poll after it carves new slots out of the beyond filler. */
 export function dressStrip(model: SourceModel): void {
-  for (const sl of model.slots) {
-    if (!sl.el || sl.frame) {continue;}
-    sl.el.style.backgroundPosition = (-sl.el.offsetLeft) + 'px 0';
-    if (sl.paused && sl.el.offsetWidth >= 90 && !sl.el.querySelector('.band-label')) {
+  // every offset read first, then every write: a read after a write forces a
+  // style recalculation, one per slot (the pattern setCursor uses)
+  const todo = model.slots.filter((sl) => sl.el && !sl.frame);
+  const at = todo.map((sl) => ({ left: sl.el!.offsetLeft, width: sl.el!.offsetWidth }));
+  todo.forEach((sl, i) => {
+    const el = sl.el!;
+    el.style.backgroundPosition = (-at[i].left) + 'px 0';
+    if (sl.paused && at[i].width >= 90 && !el.querySelector('.band-label')) {
       const lab = document.createElement('span');
       lab.className = 'band-label';
       lab.textContent = pauseInfo(sl).label;
-      sl.el.appendChild(lab);
+      el.appendChild(lab);
     }
-  }
+  });
 }
 export function dressAll(s: TimelineState, tries: number): void {
-  const anySized = s.kiosks.some((k) => s.cards[k.id] && s.cards[k.id].strip.clientWidth > 0);
+  const anySized = s.hosts.some((k) => s.cards[k.id] && s.cards[k.id].strip.clientWidth > 0);
   if (!anySized) {
     if (tries > 0 && !s.destroyed) {setTimeout(() => dressAll(s, tries - 1), 500);}
     return;
   }
-  for (const k of s.kiosks) {if (s.cards[k.id]) {dressStrip(s.cards[k.id].model);}}
+  for (const k of s.hosts) {if (s.cards[k.id]) {dressStrip(s.cards[k.id].model);}}
 }
 
 /* A strip's slot elements, from its model: built at mount and again by
@@ -51,7 +56,7 @@ export function dressAll(s: TimelineState, tries: number): void {
  * and an element whose content is unchanged is reused, so its image
  * doesn't reload. Dropped time inside cells that show a frame is drawn as
  * marks at its true place. */
-export function renderStrip(s: TimelineState, model: SourceModel, strip: HTMLElement, kiosk: string, tt: ZoneTexts): void {
+export function renderStrip(s: TimelineState, model: SourceModel, strip: HTMLElement, host: string, tt: ZoneTexts): void {
   type Cell = { key: string; slots: Slot[] };
   const cells: Cell[] = [];
   for (const sl of model.slots) {
@@ -85,7 +90,11 @@ export function renderStrip(s: TimelineState, model: SourceModel, strip: HTMLEle
     }
     if (sl.frame && fresh) {
       const img = document.createElement('img');
-      img.alt = kiosk + ' ' + tt.time(sl.frame.ts) + tt.sfx(sl.frame.ts);
+      img.alt = host + ' ' + tt.time(sl.frame.ts) + tt.sfx(sl.frame.ts);
+      // a strip holds hundreds: decoded off the main thread, and no
+      // Referer (the dashboard's URL) sent to wherever the frames are
+      img.decoding = 'async';
+      img.referrerPolicy = 'no-referrer';
       el.appendChild(img);
       s.images.add(img, sl.frame.url, sl.frame.ts);   // newest first, across all cards
     }
@@ -145,7 +154,7 @@ type StripEl = HTMLElement & { __cells?: Map<string, HTMLElement> };
  * and drag-zoom handlers. Every element queried below (asserted non-null)
  * is in the card template set here. */
 export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel): Card {
-  const kiosk = decl.id;
+  const host = decl.id;
   const zone = zoneFor(decl, s.TZ, s.cfg.thumbTimes, s.PANEL_TT), tt = zone.tt;
   const card = document.createElement('div');
   const inline = s.cfg.headerMode === 'inline' || s.cfg.headerMode === 'inline-gradient';
@@ -161,23 +170,36 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
       (model.promised ? '' : ' · no promise') + '</span>'
     : '';
   card.innerHTML =
-    '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs('host', kiosk, !!s.cfg.onFilter) + '>' + esc(kiosk) + '</span>' +
+    '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs('host', host, !!s.cfg.onFilter) + '>' + esc(host) + '</span>' +
     '<span class="inline-brk"></span>' + zoneChip(zone.srcTZ) +
     headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '<span class="ft"></span>' +
     cad + '</div>' +
-    '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>' +
+    '<div class="strip" tabindex="0" role="group" aria-label="' + esc(host + ': ← → move along the timeline, Enter opens the preview') + '"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt="" referrerpolicy="no-referrer"><div class="cap"></div></div></div>' +
     '<div class="card-lane"></div>';
   const strip = card.querySelector<HTMLElement>('.strip')!;
   // hairline frame boundaries only when slices are wide enough — below
   // ~12px they read as zebra noise rather than structure
-  renderStrip(s, model, strip, kiosk, tt);
+  renderStrip(s, model, strip, host, tt);
   dressStrip(model);   // hatch alignment + band labels (re-run post-reveal)
   // the hover flipbook: a slot of several frames plays them in the
   // magnifier once the cursor has rested on it (flipbook.ts)
   let rec: Card | null = null;
   // the slot's reel, from the same source the preview player reads
   const source = playerContext(s.backend, s.cfg, s.P, decl, model, tt, () => {});
+  // the magnifier's video (a clip's part, round and round): stopped, and its
+  // download let go of
+  let unloop: (() => void) | null = null;
+  const dropVideo = (m: HTMLElement) => {
+    m.classList.remove('flip-video');
+    unloop?.();
+    unloop = null;
+    const v = m.querySelector('video');
+    if (!v) {return;}
+    releaseVideo(v);
+    v.remove();
+  };
   const flip = makeFlipbook({
+    alive: () => !s.destroyed,
     reel: (slot) => new Reel(source, slot),
     show: (at, t, i, n) => {
       const m = rec?.mag;
@@ -197,34 +219,21 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     clip: (span, rate = 1) => {
       const m = rec?.mag;
       if (!m) {return;}
+      if (!span || s.destroyed) { dropVideo(m); return; }
       let v = m.querySelector('video');
-      if (!span) {
-        m.classList.remove('flip-video');
-        if (v) { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); }
-        return;
-      }
       if (!v) {
-        v = document.createElement('video');
-        v.muted = true;
-        v.playsInline = true;
+        v = makeVideo(true);
         m.insertBefore(v, m.querySelector('.cap'));
       }
-      const vid = v;
-      const from = () => videoTime(span.clip, span.from, vid.duration), to = () => videoTime(span.clip, span.to, vid.duration);
-      const again = () => { vid.currentTime = from(); vid.playbackRate = rate; playVideo(vid).catch(() => {}); };
-      vid.onloadedmetadata = () => {
-        noteClipLength(span.clip.url, vid.duration);
-        if (vid.videoWidth && vid.videoHeight) {m.style.aspectRatio = String(vid.videoWidth / vid.videoHeight);}
-        again();
-      };
-      vid.ontimeupdate = () => {
-        const at = clipTime(span.clip, vid.currentTime, vid.duration);
-        m.querySelector('.cap')!.textContent = '▶ ' + tt.time(at) + tt.sfx(at) + ' · video';
-        if (vid.currentTime >= to() - 0.05) {again();}
-      };
-      vid.onended = again;
+      unloop?.();
       m.classList.add('flip-video');
-      vid.src = span.clip.url;
+      unloop = loopClipSpan(v, span, rate, {
+        metadata: (vid) => {
+          noteClipLength(span.clip.url, vid.duration);
+          if (vid.videoWidth && vid.videoHeight) {m.style.aspectRatio = String(vid.videoWidth / vid.videoHeight);}
+        },
+        time: (at) => { m.querySelector('.cap')!.textContent = '▶ ' + tt.time(at) + tt.sfx(at) + ' · video'; },
+      });
     },
     playingChanged: (on) => {
       if (!rec) {return;}
@@ -234,6 +243,9 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
       if (!on && !s.destroyed) { rec.shown = null; setCursor(s, s.cursorT, null, true); }
     },
   }, !!s.backend.detail, (sl) => model.clips.some((c) => c.to > sl.x0 && c.from < sl.x0 + sl.span), !!s.cfg.videoAutoSpeed);
+  // the preview is a player over this host's frames; it moves the crosshair
+  const player = () => playerContext(s.backend, s.cfg, s.P, decl, model, tt, (t) => { if (!s.destroyed) {setCursor(s, t, null, false);} },
+    s.cfg.onZoom ? (from, to) => { if (!s.destroyed) {s.cfg.onZoom!(Math.floor(from), Math.ceil(to));} } : undefined);
   const hoverAt = (e: MouseEvent) => {
     const r = strip.getBoundingClientRect();
     if (!r.width) {return;}   // stale wrapper mid-swap: no geometry, no cursor
@@ -255,19 +267,40 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     s.wrap.classList.remove('strip-hover');
     if (s.cfg.onHoverClear) {s.cfg.onHoverClear();}
   });
-  strip.addEventListener('click', e => {
-    flip.stop();
-    if (s.suppressClick) { s.suppressClick = false; return; }
+  /* the preview of the slot under the cursor, anchored at (x, y) */
+  const openAt = (x: number, y: number) => {
     const sl = model.slotAt(s.cursorT);
     const f = sl && sl.frame;
     const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
-    // the preview is a player over this host's frames; it moves the crosshair
-    const player = () => playerContext(s.backend, s.cfg, s.P, decl, model, tt, (t) => { if (!s.destroyed) {setCursor(s, t, null, false);} },
-      s.cfg.onZoom ? (from, to) => { if (!s.destroyed) {s.cfg.onZoom!(Math.floor(from), Math.ceil(to));} } : undefined);
-    if (f) {s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt, player());}
+    if (f) {s.pv.open(decl.site, host, f, x, y, f.hi ?? null, null, tt, player());}
     // a slot a video clip covers: the player, at the slot's time (M10c)
-    else if (sl && !sl.paused && !sl.beyond && sl.clip) {s.pv.play(decl.site, kiosk, sl.ts, e.clientX, e.clientY, tt, player());}
-    else if (g) {s.pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl!.ts, tt);}   // g is only set from a slot
+    else if (sl && !sl.paused && !sl.beyond && sl.clip) {s.pv.play(decl.site, host, sl.ts, x, y, tt, player());}
+    else if (g) {s.pv.open(decl.site, host, g, x, y, null, sl!.ts, tt);}   // g is only set from a slot
+  };
+  strip.addEventListener('click', e => {
+    flip.stop();
+    if (s.suppressClick) { s.suppressClick = false; return; }
+    openAt(e.clientX, e.clientY);
+  });
+  /* Without a mouse: a focused strip's ←/→ move the cursor a slot (as a
+   * hover would, the dashboard's crosshair with it), and Enter or Space
+   * opens the preview there. A press doesn't focus the strip (mousedown
+   * below prevents it), so the mouse's hover is as it was. */
+  strip.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) {return;}
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      const r = strip.getBoundingClientRect();
+      openAt(r.left + r.width * (s.cursorT - s.P.from) / s.SPAN, r.top + r.height / 2);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      const sl = model.slotAt(s.cursorT);
+      const next = sl && model.slotAt(e.key === 'ArrowRight' ? sl.x0 + sl.span : sl.x0 - 1);
+      if (next && next !== sl) {setCursor(s, Math.max(next.x0, Math.min(next.x0 + next.span - 1, next.ts)), card, false);}
+    }
+  });
+  strip.addEventListener('blur', () => {
+    if (!s.wrap.classList.contains('strip-hover') && s.cfg.onHoverClear) {s.cfg.onHoverClear();}
   });
   /* magnifier takes the aspect of the actual frames (portrait screens etc.) */
   const magEl = card.querySelector<HTMLElement>('.mag')!;
@@ -311,7 +344,9 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   q(s.wrap, '.cards').appendChild(card);
   attachZoneChip(zone, card);
   rec = {
-    card, model, zone, tt, flip,
+    card, model, zone, tt, flip, player,
+    // the mount's teardown: no flipbook, no video, left running
+    teardown: () => { flip.stop(); dropVideo(magEl); },
     head: card.querySelector<HTMLElement>('.ft')!,
     strip,
     cross: card.querySelector<HTMLElement>('.xh')!,

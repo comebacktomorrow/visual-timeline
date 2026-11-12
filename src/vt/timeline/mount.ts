@@ -58,7 +58,7 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
   // the mount's shared state (the fields that change live only here)
   const s: TimelineState = {
     root, cfg, P, TZ, SPAN, LIVE, hostWidth, pxBudget, backend, wrap,
-    kiosks: [], cards: {}, cursorT: restoreCursor(root, P), destroyed: false, pollTimer: null,
+    hosts: [], cards: {}, cursorT: restoreCursor(root, P), destroyed: false, pollTimer: null,
     axisTickList: [],   // filled by buildAxis; consumed by ruleBeyond
     axisLabels: [],
     suppressClick: false,
@@ -69,7 +69,7 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
 
   (async function boot() {
     try {
-      s.kiosks = (await backend.kiosks(P.site))
+      s.hosts = (await backend.kiosks(P.site))
         .filter((k) => !P.source || P.source.includes(k.id))
         .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
     } catch (e: any) {   // whatever was thrown, read loosely as before
@@ -85,14 +85,14 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
       return;
     }
     // a few at a time; cards still go in declared order
-    const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) =>
+    const models = limited(s.hosts, MODEL_CONCURRENCY, (k) =>
       s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence, sample: s.cfg.sampleInterval }).catch((e) => {
         // one source's backend hiccup must not black out the whole panel;
         // the next refresh retries it
         console.warn('[visual-timeline] model build failed for ' + k.id + ':', e);
         return null;
       }));
-    for (const [i, k] of s.kiosks.entries()) {
+    for (const [i, k] of s.hosts.entries()) {
       const model = await models[i];
       if (s.destroyed) {return;}
       if (!model) {continue;}
@@ -101,7 +101,13 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
       if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {continue;}
       s.cards[k.id] = buildCard(s, k, model);
     }
-    s.kiosks = s.kiosks.filter((k) => s.cards[k.id]);
+    s.hosts = s.hosts.filter((k) => s.cards[k.id]);
+    // a player this mount adopted from the one before (a refresh) steps
+    // through these cards' slots and moves this crosshair from now on
+    s.pv.rebind((site, id) => {
+      const k = s.hosts.find((d) => d.site === site && d.id === id);
+      return k ? s.cards[k.id].player?.() ?? null : null;
+    });
     buildAxis(s);
     ruleAllBeyond(s);
     // host-provided annotations (Grafana: the dashboard's own annotation
@@ -126,6 +132,9 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
       s.destroyed = true;
       s.images.stop();
       if (s.pollTimer) {clearInterval(s.pollTimer);}
+      // a strip swapped out under a resting cursor gets no mouseleave: its
+      // hover flipbook (a dwell, a 4 Hz loop, a looping video) stops here
+      for (const c of Object.values(s.cards)) {c.teardown?.();}
       s.pv.retire();   // an open preview survives refresh remounts (adopted by the successor)
       annTip().close();   // a hovered or pinned tip at teardown would strand
       retireWrapper(wrap);

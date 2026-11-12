@@ -79,6 +79,12 @@ const SCAN_CONCURRENCY = 6;
  * while after it ends, so late frames on its last ticks still show. */
 const CHUNK_MS = 6 * 3600 * 1000;
 const CHUNK_LIVE_FOR = 10 * 60 * 1000;
+/* With the frame index, a /frames window costs one D1 query and one cache
+ * entry per chunk per source whatever its step, so the window (and the step,
+ * which can't usefully exceed it) is capped as MAX_BUCKETS caps buckets:
+ * 400 days, a year's view with room to spare, is at most 1,602 chunks per
+ * source. Without the index, the R2 scan budget bounds the work instead. */
+const MAX_INDEX_WINDOW_MS = 400 * 864e5;
 const INDEX_KEY = 'index.json';
 
 const CORS = {
@@ -115,7 +121,8 @@ export default {
                      url.pathname === '/frames' || url.pathname.startsWith('/frame/');
       if (isData && request.method === 'GET') {
         // viewer auth: when VIEWER_TOKEN is set, all data reads require it
-        // (?k= for <img> URLs, Bearer for API calls). Unset = open (dev/demo).
+        // (Bearer for API calls; ?k= accepted on /frame/ image URLs only).
+        // Unset = closed, unless OPEN_READS=1 opens reads (dev/demo).
         const viewer = await viewerFor(request, env, url);
         if (!viewer) {return json({ error: 'unauthorized' }, 401);}
         if (url.pathname === '/frames') {return await handleFrames(url, env, ctx, viewer);}
@@ -138,6 +145,18 @@ function json(body, status = 200, extra = {}) {
   });
 }
 
+/* Data reads are authenticated, so clients are told `private`: a shared
+ * proxy must not store them. The edge cache (caches.default) is ours and
+ * sits behind the auth check, so the copy put there keeps `public`, which
+ * the Cache API needs to store it; every response leaving the worker, a
+ * cache hit included, goes through here. */
+function privateCopy(res) {
+  const out = new Response(res.body, res);
+  const cc = out.headers.get('cache-control');
+  if (cc) {out.headers.set('cache-control', cc.replace(/\bpublic\b/, 'private'));}
+  return out;
+}
+
 /* ---------------- auth ---------------- */
 
 /* Resolve the requesting viewer. Returns {sites} when authorized — sites
@@ -147,6 +166,7 @@ function json(body, status = 200, extra = {}) {
  * map of named consumers, so a leaked dashboard costs one revocable entry:
  *   {"grafana-cloud": "tok...",
  *    "lobby-wall": {"token": "tok...", "sites": ["site-a"]}}
+ * Only a string entry means every site; see viewerEntry.
  */
 async function viewerFor(request, env, url) {
   // a signed image URL is its own authorization: scoped to one source,
@@ -162,8 +182,10 @@ async function viewerFor(request, env, url) {
       return { sites: [m[1]] };   // the signature already binds the site
     }
   }
-  if (!env.VIEWER_TOKEN) {return { sites: null };}
-  const got = url.searchParams.get('k') ||
+  if (!env.VIEWER_TOKEN) {return openReads(env) ? { sites: null } : null;}
+  // ?k= only on image routes, where <img> can't send a header; anywhere else
+  // a key in the URL would only end up in logs and Referer headers
+  const got = (url.pathname.startsWith('/frame/') && url.searchParams.get('k')) ||
     (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
   if (!got) {return null;}
   const raw = env.VIEWER_TOKEN.trim();
@@ -172,14 +194,49 @@ async function viewerFor(request, env, url) {
   }
   let map;
   try { map = JSON.parse(raw); } catch { return null; }
-  for (const entry of Object.values(map)) {
-    const token = typeof entry === 'string' ? entry : entry && entry.token;
-    if (token && (await timingSafeEqual(token, got))) {
-      const sites = entry && typeof entry === 'object' && Array.isArray(entry.sites) && entry.sites.length
-        ? entry.sites.map((s) => String(s).toLowerCase())
-        : null;
-      return { sites };
-    }
+  for (const [name, entry] of Object.entries(map)) {
+    const consumer = viewerEntry(name, entry);
+    if (consumer && (await timingSafeEqual(consumer.token, got))) {return { sites: consumer.sites };}
+  }
+  return null;
+}
+
+/* Without VIEWER_TOKEN, reads are refused unless OPEN_READS is set (1, true
+ * or yes): a deployment that forgot the secret fails closed instead of
+ * publishing every frame. Said once per isolate, so the 401s have a cause in
+ * the logs. With VIEWER_TOKEN set, OPEN_READS is ignored. */
+let closedWarned = false;
+function openReads(env) {
+  if (/^(1|true|yes)$/i.test(String(env.OPEN_READS || '').trim())) {return true;}
+  if (!closedWarned) {
+    closedWarned = true;
+    console.warn(JSON.stringify({ msg: 'reads refused: set VIEWER_TOKEN, or OPEN_READS=1 to let anyone read the frames' }));
+  }
+  return false;
+}
+
+/* One VIEWER_TOKEN map entry as {token, sites}, or null when it grants
+ * nothing. A string is a token for every site. An object must carry a token
+ * and a non-empty array of valid site ids: an entry whose sites are missing,
+ * empty, a string or misspelled ("site") is refused rather than read as
+ * "every site", which is what an operator who meant one site least wants.
+ * A refused entry is logged once per isolate, by name, never by token. */
+const viewerWarned = new Set();
+function viewerEntry(name, entry) {
+  if (typeof entry === 'string' && entry) {return { token: entry, sites: null };}
+  const token = entry && typeof entry === 'object' ? entry.token : undefined;
+  const sites = entry && typeof entry === 'object' ? entry.sites : undefined;
+  const ids = Array.isArray(sites) && sites.every((s) => typeof s === 'string')
+    ? sites.map((s) => s.toLowerCase()) : [];
+  if (typeof token === 'string' && token && ids.length && ids.every((s) => ID_RE.test(s))) {
+    return { token, sites: ids };
+  }
+  if (!viewerWarned.has(name)) {
+    viewerWarned.add(name);
+    console.warn(JSON.stringify({
+      msg: 'VIEWER_TOKEN entry refused: give it a non-empty string token, or an object with a token and a non-empty "sites" array of site ids',
+      consumer: name,
+    }));
   }
   return null;
 }
@@ -308,8 +365,18 @@ async function handleUpload(request, env, ctx) {
   }
   ts = Math.round(ts / cadence) * cadence;   // snap to the cadence grid → deterministic keys
 
+  const body = await readCapped(request, MAX_UPLOAD_BYTES);
+  if (!body) {return json({ error: 'too large' }, 413);}
+  if (!body.byteLength) {return json({ error: 'empty body: send the JPEG' }, 400);}
+  if (!(body[0] === 0xff && body[1] === 0xd8 && body[2] === 0xff)) {
+    return json({ error: 'not a JPEG: the body must start with FF D8 FF' }, 415);
+  }
+
+  // registered first, so a source the site has no room for stores nothing
+  if (!(await ensureRegistered(env, site, source, variant, cadence, ts, location, tags, timezone))) {
+    return json({ error: `this site already has ${MAX_SOURCES_PER_SITE} sources, the most allowed` }, 409);
+  }
   const key = `${variant}/${site}/${source}/${ts}.jpg`;
-  const body = await request.arrayBuffer();  // bounded by MAX_UPLOAD_BYTES
   await env.FRAMES.put(key, body, {
     httpMetadata: { contentType: 'image/jpeg', cacheControl: FRAME_CACHE },
   });
@@ -322,9 +389,32 @@ async function handleUpload(request, env, ctx) {
       console.error(JSON.stringify({ msg: 'frame index write failed', site, source, variant, ts, error: String(err) }));
     }
   }
-  await ensureRegistered(env, site, source, variant, cadence, ts, location, tags, timezone);
   if (retentionMs(env, 'lo') || retentionMs(env, 'hi')) {ctx.waitUntil(pruneSite(env, site, source));}
   return json({ ok: true, key, ts });
+}
+
+/* The request body, or null once it passes max bytes. Content-Length is the
+ * client's claim; this counts what actually arrives, and stops reading at
+ * the cap rather than buffering a body of any size. */
+async function readCapped(request, max) {
+  if (!request.body) {return new Uint8Array(0);}
+  const reader = request.body.getReader();
+  const chunks = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {break;}
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) { out.set(c, at); at += c.byteLength; }
+  return out;
 }
 
 /* ---------------- retention ---------------- */
@@ -413,7 +503,11 @@ function retainedHistory(history, cutoff, cadence) {
     const firstLo = sorted.find((h) => (h.variant || 'lo') === 'lo');
     inForce.set('lo', { variant: 'lo', cadence: (firstLo && firstLo.cadence) || cadence || 60000 });
   }
-  for (const h of inForce.values()) {out.push({ ...h, since: cutoff });}
+  // lo first, then the rest: a fixed order, whichever event came first
+  // (trimHistory may have dropped it)
+  for (const [, h] of [...inForce].sort(([a], [b]) => (a !== 'lo') - (b !== 'lo'))) {
+    out.push({ ...h, since: cutoff });
+  }
   return out.concat(later);
 }
 
@@ -459,17 +553,78 @@ function parseTags(raw) {
   return Object.keys(tags).length ? tags : null;
 }
 
+/* Bounds on what one site's upload token can make index.json hold (W2).
+ * Every site shares that one object and its etag-conditional writes, so a
+ * site that grows it without limit (new source ids, a flapping cadence or
+ * pause) slows every read of it and runs other sites' write retries out.
+ * The bounds are far past any real fleet:
+ *  - MAX_SOURCES_PER_SITE: an upload for a new source past it is refused
+ *    (409) before anything is stored.
+ *  - MAX_HISTORY: events kept per source. Under retention, events from
+ *    before the cutoff are dropped first (except the one in force there,
+ *    which /sources restates, so what it reports is unchanged); past the
+ *    cap, the oldest go.
+ *  - INDEX_WRITES_PER_MIN: index writes per site per minute, counted per
+ *    isolate (so a bound on each isolate, not a global one). Past it, an
+ *    upload is still stored and its registration waits for a later upload;
+ *    a /declare is a 429. */
+const MAX_SOURCES_PER_SITE = 1000;
+const MAX_HISTORY = 1000;
+const INDEX_WRITES_PER_MIN = 300;
+const indexWrites = new Map();   // site → {start, n}: this isolate's current minute
+
+function indexWriteAllowed(site) {
+  const now = Date.now();
+  let w = indexWrites.get(site);
+  if (!w || now - w.start >= 60000) {
+    w = { start: now, n: 0, warned: false };
+    indexWrites.set(site, w);
+  }
+  if (w.n < INDEX_WRITES_PER_MIN) {
+    w.n++;
+    return true;
+  }
+  if (!w.warned) {
+    w.warned = true;
+    console.warn(JSON.stringify({ msg: 'index writes rate-limited', site, perMinute: INDEX_WRITES_PER_MIN }));
+  }
+  return false;
+}
+
+/* A source's history as stored after a write: see MAX_HISTORY. */
+function trimHistory(env, history) {
+  const keep = retentionMs(env, 'lo');
+  if (keep) {
+    // the latest event per variant at or before the cutoff stays (it is the
+    // one in force there, as retainedHistory picks it); older ones go
+    const cutoff = Date.now() - keep;
+    const inForce = new Map();
+    for (const h of history) {
+      const v = h.variant || 'lo';
+      const cur = inForce.get(v);
+      if (h.since <= cutoff && (!cur || h.since >= cur.since)) {inForce.set(v, h);}
+    }
+    history = history.filter((h) => h.since > cutoff || inForce.get(h.variant || 'lo') === h);
+  }
+  return history.length > MAX_HISTORY ? history.slice(-MAX_HISTORY) : history;
+}
+
 /* Register the source's declared cadence in index.json. Writes only when the
- * declaration changed; concurrent writers resolved by verify-after-write. */
+ * declaration changed; concurrent writers resolved by verify-after-write.
+ * Returns false only when the site is full (MAX_SOURCES_PER_SITE). */
 async function ensureRegistered(env, site, source, variant, cadence, ts, location, tags, timezone) {
   const memo = `${site}/${source}/${variant}/${cadence}/${location || ''}/${timezone || ''}/${JSON.stringify(tags || {})}`;
-  if (isRegistered(memo)) {return;}
+  if (isRegistered(memo)) {return true;}
   const field = variant === 'hi' ? 'hiCadence' : 'cadence';
 
   for (let attempt = 0; attempt < 4; attempt++) {
     const cur = await env.FRAMES.get(INDEX_KEY);
     const index = cur ? await cur.json() : { sites: {} };
     const sources = own(index.sites, site) || (index.sites[site] = {});
+    if (!own(sources, source) && Object.keys(sources).length >= MAX_SOURCES_PER_SITE) {
+      console.warn(JSON.stringify({ msg: 'source refused: site has the most sources allowed', site, max: MAX_SOURCES_PER_SITE }));
+      return false;
+    }
     const entry = own(sources, source) || (sources[source] = { history: [] });
     const lastEvt = entry.history[entry.history.length - 1];
     const wasPaused = !!(lastEvt && lastEvt.paused);
@@ -477,11 +632,14 @@ async function ensureRegistered(env, site, source, variant, cadence, ts, locatio
     const locChanged = !!location && entry.location !== location;
     const tzChanged = !!timezone && entry.timezone !== timezone;
     const tagsChanged = !!tags && JSON.stringify(entry.tags || null) !== JSON.stringify(tags);
-    if (!cadChanged && !locChanged && !tzChanged && !tagsChanged && !wasPaused) { registered.set(memo, Date.now()); return; }
+    if (!cadChanged && !locChanged && !tzChanged && !tagsChanged && !wasPaused) { registered.set(memo, Date.now()); return true; }
+    // over the rate: the frame is stored, and a later upload registers it
+    if (!indexWriteAllowed(site)) {return true;}
 
     if (cadChanged || wasPaused) {
       entry[field] = cadence;
       entry.history.push({ since: ts, variant, cadence });   // resume and/or pace change
+      entry.history = trimHistory(env, entry.history);
     }
     if (locChanged) {entry.location = location;}
     if (tzChanged) {entry.timezone = timezone;}
@@ -497,10 +655,11 @@ async function ensureRegistered(env, site, source, variant, cadence, ts, locatio
         (!timezone || seen.timezone === timezone) &&
         (!tags || JSON.stringify(seen.tags || null) === JSON.stringify(tags))) {
       registered.set(memo, Date.now());
-      return;
+      return true;
     }
   }
   console.warn(JSON.stringify({ msg: 'index registration retries exhausted', site, source, variant }));
+  return true;
 }
 
 /* Cadence-event declaration: a source about to go deliberately silent says
@@ -536,10 +695,14 @@ async function handleDeclare(request, env) {
     // pushes a new event so the band splits (quiet hours -> box shut down)
     if (last && last.paused && last.reason === reason && last.intended === intended)
       {return json({ ok: true, note: 'already paused' });}
+    if (!indexWriteAllowed(site)) {
+      return json({ error: 'too many index writes for this site; try again in a minute' }, 429, { 'retry-after': '60' });
+    }
     const evt = { since: Date.now(), variant: 'lo', paused: true };
     if (reason !== undefined) {evt.reason = reason;}
     if (intended !== undefined) {evt.intended = intended;}
     entry.history.push(evt);
+    entry.history = trimHistory(env, entry.history);
     const put = await env.FRAMES.put(INDEX_KEY, JSON.stringify(index), { onlyIf: { etagMatches: cur.etag } });
     if (put) {
       // drop this isolate's memos so the next upload re-checks wasPaused
@@ -569,6 +732,7 @@ async function readIndex(url, env, ctx) {
   if (!res) {
     const cur = await env.FRAMES.get(INDEX_KEY);
     const body = cur ? await cur.text() : '{"sites":{}}';
+    // an internal entry, never sent to a client: public so the Cache API keeps it
     res = new Response(body, {
       headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=15' },
     });
@@ -594,7 +758,7 @@ async function handleSources(url, env, ctx, viewer) {
     }
   }
   out.sort((a, b) => a.site.localeCompare(b.site) || a.id.localeCompare(b.id));
-  return json(out, 200, { 'cache-control': 'public, max-age=15' });
+  return json(out, 200, { 'cache-control': 'private, max-age=15' });
 }
 
 /* GET /states: each source's declared pauses as rows of time, site,
@@ -632,7 +796,7 @@ async function handleStates(url, env, ctx, viewer) {
       }
     }
   }
-  return json(rows, 200, { 'cache-control': 'public, max-age=15' });
+  return json(rows, 200, { 'cache-control': 'private, max-age=15' });
 }
 
 /* ---------------- frame index (D1, optional) ---------------- */
@@ -683,6 +847,7 @@ async function indexedTimes(env, ctx, origin, variant, site, source, from, to) {
         'SELECT ts FROM frames WHERE site = ?1 AND source = ?2 AND variant = ?3 AND ts >= ?4 AND ts < ?5 ORDER BY ts'
       ).bind(site, source, variant, c, c + CHUNK_MS).all();
       const live = c + CHUNK_MS > now - CHUNK_LIVE_FOR;
+      // an internal entry, never sent to a client: public so the Cache API keeps it
       res = new Response(JSON.stringify(results.map((r) => r.ts)), {
         headers: { 'content-type': 'application/json', 'cache-control': `public, max-age=${live ? 15 : 3600}` },
       });
@@ -776,6 +941,15 @@ function bucketPicker(from, step) {
   };
 }
 
+/* The 400 for a window or step past MAX_INDEX_WINDOW_MS with the frame
+ * index bound, or null. */
+function indexWindowError(env, from, to, step) {
+  if (!env.DB) {return null;}
+  if (to - from > MAX_INDEX_WINDOW_MS) {return json({ error: 'window too long: at most 400 days' }, 400);}
+  if (step > MAX_INDEX_WINDOW_MS) {return json({ error: 'bad step: at most 400 days' }, 400);}
+  return null;
+}
+
 /* A source's frames, one per step bucket: from the frame index when there
  * is one (never truncated), else an R2 scan within the budget. */
 async function framesOf(env, ctx, origin, variant, site, source, from, to, step, budget) {
@@ -853,6 +1027,8 @@ async function handleFrames(url, env, ctx, viewer) {
   if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {return json({ error: 'bad range' }, 400);}
   if (to === from) {return json([]);}   // zero-width window: legitimate degenerate ask, not an error
   if (!Number.isInteger(step) || step < 1000) {return json({ error: 'bad step' }, 400);}
+  const tooLong = indexWindowError(env, from, to, step);
+  if (tooLong) {return tooLong;}
 
   // snap the window to the step grid → auto-refresh jitter hits the same cache entry
   from = Math.floor(from / step) * step;
@@ -866,7 +1042,7 @@ async function handleFrames(url, env, ctx, viewer) {
   const cache = caches.default;
   const cacheKey = new Request(canonical);
   const hit = await cache.match(cacheKey);
-  if (hit) {return hit;}
+  if (hit) {return privateCopy(hit);}
 
   const { ts, truncatedAfter } = await framesOf(env, ctx, url.origin, variant, site, source, from, to, step, { pages: MAX_LIST_PAGES });
   if (truncatedAfter !== null) {
@@ -881,7 +1057,7 @@ async function handleFrames(url, env, ctx, viewer) {
     ...(truncatedAfter !== null ? { 'x-frames-truncated-after': String(truncatedAfter) } : {}),
   });
   ctx.waitUntil(cache.put(cacheKey, res.clone()));
-  return res;
+  return privateCopy(res);
 }
 
 /* /frames without source=: every source of the sites asked for (all the
@@ -905,6 +1081,8 @@ async function handleFramesAll(url, env, ctx, viewer) {
   if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {return json({ error: 'bad range' }, 400);}
   if (to === from) {return json([]);}
   if (!Number.isFinite(step) || step < 1000) {return json({ error: 'bad step' }, 400);}
+  const tooLong = indexWindowError(env, from, to, step);
+  if (tooLong) {return tooLong;}
 
   const index = await readIndex(url, env, ctx);
   const sites = Object.keys(index.sites || {})
@@ -934,7 +1112,7 @@ async function handleFramesAll(url, env, ctx, viewer) {
   const cache = caches.default;
   const cacheKey = new Request(canonical);
   const hit = await cache.match(cacheKey);
-  if (hit) {return hit;}
+  if (hit) {return privateCopy(hit);}
 
   const budget = { pages: MAX_LIST_PAGES_ALL };
   const results = new Array(jobs.length);
@@ -964,7 +1142,7 @@ async function handleFramesAll(url, env, ctx, viewer) {
     } : {}),
   });
   ctx.waitUntil(cache.put(cacheKey, res.clone()));
-  return res;
+  return privateCopy(res);
 }
 
 /* ---------------- frame image (POC path; prod = R2 custom domain) ---------------- */
@@ -982,10 +1160,12 @@ async function handleFrame(url, env, ctx, viewer) {
   const obj = await env.FRAMES.get(url.pathname.slice('/frame/'.length));
   if (!obj) {
     // cache misses briefly so a gap-heavy window doesn't hammer R2
-    return new Response('not found', { status: 404, headers: { 'cache-control': 'public, max-age=30', ...CORS } });
+    return new Response('not found', { status: 404, headers: { 'cache-control': 'public, max-age=30', 'x-content-type-options': 'nosniff', ...CORS } });
   }
   const res = new Response(obj.body, {
-    headers: { 'content-type': 'image/jpeg', 'cache-control': FRAME_CACHE, etag: obj.httpEtag, ...CORS },
+    // nosniff: the browser takes it as the image/jpeg it says it is, never
+    // as markup, whatever bytes an older upload stored
+    headers: { 'content-type': 'image/jpeg', 'cache-control': FRAME_CACHE, 'x-content-type-options': 'nosniff', etag: obj.httpEtag, ...CORS },
   });
   ctx.waitUntil(cache.put(cacheKey, res.clone()));
   return res;

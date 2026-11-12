@@ -13,7 +13,8 @@ token never reaches the dashboard JSON or the browser. The self-hosted stack
 Add an **Infinity** data source:
 
 - **Authentication:** Bearer token, with the worker's viewer token
-  (`VIEWER_TOKEN`). Leave it off if the worker allows open reads.
+  (`VIEWER_TOKEN`). Leave it off only if the worker opens reads on purpose
+  (`OPEN_READS=1`, for a demo): without a token it refuses them.
 - **Allowed hosts:** the worker's address, as Grafana's server reaches it, for
   example `https://frames.example.com`. Infinity sends the token only there.
 

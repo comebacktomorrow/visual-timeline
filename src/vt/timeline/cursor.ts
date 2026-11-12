@@ -27,8 +27,8 @@ export function restoreCursor(root: HTMLElement, P: TimeWindow): number {
 export function showSelection(s: TimelineState, fa: number, fb: number): void {
   const a = Math.min(fa, fb), b = Math.max(fa, fb);
   // widths first, then styles: one layout per drag move, not one per card
-  const widths = s.kiosks.map((k) => (s.cards[k.id] ? s.cards[k.id].strip.clientWidth : 0));
-  s.kiosks.forEach((k, i) => {
+  const widths = s.hosts.map((k) => (s.cards[k.id] ? s.cards[k.id].strip.clientWidth : 0));
+  s.hosts.forEach((k, i) => {
     const c = s.cards[k.id];
     if (!c) {return;}
     const w = widths[i];
@@ -38,7 +38,7 @@ export function showSelection(s: TimelineState, fa: number, fb: number): void {
   });
 }
 export function hideSelection(s: TimelineState): void {
-  for (const k of s.kiosks) {if (s.cards[k.id]) {s.cards[k.id].sel.style.display = 'none';}}
+  for (const k of s.hosts) {if (s.cards[k.id]) {s.cards[k.id].sel.style.display = 'none';}}
 }
 
 /* external=true → came from the event bus; don't re-publish (no loop).
@@ -60,7 +60,7 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
   const acW = ac.offsetWidth || 50;
   const axisW = axis.clientWidth;
   const widths = new Map<string, { w: number; magW: number }>();
-  for (const k of s.kiosks) {
+  for (const k of s.hosts) {
     const c = s.cards[k.id];
     if (c) {widths.set(k.id, { w: c.strip.clientWidth, magW: c.mag.offsetWidth || c.strip.clientHeight * 16 / 9 });}
   }
@@ -75,7 +75,7 @@ export function setCursor(s: TimelineState, t: number, hoveredCard: HTMLElement 
     l.el.classList.toggle('under-cursor', Math.abs(l.frac * axisW - acX) < l.half + acW / 2 + 2);
   }
 
-  for (const k of s.kiosks) {
+  for (const k of s.hosts) {
     const c = s.cards[k.id];
     if (!c) {continue;}
     const { w, magW } = widths.get(k.id)!;   // measured above for every card

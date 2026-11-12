@@ -21,7 +21,7 @@ describe('makeImageQueue', () => {
     }
     const loading = () => [...imgs].filter(([, i]) => i.getAttribute('src')).map(([ts]) => ts);
     await flush();
-    expect(loading().sort((a, b) => b - a)).toEqual([12, 11, 10, 9].slice(0, IMAGE_CONCURRENCY));
+    expect(loading().sort((a, b) => b - a)).toEqual([12, 11, 10, 9, 8, 7, 6, 5].slice(0, IMAGE_CONCURRENCY));
     // each finished image starts the newest one still waiting
     for (const ts of [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]) {
       imgs.get(ts)!.dispatchEvent(new Event(ts % 3 ? 'load' : 'error'));   // errors free a slot too
@@ -83,5 +83,31 @@ describe('makeImageQueue', () => {
     all[9].dispatchEvent(new Event('load'));
     await flush();
     expect(all.filter((i) => i.getAttribute('src')).length).toBe(IMAGE_CONCURRENCY);
+  });
+
+  test('a hung image lets go of its slot after the timeout, so others load', async () => {
+    // the queue starts on a microtask: that stays real
+    jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+    try {
+      const q = makeImageQueue(2, 1000);
+      const all = Array.from({ length: 4 }, (_, n) => {
+        const i = img();
+        q.add(i, `https://x/${n}.jpg`, n);
+        return i;
+      });
+      await Promise.resolve();
+      // the two newest start, and never answer
+      expect(all.filter((i) => i.getAttribute('src')).length).toBe(2);
+      jest.advanceTimersByTime(999);
+      expect(all.filter((i) => i.getAttribute('src')).length).toBe(2);
+      jest.advanceTimersByTime(1);
+      expect(all.filter((i) => i.getAttribute('src')).length).toBe(4);
+      // a late answer from a let-go image frees nothing twice
+      all[3].dispatchEvent(new Event('load'));
+      jest.advanceTimersByTime(5000);
+      await expect(q.idle()).resolves.toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

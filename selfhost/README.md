@@ -45,8 +45,10 @@ docker compose -f selfhost/docker-compose.yml up -d
 ```
 
 The backend and Grafana refuse to start while a token, key or password in
-`.env` is still the example's `replace-with-...` placeholder;
-`docker compose -f selfhost/docker-compose.yml logs` names which one.
+`.env` is missing, empty, or still the example's `replace-with-...`
+placeholder; `docker compose -f selfhost/docker-compose.yml logs` names
+which one. `VIEWER_TOKEN` is one of them: the backend refuses every read
+without a viewer token, and Grafana reads with this one.
 
 The first run builds the backend image and the plugin, so it takes a few
 minutes. Then open Grafana (user `admin`, password `GF_SECURITY_ADMIN_PASSWORD`
@@ -58,6 +60,10 @@ read-only in Grafana: to change its token, edit `VIEWER_TOKEN`, then
 
 Ports taken? Set `VT_PORT` and `GRAFANA_PORT` when you run compose, and keep
 `PUBLIC_URL` in `.env` on the same port as `VT_PORT`.
+
+Both ports listen on `127.0.0.1` only, so out of the box only this machine
+can open them. To use the stack from other machines, see
+[View it from other machines](#view-it-from-other-machines).
 
 ## Send it frames
 
@@ -122,14 +128,23 @@ pauses, is in [docs/API.md](../docs/API.md).
 
 ## View it from other machines
 
-Image URLs are built on `PUBLIC_URL`, so it must be the address your browser
-uses to reach the backend. For other machines on your network, set it to the
-host's name or address (`PUBLIC_URL=http://nas.lan:8787`), then
-`docker compose -f selfhost/docker-compose.yml up -d` again.
+The backend and Grafana listen on `127.0.0.1` only. For other machines on
+your network, in `.env`:
 
-This stack is meant for a trusted network. To reach it from the internet, put
-it behind a reverse proxy with TLS (and use the proxy's address as
-`PUBLIC_URL`) rather than exposing the ports.
+1. set `VT_BIND=0.0.0.0` and `GRAFANA_BIND=0.0.0.0`, so both listen on every
+   interface (or set a LAN address to listen on that one alone);
+2. set `PUBLIC_URL` to the address browsers use to reach the backend, the
+   host's name or address (`PUBLIC_URL=http://nas.lan:8787`): image URLs are
+   built on it;
+
+then `docker compose -f selfhost/docker-compose.yml up -d` again.
+
+Docker publishes ports past host firewalls such as ufw, so a bound port is
+open to everything that can reach the machine. This stack is meant for a
+trusted network. To reach it from the internet, put it behind a reverse
+proxy with TLS on the same machine (it reaches the default `127.0.0.1`
+ports, and its address is then `PUBLIC_URL`) rather than exposing the
+ports.
 
 ## Use your own Grafana
 
@@ -138,6 +153,11 @@ Start only the backend:
 ```bash
 docker compose -f selfhost/docker-compose.yml up -d backend
 ```
+
+The backend listens on `127.0.0.1` only. If your Grafana runs on another
+machine, or in a container that reaches the backend through the host, set
+`VT_BIND` in `.env` as in
+[View it from other machines](#view-it-from-other-machines).
 
 Then, in your Grafana:
 
@@ -181,6 +201,13 @@ Plan the disk accordingly.
 git pull
 docker compose -f selfhost/docker-compose.yml up -d --build
 ```
+
+> **Upgrading from a version that published the ports on every
+> interface:** the backend and Grafana now listen on `127.0.0.1` only. If
+> you view the stack from other machines, set `VT_BIND=0.0.0.0` and
+> `GRAFANA_BIND=0.0.0.0` in `.env` before running `up -d` (see
+> [View it from other machines](#view-it-from-other-machines)). The backend
+> and Grafana also refuse to start if a required value in `.env` is empty.
 
 ## How it works, and its limits
 

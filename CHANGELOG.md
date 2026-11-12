@@ -1,6 +1,9 @@
 # Changelog
 
-## 2.0.0 (2026-11-12)
+## 2.0.0-rc.1 (2026-11-12)
+
+The 2.0 pre-release: for trying on a real Grafana before the catalog
+submission. 2.0.0 follows with the same notes.
 
 ### Highlights
 
@@ -248,6 +251,45 @@
   dashboard annotations: with Demo data it returns the demo's events. The
   starter dashboard and the demo dashboards have a **Host events**
   annotation query.
+- **Pre-release audit** fixes:
+  - **Security:** a frame's image or video URL is used only with an
+    http(s), blob:, data:image/ or data:video/ scheme, or a relative one;
+    anything else is dropped. Frame images send no Referer. Folder listings
+    ignore `.`, `..` and names with slashes, encoded or not. The folder
+    route's bearer token reaches every path below the folder URL for anyone
+    who can query the data source ([docs/FOLDERS.md](docs/FOLDERS.md),
+    Security).
+  - **Fixed:** with the mouse resting on a strip, an auto-refreshing
+    dashboard leaked a hover flipbook each refresh (one more image loop or
+    looping video every time).
+  - **Fixed:** an image host that never answered stalled every strip's
+    images. An image now lets go of its place after 15 s, and 6 load at a
+    time.
+  - An open player carries on across a refresh with the new panel.
+  - **Fewer queries:** a slot's frames are asked for once for every host. A
+    folder lists newest first, so its listing cap drops the oldest days,
+    and keeps listings of past days for an hour. The panel parses its data
+    only when it changes.
+  - **Keyboard and screen readers:**
+    - The player doesn't take Space or the arrows while you type.
+    - It's a modal dialog that takes focus and gives it back.
+    - Its scrubber is a labelled slider, and its status is announced.
+    - A strip opens the player from the keyboard (Tab to it, ← → to move,
+      Enter to open).
+- **Reference worker and self-host kit** (not part of the plugin):
+  - **Reads fail closed:** a worker without `VIEWER_TOKEN` refuses reads
+    unless `OPEN_READS=1`. Upgrading a deployment with open reads needs one
+    or the other.
+  - `?k=` is accepted on image URLs only.
+  - A viewer-token entry with malformed `sites` grants nothing.
+  - Uploads are checked for size (2 MB) and the JPEG signature.
+  - Bounds on sources and history per site, registry writes, and `/frames`
+    windows.
+  - Authenticated JSON is `private`; images carry `nosniff`.
+  - Local dev: copy `worker/.dev.vars.example` to `worker/.dev.vars`.
+  - **Self-host:** ports bind to 127.0.0.1 unless `VT_BIND` and
+    `GRAFANA_BIND` are set, and an empty secret stops the stack from
+    starting.
 
 ## 1.2.3 (2026-10-16)
 

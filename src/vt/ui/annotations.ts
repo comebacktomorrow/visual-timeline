@@ -101,7 +101,7 @@ export function annTip(): AnnTip {
         linkify(tx, a.text);
         item.appendChild(tx);
       }
-      const shown = a.tags.filter((t) => !/^(?:source|kiosk|site):/.test(t));
+      const shown = a.tags.filter((t) => !/^(?:host|source|kiosk|site):/.test(t));
       if (shown.length) {
         const tg = document.createElement('div');
         tg.className = 'ag';

@@ -273,6 +273,95 @@ describe('the preview player', () => {
     expect(el.classList.contains('thumbs')).toBe(true);
   });
 
+  describe('keys and accessibility (M6)', () => {
+    const key = (target: EventTarget, k: string, extra: KeyboardEventInit = {}) =>
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...extra }));
+
+    test('Space and ←/→ work anywhere but in a field that takes typing, and not with Ctrl, Alt or Cmd', async () => {
+      teardown = mountPlayer(el, fr(30), ctx(), () => {});
+      await flush();
+      key(document.body, 'ArrowRight');
+      expect(hhmm()).toBe('10:31');
+      const fields = [document.createElement('input'), document.createElement('textarea'), document.createElement('select')];
+      const editable = document.createElement('div');
+      editable.setAttribute('contenteditable', 'true');
+      const inside = document.createElement('span');
+      editable.appendChild(inside);
+      for (const f of [...fields, inside]) {
+        document.body.appendChild(f.parentElement === editable ? editable : f);
+        const typed = key(f, 'ArrowRight');
+        expect(typed).toBe(true);   // not prevented: the field's own
+        expect(key(f, ' ')).toBe(true);
+      }
+      expect(hhmm()).toBe('10:31');
+      expect(el.querySelector('button[data-a="play"]')!.textContent).toBe('▶');
+      key(document.body, 'ArrowRight', { ctrlKey: true });
+      key(document.body, 'ArrowRight', { metaKey: true });
+      key(document.body, 'ArrowRight', { altKey: true });
+      expect(hhmm()).toBe('10:31');
+      // Shift is the slot's step
+      key(document.body, 'ArrowRight', { shiftKey: true });
+      await flush();
+      expect(hhmm()).toBe('10:35');
+      fields.forEach((f) => f.remove());
+      editable.remove();
+    });
+
+    test('Space on a button presses the button, not Play', async () => {
+      teardown = mountPlayer(el, fr(30), ctx(), () => {});
+      await flush();
+      expect(key(el.querySelector('button[data-a="next"]')!, ' ')).toBe(true);
+      expect(el.querySelector('button[data-a="play"]')!.textContent).toBe('▶');
+    });
+
+    test('the scrubber is a slider with a value: the playhead\'s time, read out as shown', async () => {
+      teardown = mountPlayer(el, fr(30), ctx(), () => {});
+      await flush();
+      const scrub = el.querySelector<HTMLElement>('.scrub')!;
+      expect(scrub.getAttribute('role')).toBe('slider');
+      expect(scrub.getAttribute('aria-valuemin')).toBe(String(at(30)));
+      expect(scrub.getAttribute('aria-valuemax')).toBe(String(at(35) - 1));
+      expect(scrub.getAttribute('aria-valuenow')).toBe(String(at(30)));
+      expect(scrub.getAttribute('aria-valuetext')).toBe('10:30:00');
+      press('next');
+      expect(scrub.getAttribute('aria-valuenow')).toBe(String(at(31)));
+      expect(scrub.getAttribute('aria-valuetext')).toBe('10:31:00');
+    });
+
+    test('the scrubber\'s own keys: ←/→ a step, Home and End the slot\'s first and last', async () => {
+      teardown = mountPlayer(el, fr(32), ctx(), () => {});
+      await flush();
+      const scrub = el.querySelector<HTMLElement>('.scrub')!;
+      expect(key(scrub, 'ArrowRight')).toBe(false);   // handled
+      expect(hhmm()).toBe('10:33');
+      key(scrub, 'ArrowLeft');
+      key(scrub, 'ArrowLeft');
+      expect(hhmm()).toBe('10:31');
+      key(scrub, 'End');
+      expect(hhmm()).toBe('10:34');
+      key(scrub, 'Home');
+      expect(hhmm()).toBe('10:30');
+      expect(scrub.getAttribute('aria-valuetext')).toBe('10:30:00');
+      expect(times).toEqual([]);
+    });
+
+    test('its pictures send no Referer', async () => {
+      teardown = mountPlayer(el, fr(30), ctx(), () => {});
+      await flush();
+      press('style-thumbs');
+      const imgs = [...el.querySelectorAll<HTMLImageElement>('img')];
+      expect(imgs.length).toBeGreaterThan(1);
+      expect(imgs.every((i) => i.referrerPolicy === 'no-referrer')).toBe(true);
+    });
+
+    test('what the stage says (offline, loading video…) is in a polite live region', async () => {
+      teardown = mountPlayer(el, fr(26), ctx(), () => {});
+      await flush();
+      const state = el.querySelector('.stage .state')!;
+      expect(state.getAttribute('aria-live')).toBe('polite');
+    });
+  });
+
   describe('a video clip in the slot (M10c)', () => {
     // 10:31 to 10:34 recorded as a clip, with a larger version
     const clip = { from: at(31), to: at(34), url: 'c.webm', hi: 'c-hi.webm' };
@@ -295,6 +384,28 @@ describe('the preview player', () => {
       Object.defineProperty(v, 'readyState', { configurable: true, value: 1 });
       v.dispatchEvent(new Event('loadedmetadata'));
     };
+
+    test('Play toggled before the video\'s metadata arrives starts it once, not once per press (L3)', async () => {
+      const rafs = jest.spyOn(window, 'requestAnimationFrame');
+      teardown = mountPlayer(el, fr(30), clipCtx(), () => {});
+      await flush();
+      press('next');   // 10:31: in the clip, its video not loaded yet
+      const v = el.querySelector('.stage video:not(.spare)') as HTMLVideoElement;
+      press('play'); press('play'); press('play');   // play, pause, play
+      metadata(v, 30);
+      await flush();
+      expect(played).toBe(1);
+      expect(rafs).toHaveBeenCalledTimes(1);
+      // paused before it arrives: nothing starts when it does
+      press('play');
+      Object.defineProperty(v, 'readyState', { configurable: true, value: 0 });
+      press('play');
+      press('play');
+      v.dispatchEvent(new Event('loadedmetadata'));
+      await flush();
+      expect(el.querySelector('button[data-a="play"]')!.textContent).toBe('▶');
+      expect(played).toBe(1);
+    });
 
     test('it plays over the stills: a plain bar on the scrubber, no ticks under it', async () => {
       teardown = mountPlayer(el, fr(30), clipCtx(), () => {});

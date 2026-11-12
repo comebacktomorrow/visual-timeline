@@ -44,7 +44,8 @@ export interface SourceDecl {
 }
 
 /* One lo-variant frame from GET /frames. The API names its source
- * `source`; the demo backend writes `kiosk`. The core reads ts and url. */
+ * `source`, as the demo backend does; `kiosk` is its 1.x name, still
+ * accepted. The core reads ts and url. */
 export interface Frame {
   ts: number;
   url: string;
@@ -88,7 +89,9 @@ export interface Era {
 }
 
 /* The data layer both mounts read through: the API backend (makeApiBackend)
- * or the demo one. The demo's kiosks() answers synchronously. */
+ * or the demo one. The demo's kiosks() answers synchronously. `kiosks` is
+ * the 1.x name for a backend's hosts, kept: a host page can hand the core
+ * its own backend. */
 export interface Backend {
   kiosks(sites?: string[] | null): Promise<SourceDecl[]> | SourceDecl[];
   frames(site: string, id: string, from: number, to: number, step: number): Promise<Frame[]>;

@@ -6,8 +6,10 @@ completes them, and delete this file once the plugin is published and signed.
 Submitting is the maintainer's call: an agent prepares, the maintainer
 submits.
 
-**State as of 2026-11-12:** 2.0's code and docs are merged (#130 to #158).
-Video clips (#157, #158) are labelled experimental.
+**State as of 2026-11-12:** 2.0's code and docs are merged (#130 to #158),
+with the pre-release audit's fixes (#167) and dependency updates (#168).
+Video clips (#157, #158) are labelled experimental. 2.0.0-rc.1 is the
+pre-release (section 2).
 Grafana's review declined 1.2.3 because using it meant running this
 project's backend or building one to its API; 2.0 removes that: the panel
 reads frames from any data source, and the Visual Timeline data source reads
@@ -44,7 +46,8 @@ frontend-only.
 
 - [ ] Merge any open PRs that should be in 2.0 (check
       [open PRs](https://github.com/comebacktomorrow/visual-timeline/pulls)).
-      Dependabot #117 waits for sign-plugin 4's Node 24.5 requirement.
+      Dependabot #166 (sign-plugin 4) waits for a move to Node 24.5 or
+      later; CI and the release workflow use Node 22.
 - [ ] **Screenshots.** The catalog shows `info.screenshots` from
       `src/plugin.json`: a dark and a light dashboard shot from 1.x's demo.
       Optionally replace or add shots of 2.0: the demo stack's Rivers and
@@ -58,9 +61,18 @@ frontend-only.
 
 ## 2. Cut the release
 
-The release PR (version 2.0.0 in `package.json` and `package-lock.json`, and
-the `## 2.0.0` CHANGELOG section with its Highlights) is merged before
-tagging. For a later version, substitute its number.
+**First, the pre-release.** The release PR sets version 2.0.0-rc.1 (in
+`package.json` and `package-lock.json`) and the CHANGELOG section
+`## 2.0.0-rc.1`. Cut it with the steps below, using `2.0.0-rc.1` for the
+version, and publish it as a GitHub **pre-release** (tick "Set as a
+pre-release"). Don't submit it: install its zip on a real Grafana and try
+it. Then a second PR sets 2.0.0
+(`npm version 2.0.0 --no-git-tag-version`), renames the CHANGELOG heading
+to `## 2.0.0 (<date>)` and drops its pre-release line, with any fixes the
+pre-release turned up (another rc if they're large). Cut 2.0.0 the same
+way, publish it as the latest release, and submit that.
+
+The steps for 2.0.0 (for another version, substitute its number):
 
 - [ ] Tag the merge commit on `main`:
       `git tag v2.0.0 && git push origin v2.0.0`. The tag must match
