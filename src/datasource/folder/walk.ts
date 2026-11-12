@@ -2,13 +2,24 @@
  * way to list one folder. Date folders the template names by time alone
  * ({YYYY}/{MM}/{DD}/) are built for the range, not listed; folders named by
  * a host, site or variant are listed and matched; the last level's files are
- * matched and timed. Pure apart from the lister passed in. */
+ * matched and timed. Folders are listed newest first, so a walk cut short
+ * by its listing cap loses the oldest times (M5). Pure apart from the lister
+ * passed in. */
 import type { Listing } from './listings';
-import { fillSegment, FolderTemplate, isTimeOnly, matchSegment, Segment, startAfterName, timeOf, timeVars } from './template';
+import { fillSegment, FolderTemplate, isTimeOnly, matchSegment, Segment, startAfterName, timeOf, TimeUnit, timeVars, unitEnd } from './template';
 
-/** Lists one folder ("" is the base). startAfter: names after it are enough
- * (a hint: a lister that can't use it returns the whole folder). */
-export type Lister = (folder: string, opts?: { startAfter?: string }) => Promise<Listing>;
+export interface ListOptions {
+  /** names after it are enough (a hint: a lister that can't use it returns
+   * the whole folder) */
+  startAfter?: string;
+  /** when the time the folder's name covers ends (its day, hour or month,
+   * in the walk's zone); unset when its name covers no time. A folder whose
+   * time has ended changes little, so a lister may keep its listing longer. */
+  ends?: number;
+}
+
+/** Lists one folder ("" is the base). */
+export type Lister = (folder: string, opts?: ListOptions) => Promise<Listing>;
 
 export interface FoundFrame {
   /** relative to the base: the image's URL is the base plus this */
@@ -57,7 +68,38 @@ function dateNames(seg: Segment, vars: Record<string, string>, from: number, to:
     const name = fillSegment(seg, merged);
     if (name !== null && !out.has(name)) {out.set(name, merged);}
   }
-  return [...out.entries()].map(([name, v]) => ({ name, vars: v }));
+  // newest first
+  return [...out.entries()].map(([name, v]) => ({ name, vars: v })).reverse();
+}
+
+/* the finest time unit a folder's bound names cover; null when they name
+ * none, or an instant (seconds, an epoch) */
+function unitOfVars(vars: Record<string, string>): TimeUnit | null {
+  if (vars.ss !== undefined || vars.epoch !== undefined || vars.epoch_ms !== undefined) {return null;}
+  if (vars.mm !== undefined) {return 'minute';}
+  if (vars.HH !== undefined) {return 'hour';}
+  if (vars.DD !== undefined || vars.DDD !== undefined) {return 'day';}
+  if (vars.MM !== undefined) {return 'month';}
+  return vars.YYYY !== undefined ? 'year' : null;
+}
+
+/* when the time a folder's name covers starts and ends; null when it names
+ * no span of time */
+function folderSpan(vars: Record<string, string>, tz: string): { start: number; end: number } | null {
+  const unit = unitOfVars(vars);
+  const start = unit ? timeOf(vars, tz) : null;
+  return unit && start != null ? { start, end: unitEnd(start, unit, tz) } : null;
+}
+
+/* partials newest first, by the time their folders name (stable: those
+ * that name none keep their order, after the rest) */
+function newestFirst<P extends { vars: Record<string, string> }>(partials: P[], tz: string): P[] {
+  const at = new Map(partials.map((p) => [p, folderSpan(p.vars, tz)?.start ?? null]));
+  return [...partials].sort((a, b) => {
+    const ta = at.get(a)!, tb = at.get(b)!;
+    if (ta === null || tb === null) {return (ta === null ? 1 : 0) - (tb === null ? 1 : 0);}
+    return tb - ta;
+  });
 }
 
 /* runs fn over items, at most `limit` at a time, keeping their order */
@@ -125,7 +167,10 @@ export async function walkFrames(tpl: FolderTemplate, list: Lister, o: WalkOptio
         }
       }
     } else {
-      const listed = await pool(partials, CONCURRENCY, async (p) => ({ p, l: await listOnce(p.folder) }));
+      const listed = await pool(newestFirst(partials, o.tz), CONCURRENCY, async (p) => {
+        const span = folderSpan(p.vars, o.tz);
+        return { p, l: await listOnce(p.folder, span ? { ends: span.end } : undefined) };
+      });
       for (const { p, l } of listed) {
         for (const name of l.dirs) {
           const vars = matchSegment(seg, name, p.vars);
@@ -138,9 +183,13 @@ export async function walkFrames(tpl: FolderTemplate, list: Lister, o: WalkOptio
 
   const frames: FoundFrame[] = [];
   const startAfterOk = sortsByTime(last);
-  await pool(partials, CONCURRENCY, async (p) => {
-    const startAfter = startAfterOk ? startAfterName(last, p.vars, o.from, o.tz) ?? undefined : undefined;
-    const l = await listOnce(p.folder, startAfter ? { startAfter } : undefined);
+  await pool(newestFirst(partials, o.tz), CONCURRENCY, async (p) => {
+    const span = folderSpan(p.vars, o.tz);
+    // a folder that starts inside the range needs all its names: no bound,
+    // so its listing is the same whatever the range's start
+    const startAfter = startAfterOk && !(span && span.start >= o.from) ? startAfterName(last, p.vars, o.from, o.tz) ?? undefined : undefined;
+    const opts: ListOptions = { ...(startAfter ? { startAfter } : {}), ...(span ? { ends: span.end } : {}) };
+    const l = await listOnce(p.folder, Object.keys(opts).length ? opts : undefined);
     for (const name of l.files) {
       const vars = matchSegment(last, name, p.vars);
       if (!vars || !vars.host || !passes(vars, o)) {continue;}

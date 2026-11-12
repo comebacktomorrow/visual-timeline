@@ -11,7 +11,7 @@ import type { Frame } from '../../vt/types';
 import type { VisualTimelineOptions } from '../types';
 import { Listing, ListingFormat, listingPath, parseListing } from './listings';
 import { compileTemplate, finestUnit, FolderTemplate, UNIT_MS, unitEnd } from './template';
-import { walkFrames } from './walk';
+import { ListOptions, walkFrames } from './walk';
 
 /** routes[].path in datasource/plugin.json: the folder's base URL. */
 export const FOLDER_ROUTE = 'folder';
@@ -43,6 +43,14 @@ export function proxyTextFetch(uid: string): TextFetch {
 /** A listing is reused this long: a dashboard load asks for the same folders
  * from every panel, variable and refresh. */
 export const LISTING_TTL_MS = 60_000;
+/** A date folder whose day, hour or month ended at least PAST_GRACE_MS ago
+ * gets no new frames, so its listing is reused this long (M5): a long range
+ * re-lists only its recent folders on each refresh. The grace lets uploads
+ * that were on their way when the folder's time ended land first. */
+export const PAST_LISTING_TTL_MS = 3600_000;
+export const PAST_GRACE_MS = 15 * 60_000;
+/** The most listings kept; past it the oldest kept is dropped. */
+const MAX_CACHED = 500;
 const MAX_S3_PAGES = 20;
 
 const trimSlashes = (s: string) => {
@@ -64,7 +72,7 @@ export class FolderSource {
   private compiled: FolderTemplate | null = null;
   private readonly videoRaw: string;
   private compiledVideo: FolderTemplate | null = null;
-  private cache = new Map<string, { at: number; p: Promise<Listing> }>();
+  private cache = new Map<string, { at: number; ttl: number; p: Promise<Listing> }>();
 
   constructor(o: VisualTimelineOptions, private readonly fetchText: TextFetch) {
     this.listing = o.listing || 'html';
@@ -91,20 +99,24 @@ export class FolderSource {
     return (this.compiledVideo ??= compileTemplate(this.videoRaw, 'video path template'));
   }
 
-  /* one folder's listing, cached; S3 pages followed; a missing folder (a day
-   * with no frames) is empty */
-  private list = (folder: string, opts?: { startAfter?: string }): Promise<Listing> => {
+  /* one folder's listing, cached (longer once its time has passed); S3
+   * pages followed; a missing folder (a day with no frames) is empty */
+  private list = (folder: string, opts?: ListOptions): Promise<Listing> => {
     // only an S3 listing starts after a key; HTML and JSON listings are the
     // same whatever the range, so one answer serves them all
     const startAfter = this.listing === 's3' ? opts?.startAfter : undefined;
     const key = folder + '\u0000' + (startAfter ?? '');
     const now = Date.now();
     const hit = this.cache.get(key);
-    if (hit && now - hit.at < LISTING_TTL_MS) {return hit.p;}
+    if (hit && now - hit.at < hit.ttl) {return hit.p;}
+    const past = opts?.ends !== undefined && opts.ends + PAST_GRACE_MS <= now;
     const p = this.fetchListing(folder, startAfter ? { startAfter } : undefined);
-    this.cache.set(key, { at: now, p });
-    p.catch(() => this.cache.delete(key));
-    if (this.cache.size > 500) {this.cache.clear();}
+    const entry = { at: now, ttl: past ? PAST_LISTING_TTL_MS : LISTING_TTL_MS, p };
+    // newest last, so the oldest kept is the first dropped
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    p.catch(() => { if (this.cache.get(key) === entry) {this.cache.delete(key);} });
+    while (this.cache.size > MAX_CACHED) {this.cache.delete(this.cache.keys().next().value!);}
     return p;
   };
 

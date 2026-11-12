@@ -97,8 +97,27 @@ with their index first (`ffmpeg -movflags +faststart`).
   Private buckets aren't supported yet.
 
 A listing is reused for a minute, so a dashboard's panels and variables share
-it. A query lists at most 200 folders; past that, the panel shows a notice and
-some hosts or times aren't read.
+it. A date folder whose day, hour or month ended more than 15 minutes ago is
+reused for an hour, so a long range re-lists only its recent folders on each
+refresh. A frame uploaded later than that into a past folder can take up to an
+hour to appear.
+
+A query lists at most 200 folders. It lists the newest first, so past the cap
+the oldest times aren't read, for every host alike, and the panel shows a
+notice. Folders that name no time (a host's folder of every frame it ever took)
+can't be ordered by time, so there the cap can leave out whole hosts.
+
+For long ranges, choose a layout that needs few folders. Each host needs one
+listing per date folder the range touches, plus one for the folder of hosts
+unless the query names them:
+
+- **Day folders:** 30 days is 31 listings per host, so 6 hosts fit.
+- **Month folders** (`{host}/{YYYY}-{MM}/…`): a year is 13 per host, so 15
+  hosts fit.
+- **Hour folders:** a day is 25 per host, so 7 hosts fit. They suit short
+  ranges only.
+- **No date folders** (`{host}/{epoch}.jpg`): one listing per host, whatever
+  the range, but each listing holds every frame the host has.
 
 ## Missing frames
 
