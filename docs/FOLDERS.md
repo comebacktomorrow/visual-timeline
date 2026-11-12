@@ -26,7 +26,7 @@ needed: the folder's listing is the index.
 | **Expected every**       | Optional: how often each host takes a frame (`1m`, `30s`), as a promise. A frame missing past it is drawn red, as offline. Empty: no promise; a missing frame is never offline (below).                               |
 | **Time zone**            | The zone the times in names are in. Empty: UTC.                                                                                                                                                                       |
 | **Small / Large images** | With `{variant}`: its value for strips and grids, and for the click-in preview.                                                                                                                                       |
-| **Bearer token**         | Optional; sent by Grafana's server with each listing.                                                                                                                                                                 |
+| **Bearer token**         | Optional; sent by Grafana's server with each listing. Anyone who can query the data source can use it (Security, below).                                                                                              |
 
 ## The path template
 
@@ -118,6 +118,22 @@ unless the query names them:
   ranges only.
 - **No date folders** (`{host}/{epoch}.jpg`): one listing per host, whatever
   the range, but each listing holds every frame the host has.
+
+## Security
+
+Grafana's proxy route for the folder isn't limited to the listings the data
+source builds. Anyone who can query the data source (by default every Viewer)
+can ask Grafana's server to GET any path below the folder URL, and the bearer
+token is sent with it. So:
+
+- **Make the token read-only, and scope it to the folder.** Never use a token
+  that can write, or that reaches other folders, buckets or APIs.
+- **Serve only the frames at the folder URL.** Use a dedicated host or virtual
+  host whose root is the frames' folder, not a path on a server that also
+  serves other files or an API. Don't rely on the folder URL's path to fence
+  the token in.
+
+The token itself never reaches the browser. Only GET is allowed.
 
 ## Missing frames
 
