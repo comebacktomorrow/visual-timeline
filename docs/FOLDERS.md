@@ -152,4 +152,6 @@ job: the uploader can post both (as `selfhost/snapshot-uploader.sh` does), a
 bucket event can trigger a small resize job, or an on-the-fly resizer (imgproxy,
 imagor, thumbor, nginx `image_filter`, Cloudflare Image Transformations) can sit
 in front of the folder. Full-size images work, but cost bandwidth and browser
-decoding with many hosts.
+decoding with many hosts: a strip holds an image per slot (a few hundred per
+host), each decoded at its full size, so keep the small size to about 320 px
+wide or less.

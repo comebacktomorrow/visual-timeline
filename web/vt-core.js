@@ -1063,10 +1063,10 @@ var VTCore = (() => {
     const qs = q2.toString();
     return "/sources" + (qs ? "?" + qs : "");
   }
-  function framesPath(site, kiosk, from, to, step) {
+  function framesPath(site, host, from, to, step) {
     const q2 = new URLSearchParams();
     q2.set("site", site);
-    q2.set("source", kiosk);
+    q2.set("source", host);
     q2.set("from", String(Math.round(from)));
     q2.set("to", String(Math.round(to)));
     q2.set("step", String(step));
@@ -1174,13 +1174,13 @@ var VTCore = (() => {
         }
         return list;
       },
-      async frames(site, kiosk, from, to, step) {
-        const r = await get(framesPath(site, kiosk, from, to, step));
+      async frames(site, host, from, to, step) {
+        const r = await get(framesPath(site, host, from, to, step));
         if (!r.ok) {
           throw await apiError("frames", r, !!apiFetch);
         }
         const rows = await r.json();
-        const decl = decls.get(site + "/" + kiosk);
+        const decl = decls.get(site + "/" + host);
         for (const f of rows) {
           f.url = image(f.url);
           if (f.url_hi) {
@@ -1339,7 +1339,7 @@ var VTCore = (() => {
        color:var(--ktl-text); font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif; }
 .ktl * { box-sizing:border-box; margin:0; padding:0; }
 .ktl .cards { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:6px; overflow-y:auto; }
-/* cards share panel height equally (fewer kiosks \u2192 taller strips), but
+/* cards share panel height equally (fewer hosts \u2192 taller strips), but
    never crush below a usable minimum \u2014 past that the list scrolls */
 .ktl .card { flex:1 1 0; min-height:76px; display:flex; flex-direction:column; background:var(--ktl-bg2);
              border:1px solid var(--ktl-border); border-radius:4px; overflow:hidden; transition:opacity 120ms ease;
@@ -1400,6 +1400,9 @@ var VTCore = (() => {
 .ktl .card-head .cad { margin-left:auto; font-size:10px; color:var(--ktl-dim); }
 .ktl .strip { flex:1 1 auto; min-height:0; position:relative; display:flex; align-items:stretch;
               cursor:crosshair; background:var(--ktl-media); }
+/* a strip has focus only from the keyboard (a press doesn't focus it) */
+.ktl .strip:focus { outline:none; }
+.ktl .strip:focus-visible { outline:2px solid var(--ktl-accent); outline-offset:-2px; }
 .ktl .slot { flex:1 1 0; min-width:0; position:relative; overflow:hidden; }
 /* Frame delineation tints the FRAME: overflow clips the img to the padding
    box, so a border column would expose the #111 strip bg underneath and
@@ -1498,6 +1501,7 @@ var VTCore = (() => {
  * frame: the caption below must be free to overflow the magnifier */
 .ktl .mag img { width:100%; height:100%; object-fit:contain; display:block; background:var(--ktl-mag-bg);
                 clip-path:inset(0); }
+.ktl .mag img:not([src]) { visibility:hidden; }   /* before the cursor first sets it: no broken-image box */
 .ktl.fill .mag img { object-fit:cover; }
 .ktl.fill .tile .t-img img { object-fit:cover; }
 .ktl .mag.gap { border-color:var(--ktl-off);
@@ -1599,7 +1603,9 @@ var VTCore = (() => {
 .ktl-pop img { display:block; max-width:min(560px, 50vw); max-height:55vh; border-radius:2px; }
 .ktl-pop .cap { text-align:center; color:var(--ktl-text); font-size:11px; padding:3px 0 0;
                 font-variant-numeric:tabular-nums; }
-/* the preview as a player (M10): stage, scrubber, controls */
+/* the preview as a player (M10): stage, scrubber, controls. The popup
+ * itself takes focus when it opens: no ring round all of it */
+.ktl-pop.player:focus { outline:none; }
 .ktl-pop.player { cursor:default; padding:6px; width:min(720px, 92vw); max-width:92vw; font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;
                   color:var(--ktl-text); display:flex; flex-direction:column; gap:6px; }
 .ktl-pop.player .stage { position:relative; display:flex; align-items:center; justify-content:center; background:var(--ktl-media);
@@ -1738,14 +1744,14 @@ var VTCore = (() => {
   var DIMS = { "source-3": [288, 216], "source-5": [216, 384] };
   var xml = (t) => t.replace(/[&<>'"]/g, (c) => "&#" + c.charCodeAt(0) + ";");
   function makeBackend(P, SPAN, tz) {
-    function renderMockFrame(site, kiosk, ts, step) {
-      const dims = DIMS[kiosk] || [384, 216];
+    function renderMockFrame(site, host, ts, step) {
+      const dims = DIMS[host] || [384, 216];
       const w = dims[0], h = dims[1];
-      const hue = HUES[kiosk] != null ? HUES[kiosk] : 130;
-      const own = DEMO_ZONES[kiosk];
+      const hue = HUES[host] != null ? HUES[host] : 130;
+      const own = DEMO_ZONES[host];
       const phase = ts / step % 20 / 20;
       const big = Math.round(Math.min(w * 0.16, h * 0.18));
-      const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}' viewBox='0 0 ${w} ${h}'><rect width='${w}' height='${h}' fill='hsl(${hue},30%,14%)'/><rect width='${w}' height='${Math.round(h * 0.14)}' fill='hsl(${hue},60%,30%)'/><text x='8' y='${Math.round(h * 0.1)}' font-family='sans-serif' font-weight='bold' font-size='${Math.round(h * 0.06)}' fill='#fff'>${xml(site)} / ${xml(kiosk)}</text><text x='${w / 2}' y='${Math.round(h * 0.55)}' text-anchor='middle' font-family='monospace' font-weight='bold' font-size='${big}' fill='hsl(${hue},70%,72%)'>${xml(fmtTime(ts, own || tz))}</text>` + (own ? `<text x='${w / 2}' y='${Math.round(h * 0.655)}' text-anchor='middle' font-family='sans-serif' font-size='${Math.round(Math.min(h * 0.055, w * 0.06))}' fill='hsl(${hue},70%,72%)'>${xml(zoneLabel(own))} local time</text>` : "") + `<rect x='${(w * 0.04 + phase * w * 0.8).toFixed(1)}' y='${(h * 0.72).toFixed(1)}' width='${(w * 0.13).toFixed(1)}' height='${(h * 0.16).toFixed(1)}' fill='hsl(${hue},80%,55%)'/></svg>`;
+      const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}' viewBox='0 0 ${w} ${h}'><rect width='${w}' height='${h}' fill='hsl(${hue},30%,14%)'/><rect width='${w}' height='${Math.round(h * 0.14)}' fill='hsl(${hue},60%,30%)'/><text x='8' y='${Math.round(h * 0.1)}' font-family='sans-serif' font-weight='bold' font-size='${Math.round(h * 0.06)}' fill='#fff'>${xml(site)} / ${xml(host)}</text><text x='${w / 2}' y='${Math.round(h * 0.55)}' text-anchor='middle' font-family='monospace' font-weight='bold' font-size='${big}' fill='hsl(${hue},70%,72%)'>${xml(fmtTime(ts, own || tz))}</text>` + (own ? `<text x='${w / 2}' y='${Math.round(h * 0.655)}' text-anchor='middle' font-family='sans-serif' font-size='${Math.round(Math.min(h * 0.055, w * 0.06))}' fill='hsl(${hue},70%,72%)'>${xml(zoneLabel(own))} local time</text>` : "") + `<rect x='${(w * 0.04 + phase * w * 0.8).toFixed(1)}' y='${(h * 0.72).toFixed(1)}' width='${(w * 0.13).toFixed(1)}' height='${(h * 0.16).toFixed(1)}' fill='hsl(${hue},80%,55%)'/></svg>`;
       return "data:image/svg+xml," + encodeURIComponent(svg);
     }
     return {
@@ -1770,18 +1776,18 @@ var VTCore = (() => {
           return labelPauses(decl);
         }));
       },
-      frames(site, kiosk, from, to, step) {
+      frames(site, host, from, to, step) {
         const out = [];
         const gapA = P.from + SPAN * 0.35, gapB = P.from + SPAN * 0.55;
         const first = Math.ceil(from / step) * step;
         for (let ts = first; ts <= Math.min(to, Date.now()); ts += step) {
-          if (kiosk === "source-2" && ts > gapA && ts < gapB) {
+          if (host === "source-2" && ts > gapA && ts < gapB) {
             continue;
           }
-          if (kiosk === "source-4" && ts > P.from + SPAN * 0.2 && ts < P.from + SPAN * 0.45) {
+          if (host === "source-4" && ts > P.from + SPAN * 0.2 && ts < P.from + SPAN * 0.45) {
             continue;
           }
-          out.push({ kiosk, ts, url: renderMockFrame(site, kiosk, ts, step) });
+          out.push({ source: host, ts, url: renderMockFrame(site, host, ts, step) });
         }
         return Promise.resolve(out);
       },
@@ -1901,7 +1907,7 @@ var VTCore = (() => {
           linkify(tx, a.text);
           item.appendChild(tx);
         }
-        const shown = a.tags.filter((t) => !/^(?:source|kiosk|site):/.test(t));
+        const shown = a.tags.filter((t) => !/^(?:host|source|kiosk|site):/.test(t));
         if (shown.length) {
           const tg = document.createElement("div");
           tg.className = "ag";
@@ -1946,8 +1952,9 @@ var VTCore = (() => {
   }
 
   // src/vt/ui/imageQueue.ts
-  var IMAGE_CONCURRENCY = 4;
-  function makeImageQueue(concurrency = IMAGE_CONCURRENCY) {
+  var IMAGE_CONCURRENCY = 6;
+  var IMAGE_TIMEOUT_MS = 15e3;
+  function makeImageQueue(concurrency = IMAGE_CONCURRENCY, timeoutMs = IMAGE_TIMEOUT_MS) {
     let pending = [];
     let sorted = true;
     let active = 0;
@@ -1955,6 +1962,7 @@ var VTCore = (() => {
     let scheduled = false;
     let pumping = false;
     let idleWaiters = [];
+    const timers = /* @__PURE__ */ new Set();
     function settleIdle() {
       if (active === 0 && pending.length === 0) {
         const w = idleWaiters;
@@ -1976,11 +1984,16 @@ var VTCore = (() => {
         const job = pending.pop();
         active++;
         let finished = false;
+        let timer = null;
         const done = () => {
           if (finished) {
             return;
           }
           finished = true;
+          if (timer) {
+            clearTimeout(timer);
+            timers.delete(timer);
+          }
           job.img.removeEventListener("load", done);
           job.img.removeEventListener("error", done);
           active--;
@@ -1991,6 +2004,9 @@ var VTCore = (() => {
         job.img.src = job.url;
         if (job.img.complete && job.img.naturalWidth) {
           done();
+        } else if (!finished) {
+          timer = setTimeout(done, timeoutMs);
+          timers.add(timer);
         }
       }
       pumping = false;
@@ -2017,6 +2033,10 @@ var VTCore = (() => {
       stop() {
         stopped = true;
         pending = [];
+        for (const t of timers) {
+          clearTimeout(t);
+        }
+        timers.clear();
         const w = idleWaiters;
         idleWaiters = [];
         w.forEach((r) => r());
@@ -2291,10 +2311,92 @@ var VTCore = (() => {
     }
   };
 
+  // src/vt/ui/media.ts
+  function makeVideo(muted, preload) {
+    const v = document.createElement("video");
+    v.muted = muted;
+    v.playsInline = true;
+    if (preload !== void 0) {
+      v.preload = preload;
+    }
+    return v;
+  }
+  function releaseVideo(v) {
+    if (!v.paused) {
+      v.pause();
+    }
+    v.removeAttribute("src");
+    try {
+      v.load();
+    } catch {
+    }
+  }
+  function loopClipSpan(v, span, rate, hooks = {}) {
+    const from = () => videoTime(span.clip, span.from, v.duration);
+    const to = () => videoTime(span.clip, span.to, v.duration);
+    const again = () => {
+      v.currentTime = from();
+      v.playbackRate = rate;
+      playVideo(v).catch(() => {
+      });
+    };
+    v.onloadedmetadata = () => {
+      hooks.metadata?.(v);
+      again();
+    };
+    v.ontimeupdate = () => {
+      hooks.time?.(clipTime(span.clip, v.currentTime, v.duration));
+      if (v.currentTime >= to() - 0.05) {
+        again();
+      }
+    };
+    v.onended = again;
+    v.src = span.clip.url;
+    return () => {
+      v.onloadedmetadata = v.ontimeupdate = v.onended = null;
+    };
+  }
+  function loadImage(url, onload) {
+    const p = new Image();
+    p.referrerPolicy = "no-referrer";
+    if (onload) {
+      p.onload = onload;
+    }
+    p.src = url;
+    return p;
+  }
+  function preloadAfter(frames, t, n = 3) {
+    const j = Math.max(0, frames.findIndex((f) => f.ts > t));
+    for (let k = 0; k < n && frames.length; k++) {
+      loadImage(frames[(j + k) % frames.length].url);
+    }
+  }
+
   // src/vt/ui/clipLength.ts
   var PROBE_MS = 4e3;
-  var lengths = /* @__PURE__ */ new Map();
-  var ratios = /* @__PURE__ */ new Map();
+  var REMEMBER_MAX = 500;
+  var Recent = class {
+    constructor() {
+      this.m = /* @__PURE__ */ new Map();
+    }
+    get(k) {
+      const v = this.m.get(k);
+      if (v !== void 0) {
+        this.m.delete(k);
+        this.m.set(k, v);
+      }
+      return v;
+    }
+    set(k, v) {
+      this.m.delete(k);
+      this.m.set(k, v);
+      if (this.m.size > REMEMBER_MAX) {
+        this.m.delete(this.m.keys().next().value);
+      }
+    }
+  };
+  var lengths = new Recent();
+  var ratios = new Recent();
   function noteClipLength(url, seconds) {
     if (Number.isFinite(seconds) && seconds > 0) {
       lengths.set(url, seconds);
@@ -2306,9 +2408,7 @@ var VTCore = (() => {
       return Promise.resolve(known);
     }
     return new Promise((resolve2) => {
-      const v = document.createElement("video");
-      v.preload = "metadata";
-      v.muted = true;
+      const v = makeVideo(true, "metadata");
       let timer = null;
       const done = (s) => {
         if (timer) {
@@ -2318,11 +2418,7 @@ var VTCore = (() => {
           return;
         }
         v.onloadedmetadata = v.onerror = null;
-        v.removeAttribute("src");
-        try {
-          v.load();
-        } catch {
-        }
+        releaseVideo(v);
         resolve2(s);
       };
       v.onloadedmetadata = () => {
@@ -2356,13 +2452,13 @@ var VTCore = (() => {
     return true;
   }
 
-  // src/vt/ui/player.ts
+  // src/vt/ui/playerPrefs.ts
   var PREFS_KEY = "ktl-player";
   var FPS = [1, 2, 4, 8, 16];
   var SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
   var fmtRate = (r) => (r === 0.25 ? "\xBC" : r === 0.5 ? "\xBD" : String(Math.round(r * 10) / 10)) + "\xD7";
-  function loadPrefs(ctx) {
-    const base = { style: ctx.scrubber ?? "ticks", fps: 4, hd: true, muted: true };
+  function loadPrefs(style = "ticks") {
+    const base = { style, fps: 4, hd: true, muted: true };
     try {
       const p = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
       return {
@@ -2381,222 +2477,24 @@ var VTCore = (() => {
     } catch {
     }
   }
-  var THUMB_PX = 48;
+
+  // src/vt/ui/playerVideo.ts
   var LOADING_AFTER_MS = 600;
-  var MIN_CLIP_S = 0.25;
-  var STAGE_H = 405;
-  var MIN_W = 400;
-  var MAX_W = 960;
-  var ICON_TICKS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><path d="M2 2v8M5 4v6M8 1v9M11 5v5M14 3v7" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>';
-  var ICON_THUMBS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><rect x="1" y="1" width="14" height="10" rx="1" stroke="currentColor" stroke-width="1.2" fill="none"/><circle cx="11" cy="4" r="1.3" fill="currentColor"/><path d="M2.5 9.5l3.5-4 2.5 2.5 1.5-1.5 3 3z" fill="currentColor"/></svg>';
-  var ICON_MUTED = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path d="M11 6l4 4M15 6l-4 4" stroke="currentColor" stroke-width="1.5"/></svg>';
-  var ICON_SOUND = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path d="M11 5.5c1.2 1.2 1.2 3.8 0 5M13 3.5c2.2 2.4 2.2 6.6 0 9" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>';
-  var ICON_ZOOM = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10 10l4.5 4.5M4.5 6.5h4M6.5 4.5v4" stroke="currentColor" stroke-width="1.5"/></svg>';
-  var btn = (a, label, title) => `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
-  function mountPlayer(el, start, ctx, place, close = () => {
-  }, startTs = start?.ts ?? 0) {
-    const prefs = loadPrefs(ctx);
-    el.classList.add("player");
-    el.innerHTML = '<div class="top">' + (ctx.onZoom ? btn("zoom", ICON_ZOOM, "Zoom the dashboard to this slot") : "<span></span>") + '<span class="title"></span>' + btn("close", "\u2715", "Close (Esc)") + '</div><div class="stage"><div class="state"></div>' + (ctx.onZoom ? '<button type="button" class="zoom-video" data-a="zoom-video">\u25B6 Zoom in for the video</button>' : '<span class="zoom-video">\u25B6 Video at a closer zoom</span>') + '</div><div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="bar"><span class="time"></span><span class="transport">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame in this slot (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame in this slot (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '</span><span class="opts">' + btn("mute", "", "Sound") + btn("hd", "HD", "Video quality") + btn("style-ticks", ICON_TICKS, "Scrubber: a tick per frame") + btn("style-thumbs", ICON_THUMBS, "Scrubber: the frames as pictures") + btn("fps", "", "Speed") + "</span></div>";
-    const img = document.createElement("img");
-    img.alt = "frame";
-    if (start) {
-      img.src = start.url;
-    }
-    const makeVideo = () => {
-      const v = document.createElement("video");
-      v.muted = prefs.muted;
-      v.playsInline = true;
-      v.preload = "metadata";
-      return v;
-    };
-    let video = makeVideo();
-    let spare = makeVideo();
+  function makePlayerVideo(host) {
+    const { el, stateEl, prefs } = host;
+    let video = makeVideo(prefs.muted, "metadata");
+    let spare = makeVideo(prefs.muted, "metadata");
     spare.classList.add("spare");
-    el.querySelector(".stage").prepend(img, video, spare);
-    const stateEl = el.querySelector(".stage .state");
-    const scrub = el.querySelector(".scrub");
-    const lanes = el.querySelector(".lanes");
-    const thumbs = el.querySelector(".thumbs");
-    const ticks = el.querySelector(".ticks");
-    const head = el.querySelector(".head");
-    const titleEl = el.querySelector(".title");
-    const timeEl = el.querySelector(".time");
-    const b = (a) => el.querySelector(`button[data-a="${a}"]`);
-    const firstSlot = ctx.slotAt(startTs) ?? { from: startTs - ctx.step / 2, to: startTs + ctx.step / 2, ts: startTs };
-    let reel = new Reel(ctx, firstSlot, start ?? void 0);
-    let t = startTs;
-    let playing = false;
-    let timer = null;
+    const elements = [video, spare];
     let vidClip = null;
     let vidSrc = "";
     let pendingT = null;
     let spareClip = null;
     let spareSrc = "";
     let spareT = null;
-    let driving = false;
-    let raf = 0;
-    let speed = null;
-    const videoMode = () => reel.watched().length > 0;
-    const rateNow = () => speed ?? (ctx.autoSpeed ? reel.videoRate() ?? 1 : 1);
-    let hiTimer = null;
-    let gone = false;
-    const width = () => scrub.clientWidth || 560;
-    const tickPx = ctx.frameWidth && ctx.frameWidth > 0 ? ctx.frameWidth : FRAME_WIDTH;
-    const most = () => Math.max(4, Math.floor(width() / tickPx));
-    const slot = () => reel.slot;
-    const span = () => Math.max(1, slot().to - slot().from);
-    const xOf = (ts) => (ts - slot().from) / span() * 100;
-    function labels() {
-      if (videoMode()) {
-        b("fps").textContent = fmtRate(rateNow());
-        b("fps").title = "Video speed" + (speed === null && ctx.autoSpeed ? " (fits this slot's video into about ten seconds)" : "") + ": click for faster, round from \xBC\xD7";
-      } else {
-        b("fps").textContent = prefs.fps + " fps";
-        b("fps").title = "Speed";
-      }
-      b("fps").setAttribute("aria-label", b("fps").title);
-      b("style-ticks").setAttribute("aria-pressed", String(prefs.style === "ticks"));
-      b("style-thumbs").setAttribute("aria-pressed", String(prefs.style === "thumbs"));
-      b("play").textContent = playing ? "\u275A\u275A" : "\u25B6";
-      const n = reel.stops(most()).length;
-      const can = reel.playable(most());
-      b("play").disabled = !can;
-      b("play").title = !can ? "One frame in this slot: nothing to play" : playing ? "Pause (Space)" : "Play this slot (Space)";
-      b("prev").disabled = b("next").disabled = n < 2;
-      el.classList.toggle("thumbs", prefs.style === "thumbs");
-      reel.capacity = most();
-      const clips = reel.clipSpans();
-      el.classList.toggle("no-stills", !reel.frames.length);
-      el.classList.toggle("video-far", clips.length > 0 && reel.videoRate() === null);
-      el.classList.toggle("has-clip", clips.length > 0);
-      el.classList.toggle("has-hi", clips.some((c) => !!c.clip.hi));
-      b("mute").innerHTML = prefs.muted ? ICON_MUTED : ICON_SOUND;
-      b("mute").title = prefs.muted ? "Unmute the video" : "Mute the video";
-      b("mute").setAttribute("aria-label", b("mute").title);
-      b("hd").setAttribute("aria-pressed", String(prefs.hd));
-      b("hd").title = prefs.hd ? "Playing the larger video: switch to the smaller" : "Playing the smaller video: switch to the larger";
-    }
-    function drawScrub() {
-      reel.capacity = most();
-      lanes.textContent = "";
-      for (const iv of reel.gaps()) {
-        const d = document.createElement("div");
-        d.className = "lane " + iv.kind;
-        if (iv.kind === "paused") {
-          if (iv.pause?.color) {
-            d.style.setProperty("--ktl-band", iv.pause.color);
-          }
-          d.title = pauseInfo({ paused: true, label: iv.pause?.label, color: iv.pause?.color }).label.toLowerCase();
-        }
-        d.style.left = Math.max(0, xOf(iv.from)) + "%";
-        d.style.width = Math.max(0, Math.min(100, xOf(iv.to)) - Math.max(0, xOf(iv.from))) + "%";
-        lanes.appendChild(d);
-      }
-      for (const c of reel.clipSpans()) {
-        const d = document.createElement("div");
-        d.className = "lane clip";
-        d.title = "video";
-        d.style.left = Math.max(0, xOf(c.from)) + "%";
-        d.style.width = Math.max(0, Math.min(100, xOf(c.to)) - Math.max(0, xOf(c.from))) + "%";
-        lanes.appendChild(d);
-      }
-      ticks.textContent = "";
-      for (const f of reel.shown(most())) {
-        const k = document.createElement("div");
-        k.className = "tick";
-        k.style.left = xOf(f.ts) + "%";
-        ticks.appendChild(k);
-      }
-      const watched = reel.watched();
-      for (const c of watched) {
-        const k = document.createElement("div");
-        k.className = "tick clip-start";
-        k.style.left = xOf(c.from) + "%";
-        ticks.appendChild(k);
-      }
-      thumbs.textContent = "";
-      if (prefs.style !== "thumbs") {
-        return;
-      }
-      const fs = reel.shown(Math.max(4, Math.floor(width() / THUMB_PX)));
-      const gaps = [...reel.gaps(), ...reel.watched()].sort((a, z) => a.from - z.from);
-      const cell = (f, from, to, prior2 = false, clip = false) => {
-        const c = document.createElement("div");
-        c.className = "thumb" + (prior2 ? " prior" : "") + (clip ? " clip" : "");
-        c.style.left = xOf(from) + "%";
-        c.style.width = Math.max(0, xOf(to) - xOf(from)) + "%";
-        const ti = document.createElement("img");
-        ti.alt = "";
-        ti.src = f.url;
-        c.appendChild(ti);
-        thumbs.appendChild(c);
-      };
-      const prior = reel.prior();
-      const firstTs = fs.length ? fs[0].ts : slot().to;
-      const firstGap = gaps.find((g) => g.from <= slot().from);
-      if (prior && firstTs > slot().from && !firstGap) {
-        cell(prior, slot().from, firstTs, true);
-      }
-      fs.forEach((f, i) => {
-        const next = i + 1 < fs.length ? fs[i + 1].ts : slot().to;
-        const gap = gaps.find((g) => g.from >= f.ts && g.from < next);
-        cell(f, f.ts, gap ? gap.from : next);
-      });
-      for (const c of watched) {
-        const f = reel.stillFor(c);
-        if (f) {
-          cell(f, c.from, c.to, false, true);
-        }
-      }
-    }
-    function show() {
-      head.style.left = xOf(t) + "%";
-      const at = reel.at(t);
-      if (at.span) {
-        el.classList.add("video");
-        el.classList.remove("off");
-        stateEl.textContent = el.classList.contains("loading") ? "loading video\u2026" : "";
-        if (at.frame && img.getAttribute("src") !== at.frame.url && img.dataset.hiOf !== at.frame.url) {
-          img.src = at.frame.url;
-          delete img.dataset.hiOf;
-        }
-        showClip(at.span.clip);
-        caption(null);
-        return;
-      }
-      if (el.classList.contains("video")) {
-        el.classList.remove("video");
-        waitFor(false);
-        stopVideo();
-      }
-      const f = at.frame;
-      el.classList.toggle("off", at.gap);
-      stateEl.textContent = at.kind === "dropped" ? "offline" : at.kind === "nodata" ? "no frame" : at.kind === "paused" ? pauseInfo({ paused: true, label: at.interval?.pause?.label }).label.toLowerCase() : "";
-      if (f && img.getAttribute("src") !== f.url && img.dataset.hiOf !== f.url) {
-        img.src = f.url;
-        delete img.dataset.hiOf;
-      }
-      caption(at.gap ? null : f);
-      if (hiTimer) {
-        clearTimeout(hiTimer);
-      }
-      if (f && f.hi && !playing) {
-        const hi = f.hi, lo = f.url;
-        hiTimer = setTimeout(() => {
-          const pre = new Image();
-          pre.onload = () => {
-            if (!gone && reel.at(t).frame === f) {
-              img.src = hi;
-              img.dataset.hiOf = lo;
-            }
-          };
-          pre.src = hi;
-        }, 300);
-      }
-    }
     const srcOf = (c) => prefs.hd && c.hi ? c.hi : c.url;
-    function showClip(c) {
+    function show(c, driving) {
+      const t = host.t();
       const src = srcOf(c);
       if (src !== vidSrc) {
         if (src === spareSrc) {
@@ -2648,7 +2546,7 @@ var VTCore = (() => {
     }
     function wire(v) {
       v.addEventListener("loadedmetadata", () => {
-        if (gone) {
+        if (host.gone()) {
           return;
         }
         if (v !== video) {
@@ -2660,8 +2558,7 @@ var VTCore = (() => {
           }
           return;
         }
-        size(v.videoWidth, v.videoHeight);
-        place();
+        host.sized(v.videoWidth, v.videoHeight);
         if (vidClip) {
           noteClipLength(vidClip.url, v.duration);
         }
@@ -2697,11 +2594,11 @@ var VTCore = (() => {
           spareSrc = "";
           return;
         }
-        if (gone || !vidClip || !vidClip.hi || vidSrc !== vidClip.hi) {
+        if (host.gone() || !vidClip || !vidClip.hi || vidSrc !== vidClip.hi) {
           return;
         }
         vidSrc = vidClip.url;
-        pendingT = t;
+        pendingT = host.t();
         v.src = vidClip.url;
       });
     }
@@ -2725,18 +2622,10 @@ var VTCore = (() => {
       }
       waitTimer = setTimeout(() => {
         waitTimer = null;
-        if (!gone && video.readyState < 3 && !buffered(video, video.currentTime)) {
+        if (!host.gone() && video.readyState < 3 && !buffered(video, video.currentTime)) {
           loading(true);
         }
       }, LOADING_AFTER_MS);
-    }
-    function buffered(v, s) {
-      for (let i = 0; i < v.buffered.length; i++) {
-        if (v.buffered.start(i) <= s && s < v.buffered.end(i) - 0.1) {
-          return true;
-        }
-      }
-      return false;
     }
     function loading(on) {
       if (el.classList.contains("loading") === on) {
@@ -2747,6 +2636,326 @@ var VTCore = (() => {
         stateEl.textContent = on ? "loading video\u2026" : "";
       }
     }
+    return {
+      get video() {
+        return video;
+      },
+      elements,
+      show,
+      preload,
+      ready: () => video.readyState >= 1 && pendingT === null,
+      waitFor,
+      release() {
+        for (const v of [video, spare]) {
+          releaseVideo(v);
+        }
+        if (waitTimer) {
+          clearTimeout(waitTimer);
+        }
+      }
+    };
+  }
+  function buffered(v, s) {
+    for (let i = 0; i < v.buffered.length; i++) {
+      if (v.buffered.start(i) <= s && s < v.buffered.end(i) - 0.1) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // src/vt/ui/scrubber.ts
+  var THUMB_PX = 48;
+  var setAttr = (el, name, value) => {
+    if (el.getAttribute(name) !== value) {
+      el.setAttribute(name, value);
+    }
+  };
+  function makeScrubber(scrub, host) {
+    const lanes = scrub.querySelector(".lanes");
+    const thumbs = scrub.querySelector(".thumbs");
+    const ticks = scrub.querySelector(".ticks");
+    const headEl = scrub.querySelector(".head");
+    const width = () => scrub.clientWidth || 560;
+    const slot = () => host.reel().slot;
+    const span = () => Math.max(1, slot().to - slot().from);
+    const xOf = (ts) => (ts - slot().from) / span() * 100;
+    function draw() {
+      const reel = host.reel();
+      const most = host.most();
+      reel.capacity = most;
+      lanes.textContent = "";
+      for (const iv of reel.gaps()) {
+        const d = document.createElement("div");
+        d.className = "lane " + iv.kind;
+        if (iv.kind === "paused") {
+          if (iv.pause?.color) {
+            d.style.setProperty("--ktl-band", iv.pause.color);
+          }
+          d.title = pauseInfo({ paused: true, label: iv.pause?.label, color: iv.pause?.color }).label.toLowerCase();
+        }
+        d.style.left = Math.max(0, xOf(iv.from)) + "%";
+        d.style.width = Math.max(0, Math.min(100, xOf(iv.to)) - Math.max(0, xOf(iv.from))) + "%";
+        lanes.appendChild(d);
+      }
+      for (const c of reel.clipSpans()) {
+        const d = document.createElement("div");
+        d.className = "lane clip";
+        d.title = "video";
+        d.style.left = Math.max(0, xOf(c.from)) + "%";
+        d.style.width = Math.max(0, Math.min(100, xOf(c.to)) - Math.max(0, xOf(c.from))) + "%";
+        lanes.appendChild(d);
+      }
+      ticks.textContent = "";
+      for (const f of reel.shown(most)) {
+        const k = document.createElement("div");
+        k.className = "tick";
+        k.style.left = xOf(f.ts) + "%";
+        ticks.appendChild(k);
+      }
+      const watched = reel.watched();
+      for (const c of watched) {
+        const k = document.createElement("div");
+        k.className = "tick clip-start";
+        k.style.left = xOf(c.from) + "%";
+        ticks.appendChild(k);
+      }
+      thumbs.textContent = "";
+      if (host.style() !== "thumbs") {
+        return;
+      }
+      const fs = reel.shown(Math.max(4, Math.floor(width() / THUMB_PX)));
+      const gaps = [...reel.gaps(), ...reel.watched()].sort((a, z) => a.from - z.from);
+      const cell = (f, from, to, prior2 = false, clip = false) => {
+        const c = document.createElement("div");
+        c.className = "thumb" + (prior2 ? " prior" : "") + (clip ? " clip" : "");
+        c.style.left = xOf(from) + "%";
+        c.style.width = Math.max(0, xOf(to) - xOf(from)) + "%";
+        const ti = document.createElement("img");
+        ti.alt = "";
+        ti.referrerPolicy = "no-referrer";
+        ti.src = f.url;
+        c.appendChild(ti);
+        thumbs.appendChild(c);
+      };
+      const prior = reel.prior();
+      const firstTs = fs.length ? fs[0].ts : slot().to;
+      const firstGap = gaps.find((g) => g.from <= slot().from);
+      if (prior && firstTs > slot().from && !firstGap) {
+        cell(prior, slot().from, firstTs, true);
+      }
+      fs.forEach((f, i) => {
+        const next = i + 1 < fs.length ? fs[i + 1].ts : slot().to;
+        const gap = gaps.find((g) => g.from >= f.ts && g.from < next);
+        cell(f, f.ts, gap ? gap.from : next);
+      });
+      for (const c of watched) {
+        const f = reel.stillFor(c);
+        if (f) {
+          cell(f, c.from, c.to, false, true);
+        }
+      }
+    }
+    const tAt = (clientX) => {
+      const r = scrub.getBoundingClientRect();
+      return slot().from + Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width))) * span();
+    };
+    scrub.addEventListener("pointermove", (e) => host.seekTo(tAt(e.clientX)));
+    scrub.addEventListener("pointerdown", (e) => {
+      scrub.setPointerCapture?.(e.pointerId);
+      host.seekTo(tAt(e.clientX));
+    });
+    scrub.addEventListener("keydown", (e) => {
+      if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) {
+        return;
+      }
+      const stops = host.reel().stops(host.most());
+      switch (e.key) {
+        case "ArrowLeft":
+        case "ArrowDown":
+          host.step(-1);
+          break;
+        case "ArrowRight":
+        case "ArrowUp":
+          host.step(1);
+          break;
+        case "Home":
+          host.seekTo(stops.length ? stops[0] : slot().from);
+          break;
+        case "End":
+          host.seekTo(stops.length ? stops[stops.length - 1] : slot().to - 1);
+          break;
+        default:
+          return;
+      }
+      e.preventDefault();
+    });
+    return {
+      draw,
+      width,
+      xOf,
+      head(t) {
+        headEl.style.left = xOf(t) + "%";
+      },
+      value(t, text) {
+        setAttr(scrub, "aria-valuemin", String(Math.round(slot().from)));
+        setAttr(scrub, "aria-valuemax", String(Math.round(slot().to - 1)));
+        setAttr(scrub, "aria-valuenow", String(Math.round(t)));
+        setAttr(scrub, "aria-valuetext", text);
+      }
+    };
+  }
+
+  // src/vt/ui/player.ts
+  var MIN_CLIP_S = 0.25;
+  var STAGE_H = 405;
+  var MIN_W = 400;
+  var MAX_W = 960;
+  var ICON_TICKS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><path d="M2 2v8M5 4v6M8 1v9M11 5v5M14 3v7" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>';
+  var ICON_THUMBS = '<svg viewBox="0 0 16 12" width="16" height="12" aria-hidden="true"><rect x="1" y="1" width="14" height="10" rx="1" stroke="currentColor" stroke-width="1.2" fill="none"/><circle cx="11" cy="4" r="1.3" fill="currentColor"/><path d="M2.5 9.5l3.5-4 2.5 2.5 1.5-1.5 3 3z" fill="currentColor"/></svg>';
+  var ICON_MUTED = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path d="M11 6l4 4M15 6l-4 4" stroke="currentColor" stroke-width="1.5"/></svg>';
+  var ICON_SOUND = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path d="M11 5.5c1.2 1.2 1.2 3.8 0 5M13 3.5c2.2 2.4 2.2 6.6 0 9" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>';
+  var ICON_ZOOM = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10 10l4.5 4.5M4.5 6.5h4M6.5 4.5v4" stroke="currentColor" stroke-width="1.5"/></svg>';
+  var typing = (target) => target instanceof Element && !!target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+  var btn = (a, label, title) => `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
+  function mountPlayer(el, start, ctx, place, close = () => {
+  }, startTs = start?.ts ?? 0) {
+    const prefs = loadPrefs(ctx.scrubber);
+    el.classList.add("player");
+    el.innerHTML = '<div class="top">' + (ctx.onZoom ? btn("zoom", ICON_ZOOM, "Zoom the dashboard to this slot") : "<span></span>") + '<span class="title"></span>' + btn("close", "\u2715", "Close (Esc)") + '</div><div class="stage"><div class="state" aria-live="polite"></div>' + (ctx.onZoom ? '<button type="button" class="zoom-video" data-a="zoom-video">\u25B6 Zoom in for the video</button>' : '<span class="zoom-video">\u25B6 Video at a closer zoom</span>') + '</div><div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="bar"><span class="time"></span><span class="transport">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame in this slot (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame in this slot (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '</span><span class="opts">' + btn("mute", "", "Sound") + btn("hd", "HD", "Video quality") + btn("style-ticks", ICON_TICKS, "Scrubber: a tick per frame") + btn("style-thumbs", ICON_THUMBS, "Scrubber: the frames as pictures") + btn("fps", "", "Speed") + "</span></div>";
+    const img = document.createElement("img");
+    img.alt = "frame";
+    img.referrerPolicy = "no-referrer";
+    if (start) {
+      img.src = start.url;
+    }
+    const stateEl = el.querySelector(".stage .state");
+    const media = makePlayerVideo({
+      el,
+      stateEl,
+      prefs,
+      t: () => t,
+      gone: () => gone,
+      sized: (w, h) => {
+        size(w, h);
+        place();
+      }
+    });
+    el.querySelector(".stage").prepend(img, ...media.elements);
+    const titleEl = el.querySelector(".title");
+    const timeEl = el.querySelector(".time");
+    const b = (a) => el.querySelector(`button[data-a="${a}"]`);
+    const firstSlot = ctx.slotAt(startTs) ?? { from: startTs - ctx.step / 2, to: startTs + ctx.step / 2, ts: startTs };
+    let reel = new Reel(ctx, firstSlot, start ?? void 0);
+    let t = startTs;
+    let playing = false;
+    let timer = null;
+    let driving = false;
+    let raf = 0;
+    let pendingGo = null;
+    function cancelGo() {
+      if (!pendingGo) {
+        return;
+      }
+      pendingGo.v.removeEventListener("loadedmetadata", pendingGo.h);
+      if (pendingGo.timer) {
+        clearTimeout(pendingGo.timer);
+      }
+      pendingGo = null;
+    }
+    let speed = null;
+    const videoMode = () => reel.watched().length > 0;
+    const rateNow = () => speed ?? (ctx.autoSpeed ? reel.videoRate() ?? 1 : 1);
+    let hiTimer = null;
+    let gone = false;
+    const scrubber = makeScrubber(el.querySelector(".scrub"), {
+      reel: () => reel,
+      most: () => most(),
+      style: () => prefs.style,
+      seekTo: (to) => {
+        if (playing) {
+          stop();
+        }
+        seek(to);
+      },
+      step: (dir) => act(dir > 0 ? "next" : "prev")
+    });
+    const tickPx = () => ctx.frameWidth && ctx.frameWidth > 0 ? ctx.frameWidth : FRAME_WIDTH;
+    const most = () => Math.max(4, Math.floor(scrubber.width() / tickPx()));
+    const slot = () => reel.slot;
+    function labels() {
+      if (videoMode()) {
+        b("fps").textContent = fmtRate(rateNow());
+        b("fps").title = "Video speed" + (speed === null && ctx.autoSpeed ? " (fits this slot's video into about ten seconds)" : "") + ": click for faster, round from \xBC\xD7";
+      } else {
+        b("fps").textContent = prefs.fps + " fps";
+        b("fps").title = "Speed";
+      }
+      b("fps").setAttribute("aria-label", b("fps").title);
+      b("style-ticks").setAttribute("aria-pressed", String(prefs.style === "ticks"));
+      b("style-thumbs").setAttribute("aria-pressed", String(prefs.style === "thumbs"));
+      b("play").textContent = playing ? "\u275A\u275A" : "\u25B6";
+      const n = reel.stops(most()).length;
+      const can = reel.playable(most());
+      b("play").disabled = !can;
+      b("play").title = !can ? "One frame in this slot: nothing to play" : playing ? "Pause (Space)" : "Play this slot (Space)";
+      b("prev").disabled = b("next").disabled = n < 2;
+      el.classList.toggle("thumbs", prefs.style === "thumbs");
+      reel.capacity = most();
+      const clips = reel.clipSpans();
+      el.classList.toggle("no-stills", !reel.frames.length);
+      el.classList.toggle("video-far", clips.length > 0 && reel.videoRate() === null);
+      el.classList.toggle("has-clip", clips.length > 0);
+      el.classList.toggle("has-hi", clips.some((c) => !!c.clip.hi));
+      b("mute").innerHTML = prefs.muted ? ICON_MUTED : ICON_SOUND;
+      b("mute").title = prefs.muted ? "Unmute the video" : "Mute the video";
+      b("mute").setAttribute("aria-label", b("mute").title);
+      b("hd").setAttribute("aria-pressed", String(prefs.hd));
+      b("hd").title = prefs.hd ? "Playing the larger video: switch to the smaller" : "Playing the smaller video: switch to the larger";
+    }
+    function show() {
+      scrubber.head(t);
+      const at = reel.at(t);
+      if (at.span) {
+        el.classList.add("video");
+        el.classList.remove("off");
+        stateEl.textContent = el.classList.contains("loading") ? "loading video\u2026" : "";
+        if (at.frame && img.getAttribute("src") !== at.frame.url && img.dataset.hiOf !== at.frame.url) {
+          img.src = at.frame.url;
+          delete img.dataset.hiOf;
+        }
+        media.show(at.span.clip, driving);
+        caption(null);
+        return;
+      }
+      if (el.classList.contains("video")) {
+        el.classList.remove("video");
+        media.waitFor(false);
+        stopVideo();
+      }
+      const f = at.frame;
+      el.classList.toggle("off", at.gap);
+      stateEl.textContent = at.kind === "dropped" ? "offline" : at.kind === "nodata" ? "no frame" : at.kind === "paused" ? pauseInfo({ paused: true, label: at.interval?.pause?.label }).label.toLowerCase() : "";
+      if (f && img.getAttribute("src") !== f.url && img.dataset.hiOf !== f.url) {
+        img.src = f.url;
+        delete img.dataset.hiOf;
+      }
+      caption(at.gap ? null : f);
+      if (hiTimer) {
+        clearTimeout(hiTimer);
+      }
+      if (f && f.hi && !playing) {
+        const hi = f.hi, lo = f.url;
+        hiTimer = setTimeout(() => {
+          loadImage(hi, () => {
+            if (!gone && reel.at(t).frame === f) {
+              img.src = hi;
+              img.dataset.hiOf = lo;
+            }
+          });
+        }, 300);
+      }
+    }
     function caption(f) {
       const shown = reel.shown(most()).length;
       const total = reel.total();
@@ -2754,6 +2963,7 @@ var VTCore = (() => {
       titleEl.title = titleEl.textContent;
       const at = f ? f.ts : t;
       timeEl.textContent = ctx.tt.time(at) + ctx.tt.sfx(at);
+      scrubber.value(t, timeEl.textContent);
       const sampled = reel.clips.length > 0 && reel.videoRate() === null;
       const zoom = el.querySelector('button[data-a="zoom"]');
       if (zoom) {
@@ -2773,26 +2983,27 @@ var VTCore = (() => {
       if (gone || !ok || r !== reel) {
         return;
       }
-      drawScrub();
+      scrubber.draw();
       labels();
       seek(at);
       if (await measureReel(r, ctx.key)) {
         if (gone || r !== reel) {
           return;
         }
-        drawScrub();
+        scrubber.draw();
         labels();
         show();
       }
     }
     function stopVideo() {
       driving = false;
+      cancelGo();
       if (raf) {
         cancelAnimationFrame(raf);
         raf = 0;
       }
-      if (!video.paused) {
-        video.pause();
+      if (!media.video.paused) {
+        media.video.pause();
       }
     }
     function stop() {
@@ -2808,10 +3019,10 @@ var VTCore = (() => {
       if (!playing || gone) {
         return;
       }
-      const span2 = reel.clipAt(t);
-      const d = video.duration;
-      if (span2 && !(d > 0 && videoTime(span2.clip, span2.to, d) - videoTime(span2.clip, span2.from, d) < MIN_CLIP_S)) {
-        playSpan(span2);
+      const span = reel.clipAt(t);
+      const d = media.video.duration;
+      if (span && !(d > 0 && videoTime(span.clip, span.to, d) - videoTime(span.clip, span.from, d) < MIN_CLIP_S)) {
+        playSpan(span);
         return;
       }
       timer = setTimeout(() => {
@@ -2826,28 +3037,24 @@ var VTCore = (() => {
         return;
       }
       seek(next);
-      const fs = reel.shown(most());
-      const j = fs.findIndex((f) => f.ts > t);
-      for (let k = 0; k < 3 && fs.length; k++) {
-        const p = new Image();
-        p.src = fs[((j < 0 ? 0 : j) + k) % fs.length].url;
-      }
+      preloadAfter(reel.shown(most()), t);
       run();
     }
-    function playSpan(span2) {
+    function playSpan(span) {
       driving = true;
       const follow = () => {
         raf = 0;
         if (!playing || gone || !driving) {
           return;
         }
+        const video = media.video;
         const d = video.duration;
         if (d > 0) {
-          t = Math.max(span2.from, clipTime(span2.clip, video.currentTime, d));
-          head.style.left = xOf(t) + "%";
+          t = Math.max(span.from, clipTime(span.clip, video.currentTime, d));
+          scrubber.head(t);
           caption(null);
         }
-        if (video.ended || t >= span2.to - 1) {
+        if (video.ended || t >= span.to - 1) {
           stopVideo();
           advance();
           return;
@@ -2855,25 +3062,39 @@ var VTCore = (() => {
         raf = requestAnimationFrame(follow);
       };
       const go = () => {
+        pendingGo = null;
         if (!playing || gone || !driving) {
           return;
         }
-        video.muted = prefs.muted;
-        video.playbackRate = rateNow();
-        const v = video;
-        playVideo(v).catch(() => {
-          v.muted = true;
-          return playVideo(v);
+        if (raf) {
+          cancelAnimationFrame(raf);
+          raf = 0;
+        }
+        const v2 = media.video;
+        v2.muted = prefs.muted;
+        v2.playbackRate = rateNow();
+        playVideo(v2).catch(() => {
+          v2.muted = true;
+          return playVideo(v2);
         }).catch(() => stop());
         const ws = reel.watched();
-        preload(ws.find((c) => c.from >= span2.to - 1 && c.clip !== span2.clip) ?? ws.find((c) => c.clip !== span2.clip));
+        media.preload(ws.find((c) => c.from >= span.to - 1 && c.clip !== span.clip) ?? ws.find((c) => c.clip !== span.clip));
         raf = requestAnimationFrame(follow);
       };
-      if (video.readyState >= 1 && pendingT === null) {
+      cancelGo();
+      if (media.ready()) {
         go();
-      } else {
-        video.addEventListener("loadedmetadata", () => setTimeout(go, 0), { once: true });
+        return;
       }
+      const v = media.video;
+      const h = () => {
+        v.removeEventListener("loadedmetadata", h);
+        if (pendingGo) {
+          pendingGo.timer = setTimeout(go, 0);
+        }
+      };
+      pendingGo = { v, h, timer: null };
+      v.addEventListener("loadedmetadata", h);
     }
     function play() {
       if (playing || !reel.playable(most())) {
@@ -2893,7 +3114,7 @@ var VTCore = (() => {
         speed = null;
       }
       const at = next.frameTs !== void 0 && next.frameTs >= next.from && next.frameTs < next.to ? next.frameTs : next.ts;
-      drawScrub();
+      scrubber.draw();
       labels();
       seek(at);
       ctx.onTime?.(next.ts);
@@ -2928,7 +3149,7 @@ var VTCore = (() => {
         case "mute":
           prefs.muted = !prefs.muted;
           savePrefs(prefs);
-          video.muted = prefs.muted;
+          media.video.muted = prefs.muted;
           labels();
           break;
         case "hd": {
@@ -2947,7 +3168,7 @@ var VTCore = (() => {
           if (videoMode()) {
             speed = SPEEDS.find((x) => x > rateNow() + 0.01) ?? SPEEDS[0];
             if (driving) {
-              video.playbackRate = speed;
+              media.video.playbackRate = speed;
             }
             labels();
             break;
@@ -2970,7 +3191,7 @@ var VTCore = (() => {
           prefs.style = style;
           savePrefs(prefs);
           labels();
-          drawScrub();
+          scrubber.draw();
           show();
           break;
         }
@@ -2989,26 +3210,15 @@ var VTCore = (() => {
         act(a);
       }
     });
-    const tAt = (clientX) => {
-      const r = scrub.getBoundingClientRect();
-      return slot().from + Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width))) * span();
-    };
-    scrub.addEventListener("pointermove", (e) => {
-      if (playing) {
-        stop();
-      }
-      seek(tAt(e.clientX));
-    });
-    scrub.addEventListener("pointerdown", (e) => {
-      if (playing) {
-        stop();
-      }
-      scrub.setPointerCapture?.(e.pointerId);
-      seek(tAt(e.clientX));
-    });
     const keyH = (e) => {
+      if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey || typing(e.target)) {
+        return;
+      }
       const k = e.key;
       if (k === " ") {
+        if (e.target instanceof Element && e.target.closest('button, a[href], [role="button"], summary')) {
+          return;
+        }
         e.preventDefault();
         act("play");
       } else if (k === "ArrowLeft") {
@@ -3042,7 +3252,7 @@ var VTCore = (() => {
       }
       el.style.width = Math.round(Math.max(MIN_W, w) + pad) + "px";
       stage.style.height = Math.round(h) + "px";
-      drawScrub();
+      scrubber.draw();
       show();
     }
     img.onload = () => {
@@ -3062,21 +3272,23 @@ var VTCore = (() => {
     labels();
     caption(start);
     void load(startTs);
-    return () => {
+    const rebind = (next) => {
+      if (gone) {
+        return;
+      }
+      ctx = next;
+      scrubber.draw();
+      labels();
+    };
+    return Object.assign(() => {
       gone = true;
       stop();
-      for (const v of [video, spare]) {
-        v.removeAttribute("src");
-        v.load();
-      }
+      media.release();
       if (hiTimer) {
         clearTimeout(hiTimer);
       }
-      if (waitTimer) {
-        clearTimeout(waitTimer);
-      }
       document.removeEventListener("keydown", keyH);
-    };
+    }, { rebind });
   }
 
   // src/vt/ui/preview.ts
@@ -3090,9 +3302,15 @@ var VTCore = (() => {
       popState.teardown();
       popState.teardown = null;
     }
+    const opener = popState.el?.contains(document.activeElement) ? popState.opener : null;
     if (popState.el) {
       popState.el.remove();
       popState.el = null;
+    }
+    popState.player = null;
+    popState.opener = null;
+    if (opener?.isConnected) {
+      opener.focus({ preventScroll: true });
     }
     if (popState.keyH) {
       if (popState.keyCapture) {
@@ -3114,15 +3332,16 @@ var VTCore = (() => {
       popState.retireTimer = null;
     }
     const panelTexts = zoneTexts(tz, tz, false);
-    return {
+    const label = (site, host) => site ? site + " / " + host : host;
+    const pv = {
       // expectedTs set = frame is the pending slot's ghost: shown blurred and
       // captioned as the last frame, never as the expected one. tt: the
       // source's time text (zoneTexts), the panel's when omitted
-      open(site, kiosk, frame, x, y, hiUrl, expectedTs, tt, player) {
+      open(site, host, frame, x, y, hiUrl, expectedTs, tt, player) {
         tt = tt || panelTexts;
         closePreview();
         if (player && !expectedTs) {
-          openPlayer(root, site, kiosk, frame, frame.ts, x, y, { ...player, tt, label: site ? site + " / " + kiosk : kiosk });
+          openPlayer(root, pv, site, host, frame, frame.ts, x, y, { ...player, tt, label: label(site, host) });
           return;
         }
         const el = document.createElement("div");
@@ -3130,7 +3349,8 @@ var VTCore = (() => {
         copyVars(root, el);
         el.innerHTML = '<img alt="frame"><div class="cap"></div>';
         const img = el.querySelector("img");
-        el.querySelector(".cap").textContent = (site ? site + " / " : "") + kiosk + " \u2014 " + (expectedTs ? "expected " + tt.short(expectedTs) + " \xB7 last frame " + tt.time(frame.ts) : tt.time(frame.ts)) + tt.sfx(frame.ts);
+        img.referrerPolicy = "no-referrer";
+        el.querySelector(".cap").textContent = (site ? site + " / " : "") + host + " \u2014 " + (expectedTs ? "expected " + tt.short(expectedTs) + " \xB7 last frame " + tt.time(frame.ts) : tt.time(frame.ts)) + tt.sfx(frame.ts);
         el.addEventListener("click", closePreview);
         document.body.appendChild(el);
         const place = () => {
@@ -3156,24 +3376,41 @@ var VTCore = (() => {
         };
         document.addEventListener("keydown", popState.keyH);
       },
-      play(site, kiosk, t, x, y, tt, player) {
+      play(site, host, t, x, y, tt, player) {
         closePreview();
-        openPlayer(root, site, kiosk, null, t, x, y, { ...player, tt: tt || panelTexts, label: site ? site + " / " + kiosk : kiosk });
+        openPlayer(root, pv, site, host, null, t, x, y, { ...player, tt: tt || panelTexts, label: label(site, host) });
       },
       close: closePreview,
       retire() {
         if (popState.el && !popState.retireTimer) {
           popState.retireTimer = setTimeout(closePreview, 1500);
         }
+      },
+      rebind(provide) {
+        const p = popState.player;
+        if (!p || p.root !== root || p.by === pv) {
+          return;
+        }
+        const ctx = provide(p.site, p.host);
+        if (!ctx) {
+          closePreview();
+          return;
+        }
+        p.by = pv;
+        p.handle.rebind({ ...ctx, label: p.label });
       }
     };
+    return pv;
   }
-  function openPlayer(root, site, kiosk, frame, t, x, y, ctx) {
+  function openPlayer(root, by, site, host, frame, t, x, y, ctx) {
     const el = document.createElement("div");
     el.className = "ktl-pop";
     copyVars(root, el);
     el.setAttribute("role", "dialog");
-    el.setAttribute("aria-label", site ? site + " / " + kiosk : kiosk);
+    el.setAttribute("aria-modal", "true");
+    el.setAttribute("aria-label", site ? site + " / " + host : host);
+    el.tabIndex = -1;
+    const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
     document.body.appendChild(el);
     let placedW = -1;
     const place = () => {
@@ -3188,10 +3425,14 @@ var VTCore = (() => {
       el.style.left = Math.max(8, Math.min(window.innerWidth - r.width - 8, x - r.width / 2)) + "px";
       el.style.top = Math.max(8, Math.min(window.innerHeight - r.height - 8, y + 16)) + "px";
     };
-    popState.teardown = mountPlayer(el, frame, ctx, place, closePreview, t);
+    const handle = mountPlayer(el, frame, ctx, place, closePreview, t);
+    popState.teardown = handle;
+    popState.player = { root, by, site, host, label: ctx.label ?? host, handle };
     el.querySelector('button[data-a="close"]')?.addEventListener("click", closePreview);
     place();
     popState.el = el;
+    popState.opener = opener;
+    el.focus({ preventScroll: true });
     popState.keyH = (e) => {
       if (e.key === "Escape") {
         e.stopImmediatePropagation();
@@ -3288,8 +3529,8 @@ var VTCore = (() => {
   }
   function showSelection(s, fa, fb) {
     const a = Math.min(fa, fb), b = Math.max(fa, fb);
-    const widths = s.kiosks.map((k) => s.cards[k.id] ? s.cards[k.id].strip.clientWidth : 0);
-    s.kiosks.forEach((k, i) => {
+    const widths = s.hosts.map((k) => s.cards[k.id] ? s.cards[k.id].strip.clientWidth : 0);
+    s.hosts.forEach((k, i) => {
       const c = s.cards[k.id];
       if (!c) {
         return;
@@ -3301,7 +3542,7 @@ var VTCore = (() => {
     });
   }
   function hideSelection(s) {
-    for (const k of s.kiosks) {
+    for (const k of s.hosts) {
       if (s.cards[k.id]) {
         s.cards[k.id].sel.style.display = "none";
       }
@@ -3321,7 +3562,7 @@ var VTCore = (() => {
     const acW = ac.offsetWidth || 50;
     const axisW = axis.clientWidth;
     const widths = /* @__PURE__ */ new Map();
-    for (const k of s.kiosks) {
+    for (const k of s.hosts) {
       const c = s.cards[k.id];
       if (c) {
         widths.set(k.id, { w: c.strip.clientWidth, magW: c.mag.offsetWidth || c.strip.clientHeight * 16 / 9 });
@@ -3333,7 +3574,7 @@ var VTCore = (() => {
     for (const l of s.axisLabels) {
       l.el.classList.toggle("under-cursor", Math.abs(l.frac * axisW - acX) < l.half + acW / 2 + 2);
     }
-    for (const k of s.kiosks) {
+    for (const k of s.hosts) {
       const c = s.cards[k.id];
       if (!c) {
         continue;
@@ -3535,7 +3776,7 @@ var VTCore = (() => {
     }
   }
   function ruleAllBeyond(s) {
-    for (const k of s.kiosks) {
+    for (const k of s.hosts) {
       const c = s.cards[k.id];
       if (!c) {
         continue;
@@ -3564,6 +3805,8 @@ var VTCore = (() => {
       img = document.createElement("img");
       img.className = "ghost";
       img.alt = "";
+      img.referrerPolicy = "no-referrer";
+      img.decoding = "async";
       sl.el.appendChild(img);
     }
     if (img.src !== g.url) {
@@ -3610,6 +3853,7 @@ var VTCore = (() => {
     let timer = null;
     let clipOn = false;
     let seq = 0;
+    const alive = () => target.alive?.() ?? true;
     function halt() {
       seq++;
       if (dwell) {
@@ -3629,16 +3873,19 @@ var VTCore = (() => {
     }
     async function start(sl) {
       const mine = ++seq;
+      if (!alive()) {
+        return;
+      }
       const reel = target.reel({ from: sl.x0, to: sl.x0 + sl.span, ts: sl.ts });
       reel.capacity = FLIP_MAX;
       const ok = await reel.load(FLIP_MAX);
-      if (!ok || mine !== seq || !current || current.x0 !== sl.x0) {
+      if (!ok || mine !== seq || !current || current.x0 !== sl.x0 || !alive()) {
         return;
       }
       if (reel.clips.length) {
         await target.measure?.(reel);
       }
-      if (mine !== seq || !current || current.x0 !== sl.x0) {
+      if (mine !== seq || !current || current.x0 !== sl.x0 || !alive()) {
         return;
       }
       if (!reel.clips.some((c) => c.hi)) {
@@ -3659,27 +3906,30 @@ var VTCore = (() => {
         return;
       }
       const frames = reel.shown(FLIP_MAX);
-      const preload = (t) => {
-        const j = Math.max(0, frames.findIndex((f) => f.ts > t));
-        for (let k = 0; k < 3 && frames.length; k++) {
-          const p = new Image();
-          p.src = frames[(j + k) % frames.length].url;
-        }
-      };
       let i = 0;
       const showAt = () => {
         target.show(reel.at(stops[i]), stops[i], i, stops.length);
-        preload(stops[i]);
+        preloadAfter(frames, stops[i]);
       };
       target.playingChanged(true);
       showAt();
       timer = setInterval(() => {
+        if (!alive()) {
+          halt();
+          current = null;
+          return;
+        }
         i = (i + 1) % stops.length;
         showAt();
       }, 1e3 / FLIP_FPS);
     }
     return {
       hover(slot) {
+        if (!alive()) {
+          halt();
+          current = null;
+          return;
+        }
         const sl = slot && !slot.paused && !slot.beyond && (slot.count > 1 || anySlot && slot.frame || hasClip(slot)) ? slot : null;
         if (sl === current || sl && current && sl.x0 === current.x0 && sl.ts === current.ts) {
           return;
@@ -3703,34 +3953,34 @@ var VTCore = (() => {
 
   // src/vt/timeline/card.ts
   function dressStrip(model) {
-    for (const sl of model.slots) {
-      if (!sl.el || sl.frame) {
-        continue;
-      }
-      sl.el.style.backgroundPosition = -sl.el.offsetLeft + "px 0";
-      if (sl.paused && sl.el.offsetWidth >= 90 && !sl.el.querySelector(".band-label")) {
+    const todo = model.slots.filter((sl) => sl.el && !sl.frame);
+    const at = todo.map((sl) => ({ left: sl.el.offsetLeft, width: sl.el.offsetWidth }));
+    todo.forEach((sl, i) => {
+      const el = sl.el;
+      el.style.backgroundPosition = -at[i].left + "px 0";
+      if (sl.paused && at[i].width >= 90 && !el.querySelector(".band-label")) {
         const lab = document.createElement("span");
         lab.className = "band-label";
         lab.textContent = pauseInfo(sl).label;
-        sl.el.appendChild(lab);
+        el.appendChild(lab);
       }
-    }
+    });
   }
   function dressAll(s, tries) {
-    const anySized = s.kiosks.some((k) => s.cards[k.id] && s.cards[k.id].strip.clientWidth > 0);
+    const anySized = s.hosts.some((k) => s.cards[k.id] && s.cards[k.id].strip.clientWidth > 0);
     if (!anySized) {
       if (tries > 0 && !s.destroyed) {
         setTimeout(() => dressAll(s, tries - 1), 500);
       }
       return;
     }
-    for (const k of s.kiosks) {
+    for (const k of s.hosts) {
       if (s.cards[k.id]) {
         dressStrip(s.cards[k.id].model);
       }
     }
   }
-  function renderStrip(s, model, strip, kiosk, tt) {
+  function renderStrip(s, model, strip, host, tt) {
     const cells = [];
     for (const sl of model.slots) {
       const key = sl.frame ? "f:" + sl.frame.ts + ":" + sl.frame.url : sl.paused ? "p:" + sl.x0 : sl.beyond ? "b" : sl.clip ? "c:" + sl.clip.from + ":" + sl.clip.url : (sl.future ? "u:" : sl.nodata ? "n:" : "g:") + sl.x0;
@@ -3768,7 +4018,9 @@ var VTCore = (() => {
       }
       if (sl.frame && fresh) {
         const img = document.createElement("img");
-        img.alt = kiosk + " " + tt.time(sl.frame.ts) + tt.sfx(sl.frame.ts);
+        img.alt = host + " " + tt.time(sl.frame.ts) + tt.sfx(sl.frame.ts);
+        img.decoding = "async";
+        img.referrerPolicy = "no-referrer";
         el.appendChild(img);
         s.images.add(img, sl.frame.url, sl.frame.ts);
       }
@@ -3827,21 +4079,34 @@ var VTCore = (() => {
     }
   }
   function buildCard(s, decl, model) {
-    const kiosk = decl.id;
+    const host = decl.id;
     const zone = zoneFor(decl, s.TZ, s.cfg.thumbTimes, s.PANEL_TT), tt = zone.tt;
     const card = document.createElement("div");
     const inline = s.cfg.headerMode === "inline" || s.cfg.headerMode === "inline-gradient";
     card.className = "card" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
     const la = model.lastActive;
     const cad = s.cfg.showDetails && la ? '<span class="cad" title="' + esc(model.promised ? "Promises a frame every " + fmtDur(la.cadence) + "; one slot per " + fmtDur(la.step) : "Promises no cadence: frames are typically " + fmtDur(la.cadence) + " apart; one slot per " + fmtDur(la.step)) + '">\u23F1 ' + (model.promised ? "" : "~") + fmtDur(la.cadence) + " \xB7 1/" + fmtDur(la.step) + (la.step > la.cadence ? " \u2193" : "") + (model.promised ? "" : " \xB7 no promise") + "</span>" : "";
-    card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", kiosk, !!s.cfg.onFilter) + ">" + esc(kiosk) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '<span class="ft"></span>' + cad + '</div><div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div><div class="card-lane"></div>';
+    card.innerHTML = '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", host, !!s.cfg.onFilter) + ">" + esc(host) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '<span class="ft"></span>' + cad + '</div><div class="strip" tabindex="0" role="group" aria-label="' + esc(host + ": \u2190 \u2192 move along the timeline, Enter opens the preview") + '"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt="" referrerpolicy="no-referrer"><div class="cap"></div></div></div><div class="card-lane"></div>';
     const strip = card.querySelector(".strip");
-    renderStrip(s, model, strip, kiosk, tt);
+    renderStrip(s, model, strip, host, tt);
     dressStrip(model);
     let rec = null;
     const source = playerContext(s.backend, s.cfg, s.P, decl, model, tt, () => {
     });
+    let unloop = null;
+    const dropVideo = (m) => {
+      m.classList.remove("flip-video");
+      unloop?.();
+      unloop = null;
+      const v = m.querySelector("video");
+      if (!v) {
+        return;
+      }
+      releaseVideo(v);
+      v.remove();
+    };
     const flip = makeFlipbook({
+      alive: () => !s.destroyed,
       reel: (slot) => new Reel(source, slot),
       show: (at, t, i, n) => {
         const m = rec?.mag;
@@ -3864,48 +4129,28 @@ var VTCore = (() => {
         if (!m) {
           return;
         }
-        let v = m.querySelector("video");
-        if (!span) {
-          m.classList.remove("flip-video");
-          if (v) {
-            v.pause();
-            v.removeAttribute("src");
-            v.load();
-            v.remove();
-          }
+        if (!span || s.destroyed) {
+          dropVideo(m);
           return;
         }
+        let v = m.querySelector("video");
         if (!v) {
-          v = document.createElement("video");
-          v.muted = true;
-          v.playsInline = true;
+          v = makeVideo(true);
           m.insertBefore(v, m.querySelector(".cap"));
         }
-        const vid = v;
-        const from = () => videoTime(span.clip, span.from, vid.duration), to = () => videoTime(span.clip, span.to, vid.duration);
-        const again = () => {
-          vid.currentTime = from();
-          vid.playbackRate = rate;
-          playVideo(vid).catch(() => {
-          });
-        };
-        vid.onloadedmetadata = () => {
-          noteClipLength(span.clip.url, vid.duration);
-          if (vid.videoWidth && vid.videoHeight) {
-            m.style.aspectRatio = String(vid.videoWidth / vid.videoHeight);
-          }
-          again();
-        };
-        vid.ontimeupdate = () => {
-          const at = clipTime(span.clip, vid.currentTime, vid.duration);
-          m.querySelector(".cap").textContent = "\u25B6 " + tt.time(at) + tt.sfx(at) + " \xB7 video";
-          if (vid.currentTime >= to() - 0.05) {
-            again();
-          }
-        };
-        vid.onended = again;
+        unloop?.();
         m.classList.add("flip-video");
-        vid.src = span.clip.url;
+        unloop = loopClipSpan(v, span, rate, {
+          metadata: (vid) => {
+            noteClipLength(span.clip.url, vid.duration);
+            if (vid.videoWidth && vid.videoHeight) {
+              m.style.aspectRatio = String(vid.videoWidth / vid.videoHeight);
+            }
+          },
+          time: (at) => {
+            m.querySelector(".cap").textContent = "\u25B6 " + tt.time(at) + tt.sfx(at) + " \xB7 video";
+          }
+        });
       },
       playingChanged: (on) => {
         if (!rec) {
@@ -3921,6 +4166,24 @@ var VTCore = (() => {
         }
       }
     }, !!s.backend.detail, (sl) => model.clips.some((c) => c.to > sl.x0 && c.from < sl.x0 + sl.span), !!s.cfg.videoAutoSpeed);
+    const player = () => playerContext(
+      s.backend,
+      s.cfg,
+      s.P,
+      decl,
+      model,
+      tt,
+      (t) => {
+        if (!s.destroyed) {
+          setCursor(s, t, null, false);
+        }
+      },
+      s.cfg.onZoom ? (from, to) => {
+        if (!s.destroyed) {
+          s.cfg.onZoom(Math.floor(from), Math.ceil(to));
+        }
+      } : void 0
+    );
     const hoverAt = (e) => {
       const r = strip.getBoundingClientRect();
       if (!r.width) {
@@ -3942,39 +4205,46 @@ var VTCore = (() => {
         s.cfg.onHoverClear();
       }
     });
+    const openAt = (x, y) => {
+      const sl = model.slotAt(s.cursorT);
+      const f = sl && sl.frame;
+      const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
+      if (f) {
+        s.pv.open(decl.site, host, f, x, y, f.hi ?? null, null, tt, player());
+      } else if (sl && !sl.paused && !sl.beyond && sl.clip) {
+        s.pv.play(decl.site, host, sl.ts, x, y, tt, player());
+      } else if (g) {
+        s.pv.open(decl.site, host, g, x, y, null, sl.ts, tt);
+      }
+    };
     strip.addEventListener("click", (e) => {
       flip.stop();
       if (s.suppressClick) {
         s.suppressClick = false;
         return;
       }
-      const sl = model.slotAt(s.cursorT);
-      const f = sl && sl.frame;
-      const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
-      const player = () => playerContext(
-        s.backend,
-        s.cfg,
-        s.P,
-        decl,
-        model,
-        tt,
-        (t) => {
-          if (!s.destroyed) {
-            setCursor(s, t, null, false);
-          }
-        },
-        s.cfg.onZoom ? (from, to) => {
-          if (!s.destroyed) {
-            s.cfg.onZoom(Math.floor(from), Math.ceil(to));
-          }
-        } : void 0
-      );
-      if (f) {
-        s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt, player());
-      } else if (sl && !sl.paused && !sl.beyond && sl.clip) {
-        s.pv.play(decl.site, kiosk, sl.ts, e.clientX, e.clientY, tt, player());
-      } else if (g) {
-        s.pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl.ts, tt);
+      openAt(e.clientX, e.clientY);
+    });
+    strip.addEventListener("keydown", (e) => {
+      if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) {
+        return;
+      }
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        const r = strip.getBoundingClientRect();
+        openAt(r.left + r.width * (s.cursorT - s.P.from) / s.SPAN, r.top + r.height / 2);
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        const sl = model.slotAt(s.cursorT);
+        const next = sl && model.slotAt(e.key === "ArrowRight" ? sl.x0 + sl.span : sl.x0 - 1);
+        if (next && next !== sl) {
+          setCursor(s, Math.max(next.x0, Math.min(next.x0 + next.span - 1, next.ts)), card, false);
+        }
+      }
+    });
+    strip.addEventListener("blur", () => {
+      if (!s.wrap.classList.contains("strip-hover") && s.cfg.onHoverClear) {
+        s.cfg.onHoverClear();
       }
     });
     const magEl = card.querySelector(".mag");
@@ -4031,6 +4301,12 @@ var VTCore = (() => {
       zone,
       tt,
       flip,
+      player,
+      // the mount's teardown: no flipbook, no video, left running
+      teardown: () => {
+        flip.stop();
+        dropVideo(magEl);
+      },
       head: card.querySelector(".ft"),
       strip,
       cross: card.querySelector(".xh"),
@@ -4097,7 +4373,7 @@ var VTCore = (() => {
     const appliesTo = (a, k) => (!a.source || a.source === k.id) && (!a.siteScope || a.siteScope === k.site);
     const isGlobal = (a) => !a.source && !a.siteScope;
     if (s.cfg.annotationLanes === "per-source") {
-      for (const k of s.kiosks) {
+      for (const k of s.hosts) {
         const c = s.cards[k.id];
         const items = anns.filter((a) => appliesTo(a, k));
         if (!items.length) {
@@ -4119,14 +4395,14 @@ var VTCore = (() => {
       if (isGlobal(a)) {
         laneItems.push(a);
       } else {
-        for (const k of s.kiosks) {
+        for (const k of s.hosts) {
           if (appliesTo(a, k)) {
             (perCard[k.id] ||= []).push(a);
           }
         }
       }
       if (a.timeEnd) {
-        const hosts = isGlobal(a) ? s.kiosks.map((k) => s.cards[k.id].strip).concat([q(s.wrap, ".ann-lane")]) : s.kiosks.filter((k) => appliesTo(a, k)).map((k) => s.cards[k.id].strip);
+        const hosts = isGlobal(a) ? s.hosts.map((k) => s.cards[k.id].strip).concat([q(s.wrap, ".ann-lane")]) : s.hosts.filter((k) => appliesTo(a, k)).map((k) => s.cards[k.id].strip);
         for (const h of hosts) {
           addRegion(h, a);
         }
@@ -4145,7 +4421,7 @@ var VTCore = (() => {
 
   // src/vt/timeline/poll.ts
   function startPoll(s) {
-    const steps = s.kiosks.map((k) => s.cards[k.id]?.model.step).filter((x) => !!x);
+    const steps = s.hosts.map((k) => s.cards[k.id]?.model.step).filter((x) => !!x);
     const minStep = steps.length ? Math.min(...steps) : 6e4;
     let busy = false;
     s.pollTimer = setInterval(async () => {
@@ -4161,7 +4437,7 @@ var VTCore = (() => {
     }, Math.min(minStep, 1e4));
   }
   async function pollOnce(s) {
-    for (const k of s.kiosks) {
+    for (const k of s.hosts) {
       const c = s.cards[k.id];
       if (!c) {
         continue;
@@ -4215,7 +4491,7 @@ var VTCore = (() => {
       pxBudget,
       backend,
       wrap,
-      kiosks: [],
+      hosts: [],
       cards: {},
       cursorT: restoreCursor(root, P),
       destroyed: false,
@@ -4230,7 +4506,7 @@ var VTCore = (() => {
     };
     (async function boot() {
       try {
-        s.kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
+        s.hosts = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
       } catch (e) {
         console.warn("[visual-timeline] sources fetch failed:", e);
         if (s.destroyed) {
@@ -4243,11 +4519,11 @@ var VTCore = (() => {
         await revealWrapper(root, wrap);
         return;
       }
-      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence, sample: s.cfg.sampleInterval }).catch((e) => {
+      const models = limited(s.hosts, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, pxBudget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence, sample: s.cfg.sampleInterval }).catch((e) => {
         console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
         return null;
       }));
-      for (const [i, k] of s.kiosks.entries()) {
+      for (const [i, k] of s.hosts.entries()) {
         const model = await models[i];
         if (s.destroyed) {
           return;
@@ -4260,7 +4536,11 @@ var VTCore = (() => {
         }
         s.cards[k.id] = buildCard(s, k, model);
       }
-      s.kiosks = s.kiosks.filter((k) => s.cards[k.id]);
+      s.hosts = s.hosts.filter((k) => s.cards[k.id]);
+      s.pv.rebind((site, id) => {
+        const k = s.hosts.find((d) => d.site === site && d.id === id);
+        return k ? s.cards[k.id].player?.() ?? null : null;
+      });
       buildAxis(s);
       ruleAllBeyond(s);
       const rawAnns = cfg.annotations && cfg.annotations.length ? cfg.annotations : backend.annotations ? backend.annotations() : [];
@@ -4292,6 +4572,9 @@ var VTCore = (() => {
         if (s.pollTimer) {
           clearInterval(s.pollTimer);
         }
+        for (const c of Object.values(s.cards)) {
+          c.teardown?.();
+        }
         s.pv.retire();
         annTip().close();
         retireWrapper(wrap);
@@ -4307,6 +4590,7 @@ var VTCore = (() => {
     el.className = "tile" + (inline ? " inline-head" : "") + (s.cfg.headerMode === "inline-gradient" ? " inline-grad" : "");
     el.innerHTML = '<div class="t-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs("host", decl.id, !!s.cfg.onFilter) + ">" + esc(decl.id) + '</span><span class="inline-brk"></span>' + zoneChip(zone.srcTZ) + headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '</div><div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
     attachZoneChip(zone, el);
+    el.querySelector("img").referrerPolicy = "no-referrer";
     const rec = {
       decl,
       model,
@@ -4360,7 +4644,7 @@ var VTCore = (() => {
     }
     const live = Math.min(s.P.to, Date.now());
     const zoneAt = t == null ? live : t;
-    for (const k of s.kiosks) {
+    for (const k of s.hosts) {
       const rec = s.tiles[k.id];
       if (!rec) {
         continue;
@@ -4438,7 +4722,7 @@ var VTCore = (() => {
     }, 1e4);
   }
   async function pollOnce2(s) {
-    for (const k of s.kiosks) {
+    for (const k of s.hosts) {
       const rec = s.tiles[k.id];
       if (!rec) {
         continue;
@@ -4483,7 +4767,7 @@ var VTCore = (() => {
       LIVE,
       backend,
       wrap,
-      kiosks: [],
+      hosts: [],
       tiles: {},
       destroyed: false,
       pollTimer: null,
@@ -4493,7 +4777,7 @@ var VTCore = (() => {
     };
     (async function boot() {
       try {
-        s.kiosks = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
+        s.hosts = (await backend.kiosks(P.site)).filter((k) => !P.source || P.source.includes(k.id)).filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
       } catch (e) {
         console.warn("[visual-timeline] sources fetch failed:", e);
         if (s.destroyed) {
@@ -4506,11 +4790,11 @@ var VTCore = (() => {
         await revealWrapper(root, wrap);
         return;
       }
-      const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence, sample: s.cfg.sampleInterval }).catch((e) => {
+      const models = limited(s.hosts, MODEL_CONCURRENCY, (k) => s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence, sample: s.cfg.sampleInterval }).catch((e) => {
         console.warn("[visual-timeline] model build failed for " + k.id + ":", e);
         return null;
       }));
-      for (const [i, k] of s.kiosks.entries()) {
+      for (const [i, k] of s.hosts.entries()) {
         const model = await models[i];
         if (s.destroyed) {
           return;
@@ -4523,7 +4807,15 @@ var VTCore = (() => {
         }
         s.tiles[k.id] = buildTile(s, k, model);
       }
-      s.kiosks = s.kiosks.filter((k) => s.tiles[k.id]);
+      s.hosts = s.hosts.filter((k) => s.tiles[k.id]);
+      s.pv.rebind((site, id) => {
+        const t = s.hosts.find((d) => d.site === site && d.id === id) && s.tiles[id];
+        return t ? playerContext(s.backend, s.cfg, s.P, t.decl, t.model, t.tt, (at) => {
+          if (!s.destroyed) {
+            setShown(s, at);
+          }
+        }) : null;
+      });
       setShown(s, null);
       await revealWrapper(root, wrap);
       if (s.destroyed) {
