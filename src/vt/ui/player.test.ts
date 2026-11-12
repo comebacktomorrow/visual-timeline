@@ -296,6 +296,28 @@ describe('the preview player', () => {
       v.dispatchEvent(new Event('loadedmetadata'));
     };
 
+    test('Play toggled before the video\'s metadata arrives starts it once, not once per press (L3)', async () => {
+      const rafs = jest.spyOn(window, 'requestAnimationFrame');
+      teardown = mountPlayer(el, fr(30), clipCtx(), () => {});
+      await flush();
+      press('next');   // 10:31: in the clip, its video not loaded yet
+      const v = el.querySelector('.stage video:not(.spare)') as HTMLVideoElement;
+      press('play'); press('play'); press('play');   // play, pause, play
+      metadata(v, 30);
+      await flush();
+      expect(played).toBe(1);
+      expect(rafs).toHaveBeenCalledTimes(1);
+      // paused before it arrives: nothing starts when it does
+      press('play');
+      Object.defineProperty(v, 'readyState', { configurable: true, value: 0 });
+      press('play');
+      press('play');
+      v.dispatchEvent(new Event('loadedmetadata'));
+      await flush();
+      expect(el.querySelector('button[data-a="play"]')!.textContent).toBe('▶');
+      expect(played).toBe(1);
+    });
+
     test('it plays over the stills: a plain bar on the scrubber, no ticks under it', async () => {
       teardown = mountPlayer(el, fr(30), clipCtx(), () => {});
       await flush();

@@ -183,6 +183,15 @@ export function mountPlayer(
   /* the video is playing, and moves the playhead (not the other way round) */
   let driving = false;
   let raf = 0;
+  /* a play waiting for the video's metadata: one at a time, so toggling
+   * Play before it arrives doesn't stack starts (and rAF loops) */
+  let pendingGo: { v: HTMLVideoElement; h: () => void; timer: ReturnType<typeof setTimeout> | null } | null = null;
+  function cancelGo(): void {
+    if (!pendingGo) {return;}
+    pendingGo.v.removeEventListener('loadedmetadata', pendingGo.h);
+    if (pendingGo.timer) {clearTimeout(pendingGo.timer);}
+    pendingGo = null;
+  }
   /* the video's speed the viewer chose, for this slot; null: what fits it */
   let speed: number | null = null;
   /* the slot's video plays: the speed button sets how fast */
@@ -516,6 +525,7 @@ export function mountPlayer(
 
   function stopVideo(): void {
     driving = false;
+    cancelGo();
     if (raf) { cancelAnimationFrame(raf); raf = 0; }
     if (!video.paused) {video.pause();}
   }
@@ -564,7 +574,9 @@ export function mountPlayer(
       raf = requestAnimationFrame(follow);
     };
     const go = () => {
+      pendingGo = null;
       if (!playing || gone || !driving) {return;}
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
       video.muted = prefs.muted;
       // sped up to be watched in a few seconds, or as the viewer chose
       video.playbackRate = rateNow();
@@ -576,8 +588,15 @@ export function mountPlayer(
       preload(ws.find((c) => c.from >= span.to - 1 && c.clip !== span.clip) ?? ws.find((c) => c.clip !== span.clip));
       raf = requestAnimationFrame(follow);
     };
-    if (video.readyState >= 1 && pendingT === null) {go();}
-    else {video.addEventListener('loadedmetadata', () => setTimeout(go, 0), { once: true });}
+    cancelGo();
+    if (video.readyState >= 1 && pendingT === null) { go(); return; }
+    const v = video;
+    const h = () => {
+      v.removeEventListener('loadedmetadata', h);
+      if (pendingGo) {pendingGo.timer = setTimeout(go, 0);}
+    };
+    pendingGo = { v, h, timer: null };
+    v.addEventListener('loadedmetadata', h);
   }
   function play(): void {
     if (playing || !reel.playable(most())) {return;}
