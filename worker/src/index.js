@@ -366,6 +366,10 @@ async function handleUpload(request, env, ctx) {
     return json({ error: 'not a JPEG: the body must start with FF D8 FF' }, 415);
   }
 
+  // registered first, so a source the site has no room for stores nothing
+  if (!(await ensureRegistered(env, site, source, variant, cadence, ts, location, tags, timezone))) {
+    return json({ error: `this site already has ${MAX_SOURCES_PER_SITE} sources, the most allowed` }, 409);
+  }
   const key = `${variant}/${site}/${source}/${ts}.jpg`;
   await env.FRAMES.put(key, body, {
     httpMetadata: { contentType: 'image/jpeg', cacheControl: FRAME_CACHE },
@@ -379,7 +383,6 @@ async function handleUpload(request, env, ctx) {
       console.error(JSON.stringify({ msg: 'frame index write failed', site, source, variant, ts, error: String(err) }));
     }
   }
-  await ensureRegistered(env, site, source, variant, cadence, ts, location, tags, timezone);
   if (retentionMs(env, 'lo') || retentionMs(env, 'hi')) {ctx.waitUntil(pruneSite(env, site, source));}
   return json({ ok: true, key, ts });
 }
@@ -494,7 +497,11 @@ function retainedHistory(history, cutoff, cadence) {
     const firstLo = sorted.find((h) => (h.variant || 'lo') === 'lo');
     inForce.set('lo', { variant: 'lo', cadence: (firstLo && firstLo.cadence) || cadence || 60000 });
   }
-  for (const h of inForce.values()) {out.push({ ...h, since: cutoff });}
+  // lo first, then the rest: a fixed order, whichever event came first
+  // (trimHistory may have dropped it)
+  for (const [, h] of [...inForce].sort(([a], [b]) => (a !== 'lo') - (b !== 'lo'))) {
+    out.push({ ...h, since: cutoff });
+  }
   return out.concat(later);
 }
 
@@ -540,17 +547,78 @@ function parseTags(raw) {
   return Object.keys(tags).length ? tags : null;
 }
 
+/* Bounds on what one site's upload token can make index.json hold (W2).
+ * Every site shares that one object and its etag-conditional writes, so a
+ * site that grows it without limit (new source ids, a flapping cadence or
+ * pause) slows every read of it and runs other sites' write retries out.
+ * The bounds are far past any real fleet:
+ *  - MAX_SOURCES_PER_SITE: an upload for a new source past it is refused
+ *    (409) before anything is stored.
+ *  - MAX_HISTORY: events kept per source. Under retention, events from
+ *    before the cutoff are dropped first (except the one in force there,
+ *    which /sources restates, so what it reports is unchanged); past the
+ *    cap, the oldest go.
+ *  - INDEX_WRITES_PER_MIN: index writes per site per minute, counted per
+ *    isolate (so a bound on each isolate, not a global one). Past it, an
+ *    upload is still stored and its registration waits for a later upload;
+ *    a /declare is a 429. */
+const MAX_SOURCES_PER_SITE = 1000;
+const MAX_HISTORY = 1000;
+const INDEX_WRITES_PER_MIN = 300;
+const indexWrites = new Map();   // site → {start, n}: this isolate's current minute
+
+function indexWriteAllowed(site) {
+  const now = Date.now();
+  let w = indexWrites.get(site);
+  if (!w || now - w.start >= 60000) {
+    w = { start: now, n: 0, warned: false };
+    indexWrites.set(site, w);
+  }
+  if (w.n < INDEX_WRITES_PER_MIN) {
+    w.n++;
+    return true;
+  }
+  if (!w.warned) {
+    w.warned = true;
+    console.warn(JSON.stringify({ msg: 'index writes rate-limited', site, perMinute: INDEX_WRITES_PER_MIN }));
+  }
+  return false;
+}
+
+/* A source's history as stored after a write: see MAX_HISTORY. */
+function trimHistory(env, history) {
+  const keep = retentionMs(env, 'lo');
+  if (keep) {
+    // the latest event per variant at or before the cutoff stays (it is the
+    // one in force there, as retainedHistory picks it); older ones go
+    const cutoff = Date.now() - keep;
+    const inForce = new Map();
+    for (const h of history) {
+      const v = h.variant || 'lo';
+      const cur = inForce.get(v);
+      if (h.since <= cutoff && (!cur || h.since >= cur.since)) {inForce.set(v, h);}
+    }
+    history = history.filter((h) => h.since > cutoff || inForce.get(h.variant || 'lo') === h);
+  }
+  return history.length > MAX_HISTORY ? history.slice(-MAX_HISTORY) : history;
+}
+
 /* Register the source's declared cadence in index.json. Writes only when the
- * declaration changed; concurrent writers resolved by verify-after-write. */
+ * declaration changed; concurrent writers resolved by verify-after-write.
+ * Returns false only when the site is full (MAX_SOURCES_PER_SITE). */
 async function ensureRegistered(env, site, source, variant, cadence, ts, location, tags, timezone) {
   const memo = `${site}/${source}/${variant}/${cadence}/${location || ''}/${timezone || ''}/${JSON.stringify(tags || {})}`;
-  if (isRegistered(memo)) {return;}
+  if (isRegistered(memo)) {return true;}
   const field = variant === 'hi' ? 'hiCadence' : 'cadence';
 
   for (let attempt = 0; attempt < 4; attempt++) {
     const cur = await env.FRAMES.get(INDEX_KEY);
     const index = cur ? await cur.json() : { sites: {} };
     const sources = own(index.sites, site) || (index.sites[site] = {});
+    if (!own(sources, source) && Object.keys(sources).length >= MAX_SOURCES_PER_SITE) {
+      console.warn(JSON.stringify({ msg: 'source refused: site has the most sources allowed', site, max: MAX_SOURCES_PER_SITE }));
+      return false;
+    }
     const entry = own(sources, source) || (sources[source] = { history: [] });
     const lastEvt = entry.history[entry.history.length - 1];
     const wasPaused = !!(lastEvt && lastEvt.paused);
@@ -558,11 +626,14 @@ async function ensureRegistered(env, site, source, variant, cadence, ts, locatio
     const locChanged = !!location && entry.location !== location;
     const tzChanged = !!timezone && entry.timezone !== timezone;
     const tagsChanged = !!tags && JSON.stringify(entry.tags || null) !== JSON.stringify(tags);
-    if (!cadChanged && !locChanged && !tzChanged && !tagsChanged && !wasPaused) { registered.set(memo, Date.now()); return; }
+    if (!cadChanged && !locChanged && !tzChanged && !tagsChanged && !wasPaused) { registered.set(memo, Date.now()); return true; }
+    // over the rate: the frame is stored, and a later upload registers it
+    if (!indexWriteAllowed(site)) {return true;}
 
     if (cadChanged || wasPaused) {
       entry[field] = cadence;
       entry.history.push({ since: ts, variant, cadence });   // resume and/or pace change
+      entry.history = trimHistory(env, entry.history);
     }
     if (locChanged) {entry.location = location;}
     if (tzChanged) {entry.timezone = timezone;}
@@ -578,10 +649,11 @@ async function ensureRegistered(env, site, source, variant, cadence, ts, locatio
         (!timezone || seen.timezone === timezone) &&
         (!tags || JSON.stringify(seen.tags || null) === JSON.stringify(tags))) {
       registered.set(memo, Date.now());
-      return;
+      return true;
     }
   }
   console.warn(JSON.stringify({ msg: 'index registration retries exhausted', site, source, variant }));
+  return true;
 }
 
 /* Cadence-event declaration: a source about to go deliberately silent says
@@ -617,10 +689,14 @@ async function handleDeclare(request, env) {
     // pushes a new event so the band splits (quiet hours -> box shut down)
     if (last && last.paused && last.reason === reason && last.intended === intended)
       {return json({ ok: true, note: 'already paused' });}
+    if (!indexWriteAllowed(site)) {
+      return json({ error: 'too many index writes for this site; try again in a minute' }, 429, { 'retry-after': '60' });
+    }
     const evt = { since: Date.now(), variant: 'lo', paused: true };
     if (reason !== undefined) {evt.reason = reason;}
     if (intended !== undefined) {evt.intended = intended;}
     entry.history.push(evt);
+    entry.history = trimHistory(env, entry.history);
     const put = await env.FRAMES.put(INDEX_KEY, JSON.stringify(index), { onlyIf: { etagMatches: cur.etag } });
     if (put) {
       // drop this isolate's memos so the next upload re-checks wasPaused

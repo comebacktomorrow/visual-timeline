@@ -221,6 +221,23 @@ endpoint isn't cached at Cloudflare's edge, so every first view of an image is
 an R2 read; a public bucket on a custom domain (`IMG_BASE`) is cached and free,
 but makes every frame public.
 
+## Limits
+
+The worker keeps every site's sources in one shared registry
+(`index.json`), so one site's upload token can't grow it without limit.
+The bounds are far past any real fleet:
+
+- **1,000 sources per site.** An upload for a new source past that is
+  refused with 409, and nothing is stored.
+- **1,000 history events per source** (pace changes, pauses and resumes).
+  With `RETENTION_DAYS` set, events from before the cutoff go first, which
+  doesn't change what `/sources` reports; past the cap, the oldest go.
+- **300 registry writes per site a minute**, counted in each Worker isolate
+  (a bound per isolate, not across them). Past it, an upload is still
+  stored, and its source is registered by a later upload; a `/declare` gets
+  a 429 with `Retry-After: 60`.
+- **Uploads:** a JPEG of at most 2 MB, as below.
+
 ## Uploading frames
 
 An uploader captures a JPEG on its cadence and POSTs it to `/upload` with

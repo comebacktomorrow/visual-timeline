@@ -465,6 +465,94 @@ test('retention: unset or invalid RETENTION_DAYS keeps everything', async () => 
   }
 });
 
+/* ---------------- index.json bounds (W2) ---------------- */
+
+const storedIndex = (env) => JSON.parse(env.FRAMES.objs.get('index.json').body);
+const declarePause = (env, site, source) => call('/declare', env, {
+  method: 'POST', headers: { authorization: 'Bearer tok', 'x-site': site, 'x-source': source, 'x-event': 'pause' },
+});
+
+test('index bounds: a site at its source cap refuses a new source, and stores nothing for it', async () => {
+  const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'cap-a': 'tok', 'cap-b': 'tok' }) };
+  const full = {};
+  for (let i = 0; i < 1000; i++) {full[`cam-${i}`] = { cadence: MIN, history: [] };}
+  env.FRAMES.objs.set('index.json', { body: JSON.stringify({ sites: { 'cap-a': full } }), etag: 'i' });
+  const warns = [];
+  const orig = console.warn; console.warn = (m) => warns.push(m);
+  let res;
+  try { res = await uploadTo(env, 'cap-a', 'one-more'); } finally { console.warn = orig; }
+  assert.equal(res.status, 409);
+  assert.match((await res.json()).error, /1000 sources/);
+  assert.equal(framesOf(env, 'lo', 'cap-a', 'one-more'), 0, 'no frame stored');
+  assert.equal(own1000(storedIndex(env)), 1000, 'the registry did not grow');
+  assert.ok(warns.some((w) => w.includes('source refused')));
+  // the site's existing sources, and other sites, carry on
+  assert.equal((await uploadTo(env, 'cap-a', 'cam-7')).status, 200);
+  assert.equal((await uploadTo(env, 'cap-b', 'cam-1')).status, 200);
+});
+const own1000 = (index) => Object.keys(index.sites['cap-a']).length;
+
+test('index bounds: a source keeps at most 1000 history events, the newest', async () => {
+  const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'hist-a': 'tok' }) };
+  const t0 = Date.now() - 2000 * MIN;
+  const history = [];
+  for (let i = 0; i < 1000; i++) {history.push(i % 2 ? { since: t0 + i * MIN, variant: 'lo', paused: true } : { since: t0 + i * MIN, variant: 'lo', cadence: MIN });}
+  env.FRAMES.objs.set('index.json', { body: JSON.stringify({ sites: { 'hist-a': { cam: { cadence: MIN, history } } } }), etag: 'i' });
+  // the last event is a pause, so this upload is a resume: one more event
+  assert.equal((await uploadTo(env, 'hist-a', 'cam')).status, 200);
+  const after = storedIndex(env).sites['hist-a'].cam.history;
+  assert.equal(after.length, 1000);
+  assert.equal(after[0].since, t0 + MIN, 'the oldest event went');
+  assert.equal(after.at(-1).paused, undefined, 'the resume is kept');
+  // a pause declared on top: still 1000
+  assert.equal((await declarePause(env, 'hist-a', 'cam')).status, 200);
+  assert.equal(storedIndex(env).sites['hist-a'].cam.history.length, 1000);
+});
+
+test('index bounds: under retention, a write drops expired events without changing what /sources reports', async (t) => {
+  const NOWX = 1_800_000_000_000;
+  t.mock.method(Date, 'now', () => NOWX);
+  const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'hist-r': 'tok' }), RETENTION_DAYS: '30' };
+  const history = [
+    { since: NOWX - 90 * DAY, variant: 'lo', cadence: MIN },
+    { since: NOWX - 80 * DAY, variant: 'hi', cadence: 5 * MIN },
+    { since: NOWX - 60 * DAY, variant: 'lo', paused: true, reason: 'quiet' },
+    { since: NOWX - 50 * DAY, variant: 'lo', cadence: 2 * MIN },   // lo in force at the cutoff
+    { since: NOWX - 10 * DAY, variant: 'lo', paused: true, reason: 'quiet' },
+  ];
+  env.FRAMES.objs.set('index.json', { body: JSON.stringify({ sites: { 'hist-r': { cam: { cadence: 2 * MIN, hiCadence: 5 * MIN, history } } } }), etag: 'i' });
+  const before = (await sourceOf(env, 'cam')).history;
+  await declarePause(env, 'hist-r', 'cam');   // a different pause (no reason): one write
+  const stored = storedIndex(env).sites['hist-r'].cam.history;
+  assert.deepEqual(stored.map((h) => h.since), [NOWX - 80 * DAY, NOWX - 50 * DAY, NOWX - 10 * DAY, NOWX]);
+  assert.deepEqual((await sourceOf(env, 'cam')).history.slice(0, -1), before, 'the same report, plus the new pause');
+  t.mock.restoreAll();
+});
+
+test('index bounds: index writes are rate-limited per site; a deferred registration lands on a later upload', async (t) => {
+  let now = Math.floor(Date.now() / MIN) * MIN;
+  t.mock.method(Date, 'now', () => now);
+  const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'rate-a': 'tok', 'rate-b': 'tok' }) };
+  const warns = [];
+  const orig = console.warn; console.warn = (m) => warns.push(m);
+  try {
+    for (let i = 0; i < 300; i++) {assert.equal((await uploadTo(env, 'rate-a', `cam-${i}`)).status, 200);}
+    // the 301st write this minute: the frame is stored, the registration waits
+    assert.equal((await uploadTo(env, 'rate-a', 'late')).status, 200);
+    assert.equal(framesOf(env, 'lo', 'rate-a', 'late'), 1);
+    assert.equal(storedIndex(env).sites['rate-a'].late, undefined);
+    assert.equal((await declarePause(env, 'rate-a', 'cam-0')).status, 429);
+    // another site has its own allowance
+    assert.equal((await uploadTo(env, 'rate-b', 'cam')).status, 200);
+    assert.ok(storedIndex(env).sites['rate-b'].cam);
+    assert.equal(warns.filter((w) => w.includes('index writes rate-limited')).length, 1, 'said once a minute');
+    now += MIN;
+    assert.equal((await uploadTo(env, 'rate-a', 'late')).status, 200);
+    assert.ok(storedIndex(env).sites['rate-a'].late, 'registered once the minute is up');
+    assert.equal((await declarePause(env, 'rate-a', 'cam-0')).status, 200);
+  } finally { console.warn = orig; t.mock.restoreAll(); }
+});
+
 /* ---------------- /frames for every source (#126 M2) ---------------- */
 
 /* memR2's frames plus an index.json, as the worker keeps them */
