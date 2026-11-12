@@ -15,7 +15,7 @@ export function startPoll(s: GridState): void {
 }
 
 async function pollOnce(s: GridState): Promise<void> {
-  for (const k of s.kiosks) {
+  for (const k of s.hosts) {
     const rec = s.tiles[k.id];
     if (!rec) {continue;}
     const last = lastFrame(rec);

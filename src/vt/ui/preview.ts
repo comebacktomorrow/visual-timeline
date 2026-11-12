@@ -8,18 +8,18 @@ import { mountPlayer, type PlayerContext, type PlayerTeardown } from './player';
  * omitted); hiUrl, when set, is tried first and falls back to frame.url */
 export interface Preview {
   open(
-    site: string, kiosk: string, frame: Frame, x: number, y: number,
+    site: string, host: string, frame: Frame, x: number, y: number,
     hiUrl: string | null, expectedTs: number | null, tt?: ZoneTexts, player?: PlayerContext
   ): void;
   /** the player at t, with no frame to show first: a video clip's slot (M10c) */
-  play(site: string, kiosk: string, t: number, x: number, y: number, tt: ZoneTexts | undefined, player: PlayerContext): void;
+  play(site: string, host: string, t: number, x: number, y: number, tt: ZoneTexts | undefined, player: PlayerContext): void;
   close(): void;
   retire(): void;
   /** A refresh remount adopting an open player hands it its own context for
    * the same host (`provide`), once it has built its cards; a host it no
    * longer shows closes the player. Only a player opened in this mount's
    * root, by an earlier mount, is touched. */
-  rebind(provide: (site: string, kiosk: string) => PlayerContext | null): void;
+  rebind(provide: (site: string, host: string) => PlayerContext | null): void;
 }
 
 /* cursor-anchored larger preview (not full-screen), shared by both modes.
@@ -40,7 +40,7 @@ interface PopState {
   keyCapture?: boolean;
   /* an open player: the root and the mount (its Preview) it belongs to, and
    * its host, for rebind() */
-  player?: { root: HTMLElement; by: Preview; site: string; kiosk: string; label: string; handle: PlayerTeardown } | null;
+  player?: { root: HTMLElement; by: Preview; site: string; host: string; label: string; handle: PlayerTeardown } | null;
   /* what had focus before the player took it: given back when it closes */
   opener?: HTMLElement | null;
 }
@@ -67,15 +67,15 @@ export function makePreview(root: HTMLElement, tz: string): Preview {
   // adopt: a mount created while a retire is pending cancels the close
   if (popState.retireTimer) { clearTimeout(popState.retireTimer); popState.retireTimer = null; }
   const panelTexts = zoneTexts(tz, tz, false);
-  const label = (site: string, kiosk: string) => (site ? site + ' / ' + kiosk : kiosk);
+  const label = (site: string, host: string) => (site ? site + ' / ' + host : host);
   const pv: Preview = {
     // expectedTs set = frame is the pending slot's ghost: shown blurred and
     // captioned as the last frame, never as the expected one. tt: the
     // source's time text (zoneTexts), the panel's when omitted
-    open(site, kiosk, frame, x, y, hiUrl, expectedTs, tt, player) {
+    open(site, host, frame, x, y, hiUrl, expectedTs, tt, player) {
       tt = tt || panelTexts;
       closePreview();
-      if (player && !expectedTs) { openPlayer(root, pv, site, kiosk, frame, frame.ts, x, y, { ...player, tt, label: label(site, kiosk) }); return; }
+      if (player && !expectedTs) { openPlayer(root, pv, site, host, frame, frame.ts, x, y, { ...player, tt, label: label(site, host) }); return; }
       const el = document.createElement('div');
       el.className = 'ktl-pop' + (expectedTs ? ' ghost' : '');
       copyVars(root, el);
@@ -83,7 +83,7 @@ export function makePreview(root: HTMLElement, tz: string): Preview {
       // both are in the markup just set
       const img = el.querySelector('img')!;
       img.referrerPolicy = 'no-referrer';
-      el.querySelector('.cap')!.textContent = (site ? site + ' / ' : '') + kiosk + ' — ' + (expectedTs
+      el.querySelector('.cap')!.textContent = (site ? site + ' / ' : '') + host + ' — ' + (expectedTs
         ? 'expected ' + tt.short(expectedTs) + ' · last frame ' + tt.time(frame.ts)
         : tt.time(frame.ts)) + tt.sfx(frame.ts);
       el.addEventListener('click', closePreview);
@@ -102,9 +102,9 @@ export function makePreview(root: HTMLElement, tz: string): Preview {
       popState.keyH = e => { if (e.key === 'Escape') {closePreview();} };
       document.addEventListener('keydown', popState.keyH);
     },
-    play(site, kiosk, t, x, y, tt, player) {
+    play(site, host, t, x, y, tt, player) {
       closePreview();
-      openPlayer(root, pv, site, kiosk, null, t, x, y, { ...player, tt: tt || panelTexts, label: label(site, kiosk) });
+      openPlayer(root, pv, site, host, null, t, x, y, { ...player, tt: tt || panelTexts, label: label(site, host) });
     },
     close: closePreview,
     retire() {
@@ -117,7 +117,7 @@ export function makePreview(root: HTMLElement, tz: string): Preview {
     rebind(provide) {
       const p = popState.player;
       if (!p || p.root !== root || p.by === pv) {return;}
-      const ctx = provide(p.site, p.kiosk);
+      const ctx = provide(p.site, p.host);
       if (!ctx) { closePreview(); return; }
       p.by = pv;
       p.handle.rebind({ ...ctx, label: p.label });
@@ -128,13 +128,13 @@ export function makePreview(root: HTMLElement, tz: string): Preview {
 
 /* The preview as a player (M10): it stays open while it's used, and closes
  * on its close button, Esc, or a press outside it. */
-function openPlayer(root: HTMLElement, by: Preview, site: string, kiosk: string, frame: Frame | null, t: number, x: number, y: number, ctx: PlayerContext): void {
+function openPlayer(root: HTMLElement, by: Preview, site: string, host: string, frame: Frame | null, t: number, x: number, y: number, ctx: PlayerContext): void {
   const el = document.createElement('div');
   el.className = 'ktl-pop';
   copyVars(root, el);
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-modal', 'true');
-  el.setAttribute('aria-label', site ? site + ' / ' + kiosk : kiosk);
+  el.setAttribute('aria-label', site ? site + ' / ' + host : host);
   el.tabIndex = -1;
   const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
   document.body.appendChild(el);
@@ -151,7 +151,7 @@ function openPlayer(root: HTMLElement, by: Preview, site: string, kiosk: string,
   };
   const handle = mountPlayer(el, frame, ctx, place, closePreview, t);
   popState.teardown = handle;
-  popState.player = { root, by, site, kiosk, label: ctx.label ?? kiosk, handle };
+  popState.player = { root, by, site, host, label: ctx.label ?? host, handle };
   el.querySelector('button[data-a="close"]')?.addEventListener('click', closePreview);
   place();
   popState.el = el;

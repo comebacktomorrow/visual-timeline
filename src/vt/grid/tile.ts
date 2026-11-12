@@ -70,7 +70,7 @@ export function setShown(s: GridState, t: number | null): void {
   // zone chips: offset at the crosshair, else at the window's live edge
   const live = Math.min(s.P.to, Date.now());
   const zoneAt = t == null ? live : t;
-  for (const k of s.kiosks) {
+  for (const k of s.hosts) {
     const rec = s.tiles[k.id];
     if (!rec) {continue;}
     if (rec.zone.el) {dressZoneChip(rec.zone, zoneAt);}

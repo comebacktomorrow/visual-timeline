@@ -48,7 +48,7 @@ export interface TimelineState {
   pv: Preview;
   images: ImageQueue;  // strip images, newest first (ui/imageQueue.ts)
   PANEL_TT: ZoneTexts;
-  kiosks: SourceDecl[];         // the sources shown (after boot: those with a card)
+  hosts: SourceDecl[];         // the sources shown (after boot: those with a card)
   cards: Record<string, Card>;  // by source id
   cursorT: number;
   destroyed: boolean;

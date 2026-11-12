@@ -45,7 +45,7 @@ const CSS = `
        color:var(--ktl-text); font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif; }
 .ktl * { box-sizing:border-box; margin:0; padding:0; }
 .ktl .cards { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:6px; overflow-y:auto; }
-/* cards share panel height equally (fewer kiosks → taller strips), but
+/* cards share panel height equally (fewer hosts → taller strips), but
    never crush below a usable minimum — past that the list scrolls */
 .ktl .card { flex:1 1 0; min-height:76px; display:flex; flex-direction:column; background:var(--ktl-bg2);
              border:1px solid var(--ktl-border); border-radius:4px; overflow:hidden; transition:opacity 120ms ease;

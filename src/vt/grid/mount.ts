@@ -16,7 +16,7 @@ import { buildTile, setShown } from './tile';
 import { startPoll } from './poll';
 
 /* ======================= multiview grid mode =======================
- * One tile per kiosk, no timeline. Shows the most recent frame in the
+ * One tile per host, no timeline. Shows the most recent frame in the
  * window; with follow-crosshair on, shows the frame at the shared
  * crosshair time while another panel is hovered, reverting on clear.
  * cfg: MountConfig (src/vt/types.ts); the host callback is onShown(t). */
@@ -38,14 +38,14 @@ export function mountGrid(root: HTMLElement, cfg: MountConfig): MountInstance & 
   // the mount's shared state (the fields that change live only here)
   const s: GridState = {
     root, cfg, P, TZ, SPAN, LIVE, backend, wrap,
-    kiosks: [], tiles: {}, destroyed: false, pollTimer: null, shownT: null,
+    hosts: [], tiles: {}, destroyed: false, pollTimer: null, shownT: null,
     pv: makePreview(root, TZ),
     PANEL_TT: zoneTexts(TZ, TZ, false),
   };
 
   (async function boot() {
     try {
-      s.kiosks = (await backend.kiosks(P.site))
+      s.hosts = (await backend.kiosks(P.site))
         .filter((k) => !P.source || P.source.includes(k.id))
         .filter((k) => matchesTags(k.tags, parseTagFilter(cfg.tagFilter)));
     } catch (e: any) {   // whatever was thrown, read loosely as before
@@ -59,12 +59,12 @@ export function mountGrid(root: HTMLElement, cfg: MountConfig): MountInstance & 
       return;
     }
     // a few at a time; tiles still go in declared order
-    const models = limited(s.kiosks, MODEL_CONCURRENCY, (k) =>
+    const models = limited(s.hosts, MODEL_CONCURRENCY, (k) =>
       s.destroyed ? Promise.resolve(null) : buildSourceModel(k, P, backend, budget, { hold: s.cfg.hold, expected: s.cfg.expectedCadence, sample: s.cfg.sampleInterval }).catch((e) => {
         console.warn('[visual-timeline] model build failed for ' + k.id + ':', e);
         return null;
       }));
-    for (const [i, k] of s.kiosks.entries()) {
+    for (const [i, k] of s.hosts.entries()) {
       const model = await models[i];
       if (s.destroyed) {return;}
       if (!model) {continue;}
@@ -73,10 +73,10 @@ export function mountGrid(root: HTMLElement, cfg: MountConfig): MountInstance & 
       if (cfg.hideEmpty && !model.slots.some((sl) => sl.frame || sl.paused)) {continue;}
       s.tiles[k.id] = buildTile(s, k, model);
     }
-    s.kiosks = s.kiosks.filter((k) => s.tiles[k.id]);
+    s.hosts = s.hosts.filter((k) => s.tiles[k.id]);
     // a player adopted from the mount before (a refresh) moves this grid's time
     s.pv.rebind((site, id) => {
-      const t = s.kiosks.find((d) => d.site === site && d.id === id) && s.tiles[id];
+      const t = s.hosts.find((d) => d.site === site && d.id === id) && s.tiles[id];
       return t ? playerContext(s.backend, s.cfg, s.P, t.decl, t.model, t.tt, (at) => { if (!s.destroyed) {setShown(s, at);} }) : null;
     });
     setShown(s, null);

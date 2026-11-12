@@ -42,12 +42,12 @@ export function dressStrip(model: SourceModel): void {
   });
 }
 export function dressAll(s: TimelineState, tries: number): void {
-  const anySized = s.kiosks.some((k) => s.cards[k.id] && s.cards[k.id].strip.clientWidth > 0);
+  const anySized = s.hosts.some((k) => s.cards[k.id] && s.cards[k.id].strip.clientWidth > 0);
   if (!anySized) {
     if (tries > 0 && !s.destroyed) {setTimeout(() => dressAll(s, tries - 1), 500);}
     return;
   }
-  for (const k of s.kiosks) {if (s.cards[k.id]) {dressStrip(s.cards[k.id].model);}}
+  for (const k of s.hosts) {if (s.cards[k.id]) {dressStrip(s.cards[k.id].model);}}
 }
 
 /* A strip's slot elements, from its model: built at mount and again by
@@ -56,7 +56,7 @@ export function dressAll(s: TimelineState, tries: number): void {
  * and an element whose content is unchanged is reused, so its image
  * doesn't reload. Dropped time inside cells that show a frame is drawn as
  * marks at its true place. */
-export function renderStrip(s: TimelineState, model: SourceModel, strip: HTMLElement, kiosk: string, tt: ZoneTexts): void {
+export function renderStrip(s: TimelineState, model: SourceModel, strip: HTMLElement, host: string, tt: ZoneTexts): void {
   type Cell = { key: string; slots: Slot[] };
   const cells: Cell[] = [];
   for (const sl of model.slots) {
@@ -90,7 +90,7 @@ export function renderStrip(s: TimelineState, model: SourceModel, strip: HTMLEle
     }
     if (sl.frame && fresh) {
       const img = document.createElement('img');
-      img.alt = kiosk + ' ' + tt.time(sl.frame.ts) + tt.sfx(sl.frame.ts);
+      img.alt = host + ' ' + tt.time(sl.frame.ts) + tt.sfx(sl.frame.ts);
       // a strip holds hundreds: decoded off the main thread, and no
       // Referer (the dashboard's URL) sent to wherever the frames are
       img.decoding = 'async';
@@ -154,7 +154,7 @@ type StripEl = HTMLElement & { __cells?: Map<string, HTMLElement> };
  * and drag-zoom handlers. Every element queried below (asserted non-null)
  * is in the card template set here. */
 export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel): Card {
-  const kiosk = decl.id;
+  const host = decl.id;
   const zone = zoneFor(decl, s.TZ, s.cfg.thumbTimes, s.PANEL_TT), tt = zone.tt;
   const card = document.createElement('div');
   const inline = s.cfg.headerMode === 'inline' || s.cfg.headerMode === 'inline-gradient';
@@ -170,16 +170,16 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
       (model.promised ? '' : ' · no promise') + '</span>'
     : '';
   card.innerHTML =
-    '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs('host', kiosk, !!s.cfg.onFilter) + '>' + esc(kiosk) + '</span>' +
+    '<div class="card-head" title="' + esc(headTitle(decl)) + '"><span class="nm"' + filterAttrs('host', host, !!s.cfg.onFilter) + '>' + esc(host) + '</span>' +
     '<span class="inline-brk"></span>' + zoneChip(zone.srcTZ) +
     headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '<span class="ft"></span>' +
     cad + '</div>' +
-    '<div class="strip" tabindex="0" role="group" aria-label="' + esc(kiosk + ': ← → move along the timeline, Enter opens the preview') + '"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt="" referrerpolicy="no-referrer"><div class="cap"></div></div></div>' +
+    '<div class="strip" tabindex="0" role="group" aria-label="' + esc(host + ': ← → move along the timeline, Enter opens the preview') + '"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt="" referrerpolicy="no-referrer"><div class="cap"></div></div></div>' +
     '<div class="card-lane"></div>';
   const strip = card.querySelector<HTMLElement>('.strip')!;
   // hairline frame boundaries only when slices are wide enough — below
   // ~12px they read as zebra noise rather than structure
-  renderStrip(s, model, strip, kiosk, tt);
+  renderStrip(s, model, strip, host, tt);
   dressStrip(model);   // hatch alignment + band labels (re-run post-reveal)
   // the hover flipbook: a slot of several frames plays them in the
   // magnifier once the cursor has rested on it (flipbook.ts)
@@ -272,10 +272,10 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     const sl = model.slotAt(s.cursorT);
     const f = sl && sl.frame;
     const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
-    if (f) {s.pv.open(decl.site, kiosk, f, x, y, f.hi ?? null, null, tt, player());}
+    if (f) {s.pv.open(decl.site, host, f, x, y, f.hi ?? null, null, tt, player());}
     // a slot a video clip covers: the player, at the slot's time (M10c)
-    else if (sl && !sl.paused && !sl.beyond && sl.clip) {s.pv.play(decl.site, kiosk, sl.ts, x, y, tt, player());}
-    else if (g) {s.pv.open(decl.site, kiosk, g, x, y, null, sl!.ts, tt);}   // g is only set from a slot
+    else if (sl && !sl.paused && !sl.beyond && sl.clip) {s.pv.play(decl.site, host, sl.ts, x, y, tt, player());}
+    else if (g) {s.pv.open(decl.site, host, g, x, y, null, sl!.ts, tt);}   // g is only set from a slot
   };
   strip.addEventListener('click', e => {
     flip.stop();
