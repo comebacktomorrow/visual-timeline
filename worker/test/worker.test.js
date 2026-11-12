@@ -810,6 +810,24 @@ test('with a frame index, /frames for every source finishes them all', async () 
   assert.equal(new Set(rows.map((r) => r.source)).size, 20);
 });
 
+test('with a frame index, /frames caps the window and step at 400 days', async () => {
+  const sites = { 'site-a': { 'source-1': { cadence: MIN } } };
+  const env = { FRAMES: indexedR2(frameKeys(1), sites), DB: d1() };
+  const days = (n) => n * DAY;
+  const one = (span, step) => call(framesPath(NOW - span, NOW, step), env);
+  const all = (span, step) => call(`/frames?from=${NOW - span}&to=${NOW}&step=${step}`, env);
+  for (const ask of [one, all]) {
+    const long = await ask(days(401), days(1));
+    assert.equal(long.status, 400);
+    assert.match((await long.json()).error, /window too long/);
+    assert.equal((await ask(days(400), days(1))).status, 200, 'a 400-day window is fine');
+    assert.equal((await ask(days(1), days(401))).status, 400, 'a step past 400 days is not');
+  }
+  // without the index, the R2 scan budget bounds the work instead
+  const scan = { FRAMES: indexedR2(frameKeys(1), sites) };
+  assert.equal((await call(framesPath(NOW - days(401), NOW, days(1)), scan)).status, 200);
+});
+
 test('retention removes pruned frames from the index too', async () => {
   const DB = d1();
   const env = { FRAMES: storeR2(), DB, UPLOAD_TOKENS: JSON.stringify({ 'idx-r': 'tok' }), RETENTION_DAYS: '30' };

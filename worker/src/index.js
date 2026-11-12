@@ -79,6 +79,12 @@ const SCAN_CONCURRENCY = 6;
  * while after it ends, so late frames on its last ticks still show. */
 const CHUNK_MS = 6 * 3600 * 1000;
 const CHUNK_LIVE_FOR = 10 * 60 * 1000;
+/* With the frame index, a /frames window costs one D1 query and one cache
+ * entry per chunk per source whatever its step, so the window (and the step,
+ * which can't usefully exceed it) is capped as MAX_BUCKETS caps buckets:
+ * 400 days, a year's view with room to spare, is at most 1,602 chunks per
+ * source. Without the index, the R2 scan budget bounds the work instead. */
+const MAX_INDEX_WINDOW_MS = 400 * 864e5;
 const INDEX_KEY = 'index.json';
 
 const CORS = {
@@ -935,6 +941,15 @@ function bucketPicker(from, step) {
   };
 }
 
+/* The 400 for a window or step past MAX_INDEX_WINDOW_MS with the frame
+ * index bound, or null. */
+function indexWindowError(env, from, to, step) {
+  if (!env.DB) {return null;}
+  if (to - from > MAX_INDEX_WINDOW_MS) {return json({ error: 'window too long: at most 400 days' }, 400);}
+  if (step > MAX_INDEX_WINDOW_MS) {return json({ error: 'bad step: at most 400 days' }, 400);}
+  return null;
+}
+
 /* A source's frames, one per step bucket: from the frame index when there
  * is one (never truncated), else an R2 scan within the budget. */
 async function framesOf(env, ctx, origin, variant, site, source, from, to, step, budget) {
@@ -1012,6 +1027,8 @@ async function handleFrames(url, env, ctx, viewer) {
   if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {return json({ error: 'bad range' }, 400);}
   if (to === from) {return json([]);}   // zero-width window: legitimate degenerate ask, not an error
   if (!Number.isInteger(step) || step < 1000) {return json({ error: 'bad step' }, 400);}
+  const tooLong = indexWindowError(env, from, to, step);
+  if (tooLong) {return tooLong;}
 
   // snap the window to the step grid → auto-refresh jitter hits the same cache entry
   from = Math.floor(from / step) * step;
@@ -1064,6 +1081,8 @@ async function handleFramesAll(url, env, ctx, viewer) {
   if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {return json({ error: 'bad range' }, 400);}
   if (to === from) {return json([]);}
   if (!Number.isFinite(step) || step < 1000) {return json({ error: 'bad step' }, 400);}
+  const tooLong = indexWindowError(env, from, to, step);
+  if (tooLong) {return tooLong;}
 
   const index = await readIndex(url, env, ctx);
   const sites = Object.keys(index.sites || {})
