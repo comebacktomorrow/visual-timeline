@@ -1,5 +1,6 @@
 import { mountTimeline } from './mount';
 import { DWELL_MS } from './flipbook';
+import { dressStrip } from './card';
 import type { Backend, Clip, Frame } from '../types';
 
 /* A mount's teardown (M1): a refresh swaps the strip out from under a
@@ -148,4 +149,20 @@ describe('a timeline mount\'s teardown', () => {
     expect(document.activeElement).toBe(strip);
     inst.destroy();
   });
+});
+
+/* dressStrip reads every slot's offset before it writes any (L12): a read
+ * after a write forces a style recalculation per slot. */
+test('dressStrip reads all offsets, then writes', () => {
+  const els = Array.from({ length: 5 }, () => document.createElement('div'));
+  let readAfterWrite = false;
+  for (const [i, el] of els.entries()) {
+    Object.defineProperty(el, 'offsetLeft', { get: () => { readAfterWrite ||= els.some((e) => e.style.backgroundPosition !== ''); return i * 10; } });
+    Object.defineProperty(el, 'offsetWidth', { get: () => { readAfterWrite ||= els.some((e) => e.style.backgroundPosition !== ''); return 100; } });
+  }
+  const slots = els.map((el, i) => ({ el, frame: null, paused: i === 2, label: 'screen dark' }));
+  dressStrip({ slots } as never);
+  expect(readAfterWrite).toBe(false);
+  expect(els.map((e) => e.style.backgroundPosition)).toEqual(['0px 0px', '-10px 0px', '-20px 0px', '-30px 0px', '-40px 0px']);
+  expect(els[2].querySelector('.band-label')).not.toBeNull();
 });

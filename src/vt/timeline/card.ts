@@ -25,16 +25,20 @@ import type { Card, TimelineState } from './state';
  * reveal with retries (panels that mount before they have a size), and by
  * the live poll after it carves new slots out of the beyond filler. */
 export function dressStrip(model: SourceModel): void {
-  for (const sl of model.slots) {
-    if (!sl.el || sl.frame) {continue;}
-    sl.el.style.backgroundPosition = (-sl.el.offsetLeft) + 'px 0';
-    if (sl.paused && sl.el.offsetWidth >= 90 && !sl.el.querySelector('.band-label')) {
+  // every offset read first, then every write: a read after a write forces a
+  // style recalculation, one per slot (the pattern setCursor uses)
+  const todo = model.slots.filter((sl) => sl.el && !sl.frame);
+  const at = todo.map((sl) => ({ left: sl.el!.offsetLeft, width: sl.el!.offsetWidth }));
+  todo.forEach((sl, i) => {
+    const el = sl.el!;
+    el.style.backgroundPosition = (-at[i].left) + 'px 0';
+    if (sl.paused && at[i].width >= 90 && !el.querySelector('.band-label')) {
       const lab = document.createElement('span');
       lab.className = 'band-label';
       lab.textContent = pauseInfo(sl).label;
-      sl.el.appendChild(lab);
+      el.appendChild(lab);
     }
-  }
+  });
 }
 export function dressAll(s: TimelineState, tries: number): void {
   const anySized = s.kiosks.some((k) => s.cards[k.id] && s.cards[k.id].strip.clientWidth > 0);
