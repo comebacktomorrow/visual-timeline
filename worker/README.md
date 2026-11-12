@@ -238,7 +238,7 @@ The bounds are far past any real fleet:
   a 429 with `Retry-After: 60`.
 - **Uploads:** a JPEG of at most 2 MB, as below.
 - **With a frame index (D1):** a `/frames` window, and its step, of at most
-  400 days (400 otherwise). Each 6-hour chunk of the window is a D1 query and
+  400 days. Each 6-hour chunk of the window is a D1 query and
   a cache entry per source, so this bounds one request's work. Without the
   index, the R2 scan budget bounds it instead.
 
