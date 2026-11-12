@@ -8,6 +8,7 @@ import { bootErrorText, makeApiBackend } from '../backends/api';
 import { injectStyles } from '../dom/styles';
 import { makeBackend } from '../backends/demo';
 import { makePreview } from '../ui/preview';
+import { playerContext } from '../ui/playerContext';
 import { makeWrapper, q, retireWrapper, revealWrapper } from '../ui/wrapper';
 import type { Backend, MountConfig, MountInstance, MountWindow } from '../types';
 import type { GridState } from './state';
@@ -73,6 +74,11 @@ export function mountGrid(root: HTMLElement, cfg: MountConfig): MountInstance & 
       s.tiles[k.id] = buildTile(s, k, model);
     }
     s.kiosks = s.kiosks.filter((k) => s.tiles[k.id]);
+    // a player adopted from the mount before (a refresh) moves this grid's time
+    s.pv.rebind((site, id) => {
+      const t = s.kiosks.find((d) => d.site === site && d.id === id) && s.tiles[id];
+      return t ? playerContext(s.backend, s.cfg, s.P, t.decl, t.model, t.tt, (at) => { if (!s.destroyed) {setShown(s, at);} }) : null;
+    });
     setShown(s, null);
     await revealWrapper(root, wrap);
     if (s.destroyed) {return;}   // torn down during the reveal: no poll to leak

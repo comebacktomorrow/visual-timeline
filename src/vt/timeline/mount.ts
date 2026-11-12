@@ -102,6 +102,12 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
       s.cards[k.id] = buildCard(s, k, model);
     }
     s.kiosks = s.kiosks.filter((k) => s.cards[k.id]);
+    // a player this mount adopted from the one before (a refresh) steps
+    // through these cards' slots and moves this crosshair from now on
+    s.pv.rebind((site, id) => {
+      const k = s.kiosks.find((d) => d.site === site && d.id === id);
+      return k ? s.cards[k.id].player?.() ?? null : null;
+    });
     buildAxis(s);
     ruleAllBeyond(s);
     // host-provided annotations (Grafana: the dashboard's own annotation
@@ -126,6 +132,9 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
       s.destroyed = true;
       s.images.stop();
       if (s.pollTimer) {clearInterval(s.pollTimer);}
+      // a strip swapped out under a resting cursor gets no mouseleave: its
+      // hover flipbook (a dwell, a 4 Hz loop, a looping video) stops here
+      for (const c of Object.values(s.cards)) {c.teardown?.();}
       s.pv.retire();   // an open preview survives refresh remounts (adopted by the successor)
       annTip().close();   // a hovered or pinned tip at teardown would strand
       retireWrapper(wrap);

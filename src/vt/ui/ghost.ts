@@ -8,6 +8,6 @@ export function dressGhost(slots: Slot[], sl: Slot): void {
   const g = sl.future && !sl.frame ? ghostFor(slots, sl) : null;
   let img = sl.el.querySelector<HTMLImageElement>('img.ghost');
   if (!g) { if (img) {img.remove();} return; }
-  if (!img) { img = document.createElement('img'); img.className = 'ghost'; img.alt = ''; sl.el.appendChild(img); }
+  if (!img) { img = document.createElement('img'); img.className = 'ghost'; img.alt = ''; img.referrerPolicy = 'no-referrer'; img.decoding = 'async'; sl.el.appendChild(img); }
   if (img.src !== g.url) {img.src = g.url;}
 }

@@ -106,6 +106,9 @@ const CSS = `
 .ktl .card-head .cad { margin-left:auto; font-size:10px; color:var(--ktl-dim); }
 .ktl .strip { flex:1 1 auto; min-height:0; position:relative; display:flex; align-items:stretch;
               cursor:crosshair; background:var(--ktl-media); }
+/* a strip has focus only from the keyboard (a press doesn't focus it) */
+.ktl .strip:focus { outline:none; }
+.ktl .strip:focus-visible { outline:2px solid var(--ktl-accent); outline-offset:-2px; }
 .ktl .slot { flex:1 1 0; min-width:0; position:relative; overflow:hidden; }
 /* Frame delineation tints the FRAME: overflow clips the img to the padding
    box, so a border column would expose the #111 strip bg underneath and
@@ -305,7 +308,9 @@ const CSS = `
 .ktl-pop img { display:block; max-width:min(560px, 50vw); max-height:55vh; border-radius:2px; }
 .ktl-pop .cap { text-align:center; color:var(--ktl-text); font-size:11px; padding:3px 0 0;
                 font-variant-numeric:tabular-nums; }
-/* the preview as a player (M10): stage, scrubber, controls */
+/* the preview as a player (M10): stage, scrubber, controls. The popup
+ * itself takes focus when it opens: no ring round all of it */
+.ktl-pop.player:focus { outline:none; }
 .ktl-pop.player { cursor:default; padding:6px; width:min(720px, 92vw); max-width:92vw; font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;
                   color:var(--ktl-text); display:flex; flex-direction:column; gap:6px; }
 .ktl-pop.player .stage { position:relative; display:flex; align-items:center; justify-content:center; background:var(--ktl-media);
