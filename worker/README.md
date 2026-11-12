@@ -17,6 +17,8 @@ What it does:
 - **Per-site upload tokens.** Each site has its own write token.
 - **Private reads by default.** A viewer token guards the API, and signed,
   expiring image URLs let images load without that token appearing in them.
+  Without a viewer token, reads are refused unless you open them on purpose
+  (`OPEN_READS=1`).
 - **The standalone viewer.** It also serves `web/` (the standalone app,
   embeddable viewer and fleet simulator) from the same origin; see
   [docs/VIEWER.md](../docs/VIEWER.md).
@@ -25,11 +27,31 @@ To run it on your own hardware for good rather than on Cloudflare, use the
 Docker Compose stack in [selfhost/](../selfhost/README.md), which runs this
 same code.
 
+## Upgrading: reads now fail closed
+
+> **Behaviour change.** Earlier versions served reads to anyone when
+> `VIEWER_TOKEN` was unset. Now a worker without `VIEWER_TOKEN` answers every
+> read (`/sources`, `/states`, `/frames`, `/frame/…`) with 401, and logs
+> "reads refused". Before you deploy this version:
+>
+> - if your deployment has a `VIEWER_TOKEN`, nothing changes;
+> - if it relies on open reads on purpose, set the plain variable
+>   `OPEN_READS` to `1` (in `wrangler.jsonc` `vars`, or the dashboard);
+> - for local dev, copy `.dev.vars.example` to `.dev.vars` again: it now
+>   sets `OPEN_READS=1`, and `.dev.vars` is no longer tracked.
+>
+> Two smaller changes in the same release: the viewer token is accepted as
+> `?k=` only on `/frame/…` image URLs (API calls send it as
+> `Authorization: Bearer`), and a `VIEWER_TOKEN` map entry whose `sites`
+> isn't a non-empty list of site ids now grants nothing instead of every
+> site.
+
 ## Run it locally (no Cloudflare account)
 
 ```bash
 cd worker && npm install
-npx wrangler dev --port 8787        # local Worker + local R2, dev tokens in .dev.vars
+cp .dev.vars.example .dev.vars      # throwaway local-dev settings (gitignored)
+npx wrangler dev --port 8787        # local Worker + local R2, settings from .dev.vars
 ```
 
 Then open:
@@ -40,12 +62,14 @@ Then open:
    outage and a hi-res variant.
 2. `http://localhost:8787/app.html`: the standalone app on that data.
 
-`.dev.vars` holds throwaway upload tokens for `site-a` and `site-b`, and
-leaves reads open (no viewer token). To upload real frames with curl, see
-"Try it with curl" in [docs/API.md](../docs/API.md).
+`.dev.vars.example` holds throwaway upload tokens for `site-a` and `site-b`,
+and opens reads with `OPEN_READS=1` (no viewer token). Copy it rather than renaming it:
+`.dev.vars` is gitignored, so your local values stay out of the repository.
+To upload real frames with curl, see "Try it with curl" in
+[docs/API.md](../docs/API.md).
 
 To read it from a local Grafana, use the Infinity data source with the URL
-`http://localhost:8787` (no token: reads are open locally), as in
+`http://localhost:8787` (no token: `.dev.vars` opens reads), as in
 [docs/INFINITY.md](../docs/INFINITY.md); the Visual Timeline panel draws the
 frame rows it returns. If Grafana runs in
 Docker, use `http://host.docker.internal:8787` instead and start the Worker
@@ -81,7 +105,10 @@ in-memory bucket. They don't need a Cloudflare account.
 
    `UPLOAD_TOKENS` is one secret holding every site's token, and writing it
    replaces the whole map, so keep your own record of what is deployed.
-   Without `VIEWER_TOKEN`, anyone who knows the URL can read the frames.
+   Without `VIEWER_TOKEN`, the worker refuses every read (401) and logs
+   why. To let anyone who knows the URL read the frames instead, for a demo,
+   set the plain variable `OPEN_READS` to `1`; it has no effect once
+   `VIEWER_TOKEN` is set.
    "Write auth" and "Read auth" in [docs/API.md](../docs/API.md) cover all
    three, plus the optional `IMG_BASE` and `PUBLIC_URL`.
 
@@ -194,9 +221,32 @@ endpoint isn't cached at Cloudflare's edge, so every first view of an image is
 an R2 read; a public bucket on a custom domain (`IMG_BASE`) is cached and free,
 but makes every frame public.
 
+## Limits
+
+The worker keeps every site's sources in one shared registry
+(`index.json`), so one site's upload token can't grow it without limit.
+The bounds are far past any real fleet:
+
+- **1,000 sources per site.** An upload for a new source past that is
+  refused with 409, and nothing is stored.
+- **1,000 history events per source** (pace changes, pauses and resumes).
+  With `RETENTION_DAYS` set, events from before the cutoff go first, which
+  doesn't change what `/sources` reports; past the cap, the oldest go.
+- **300 registry writes per site a minute**, counted in each Worker isolate
+  (a bound per isolate, not across them). Past it, an upload is still
+  stored, and its source is registered by a later upload; a `/declare` gets
+  a 429 with `Retry-After: 60`.
+- **Uploads:** a JPEG of at most 2 MB, as below.
+- **With a frame index (D1):** a `/frames` window, and its step, of at most
+  400 days (400 otherwise). Each 6-hour chunk of the window is a D1 query and
+  a cache entry per source, so this bounds one request's work. Without the
+  index, the R2 scan budget bounds it instead.
+
 ## Uploading frames
 
 An uploader captures a JPEG on its cadence and POSTs it to `/upload` with
 its site, source, cadence and per-site token. If an upload fails, it drops
-the frame and moves on: the gap is the signal. "Implementing your own
+the frame and moves on: the gap is the signal. The worker checks the body it
+actually receives: at most 2 MB (413 past that, whatever `Content-Length`
+says), and a JPEG, starting with the bytes `FF D8 FF` (415 otherwise). "Implementing your own
 uploader" in [docs/API.md](../docs/API.md) has the details.
