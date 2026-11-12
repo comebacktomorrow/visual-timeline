@@ -139,6 +139,18 @@ function json(body, status = 200, extra = {}) {
   });
 }
 
+/* Data reads are authenticated, so clients are told `private`: a shared
+ * proxy must not store them. The edge cache (caches.default) is ours and
+ * sits behind the auth check, so the copy put there keeps `public`, which
+ * the Cache API needs to store it; every response leaving the worker, a
+ * cache hit included, goes through here. */
+function privateCopy(res) {
+  const out = new Response(res.body, res);
+  const cc = out.headers.get('cache-control');
+  if (cc) {out.headers.set('cache-control', cc.replace(/\bpublic\b/, 'private'));}
+  return out;
+}
+
 /* ---------------- auth ---------------- */
 
 /* Resolve the requesting viewer. Returns {sites} when authorized — sites
@@ -608,6 +620,7 @@ async function readIndex(url, env, ctx) {
   if (!res) {
     const cur = await env.FRAMES.get(INDEX_KEY);
     const body = cur ? await cur.text() : '{"sites":{}}';
+    // an internal entry, never sent to a client: public so the Cache API keeps it
     res = new Response(body, {
       headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=15' },
     });
@@ -633,7 +646,7 @@ async function handleSources(url, env, ctx, viewer) {
     }
   }
   out.sort((a, b) => a.site.localeCompare(b.site) || a.id.localeCompare(b.id));
-  return json(out, 200, { 'cache-control': 'public, max-age=15' });
+  return json(out, 200, { 'cache-control': 'private, max-age=15' });
 }
 
 /* GET /states: each source's declared pauses as rows of time, site,
@@ -671,7 +684,7 @@ async function handleStates(url, env, ctx, viewer) {
       }
     }
   }
-  return json(rows, 200, { 'cache-control': 'public, max-age=15' });
+  return json(rows, 200, { 'cache-control': 'private, max-age=15' });
 }
 
 /* ---------------- frame index (D1, optional) ---------------- */
@@ -722,6 +735,7 @@ async function indexedTimes(env, ctx, origin, variant, site, source, from, to) {
         'SELECT ts FROM frames WHERE site = ?1 AND source = ?2 AND variant = ?3 AND ts >= ?4 AND ts < ?5 ORDER BY ts'
       ).bind(site, source, variant, c, c + CHUNK_MS).all();
       const live = c + CHUNK_MS > now - CHUNK_LIVE_FOR;
+      // an internal entry, never sent to a client: public so the Cache API keeps it
       res = new Response(JSON.stringify(results.map((r) => r.ts)), {
         headers: { 'content-type': 'application/json', 'cache-control': `public, max-age=${live ? 15 : 3600}` },
       });
@@ -905,7 +919,7 @@ async function handleFrames(url, env, ctx, viewer) {
   const cache = caches.default;
   const cacheKey = new Request(canonical);
   const hit = await cache.match(cacheKey);
-  if (hit) {return hit;}
+  if (hit) {return privateCopy(hit);}
 
   const { ts, truncatedAfter } = await framesOf(env, ctx, url.origin, variant, site, source, from, to, step, { pages: MAX_LIST_PAGES });
   if (truncatedAfter !== null) {
@@ -920,7 +934,7 @@ async function handleFrames(url, env, ctx, viewer) {
     ...(truncatedAfter !== null ? { 'x-frames-truncated-after': String(truncatedAfter) } : {}),
   });
   ctx.waitUntil(cache.put(cacheKey, res.clone()));
-  return res;
+  return privateCopy(res);
 }
 
 /* /frames without source=: every source of the sites asked for (all the
@@ -973,7 +987,7 @@ async function handleFramesAll(url, env, ctx, viewer) {
   const cache = caches.default;
   const cacheKey = new Request(canonical);
   const hit = await cache.match(cacheKey);
-  if (hit) {return hit;}
+  if (hit) {return privateCopy(hit);}
 
   const budget = { pages: MAX_LIST_PAGES_ALL };
   const results = new Array(jobs.length);
@@ -1003,7 +1017,7 @@ async function handleFramesAll(url, env, ctx, viewer) {
     } : {}),
   });
   ctx.waitUntil(cache.put(cacheKey, res.clone()));
-  return res;
+  return privateCopy(res);
 }
 
 /* ---------------- frame image (POC path; prod = R2 custom domain) ---------------- */

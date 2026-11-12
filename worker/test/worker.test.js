@@ -562,6 +562,38 @@ async function withCache(fn) {
   try { return await fn(store); } finally { globalThis.caches = orig; }
 }
 
+test('authenticated JSON is private to clients, while the edge cache still keeps and serves /frames', async () => {
+  await withCache(async (store) => {
+    const FRAMES = indexedR2(keysFor('site-a', 'cam-1', MIN, 1), { 'site-a': { 'cam-1': { cadence: MIN } } });
+    const env = { FRAMES, VIEWER_TOKEN: 'v', OPEN_READS: undefined };
+    const auth = { headers: { authorization: 'Bearer v' } };
+    const one = framesPath(NOW - 3600e3, NOW, MIN, 'cam-1');
+    const all = `/frames?from=${NOW - 3600e3}&to=${NOW}&step=${MIN}`;
+    for (const p of ['/sources', '/states', one, all]) {
+      const res = await call(p, env, auth);
+      assert.equal(res.status, 200, p);
+      assert.match(res.headers.get('cache-control'), /^private, max-age=\d+$/, p);
+    }
+    // the edge copies are public (the Cache API won't store a private one) ...
+    const edge = [...store.entries()].filter(([u]) => new URL(u).pathname === '/frames');
+    assert.equal(edge.length, 2);
+    assert.ok(edge.every(([, r]) => /^public, max-age=\d+$/.test(r.headers.get('cache-control'))));
+    // ... and a cache hit is served from them, still private to the client
+    FRAMES.list = async () => { throw new Error('a cache hit listed R2'); };
+    for (const p of [one, all]) {
+      const hit = await call(p, env, auth);
+      assert.equal(hit.status, 200, p);
+      assert.ok((await hit.json()).length > 0, p);
+      assert.match(hit.headers.get('cache-control'), /^private, /, p);
+    }
+    // and the cache sits behind the auth check
+    assert.equal((await call(one, env)).status, 401);
+    // images keep their immutable public caching
+    const img = await call(`/frame/lo/site-a/cam-1/${NOW}.jpg?k=v`, env);
+    assert.equal(img.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+  });
+});
+
 test('with a frame index, /upload records the frame and /frames reads it without listing R2', async () => {
   const DB = d1();
   const env = { FRAMES: storeR2(), DB, UPLOAD_TOKENS: JSON.stringify({ 'idx-a': 'tok' }) };
