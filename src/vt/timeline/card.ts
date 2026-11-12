@@ -90,6 +90,10 @@ export function renderStrip(s: TimelineState, model: SourceModel, strip: HTMLEle
     if (sl.frame && fresh) {
       const img = document.createElement('img');
       img.alt = kiosk + ' ' + tt.time(sl.frame.ts) + tt.sfx(sl.frame.ts);
+      // a strip holds hundreds: decoded off the main thread, and no
+      // Referer (the dashboard's URL) sent to wherever the frames are
+      img.decoding = 'async';
+      img.referrerPolicy = 'no-referrer';
       el.appendChild(img);
       s.images.add(img, sl.frame.url, sl.frame.ts);   // newest first, across all cards
     }
@@ -169,7 +173,7 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     '<span class="inline-brk"></span>' + zoneChip(zone.srcTZ) +
     headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '<span class="ft"></span>' +
     cad + '</div>' +
-    '<div class="strip" tabindex="0" role="group" aria-label="' + esc(kiosk + ': ← → move along the timeline, Enter opens the preview') + '"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>' +
+    '<div class="strip" tabindex="0" role="group" aria-label="' + esc(kiosk + ': ← → move along the timeline, Enter opens the preview') + '"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt="" referrerpolicy="no-referrer"><div class="cap"></div></div></div>' +
     '<div class="card-lane"></div>';
   const strip = card.querySelector<HTMLElement>('.strip')!;
   // hairline frame boundaries only when slices are wide enough — below

@@ -156,6 +156,7 @@ export function mountPlayer(
   // the image goes in with its source already set
   const img = document.createElement('img');
   img.alt = 'frame';
+  img.referrerPolicy = 'no-referrer';
   if (start) {img.src = start.url;}
   // a clip plays here, over the image (M10c)
   const makeVideo = (): HTMLVideoElement => {
@@ -311,6 +312,7 @@ export function mountPlayer(
       c.style.width = Math.max(0, xOf(to) - xOf(from)) + '%';
       const ti = document.createElement('img');
       ti.alt = '';
+      ti.referrerPolicy = 'no-referrer';
       ti.src = f.url;
       c.appendChild(ti);
       thumbs.appendChild(c);
@@ -369,6 +371,7 @@ export function mountPlayer(
       const hi = f.hi, lo = f.url;
       hiTimer = setTimeout(() => {
         const pre = new Image();
+        pre.referrerPolicy = 'no-referrer';
         pre.onload = () => { if (!gone && reel.at(t).frame === f) { img.src = hi; img.dataset.hiOf = lo; } };
         pre.src = hi;
       }, 300);
@@ -575,7 +578,7 @@ export function mountPlayer(
     // the next few frames load ahead
     const fs = reel.shown(most());
     const j = fs.findIndex((f) => f.ts > t);
-    for (let k = 0; k < 3 && fs.length; k++) { const p = new Image(); p.src = fs[((j < 0 ? 0 : j) + k) % fs.length].url; }
+    for (let k = 0; k < 3 && fs.length; k++) { const p = new Image(); p.referrerPolicy = 'no-referrer'; p.src = fs[((j < 0 ? 0 : j) + k) % fs.length].url; }
     run();
   }
   /* the video plays its part of the slot, and the playhead follows it */

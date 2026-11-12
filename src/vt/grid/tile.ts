@@ -24,6 +24,7 @@ export function buildTile(s: GridState, decl: SourceDecl, model: SourceModel): T
     headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '</div>' +
     '<div class="t-img"><img alt="' + esc(decl.id) + '"><span class="t-ts"></span><div class="t-off"></div></div>';
   attachZoneChip(zone, el);
+  el.querySelector('img')!.referrerPolicy = 'no-referrer';   // no Referer to wherever the frames are
   // img, .t-ts and .t-off are in the template just set
   const rec: Tile = {
     decl, model, el, shown: null, zone, tt: zone.tt,

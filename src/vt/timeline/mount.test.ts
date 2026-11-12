@@ -151,6 +151,26 @@ describe('a timeline mount\'s teardown', () => {
   });
 });
 
+/* No Referer (the dashboard's URL) goes with frame images; strip cells
+ * decode off the main thread (L5). */
+test('frame images send no Referer; strip cells decode asynchronously', async () => {
+  jest.useFakeTimers({ now: T + 3600e3 });
+  HTMLCanvasElement.prototype.getContext = (() => ({ font: '', measureText: () => ({ width: 30 }) })) as never;
+  const root = document.createElement('div');
+  document.body.appendChild(root);
+  const fs: Frame[] = Array.from({ length: 10 }, (_, i) => ({ ts: FROM + i * 60e3, url: `f${i}.jpg` }));
+  const inst = mountTimeline(root, { from: FROM, to: TO, width: 800, timeZone: 'UTC', backend: { kiosks: () => [{ id: 'cam', site: 'lab', cadence: 60e3 }], frames: async () => fs } });
+  await jest.advanceTimersByTimeAsync(2000);
+  const cells = [...root.querySelectorAll<HTMLImageElement>('.slot img')];
+  expect(cells.length).toBeGreaterThan(0);
+  expect(cells.every((i) => i.decoding === 'async' && i.referrerPolicy === 'no-referrer')).toBe(true);
+  // (jsdom doesn't reflect the property: the magnifier's is in its markup)
+  expect(root.querySelector('.mag img')!.getAttribute('referrerpolicy')).toBe('no-referrer');
+  inst.destroy();
+  document.body.innerHTML = '';
+  jest.useRealTimers();
+});
+
 /* dressStrip reads every slot's offset before it writes any (L12): a read
  * after a write forces a style recalculation per slot. */
 test('dressStrip reads all offsets, then writes', () => {

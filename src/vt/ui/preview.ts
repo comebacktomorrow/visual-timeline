@@ -82,6 +82,7 @@ export function makePreview(root: HTMLElement, tz: string): Preview {
       el.innerHTML = '<img alt="frame"><div class="cap"></div>';
       // both are in the markup just set
       const img = el.querySelector('img')!;
+      img.referrerPolicy = 'no-referrer';
       el.querySelector('.cap')!.textContent = (site ? site + ' / ' : '') + kiosk + ' — ' + (expectedTs
         ? 'expected ' + tt.short(expectedTs) + ' · last frame ' + tt.time(frame.ts)
         : tt.time(frame.ts)) + tt.sfx(frame.ts);

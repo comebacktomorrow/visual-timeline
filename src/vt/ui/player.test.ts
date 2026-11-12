@@ -345,6 +345,15 @@ describe('the preview player', () => {
       expect(times).toEqual([]);
     });
 
+    test('its pictures send no Referer', async () => {
+      teardown = mountPlayer(el, fr(30), ctx(), () => {});
+      await flush();
+      press('style-thumbs');
+      const imgs = [...el.querySelectorAll<HTMLImageElement>('img')];
+      expect(imgs.length).toBeGreaterThan(1);
+      expect(imgs.every((i) => i.referrerPolicy === 'no-referrer')).toBe(true);
+    });
+
     test('what the stage says (offline, loading video…) is in a polite live region', async () => {
       teardown = mountPlayer(el, fr(26), ctx(), () => {});
       await flush();

@@ -110,7 +110,7 @@ export function makeFlipbook(
     // the next few frames load ahead of the one shown
     const preload = (t: number) => {
       const j = Math.max(0, frames.findIndex((f) => f.ts > t));
-      for (let k = 0; k < 3 && frames.length; k++) { const p = new Image(); p.src = frames[(j + k) % frames.length].url; }
+      for (let k = 0; k < 3 && frames.length; k++) { const p = new Image(); p.referrerPolicy = 'no-referrer'; p.src = frames[(j + k) % frames.length].url; }
     };
     let i = 0;
     const showAt = () => { target.show(reel.at(stops[i]), stops[i], i, stops.length); preload(stops[i]); };
