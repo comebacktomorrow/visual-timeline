@@ -10,9 +10,28 @@ import type { Reel } from '../model/reel';
 /** How long a clip's metadata may take before it's given up on. */
 const PROBE_MS = 4000;
 
+/** How many clips' lengths, and hosts' ratios, are remembered: the least
+ * recently used go first, so a tab left open for weeks doesn't grow. */
+export const REMEMBER_MAX = 500;
+
+/* A map that keeps its REMEMBER_MAX most recently used entries. */
+class Recent<V> {
+  private readonly m = new Map<string, V>();
+  get(k: string): V | undefined {
+    const v = this.m.get(k);
+    if (v !== undefined) { this.m.delete(k); this.m.set(k, v); }
+    return v;
+  }
+  set(k: string, v: V): void {
+    this.m.delete(k);
+    this.m.set(k, v);
+    if (this.m.size > REMEMBER_MAX) {this.m.delete(this.m.keys().next().value!);}
+  }
+}
+
 /* seconds of video by URL, and seconds per ms by host */
-const lengths = new Map<string, number>();
-const ratios = new Map<string, number>();
+const lengths = new Recent<number>();
+const ratios = new Recent<number>();
 
 /** A clip's length (s), as a video element that loaded it says. */
 export function noteClipLength(url: string, seconds: number): void {
