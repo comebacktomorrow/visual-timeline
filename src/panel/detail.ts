@@ -3,7 +3,7 @@ import type { DataQuery } from '@grafana/schema';
 import { getDataSourceSrv } from '@grafana/runtime';
 import { isObservable, lastValueFrom, type Observable } from 'rxjs';
 
-import { type FieldRoles, recordsFromSeries } from '../shared/frameRecords';
+import { type FieldRoles, type HostRecords, recordsFromSeries } from '../shared/frameRecords';
 import type { Frame } from '../vt/types';
 import { WINDOW_FROM, WINDOW_TO } from '../shared/ids';
 
@@ -12,37 +12,49 @@ import { WINDOW_FROM, WINDOW_TO } from '../shared/ids';
  * slot's span. A data source that thins to the panel's width (ours, SQL with
  * $__interval) answers a span that short with every frame. Asked only when
  * the preview player or the hover flipbook plays a slot: a click, or a
- * deliberate rest. */
+ * deliberate rest. The queries answer for every host, so one answer per span
+ * serves every host's strip (M4). */
 
 /** At most this many points per series for a span when the caller sets no
  * limit: enough that a short span is never thinned. */
 const DETAIL_POINTS = 10000;
-/** Answers kept for a while: a slot played twice asks once. */
+/** Answers kept for a while: a slot played twice, or the same span on
+ * another host's strip, asks once. */
 const CACHE_SIZE = 50;
+
+/* one span's answer, and its hosts as the roles last read it */
+interface Answer {
+  series: Promise<DataFrame[]>;
+  parsed?: { roles: string; hosts: HostRecords[] };
+}
 
 type Query = (req: DataQueryRequest<DataQuery>) => Promise<DataQueryResponse> | Observable<DataQueryResponse>;
 
 /** A Backend.detail over the panel's latest request (read through `latest`,
  * so it never goes stale and never changes identity). */
 export function makeDetail(latest: () => DataQueryRequest<DataQuery> | undefined, roles: () => FieldRoles) {
-  const cache = new Map<string, Promise<Frame[]>>();
-  return (site: string, id: string, from: number, to: number, maxPoints?: number): Promise<Frame[]> => {
+  const cache = new Map<string, Answer>();
+  return async (site: string, id: string, from: number, to: number, maxPoints?: number): Promise<Frame[]> => {
     const request = latest();
-    if (!request) {return Promise.resolve([]);}
+    if (!request) {return [];}
     const points = Math.max(1, Math.min(DETAIL_POINTS, Math.floor(maxPoints ?? DETAIL_POINTS)));
-    const key = [request.requestId, site, id, from, to, points].join('|');
-    const hit = cache.get(key);
-    if (hit) {return hit;}
-    const p = (async () => {
-      const series = await runFor(request, from, to, points);
-      const hosts = recordsFromSeries(series, roles()) ?? [];
-      const h = hosts.find((r) => r.id === id && (r.site === site || !site || !r.site));
-      return (h?.frames ?? []).filter((f) => f.ts >= from && f.ts <= to);
-    })();
-    cache.set(key, p);
-    p.catch(() => cache.delete(key));
-    if (cache.size > CACHE_SIZE) {cache.delete(cache.keys().next().value!);}
-    return p;
+    // the span, not the host: every host's frames are in the one answer
+    const key = [request.requestId, from, to, points].join('|');
+    let answer = cache.get(key);
+    if (!answer) {
+      const entry: Answer = { series: runFor(request, from, to, points) };
+      cache.set(key, entry);
+      entry.series.catch(() => { if (cache.get(key) === entry) {cache.delete(key);} });
+      if (cache.size > CACHE_SIZE) {cache.delete(cache.keys().next().value!);}
+      answer = entry;
+    }
+    const series = await answer.series;
+    // parsed once per answer, and again only if the field roles changed
+    const r = roles();
+    const rolesKey = JSON.stringify(r);
+    if (answer.parsed?.roles !== rolesKey) {answer.parsed = { roles: rolesKey, hosts: recordsFromSeries(series, r) ?? [] };}
+    const h = answer.parsed.hosts.find((x) => x.id === id && (x.site === site || !site || !x.site));
+    return (h?.frames ?? []).filter((f) => f.ts >= from && f.ts <= to);
   };
 }
 
