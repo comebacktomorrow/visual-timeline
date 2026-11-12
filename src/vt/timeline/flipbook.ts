@@ -9,6 +9,10 @@ import type { Slot, TickSlot } from '../types';
  * no more than it did before. Moving to another slot, leaving the strip,
  * pressing, or the crosshair moving from elsewhere stops it, and the
  * magnifier goes back to the slot's own frame.
+ * The mount's teardown stops it too (a refresh swaps the strip out from under
+ * a resting cursor, which never gets mouseleave): the mount's destroy() stops
+ * every card's flipbook, and a flipbook whose mount is gone (target.alive)
+ * neither starts, after its dwell or its reel's load, nor ticks on.
  * A slot a video clip covers (M10c) plays the clip's part of it instead,
  * the smaller version, muted, round and round, sped up to be watched in a
  * few seconds. Only a clip that comes in two sizes has a smaller one: with
@@ -45,6 +49,8 @@ export interface FlipTarget {
   clip?(span: ClipSpan | null, rate?: number): void;
   /** learn how long the reel's clips play (clipLength.ts) */
   measure?(reel: Reel): Promise<unknown>;
+  /** false once the mount is torn down: nothing more starts or plays */
+  alive?(): boolean;
 }
 
 /** `anySlot`: arm on every slot that shows a frame, not only those known to
@@ -58,6 +64,7 @@ export function makeFlipbook(
   let timer: ReturnType<typeof setInterval> | null = null;
   let clipOn = false;
   let seq = 0;
+  const alive = () => target.alive?.() ?? true;
 
   function halt(): void {
     seq++;
@@ -70,13 +77,14 @@ export function makeFlipbook(
    * included, with their reason), round and round */
   async function start(sl: TickSlot): Promise<void> {
     const mine = ++seq;
+    if (!alive()) {return;}
     const reel = target.reel({ from: sl.x0, to: sl.x0 + sl.span, ts: sl.ts });
     // video only when every clip in the slot is among what it plays
     reel.capacity = FLIP_MAX;
     const ok = await reel.load(FLIP_MAX);
-    if (!ok || mine !== seq || !current || current.x0 !== sl.x0) {return;}
+    if (!ok || mine !== seq || !current || current.x0 !== sl.x0 || !alive()) {return;}
     if (reel.clips.length) {await target.measure?.(reel);}
-    if (mine !== seq || !current || current.x0 !== sl.x0) {return;}
+    if (mine !== seq || !current || current.x0 !== sl.x0 || !alive()) {return;}
     // no clip with a smaller version: none to play here, so the stills
     if (!reel.clips.some((c) => c.hi)) {reel.capacity = 0;}
     // a clip plays over stills: the one at the slot's tick (the one the
@@ -109,6 +117,7 @@ export function makeFlipbook(
     target.playingChanged(true);
     showAt();
     timer = setInterval(() => {
+      if (!alive()) { halt(); current = null; return; }
       i = (i + 1) % stops.length;
       showAt();
     }, 1000 / FLIP_FPS);
@@ -116,6 +125,7 @@ export function makeFlipbook(
 
   return {
     hover(slot) {
+      if (!alive()) { halt(); current = null; return; }
       const sl = slot && !slot.paused && !slot.beyond && (slot.count > 1 || (anySlot && slot.frame) || hasClip(slot)) ? slot : null;
       // resting on the same slot (by its time: the live poll rebuilds slots)
       // lets the dwell run on

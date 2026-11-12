@@ -126,6 +126,9 @@ export function mountTimeline(root: HTMLElement, cfg: MountConfig): MountInstanc
       s.destroyed = true;
       s.images.stop();
       if (s.pollTimer) {clearInterval(s.pollTimer);}
+      // a strip swapped out under a resting cursor gets no mouseleave: its
+      // hover flipbook (a dwell, a 4 Hz loop, a looping video) stops here
+      for (const c of Object.values(s.cards)) {c.teardown?.();}
       s.pv.retire();   // an open preview survives refresh remounts (adopted by the successor)
       annTip().close();   // a hovered or pinned tip at teardown would strand
       retireWrapper(wrap);

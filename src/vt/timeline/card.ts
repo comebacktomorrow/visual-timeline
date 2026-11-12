@@ -177,7 +177,20 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   let rec: Card | null = null;
   // the slot's reel, from the same source the preview player reads
   const source = playerContext(s.backend, s.cfg, s.P, decl, model, tt, () => {});
+  // the magnifier's video (a clip's part, round and round): stopped, and its
+  // download let go of
+  const releaseVideo = (m: HTMLElement) => {
+    m.classList.remove('flip-video');
+    const v = m.querySelector('video');
+    if (!v) {return;}
+    v.onloadedmetadata = v.ontimeupdate = v.onended = null;
+    v.pause();
+    v.removeAttribute('src');
+    v.load();
+    v.remove();
+  };
   const flip = makeFlipbook({
+    alive: () => !s.destroyed,
     reel: (slot) => new Reel(source, slot),
     show: (at, t, i, n) => {
       const m = rec?.mag;
@@ -197,12 +210,8 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     clip: (span, rate = 1) => {
       const m = rec?.mag;
       if (!m) {return;}
+      if (!span || s.destroyed) { releaseVideo(m); return; }
       let v = m.querySelector('video');
-      if (!span) {
-        m.classList.remove('flip-video');
-        if (v) { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); }
-        return;
-      }
       if (!v) {
         v = document.createElement('video');
         v.muted = true;
@@ -312,6 +321,8 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
   attachZoneChip(zone, card);
   rec = {
     card, model, zone, tt, flip,
+    // the mount's teardown: no flipbook, no video, left running
+    teardown: () => { flip.stop(); releaseVideo(magEl); },
     head: card.querySelector<HTMLElement>('.ft')!,
     strip,
     cross: card.querySelector<HTMLElement>('.xh')!,

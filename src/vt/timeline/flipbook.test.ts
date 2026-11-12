@@ -65,6 +65,39 @@ describe('the hover flipbook', () => {
     expect(fetched).toBe(1);
   });
 
+  test('once its mount is gone (alive() false) it neither starts, after the dwell or the load, nor ticks on', async () => {
+    let alive = true;
+    // gone during the dwell: nothing loads
+    const a = makeFlipbook({ ...target(), alive: () => alive });
+    a.hover(slot(0, 6));
+    alive = false;
+    jest.advanceTimersByTime(DWELL_MS);
+    await settle();
+    expect(fetched).toBe(0);
+    // gone while the reel loads: it doesn't start when the load comes back
+    alive = true;
+    const b = makeFlipbook({ ...target(), alive: () => alive });
+    b.hover(slot(0, 6));
+    jest.advanceTimersByTime(DWELL_MS);
+    alive = false;
+    await settle();
+    expect(fetched).toBe(1);
+    expect(shown).toEqual([]);
+    expect(b.playing()).toBe(false);
+    // gone while it plays: the next tick stops it, and its timer
+    alive = true;
+    const c = makeFlipbook({ ...target(), alive: () => alive });
+    c.hover(slot(0, 6));
+    jest.advanceTimersByTime(DWELL_MS);
+    await settle();
+    expect(c.playing()).toBe(true);
+    alive = false;
+    jest.advanceTimersByTime(1000 / FLIP_FPS * 4);
+    expect(shown).toEqual(['f0']);
+    expect(c.playing()).toBe(false);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
   test('a slot of one frame never plays', async () => {
     const fb = makeFlipbook(target());
     fb.hover(slot(0, 1));

@@ -19,6 +19,7 @@ export interface Card {
   lane: HTMLElement;
   shown?: string | null; // what the magnifier and header show (setCursor's shownKey)
   flip?: Flipbook;       // the hover flipbook (M10b)
+  teardown?: () => void; // the mount's destroy(): stops the flipbook and the magnifier's video
 }
 
 /* Everything one mountTimeline call shares between its parts: what were
