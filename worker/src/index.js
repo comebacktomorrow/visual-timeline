@@ -359,8 +359,14 @@ async function handleUpload(request, env, ctx) {
   }
   ts = Math.round(ts / cadence) * cadence;   // snap to the cadence grid → deterministic keys
 
+  const body = await readCapped(request, MAX_UPLOAD_BYTES);
+  if (!body) {return json({ error: 'too large' }, 413);}
+  if (!body.byteLength) {return json({ error: 'empty body: send the JPEG' }, 400);}
+  if (!(body[0] === 0xff && body[1] === 0xd8 && body[2] === 0xff)) {
+    return json({ error: 'not a JPEG: the body must start with FF D8 FF' }, 415);
+  }
+
   const key = `${variant}/${site}/${source}/${ts}.jpg`;
-  const body = await request.arrayBuffer();  // bounded by MAX_UPLOAD_BYTES
   await env.FRAMES.put(key, body, {
     httpMetadata: { contentType: 'image/jpeg', cacheControl: FRAME_CACHE },
   });
@@ -376,6 +382,30 @@ async function handleUpload(request, env, ctx) {
   await ensureRegistered(env, site, source, variant, cadence, ts, location, tags, timezone);
   if (retentionMs(env, 'lo') || retentionMs(env, 'hi')) {ctx.waitUntil(pruneSite(env, site, source));}
   return json({ ok: true, key, ts });
+}
+
+/* The request body, or null once it passes max bytes. Content-Length is the
+ * client's claim; this counts what actually arrives, and stops reading at
+ * the cap rather than buffering a body of any size. */
+async function readCapped(request, max) {
+  if (!request.body) {return new Uint8Array(0);}
+  const reader = request.body.getReader();
+  const chunks = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {break;}
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) { out.set(c, at); at += c.byteLength; }
+  return out;
 }
 
 /* ---------------- retention ---------------- */

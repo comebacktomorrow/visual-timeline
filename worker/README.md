@@ -225,5 +225,7 @@ but makes every frame public.
 
 An uploader captures a JPEG on its cadence and POSTs it to `/upload` with
 its site, source, cadence and per-site token. If an upload fails, it drops
-the frame and moves on: the gap is the signal. "Implementing your own
+the frame and moves on: the gap is the signal. The worker checks the body it
+actually receives: at most 2 MB (413 past that, whatever `Content-Length`
+says), and a JPEG, starting with the bytes `FF D8 FF` (415 otherwise). "Implementing your own
 uploader" in [docs/API.md](../docs/API.md) has the details.

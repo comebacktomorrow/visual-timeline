@@ -8,6 +8,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { presignUrl } from '../src/presign.js';
 
 const MIN = 60e3;
+/* the smallest body /upload takes as a JPEG: its FF D8 FF start, and one more byte */
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
 const NOW = Math.floor(Date.now() / MIN) * MIN;
 
 function memR2(keys = []) {
@@ -83,10 +85,31 @@ test('a bodyless /upload probe separates live tokens from rejected ones', async 
   assert.equal((await probe('-bad', 'tok-a')).status, 400, 'malformed id is a 400, not a 401');
 });
 
+test('/upload checks the body it receives: its real size, and that it is a JPEG', async () => {
+  const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'site-a': 'tok-a' }) };
+  const post = (body, length = String(body.byteLength)) => call('/upload', env, {
+    method: 'POST', body,
+    headers: { authorization: 'Bearer tok-a', 'x-site': 'site-a', 'x-source': 'body-check', 'x-cadence': '60', 'content-length': length },
+  });
+  const big = new Uint8Array(2 * 1024 * 1024 + 1);
+  big.set(JPEG);
+  assert.equal((await post(big)).status, 413, 'too large by its header');
+  assert.equal((await post(big, '4')).status, 413, 'too large by what arrives, whatever Content-Length claims');
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+  const r = await post(png);
+  assert.equal(r.status, 415);
+  assert.match((await r.json()).error, /not a JPEG/);
+  assert.equal((await post(new TextEncoder().encode('<html>'))).status, 415);
+  assert.equal((await post(new Uint8Array([0xff, 0xd8]))).status, 415, 'too short to be one');
+  assert.equal((await post(new Uint8Array(0), '4')).status, 400, 'a claimed length with no body');
+  assert.equal([...env.FRAMES.objs.keys()].filter((k) => k.endsWith('.jpg')).length, 0, 'nothing stored');
+  assert.equal((await post(JPEG)).status, 200);
+});
+
 test('inherited object keys are not tokens or sources', async () => {
   const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'site-a': 'tok-a' }) };
   const post = (site, token, source = 'cam') => call('/upload', env, {
-    method: 'POST', body: 'jpeg',
+    method: 'POST', body: JPEG,
     headers: { authorization: 'Bearer ' + token, 'x-site': site, 'x-source': source, 'x-cadence': '60', 'content-type': 'image/jpeg', 'content-length': '4' },
   });
   // tokens.constructor is the Object function; its string form is public
@@ -161,7 +184,7 @@ test('without VIEWER_TOKEN, reads are refused unless OPEN_READS opens them', asy
   assert.equal((await call('/sources', { FRAMES, OPEN_READS: '1', VIEWER_TOKEN: 'v' })).status, 401);
   // writes never depended on it
   const up = await call('/upload', { FRAMES: storeR2(), OPEN_READS: undefined, UPLOAD_TOKENS: JSON.stringify({ 'site-a': 'tok' }) }, {
-    method: 'POST', body: 'jpeg',
+    method: 'POST', body: JPEG,
     headers: { authorization: 'Bearer tok', 'x-site': 'site-a', 'x-source': 'cam', 'x-cadence': '60', 'content-length': '4' },
   });
   assert.equal(up.status, 200);
@@ -264,7 +287,7 @@ function upload(env, extra = {}) {
     authorization: 'Bearer tok-a', 'x-site': 'site-a', 'x-source': source, 'x-cadence': '60',
     'content-type': 'image/jpeg', 'content-length': '4', ...extra.headers,
   };
-  return { source, res: call('/upload', env, { method: 'POST', headers, body: 'jpeg' }) };
+  return { source, res: call('/upload', env, { method: 'POST', headers, body: JPEG }) };
 }
 const sourceOf = async (env, id) => (await (await call('/sources', env)).json()).find((s) => s.id === id);
 
@@ -345,7 +368,7 @@ const uploadTo = (env, site, source) => callAndSettle('/upload', env, {
   method: 'POST',
   headers: { authorization: 'Bearer tok', 'x-site': site, 'x-source': source, 'x-cadence': '60',
     'content-type': 'image/jpeg', 'content-length': '4' },
-  body: 'jpeg',
+  body: JPEG,
 });
 
 test('retention: an upload prunes frames older than RETENTION_DAYS, and RETENTION_DAYS_HI for hi', async () => {
