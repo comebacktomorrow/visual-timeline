@@ -87,3 +87,43 @@ describe('a player adopted by a refresh remount', () => {
     expect(times).toEqual([at(35)]);
   });
 });
+
+/* The player is a modal dialog: focus goes into it, and back (M6). */
+describe('the player as a dialog', () => {
+  beforeEach(() => {
+    jest.spyOn(Date, 'now').mockReturnValue(at(999));
+    jest.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    document.body.innerHTML = '';
+    jest.restoreAllMocks();
+  });
+
+  test('aria-modal; focus moves into it on open and back to what had it on close', () => {
+    const root = document.createElement('div');
+    const opener = document.createElement('button');
+    document.body.append(root, opener);
+    opener.focus();
+    const pv = makePreview(root, 'UTC');
+    pv.open('lab', 'cam', fr(30), 10, 10, null, null, tt, ctxFor([]));
+    const dlg = document.querySelector<HTMLElement>('.ktl-pop')!;
+    expect(dlg.getAttribute('role')).toBe('dialog');
+    expect(dlg.getAttribute('aria-modal')).toBe('true');
+    expect(document.activeElement).toBe(dlg);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(document.querySelector('.ktl-pop')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
+  test('closed while focus is elsewhere: focus stays where it is', () => {
+    const root = document.createElement('div');
+    const opener = document.createElement('button'), other = document.createElement('input');
+    document.body.append(root, opener, other);
+    opener.focus();
+    const pv = makePreview(root, 'UTC');
+    pv.open('lab', 'cam', fr(30), 10, 10, null, null, tt, ctxFor([]));
+    other.focus();
+    pv.close();
+    expect(document.activeElement).toBe(other);
+  });
+});

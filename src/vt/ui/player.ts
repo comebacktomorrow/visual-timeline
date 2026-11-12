@@ -101,6 +101,14 @@ const ICON_MUTED = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden=
 const ICON_SOUND = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M2 6h3l4-3v10l-4-3H2z" fill="currentColor"/><path d="M11 5.5c1.2 1.2 1.2 3.8 0 5M13 3.5c2.2 2.4 2.2 6.6 0 9" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>';
 const ICON_ZOOM = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10 10l4.5 4.5M4.5 6.5h4M6.5 4.5v4" stroke="currentColor" stroke-width="1.5"/></svg>';
 
+/* an element that takes typing: its keys are its own */
+const typing = (target: EventTarget | null): boolean =>
+  target instanceof Element && !!target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+/* an attribute, written only when it changes (the scrubber's, per frame) */
+const setAttr = (el: Element, name: string, value: string): void => {
+  if (el.getAttribute(name) !== value) {el.setAttribute(name, value);}
+};
+
 const btn = (a: string, label: string, title: string) =>
   `<button type="button" data-a="${a}" title="${title}" aria-label="${title}">${label}</button>`;
 
@@ -126,7 +134,8 @@ export function mountPlayer(
     '<span class="title"></span>' +
     btn('close', '✕', 'Close (Esc)') +
     '</div>' +
-    '<div class="stage"><div class="state"></div>' +
+    // what the stage says (loading video…, offline, a pause) is read out
+    '<div class="stage"><div class="state" aria-live="polite"></div>' +
     (ctx.onZoom ? '<button type="button" class="zoom-video" data-a="zoom-video">▶ Zoom in for the video</button>' : '<span class="zoom-video">▶ Video at a closer zoom</span>') +
     '</div>' +
     '<div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot">' +
@@ -491,6 +500,12 @@ export function mountPlayer(
     titleEl.title = titleEl.textContent;
     const at = f ? f.ts : t;
     timeEl.textContent = ctx.tt.time(at) + ctx.tt.sfx(at);
+    // the scrubber's value: the playhead within the slot (epoch ms), read
+    // out as the time shown
+    setAttr(scrub, 'aria-valuemin', String(Math.round(slot().from)));
+    setAttr(scrub, 'aria-valuemax', String(Math.round(slot().to - 1)));
+    setAttr(scrub, 'aria-valuenow', String(Math.round(t)));
+    setAttr(scrub, 'aria-valuetext', timeEl.textContent);
     // more frames than shown, or more video than plays here: Zoom shows them
     const sampled = reel.clips.length > 0 && reel.videoRate() === null;
     const zoom = el.querySelector<HTMLButtonElement>('button[data-a="zoom"]');
@@ -693,9 +708,30 @@ export function mountPlayer(
     seek(tAt(e.clientX));
   });
 
+  // the scrubber's own keys, when it has focus: a step, or the slot's ends
+  scrub.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) {return;}
+    const stops = reel.stops(most());
+    switch (e.key) {
+      case 'ArrowLeft': case 'ArrowDown': act('prev'); break;
+      case 'ArrowRight': case 'ArrowUp': act('next'); break;
+      case 'Home': stop(); seek(stops.length ? stops[0] : slot().from); break;
+      case 'End': stop(); seek(stops.length ? stops[stops.length - 1] : slot().to - 1); break;
+      default: return;
+    }
+    e.preventDefault();   // handled: the document's keys below leave it
+  });
+
+  // Space and ←/→ anywhere, but not while typing (a search field, say), nor
+  // with a modifier but Shift, nor a key something else already took; Space
+  // on a button presses the button
   const keyH = (e: KeyboardEvent) => {
+    if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey || typing(e.target)) {return;}
     const k = e.key;
-    if (k === ' ') { e.preventDefault(); act('play'); }
+    if (k === ' ') {
+      if (e.target instanceof Element && e.target.closest('button, a[href], [role="button"], summary')) {return;}
+      e.preventDefault(); act('play');
+    }
     else if (k === 'ArrowLeft') { e.preventDefault(); act(e.shiftKey ? 'prev-slot' : 'prev'); }
     else if (k === 'ArrowRight') { e.preventDefault(); act(e.shiftKey ? 'next-slot' : 'next'); }
   };

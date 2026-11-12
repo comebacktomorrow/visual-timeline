@@ -118,4 +118,34 @@ describe('a timeline mount\'s teardown', () => {
     await jest.advanceTimersByTimeAsync(5000);
     expect(jest.getTimerCount()).toBe(0);
   });
+
+  test('without a mouse: a focused strip\'s ←/→ move the cursor a slot, and Enter opens the player there (M6)', async () => {
+    const hovers: number[] = [];
+    const inst = mountTimeline(root, { from: FROM, to: TO, width: 800, timeZone: 'UTC', backend: backend(), onHover: (t) => hovers.push(t) });
+    await jest.advanceTimersByTimeAsync(2000);
+    const strip = root.querySelector<HTMLElement>('.card .strip')!;
+    strip.getBoundingClientRect = () => ({ left: 0, width: 800, top: 0, height: 60, right: 800, bottom: 60, x: 0, y: 0, toJSON: () => ({}) });
+    expect(strip.tabIndex).toBe(0);
+    expect(strip.getAttribute('aria-label')).toMatch(/^cam: /);
+    strip.focus();
+    calls = [];
+    const key = (k: string) => strip.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+    key('ArrowLeft');
+    key('ArrowLeft');
+    expect(hovers).toHaveLength(2);
+    expect(hovers[1]).toBeLessThan(hovers[0]);
+    key('ArrowRight');
+    expect(hovers[2]).toBeGreaterThan(hovers[1]);
+    // nothing plays from the keyboard: the hover flipbook is the mouse's
+    await jest.advanceTimersByTimeAsync(DWELL_MS * 2);
+    expect(calls).toEqual([]);
+    key('Enter');
+    const pop = document.querySelector<HTMLElement>('.ktl-pop.player');
+    expect(pop).not.toBeNull();
+    expect(document.activeElement).toBe(pop);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(document.querySelector('.ktl-pop')).toBeNull();
+    expect(document.activeElement).toBe(strip);
+    inst.destroy();
+  });
 });

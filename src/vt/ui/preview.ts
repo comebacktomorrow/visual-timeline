@@ -41,13 +41,20 @@ interface PopState {
   /* an open player: the root and the mount (its Preview) it belongs to, and
    * its host, for rebind() */
   player?: { root: HTMLElement; by: Preview; site: string; kiosk: string; label: string; handle: PlayerTeardown } | null;
+  /* what had focus before the player took it: given back when it closes */
+  opener?: HTMLElement | null;
 }
 const popState: PopState = { el: null, keyH: null, downH: null, teardown: null, retireTimer: null };
 function closePreview(): void {
   if (popState.retireTimer) { clearTimeout(popState.retireTimer); popState.retireTimer = null; }
   if (popState.teardown) { popState.teardown(); popState.teardown = null; }
+  // focus inside the player goes back to where it came from (a press
+  // outside it takes focus where it lands, after this)
+  const opener = popState.el?.contains(document.activeElement) ? popState.opener : null;
   if (popState.el) { popState.el.remove(); popState.el = null; }
   popState.player = null;
+  popState.opener = null;
+  if (opener?.isConnected) {opener.focus({ preventScroll: true });}
   if (popState.keyH) {
     if (popState.keyCapture) {window.removeEventListener('keydown', popState.keyH, true);}
     else {document.removeEventListener('keydown', popState.keyH);}
@@ -125,7 +132,10 @@ function openPlayer(root: HTMLElement, by: Preview, site: string, kiosk: string,
   el.className = 'ktl-pop';
   copyVars(root, el);
   el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
   el.setAttribute('aria-label', site ? site + ' / ' + kiosk : kiosk);
+  el.tabIndex = -1;
+  const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
   document.body.appendChild(el);
   let placedW = -1;
   const place = () => {
@@ -144,6 +154,9 @@ function openPlayer(root: HTMLElement, by: Preview, site: string, kiosk: string,
   el.querySelector('button[data-a="close"]')?.addEventListener('click', closePreview);
   place();
   popState.el = el;
+  popState.opener = opener;
+  // focus moves into the player: its keys, and a screen reader, are there
+  el.focus({ preventScroll: true });
   // Esc closes the player, and only the player: caught before Grafana's own
   // Esc (leave panel view, kiosk mode) sees it
   popState.keyH = (e) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); e.preventDefault(); closePreview(); } };

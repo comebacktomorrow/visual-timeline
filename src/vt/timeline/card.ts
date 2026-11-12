@@ -165,7 +165,7 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     '<span class="inline-brk"></span>' + zoneChip(zone.srcTZ) +
     headChips(decl, s.cfg.chips, !!s.cfg.onFilter) + '<span class="ft"></span>' +
     cad + '</div>' +
-    '<div class="strip"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>' +
+    '<div class="strip" tabindex="0" role="group" aria-label="' + esc(kiosk + ': ← → move along the timeline, Enter opens the preview') + '"><div class="xh"></div><div class="sel"></div><div class="mag"><img alt=""><div class="cap"></div></div></div>' +
     '<div class="card-lane"></div>';
   const strip = card.querySelector<HTMLElement>('.strip')!;
   // hairline frame boundaries only when slices are wide enough — below
@@ -267,16 +267,40 @@ export function buildCard(s: TimelineState, decl: SourceDecl, model: SourceModel
     s.wrap.classList.remove('strip-hover');
     if (s.cfg.onHoverClear) {s.cfg.onHoverClear();}
   });
-  strip.addEventListener('click', e => {
-    flip.stop();
-    if (s.suppressClick) { s.suppressClick = false; return; }
+  /* the preview of the slot under the cursor, anchored at (x, y) */
+  const openAt = (x: number, y: number) => {
     const sl = model.slotAt(s.cursorT);
     const f = sl && sl.frame;
     const g = !f && sl && sl.future ? ghostFor(model.slots, sl) : null;
-    if (f) {s.pv.open(decl.site, kiosk, f, e.clientX, e.clientY, f.hi ?? null, null, tt, player());}
+    if (f) {s.pv.open(decl.site, kiosk, f, x, y, f.hi ?? null, null, tt, player());}
     // a slot a video clip covers: the player, at the slot's time (M10c)
-    else if (sl && !sl.paused && !sl.beyond && sl.clip) {s.pv.play(decl.site, kiosk, sl.ts, e.clientX, e.clientY, tt, player());}
-    else if (g) {s.pv.open(decl.site, kiosk, g, e.clientX, e.clientY, null, sl!.ts, tt);}   // g is only set from a slot
+    else if (sl && !sl.paused && !sl.beyond && sl.clip) {s.pv.play(decl.site, kiosk, sl.ts, x, y, tt, player());}
+    else if (g) {s.pv.open(decl.site, kiosk, g, x, y, null, sl!.ts, tt);}   // g is only set from a slot
+  };
+  strip.addEventListener('click', e => {
+    flip.stop();
+    if (s.suppressClick) { s.suppressClick = false; return; }
+    openAt(e.clientX, e.clientY);
+  });
+  /* Without a mouse: a focused strip's ←/→ move the cursor a slot (as a
+   * hover would, the dashboard's crosshair with it), and Enter or Space
+   * opens the preview there. A press doesn't focus the strip (mousedown
+   * below prevents it), so the mouse's hover is as it was. */
+  strip.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) {return;}
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      const r = strip.getBoundingClientRect();
+      openAt(r.left + r.width * (s.cursorT - s.P.from) / s.SPAN, r.top + r.height / 2);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      const sl = model.slotAt(s.cursorT);
+      const next = sl && model.slotAt(e.key === 'ArrowRight' ? sl.x0 + sl.span : sl.x0 - 1);
+      if (next && next !== sl) {setCursor(s, Math.max(next.x0, Math.min(next.x0 + next.span - 1, next.ts)), card, false);}
+    }
+  });
+  strip.addEventListener('blur', () => {
+    if (!s.wrap.classList.contains('strip-hover') && s.cfg.onHoverClear) {s.cfg.onHoverClear();}
   });
   /* magnifier takes the aspect of the actual frames (portrait screens etc.) */
   const magEl = card.querySelector<HTMLElement>('.mag')!;
