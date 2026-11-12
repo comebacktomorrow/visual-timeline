@@ -36,6 +36,8 @@ export function makeImageQueue(concurrency = IMAGE_CONCURRENCY, timeoutMs = IMAG
   let scheduled = false;
   let pumping = false;
   let idleWaiters: Array<() => void> = [];
+  // the in-flight images' timeouts, cleared on stop()
+  const timers = new Set<ReturnType<typeof setTimeout>>();
 
   function settleIdle() {
     if (active === 0 && pending.length === 0) {
@@ -66,7 +68,7 @@ export function makeImageQueue(concurrency = IMAGE_CONCURRENCY, timeoutMs = IMAG
       const done = () => {
         if (finished) {return;}
         finished = true;
-        if (timer) {clearTimeout(timer);}
+        if (timer) { clearTimeout(timer); timers.delete(timer); }
         job.img.removeEventListener('load', done);
         job.img.removeEventListener('error', done);
         active--;
@@ -77,7 +79,7 @@ export function makeImageQueue(concurrency = IMAGE_CONCURRENCY, timeoutMs = IMAG
       job.img.src = job.url;
       // already in the browser's cache: some engines complete synchronously
       if (job.img.complete && job.img.naturalWidth) {done();}
-      else if (!finished) {timer = setTimeout(done, timeoutMs);}
+      else if (!finished) { timer = setTimeout(done, timeoutMs); timers.add(timer); }
     }
     pumping = false;
     settleIdle();
@@ -101,6 +103,9 @@ export function makeImageQueue(concurrency = IMAGE_CONCURRENCY, timeoutMs = IMAG
     stop() {
       stopped = true;
       pending = [];
+      // torn down: no timer left behind (the images finish or not on their own)
+      for (const t of timers) {clearTimeout(t);}
+      timers.clear();
       const w = idleWaiters;
       idleWaiters = [];
       w.forEach((r) => r());

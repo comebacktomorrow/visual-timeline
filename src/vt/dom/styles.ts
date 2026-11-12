@@ -207,6 +207,7 @@ const CSS = `
  * frame: the caption below must be free to overflow the magnifier */
 .ktl .mag img { width:100%; height:100%; object-fit:contain; display:block; background:var(--ktl-mag-bg);
                 clip-path:inset(0); }
+.ktl .mag img:not([src]) { visibility:hidden; }   /* before the cursor first sets it: no broken-image box */
 .ktl.fill .mag img { object-fit:cover; }
 .ktl.fill .tile .t-img img { object-fit:cover; }
 .ktl .mag.gap { border-color:var(--ktl-off);
