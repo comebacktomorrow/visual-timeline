@@ -61,7 +61,7 @@ export function ruleBeyond(s: TimelineState, sl: Slot | null | undefined): void 
   }
 }
 export function ruleAllBeyond(s: TimelineState): void {
-  for (const k of s.kiosks) {
+  for (const k of s.hosts) {
     const c = s.cards[k.id];
     if (!c) {continue;}
     const last = c.model.slots[c.model.slots.length - 1];

@@ -211,7 +211,7 @@ Three more dashboards there read real, public feeds (they need internet access):
 - **Rivers** (`/d/vt-rivers`): four USGS river cameras, each a day's light
   and night gap in its own time zone, beside the rivers' gauge heights. The
   frames come straight from the USGS's public bucket through the
-  [HTTP folder](docs/FOLDERS.md) connection; the camera details and water
+  [HTTP folder](https://github.com/comebacktomorrow/visual-timeline/blob/main/docs/FOLDERS.md) connection; the camera details and water
   levels come from USGS APIs through Infinity.
 - **The Sun** (`/d/vt-sun`): NASA SDO's images of the Sun in four channels,
   read from its web folder, above GOES X-ray flux, with solar flares as

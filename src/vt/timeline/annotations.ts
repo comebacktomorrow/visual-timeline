@@ -66,7 +66,7 @@ export function renderAnnotations(s: TimelineState, anns: Annotation[]): void {
   if (s.cfg.annotationLanes === 'per-source') {
     // one lane per card: its own scoped events plus every global, so each
     // timeline reads in context — stacked windows never share one bar
-    for (const k of s.kiosks) {
+    for (const k of s.hosts) {
       const c = s.cards[k.id];
       const items = anns.filter((a) => appliesTo(a, k));
       if (!items.length) {continue;}
@@ -80,12 +80,12 @@ export function renderAnnotations(s: TimelineState, anns: Annotation[]): void {
   const laneItems: Annotation[] = [], perCard: Record<string, Annotation[]> = {};
   for (const a of anns) {
     if (isGlobal(a)) {laneItems.push(a);}
-    else {for (const k of s.kiosks) {if (appliesTo(a, k)) {(perCard[k.id] ||= []).push(a);}}}
+    else {for (const k of s.hosts) {if (appliesTo(a, k)) {(perCard[k.id] ||= []).push(a);}}}
     if (a.timeEnd) {
       // regions shade the strips they scope to; globals also shade the lane
       const hosts = isGlobal(a)
-        ? s.kiosks.map((k) => s.cards[k.id].strip).concat([q(s.wrap, '.ann-lane')])
-        : s.kiosks.filter((k) => appliesTo(a, k)).map((k) => s.cards[k.id].strip);
+        ? s.hosts.map((k) => s.cards[k.id].strip).concat([q(s.wrap, '.ann-lane')])
+        : s.hosts.filter((k) => appliesTo(a, k)).map((k) => s.cards[k.id].strip);
       for (const h of hosts) {addRegion(h, a);}
     }
   }

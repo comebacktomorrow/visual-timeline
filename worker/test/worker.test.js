@@ -8,6 +8,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { presignUrl } from '../src/presign.js';
 
 const MIN = 60e3;
+/* the smallest body /upload takes as a JPEG: its FF D8 FF start, and one more byte */
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
 const NOW = Math.floor(Date.now() / MIN) * MIN;
 
 function memR2(keys = []) {
@@ -34,8 +36,10 @@ const frameKeys = (days, cadence = MIN, source = 'source-1') => {
   return out;
 };
 globalThis.caches = { default: { match: async () => undefined, put: async () => {} } };
+/* Reads without VIEWER_TOKEN are refused unless OPEN_READS is set; these
+ * tests mostly read an open worker, so it's on unless a test says otherwise. */
 const call = (path, env, init) =>
-  worker.fetch(new Request('https://w.example' + path, init), { ASSETS: { fetch: () => new Response('') }, ...env }, { waitUntil() {} });
+  worker.fetch(new Request('https://w.example' + path, init), { ASSETS: { fetch: () => new Response('') }, OPEN_READS: '1', ...env }, { waitUntil() {} });
 const framesPath = (from, to, step, source = 'source-1') =>
   `/frames?site=site-a&source=${source}&from=${from}&to=${to}&step=${step}`;
 
@@ -81,10 +85,31 @@ test('a bodyless /upload probe separates live tokens from rejected ones', async 
   assert.equal((await probe('-bad', 'tok-a')).status, 400, 'malformed id is a 400, not a 401');
 });
 
+test('/upload checks the body it receives: its real size, and that it is a JPEG', async () => {
+  const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'site-a': 'tok-a' }) };
+  const post = (body, length = String(body.byteLength)) => call('/upload', env, {
+    method: 'POST', body,
+    headers: { authorization: 'Bearer tok-a', 'x-site': 'site-a', 'x-source': 'body-check', 'x-cadence': '60', 'content-length': length },
+  });
+  const big = new Uint8Array(2 * 1024 * 1024 + 1);
+  big.set(JPEG);
+  assert.equal((await post(big)).status, 413, 'too large by its header');
+  assert.equal((await post(big, '4')).status, 413, 'too large by what arrives, whatever Content-Length claims');
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+  const r = await post(png);
+  assert.equal(r.status, 415);
+  assert.match((await r.json()).error, /not a JPEG/);
+  assert.equal((await post(new TextEncoder().encode('<html>'))).status, 415);
+  assert.equal((await post(new Uint8Array([0xff, 0xd8]))).status, 415, 'too short to be one');
+  assert.equal((await post(new Uint8Array(0), '4')).status, 400, 'a claimed length with no body');
+  assert.equal([...env.FRAMES.objs.keys()].filter((k) => k.endsWith('.jpg')).length, 0, 'nothing stored');
+  assert.equal((await post(JPEG)).status, 200);
+});
+
 test('inherited object keys are not tokens or sources', async () => {
   const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'site-a': 'tok-a' }) };
   const post = (site, token, source = 'cam') => call('/upload', env, {
-    method: 'POST', body: 'jpeg',
+    method: 'POST', body: JPEG,
     headers: { authorization: 'Bearer ' + token, 'x-site': site, 'x-source': source, 'x-cadence': '60', 'content-type': 'image/jpeg', 'content-length': '4' },
   });
   // tokens.constructor is the Object function; its string form is public
@@ -105,6 +130,88 @@ test('with VIEWER_TOKEN set, reads need it and scoped consumers stay in scope', 
   assert.equal((await call(path, env)).status, 401);
   assert.equal((await call(path, env, { headers: { authorization: 'Bearer v-all' } })).status, 200);
   assert.equal((await call(path, env, { headers: { authorization: 'Bearer v-b' } })).status, 403);
+});
+
+test('a VIEWER_TOKEN entry whose sites are missing, empty, a string or misspelled grants nothing', async () => {
+  const entries = {
+    'w1-empty': { token: 't-empty', sites: [] },
+    'w1-string': { token: 't-string', sites: 'site-a' },
+    'w1-misspelled': { token: 't-misspelled', site: ['site-a'] },
+    'w1-missing': { token: 't-missing' },
+    'w1-bad-id': { token: 't-bad-id', sites: ['site-a', 'Not A Site!'] },
+    'w1-not-string': { token: 't-not-string', sites: [42] },
+    'w1-no-token': { sites: ['site-a'] },
+    'w1-blank': '',
+  };
+  const env = {
+    FRAMES: memR2(frameKeys(1)),
+    VIEWER_TOKEN: JSON.stringify({ ...entries, 'w1-all': 't-all', 'w1-scoped': { token: 't-scoped', sites: ['SITE-A'] } }),
+  };
+  const path = framesPath(NOW - 3600e3, NOW, MIN);
+  const warns = [];
+  const orig = console.warn; console.warn = (m) => warns.push(m);
+  try {
+    for (const name of Object.keys(entries)) {
+      const token = entries[name] && entries[name].token;
+      if (token) {assert.equal((await call(path, env, { headers: { authorization: 'Bearer ' + token } })).status, 401, name);}
+    }
+    // the deliberate forms still work: a string is every site, sites scope (case-insensitively)
+    assert.equal((await call(path, env, { headers: { authorization: 'Bearer t-all' } })).status, 200);
+    assert.equal((await call(path, env, { headers: { authorization: 'Bearer t-scoped' } })).status, 200);
+    assert.equal((await call(path.replace('site=site-a', 'site=site-b'), env, { headers: { authorization: 'Bearer t-scoped' } })).status, 403);
+  } finally { console.warn = orig; }
+  // each refused entry is logged by name, once, and never with its token
+  for (const name of Object.keys(entries)) {
+    assert.equal(warns.filter((w) => JSON.parse(w).consumer === name).length, 1, name);
+  }
+  assert.ok(warns.every((w) => !/"t-/.test(w) && !w.includes("'t-")), 'no token in the log');
+});
+
+test('without VIEWER_TOKEN, reads are refused unless OPEN_READS opens them', async () => {
+  const FRAMES = indexedR2(keysFor('site-a', 'cam-1', MIN, 1), { 'site-a': { 'cam-1': { cadence: MIN } } });
+  const paths = ['/sources', '/states', framesPath(NOW - 3600e3, NOW, MIN, 'cam-1'), `/frame/lo/site-a/cam-1/${NOW}.jpg`];
+  const warns = [];
+  const orig = console.warn; console.warn = (m) => warns.push(m);
+  try {
+    for (const OPEN_READS of [undefined, '', '0', 'false', 'no']) {
+      for (const p of paths) {assert.equal((await call(p, { FRAMES, OPEN_READS })).status, 401, `${p} OPEN_READS=${OPEN_READS}`);}
+    }
+  } finally { console.warn = orig; }
+  for (const OPEN_READS of ['1', 'true', 'YES']) {
+    for (const p of paths) {assert.equal((await call(p, { FRAMES, OPEN_READS })).status, 200, `${p} OPEN_READS=${OPEN_READS}`);}
+  }
+  // a token, once set, is required whatever OPEN_READS says
+  assert.equal((await call('/sources', { FRAMES, OPEN_READS: '1', VIEWER_TOKEN: 'v' })).status, 401);
+  // writes never depended on it
+  const up = await call('/upload', { FRAMES: storeR2(), OPEN_READS: undefined, UPLOAD_TOKENS: JSON.stringify({ 'site-a': 'tok' }) }, {
+    method: 'POST', body: JPEG,
+    headers: { authorization: 'Bearer tok', 'x-site': 'site-a', 'x-source': 'cam', 'x-cadence': '60', 'content-length': '4' },
+  });
+  assert.equal(up.status, 200);
+});
+
+test('?k= carries the viewer token on /frame/ image URLs only, never on API calls', async () => {
+  const FRAMES = indexedR2(keysFor('site-a', 'cam-1', MIN, 1), { 'site-a': { 'cam-1': { cadence: MIN } } });
+  const env = { FRAMES, VIEWER_TOKEN: 'v-all' };
+  const img = `/frame/lo/site-a/cam-1/${NOW}.jpg`;
+  assert.equal((await call(img + '?k=v-all', env)).status, 200, 'an <img> URL may carry the key');
+  assert.equal((await call(img + '?k=wrong', env)).status, 401);
+  for (const api of ['/sources', '/kiosks', '/states', framesPath(NOW - 3600e3, NOW, MIN, 'cam-1'), `/frames?from=${NOW - 3600e3}&to=${NOW}&step=${MIN}`]) {
+    const sep = api.includes('?') ? '&' : '?';
+    assert.equal((await call(api + sep + 'k=v-all', env)).status, 401, api + ' refuses ?k=');
+    assert.equal((await call(api, env, { headers: { authorization: 'Bearer v-all' } })).status, 200, api + ' takes Bearer');
+  }
+});
+
+test('frame images, and their 404s, are sent with nosniff', async () => {
+  const FRAMES = memR2(frameKeys(1));
+  const ok = await call(`/frame/lo/site-a/source-1/${NOW}.jpg`, { FRAMES });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.headers.get('content-type'), 'image/jpeg');
+  assert.equal(ok.headers.get('x-content-type-options'), 'nosniff');
+  const missing = await call(`/frame/lo/site-a/source-1/${NOW + 1}.jpg`, { FRAMES });
+  assert.equal(missing.status, 404);
+  assert.equal(missing.headers.get('x-content-type-options'), 'nosniff');
 });
 
 test('signed image URLs authorize their own source and nothing else', async () => {
@@ -191,7 +298,7 @@ function upload(env, extra = {}) {
     authorization: 'Bearer tok-a', 'x-site': 'site-a', 'x-source': source, 'x-cadence': '60',
     'content-type': 'image/jpeg', 'content-length': '4', ...extra.headers,
   };
-  return { source, res: call('/upload', env, { method: 'POST', headers, body: 'jpeg' }) };
+  return { source, res: call('/upload', env, { method: 'POST', headers, body: JPEG }) };
 }
 const sourceOf = async (env, id) => (await (await call('/sources', env)).json()).find((s) => s.id === id);
 
@@ -259,7 +366,7 @@ const DAY = 864e5;
 async function callAndSettle(path, env, init) {
   const pending = [];
   const res = await worker.fetch(new Request('https://w.example' + path, init),
-    { ASSETS: { fetch: () => new Response('') }, ...env }, { waitUntil: (p) => pending.push(p) });
+    { ASSETS: { fetch: () => new Response('') }, OPEN_READS: '1', ...env }, { waitUntil: (p) => pending.push(p) });
   await Promise.all(pending);
   return res;
 }
@@ -272,7 +379,7 @@ const uploadTo = (env, site, source) => callAndSettle('/upload', env, {
   method: 'POST',
   headers: { authorization: 'Bearer tok', 'x-site': site, 'x-source': source, 'x-cadence': '60',
     'content-type': 'image/jpeg', 'content-length': '4' },
-  body: 'jpeg',
+  body: JPEG,
 });
 
 test('retention: an upload prunes frames older than RETENTION_DAYS, and RETENTION_DAYS_HI for hi', async () => {
@@ -358,6 +465,94 @@ test('retention: unset or invalid RETENTION_DAYS keeps everything', async () => 
   }
 });
 
+/* ---------------- index.json bounds (W2) ---------------- */
+
+const storedIndex = (env) => JSON.parse(env.FRAMES.objs.get('index.json').body);
+const declarePause = (env, site, source) => call('/declare', env, {
+  method: 'POST', headers: { authorization: 'Bearer tok', 'x-site': site, 'x-source': source, 'x-event': 'pause' },
+});
+
+test('index bounds: a site at its source cap refuses a new source, and stores nothing for it', async () => {
+  const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'cap-a': 'tok', 'cap-b': 'tok' }) };
+  const full = {};
+  for (let i = 0; i < 1000; i++) {full[`cam-${i}`] = { cadence: MIN, history: [] };}
+  env.FRAMES.objs.set('index.json', { body: JSON.stringify({ sites: { 'cap-a': full } }), etag: 'i' });
+  const warns = [];
+  const orig = console.warn; console.warn = (m) => warns.push(m);
+  let res;
+  try { res = await uploadTo(env, 'cap-a', 'one-more'); } finally { console.warn = orig; }
+  assert.equal(res.status, 409);
+  assert.match((await res.json()).error, /1000 sources/);
+  assert.equal(framesOf(env, 'lo', 'cap-a', 'one-more'), 0, 'no frame stored');
+  assert.equal(own1000(storedIndex(env)), 1000, 'the registry did not grow');
+  assert.ok(warns.some((w) => w.includes('source refused')));
+  // the site's existing sources, and other sites, carry on
+  assert.equal((await uploadTo(env, 'cap-a', 'cam-7')).status, 200);
+  assert.equal((await uploadTo(env, 'cap-b', 'cam-1')).status, 200);
+});
+const own1000 = (index) => Object.keys(index.sites['cap-a']).length;
+
+test('index bounds: a source keeps at most 1000 history events, the newest', async () => {
+  const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'hist-a': 'tok' }) };
+  const t0 = Date.now() - 2000 * MIN;
+  const history = [];
+  for (let i = 0; i < 1000; i++) {history.push(i % 2 ? { since: t0 + i * MIN, variant: 'lo', paused: true } : { since: t0 + i * MIN, variant: 'lo', cadence: MIN });}
+  env.FRAMES.objs.set('index.json', { body: JSON.stringify({ sites: { 'hist-a': { cam: { cadence: MIN, history } } } }), etag: 'i' });
+  // the last event is a pause, so this upload is a resume: one more event
+  assert.equal((await uploadTo(env, 'hist-a', 'cam')).status, 200);
+  const after = storedIndex(env).sites['hist-a'].cam.history;
+  assert.equal(after.length, 1000);
+  assert.equal(after[0].since, t0 + MIN, 'the oldest event went');
+  assert.equal(after.at(-1).paused, undefined, 'the resume is kept');
+  // a pause declared on top: still 1000
+  assert.equal((await declarePause(env, 'hist-a', 'cam')).status, 200);
+  assert.equal(storedIndex(env).sites['hist-a'].cam.history.length, 1000);
+});
+
+test('index bounds: under retention, a write drops expired events without changing what /sources reports', async (t) => {
+  const NOWX = 1_800_000_000_000;
+  t.mock.method(Date, 'now', () => NOWX);
+  const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'hist-r': 'tok' }), RETENTION_DAYS: '30' };
+  const history = [
+    { since: NOWX - 90 * DAY, variant: 'lo', cadence: MIN },
+    { since: NOWX - 80 * DAY, variant: 'hi', cadence: 5 * MIN },
+    { since: NOWX - 60 * DAY, variant: 'lo', paused: true, reason: 'quiet' },
+    { since: NOWX - 50 * DAY, variant: 'lo', cadence: 2 * MIN },   // lo in force at the cutoff
+    { since: NOWX - 10 * DAY, variant: 'lo', paused: true, reason: 'quiet' },
+  ];
+  env.FRAMES.objs.set('index.json', { body: JSON.stringify({ sites: { 'hist-r': { cam: { cadence: 2 * MIN, hiCadence: 5 * MIN, history } } } }), etag: 'i' });
+  const before = (await sourceOf(env, 'cam')).history;
+  await declarePause(env, 'hist-r', 'cam');   // a different pause (no reason): one write
+  const stored = storedIndex(env).sites['hist-r'].cam.history;
+  assert.deepEqual(stored.map((h) => h.since), [NOWX - 80 * DAY, NOWX - 50 * DAY, NOWX - 10 * DAY, NOWX]);
+  assert.deepEqual((await sourceOf(env, 'cam')).history.slice(0, -1), before, 'the same report, plus the new pause');
+  t.mock.restoreAll();
+});
+
+test('index bounds: index writes are rate-limited per site; a deferred registration lands on a later upload', async (t) => {
+  let now = Math.floor(Date.now() / MIN) * MIN;
+  t.mock.method(Date, 'now', () => now);
+  const env = { FRAMES: storeR2(), UPLOAD_TOKENS: JSON.stringify({ 'rate-a': 'tok', 'rate-b': 'tok' }) };
+  const warns = [];
+  const orig = console.warn; console.warn = (m) => warns.push(m);
+  try {
+    for (let i = 0; i < 300; i++) {assert.equal((await uploadTo(env, 'rate-a', `cam-${i}`)).status, 200);}
+    // the 301st write this minute: the frame is stored, the registration waits
+    assert.equal((await uploadTo(env, 'rate-a', 'late')).status, 200);
+    assert.equal(framesOf(env, 'lo', 'rate-a', 'late'), 1);
+    assert.equal(storedIndex(env).sites['rate-a'].late, undefined);
+    assert.equal((await declarePause(env, 'rate-a', 'cam-0')).status, 429);
+    // another site has its own allowance
+    assert.equal((await uploadTo(env, 'rate-b', 'cam')).status, 200);
+    assert.ok(storedIndex(env).sites['rate-b'].cam);
+    assert.equal(warns.filter((w) => w.includes('index writes rate-limited')).length, 1, 'said once a minute');
+    now += MIN;
+    assert.equal((await uploadTo(env, 'rate-a', 'late')).status, 200);
+    assert.ok(storedIndex(env).sites['rate-a'].late, 'registered once the minute is up');
+    assert.equal((await declarePause(env, 'rate-a', 'cam-0')).status, 200);
+  } finally { console.warn = orig; t.mock.restoreAll(); }
+});
+
 /* ---------------- /frames for every source (#126 M2) ---------------- */
 
 /* memR2's frames plus an index.json, as the worker keeps them */
@@ -398,7 +593,7 @@ test('/frames without source: site= narrows, and a site-scoped viewer sees only 
     { 'site-a': { 'cam-1': { cadence: MIN } }, 'site-b': { lobby: { cadence: MIN } } }
   );
   const q = `from=${NOW - 3600e3}&to=${NOW}&step=${MIN}`;
-  const sitesOf = async (path, env) => [...new Set((await (await call(path, env)).json()).map((r) => r.site))];
+  const sitesOf = async (path, env, init) => [...new Set((await (await call(path, env, init)).json()).map((r) => r.site))];
   assert.deepEqual(await sitesOf(allPath(`site=site-b&${q}`), { FRAMES }), ['site-b']);
   assert.deepEqual(await sitesOf(allPath(`site=All&${q}`), { FRAMES }), ['site-a', 'site-b']);
   // sources= keeps only those ids, as a Host variable would ask
@@ -407,8 +602,9 @@ test('/frames without source: site= narrows, and a site-scoped viewer sees only 
   assert.equal((await call(allPath(`sources=All&${q}`), { FRAMES })).status, 200);
   const VIEWER_TOKEN = JSON.stringify({ wall: { token: 'w', sites: ['site-a'] } });
   const scoped = { FRAMES, VIEWER_TOKEN };
-  assert.deepEqual(await sitesOf(allPath(`${q}&k=w`), scoped), ['site-a']);
-  assert.deepEqual(await (await call(allPath(`site=site-b&${q}&k=w`), scoped)).json(), []);
+  const w = { headers: { authorization: 'Bearer w' } };
+  assert.deepEqual(await sitesOf(allPath(q), scoped, w), ['site-a']);
+  assert.deepEqual(await (await call(allPath(`site=site-b&${q}`), scoped, w)).json(), []);
   assert.equal((await call(allPath(q), scoped)).status, 401);
 });
 
@@ -487,6 +683,39 @@ async function withCache(fn) {
   } };
   try { return await fn(store); } finally { globalThis.caches = orig; }
 }
+
+test('authenticated JSON is private to clients, while the edge cache still keeps and serves /frames', async () => {
+  await withCache(async (store) => {
+    const FRAMES = indexedR2(keysFor('site-a', 'cam-1', MIN, 1), { 'site-a': { 'cam-1': { cadence: MIN } } });
+    const env = { FRAMES, VIEWER_TOKEN: 'v', OPEN_READS: undefined };
+    const auth = { headers: { authorization: 'Bearer v' } };
+    const one = framesPath(NOW - 3600e3, NOW, MIN, 'cam-1');
+    const all = `/frames?from=${NOW - 3600e3}&to=${NOW}&step=${MIN}`;
+    for (const p of ['/sources', '/states', one, all]) {
+      const res = await call(p, env, auth);
+      assert.equal(res.status, 200, p);
+      assert.match(res.headers.get('cache-control'), /^private, max-age=\d+$/, p);
+    }
+    // the edge copies are public (the Cache API won't store a private one) ...
+    const edge = [...store.entries()].filter(([u]) => new URL(u).pathname === '/frames');
+    assert.equal(edge.length, 2);
+    assert.ok(edge.every(([, r]) => /^public, max-age=\d+$/.test(r.headers.get('cache-control'))));
+    // ... and a cache hit is served from them, still private to the client
+    FRAMES.list = async () => { throw new Error('a cache hit listed R2'); };
+    for (const p of [one, all]) {
+      const hit = await call(p, env, auth);
+      assert.equal(hit.status, 200, p);
+      assert.ok((await hit.json()).length > 0, p);
+      assert.match(hit.headers.get('cache-control'), /^private, /, p);
+    }
+    // and the cache sits behind the auth check
+    assert.equal((await call(one, env)).status, 401);
+    // images keep their immutable public caching
+    const img = await call(`/frame/lo/site-a/cam-1/${NOW}.jpg?k=v`, env);
+    assert.equal(img.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    assert.equal(img.headers.get('x-content-type-options'), 'nosniff');
+  });
+});
 
 test('with a frame index, /upload records the frame and /frames reads it without listing R2', async () => {
   const DB = d1();
@@ -579,6 +808,24 @@ test('with a frame index, /frames for every source finishes them all', async () 
   assert.equal(res.headers.get('x-frames-truncated-sources'), null);
   const rows = await res.json();
   assert.equal(new Set(rows.map((r) => r.source)).size, 20);
+});
+
+test('with a frame index, /frames caps the window and step at 400 days', async () => {
+  const sites = { 'site-a': { 'source-1': { cadence: MIN } } };
+  const env = { FRAMES: indexedR2(frameKeys(1), sites), DB: d1() };
+  const days = (n) => n * DAY;
+  const one = (span, step) => call(framesPath(NOW - span, NOW, step), env);
+  const all = (span, step) => call(`/frames?from=${NOW - span}&to=${NOW}&step=${step}`, env);
+  for (const ask of [one, all]) {
+    const long = await ask(days(401), days(1));
+    assert.equal(long.status, 400);
+    assert.match((await long.json()).error, /window too long/);
+    assert.equal((await ask(days(400), days(1))).status, 200, 'a 400-day window is fine');
+    assert.equal((await ask(days(1), days(401))).status, 400, 'a step past 400 days is not');
+  }
+  // without the index, the R2 scan budget bounds the work instead
+  const scan = { FRAMES: indexedR2(frameKeys(1), sites) };
+  assert.equal((await call(framesPath(NOW - days(401), NOW, days(1)), scan)).status, 200);
 });
 
 test('retention removes pruned frames from the index too', async () => {
@@ -685,6 +932,7 @@ test('/states answers each source\'s pauses as state rows, and the end of each a
   assert.deepEqual((await get('?site=site-a&sources=cam-1&to=2500')).map((r) => r.time), [2000]);
   // a site-scoped viewer sees only its sites
   const VIEWER_TOKEN = JSON.stringify({ wall: { token: 'w', sites: ['site-b'] } });
-  assert.deepEqual((await get('?k=w', { VIEWER_TOKEN })).map((r) => r.site), ['site-b']);
+  const w = { headers: { authorization: 'Bearer w' } };
+  assert.deepEqual((await (await call('/states', { FRAMES, VIEWER_TOKEN }, w)).json()).map((r) => r.site), ['site-b']);
   assert.equal((await call('/states', { FRAMES, VIEWER_TOKEN })).status, 401);
 });

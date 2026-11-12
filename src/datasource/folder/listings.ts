@@ -21,6 +21,13 @@ export interface Listing {
 
 export type ListingFormat = 'json' | 'html' | 's3';
 
+/** Whether a decoded name is one entry of this folder: not empty, not "." or
+ * "..", and with no "/" or "\\" in it. Anything else would step out of the
+ * folder (or above the base) when joined into a path (L1). */
+export function isPlainName(name: string): boolean {
+  return !!name && name !== '.' && name !== '..' && !/[/\\]/.test(name);
+}
+
 /** nginx's or Caddy's JSON listing. */
 export function parseJsonListing(text: string): Listing {
   const out: Listing = { dirs: [], files: [] };
@@ -31,7 +38,7 @@ export function parseJsonListing(text: string): Listing {
     let name = typeof r?.name === 'string' ? r.name : '';
     const dir = r?.type === 'directory' || r?.is_dir === true || name.endsWith('/');
     name = name.replace(/\/+$/, '');
-    if (!name || name === '.' || name === '..') {continue;}
+    if (!isPlainName(name)) {continue;}
     (dir ? out.dirs : out.files).push(name);
   }
   return out;
@@ -58,6 +65,8 @@ export function parseHtmlListing(text: string): Listing {
     let name = href.replace(/\/+$/, '');
     if (!name || name.includes('/')) {continue;}   // not in this folder
     try { name = decodeURIComponent(name); } catch { /* a stray %: keep it as it is */ }
+    // checked again once decoded: "%2E%2E/" is the parent too
+    if (!isPlainName(name)) {continue;}
     if (seen.has((dir ? 'd:' : 'f:') + name)) {continue;}
     seen.add((dir ? 'd:' : 'f:') + name);
     (dir ? out.dirs : out.files).push(name);
@@ -79,11 +88,11 @@ export function parseS3Listing(text: string, prefix: string): Listing {
   const rel = (k: string) => (k.startsWith(prefix) ? k.slice(prefix.length) : k);
   for (const m of text.matchAll(/<CommonPrefixes>\s*<Prefix>([^<]*)<\/Prefix>/g)) {
     const name = rel(xmlText(m[1])).replace(/\/+$/, '');
-    if (name) {out.dirs.push(name);}
+    if (isPlainName(name)) {out.dirs.push(name);}
   }
   for (const m of text.matchAll(/<Contents>[\s\S]*?<Key>([^<]*)<\/Key>/g)) {
     const name = rel(xmlText(m[1]));
-    if (name && !name.endsWith('/')) {out.files.push(name);}
+    if (isPlainName(name)) {out.files.push(name);}
   }
   if (/<IsTruncated>\s*true\s*<\/IsTruncated>/.test(text)) {
     const next = /<NextContinuationToken>([^<]*)<\/NextContinuationToken>/.exec(text)?.[1];

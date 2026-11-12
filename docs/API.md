@@ -315,15 +315,20 @@ accidental revocation while it is still one command to undo.
 
 ## Read auth (reference worker)
 
-Writes always require the per-site upload token. Reads are governed by
+Writes always require the per-site upload token, and an upload must be a
+JPEG of at most 2 MB; the worker's other bounds (sources and history per
+site, registry writes, a `/frames` window with a frame index) are in
+[worker/README.md](../worker/README.md#limits). Reads are governed by
 three env vars, composable per deployment:
 
-- **`VIEWER_TOKEN`** (secret) — when set, every data read (`/sources`,
-  `/frames`, `/frame/*`) requires a viewer credential: `Authorization:
-  Bearer` on API calls, `?k=` on image URLs (`<img>` can't send headers).
-  Unset = open reads (dev/demo). Either a single token string, or a JSON
-  map of **named consumers** so a leaked dashboard costs one revocable
-  entry, optionally scoped to sites:
+- **`VIEWER_TOKEN`** (secret) — every data read (`/sources`, `/frames`,
+  `/frame/*`) requires a viewer credential: `Authorization: Bearer` on API
+  calls, and `?k=` only on image URLs (`<img>` can't send headers; API
+  calls refuse `?k=`). Unset, reads are refused (401), unless the plain
+  variable **`OPEN_READS=1`** opens them on purpose (dev/demo; ignored once
+  a token is set). Either a single token string, or a JSON map of **named
+  consumers** so a leaked dashboard costs one revocable entry, optionally
+  scoped to sites:
 
   ```json
   {"grafana-cloud": "tok...",
@@ -331,7 +336,10 @@ three env vars, composable per deployment:
   ```
 
   A site-scoped consumer sees only its sites in `/sources` and gets 403
-  for out-of-scope `/frames` and `/frame/*`.
+  for out-of-scope `/frames` and `/frame/*`. A plain string entry sees
+  every site; an object entry needs a non-empty `sites` array of valid ids,
+  and one without (empty, a string, misspelled) grants nothing and is
+  logged by name.
 - **`IMG_SIGN_KEY`** (secret) — when set, `/frames` appends
   `?e=<expiry-ms>&sig=<hex HMAC-SHA256(site/source|expiry)>` to each image
   URL, and `/frame/*` accepts a valid signature as authorization on its

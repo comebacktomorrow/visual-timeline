@@ -33,7 +33,7 @@ export interface GridState {
   wrap: HTMLDivElement;
   pv: Preview;
   PANEL_TT: ZoneTexts;
-  kiosks: SourceDecl[];         // the sources shown (after boot: those with a tile)
+  hosts: SourceDecl[];         // the sources shown (after boot: those with a tile)
   tiles: Record<string, Tile>;  // by source id
   destroyed: boolean;
   pollTimer: ReturnType<typeof setInterval> | null;

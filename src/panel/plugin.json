@@ -22,6 +22,10 @@
     },
     "links": [
       {
+        "name": "Documentation",
+        "url": "https://github.com/comebacktomorrow/visual-timeline#readme"
+      },
+      {
         "name": "Repository",
         "url": "https://github.com/comebacktomorrow/visual-timeline"
       },

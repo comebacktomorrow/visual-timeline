@@ -10,6 +10,7 @@
  * - literal text matches literally; a path that doesn't match is ignored.
  * Pure: no fetching here (see walk.ts). */
 import { zonedParts, zonedTime } from '../../vt/time/zones';
+import { isPlainName } from './listings';
 
 const TIME = { YYYY: '\\d{4}', MM: '\\d{2}', DD: '\\d{2}', DDD: '\\d{3}', HH: '\\d{2}', mm: '\\d{2}', ss: '\\d{2}', epoch: '\\d{9,10}', epoch_ms: '\\d{12,13}' } as const;
 const IDENTITY = ['host', 'site', 'variant'] as const;
@@ -76,6 +77,9 @@ export function compileTemplate(raw: string, label = 'path template'): FolderTem
   if (!seen.has('host')) {throw new Error(`The ${label} needs {host}`);}
   if (![...seen].some(isTime)) {throw new Error(`The ${label} needs a time: {epoch}, {epoch_ms}, or {YYYY}{MM}{DD} with {HH}{mm}`);}
   if (segments.some((s) => !s.raw)) {throw new Error(`${The} has an empty folder (two slashes in a row)`);}
+  if (segments.some((s) => s.raw === '.' || s.raw === '..' || s.raw.includes('\\'))) {
+    throw new Error(`${The} can't have a "." or ".." folder, or a backslash`);
+  }
   return { raw: t, segments };
 }
 
@@ -110,11 +114,14 @@ export function unitEnd(ts: number, unit: TimeUnit, tz: string): number {
 
 /** A segment's placeholders as they match in one name, or null. */
 export function matchSegment(seg: Segment, name: string, bound: Record<string, string> = {}): Record<string, string> | null {
+  // "." and ".." are never a folder's entry, and no placeholder is either (L1)
+  if (!isPlainName(name)) {return null;}
   const m = seg.regex.exec(name);
   if (!m) {return null;}
   const got = { ...(m.groups || {}) };
-  // a placeholder bound in an earlier segment (a host's folder) must agree
   for (const [k, v] of Object.entries(got)) {
+    if (v === '.' || v === '..') {return null;}
+    // a placeholder bound in an earlier segment (a host's folder) must agree
     if (bound[k] !== undefined && bound[k] !== v) {return null;}
   }
   return { ...bound, ...got };
@@ -164,14 +171,16 @@ export function timeVars(ts: number, tz: string): Record<TimeName, string> {
   };
 }
 
-/** A segment with its placeholders filled in, or null when one has no value. */
+/** A segment with its placeholders filled in, or null when one has no
+ * value, or the name it makes isn't one plain folder entry (a host asked
+ * for as "..", or with a "/" in it). */
 export function fillSegment(seg: Segment, vars: Record<string, string>): string | null {
   let missing = false;
   const out = seg.raw.replace(PLACEHOLDER, (_m, name: string) => {
-    if (vars[name] === undefined) { missing = true; return ''; }
+    if (vars[name] === undefined || vars[name] === '.' || vars[name] === '..') { missing = true; return ''; }
     return vars[name];
   });
-  return missing ? null : out;
+  return missing || !isPlainName(out) ? null : out;
 }
 
 /** Whether a segment holds only time placeholders (and literals): a date

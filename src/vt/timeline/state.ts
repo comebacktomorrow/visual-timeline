@@ -1,5 +1,6 @@
 import type { ImageQueue } from '../ui/imageQueue';
 import type { Preview } from '../ui/preview';
+import type { PlayerContext } from '../ui/player';
 import type { SourceZone, ZoneTexts } from '../zones/source';
 import type { Backend, MountConfig, MountWindow, SourceDecl, SourceModel } from '../types';
 import type { Flipbook } from './flipbook';
@@ -19,6 +20,8 @@ export interface Card {
   lane: HTMLElement;
   shown?: string | null; // what the magnifier and header show (setCursor's shownKey)
   flip?: Flipbook;       // the hover flipbook (M10b)
+  teardown?: () => void; // the mount's destroy(): stops the flipbook and the magnifier's video
+  player?: () => PlayerContext; // the preview player's context for this host (ui/playerContext.ts)
 }
 
 /* Everything one mountTimeline call shares between its parts: what were
@@ -45,7 +48,7 @@ export interface TimelineState {
   pv: Preview;
   images: ImageQueue;  // strip images, newest first (ui/imageQueue.ts)
   PANEL_TT: ZoneTexts;
-  kiosks: SourceDecl[];         // the sources shown (after boot: those with a card)
+  hosts: SourceDecl[];         // the sources shown (after boot: those with a card)
   cards: Record<string, Card>;  // by source id
   cursorT: number;
   destroyed: boolean;

@@ -177,19 +177,29 @@ export function isVideoUrl(s: string): boolean {
   return /^data:video\//i.test(s) || /\.(mp4|m4v|webm|mov|ogv|mkv|m3u8)([?#]|$)/i.test(s);
 }
 
-/** A value as something an <img> can load: URLs and data: URLs as they are,
- * bare Base64 image data as a data: URL. */
+/* the schemes a frame's image or video may use (L2); any other scheme
+ * (javascript:, file:, vbscript:, a data: URL of another type) is no image */
+const IMAGE_SCHEMES = /^(?:https?:|blob:|data:(?:image|video)\/)/i;
+const ANY_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+
+/** A value as something an <img> can load: http(s), blob:, data:image/ and
+ * data:video/ URLs, protocol-relative and relative URLs as they are; bare
+ * Base64 image data as a data: URL; anything else null. */
 export function imageLocator(v: unknown): string | null {
   if (typeof v !== 'string') {return null;}
   const s = v.trim();
   if (!s) {return null;}
-  if (/^(https?:|data:|blob:)/i.test(s)) {return s;}
+  // a browser drops tabs and newlines anywhere in a URL: "java\tscript:" is
+  // javascript:, so the scheme is read as it will
+  const probe = s.replace(/[\t\n\r]/g, '');
+  if (IMAGE_SCHEMES.test(probe)) {return s;}
   // checked before paths: JPEG data starts "/9j/", which looks like one
   const type = BASE64_TYPES.find(([magic]) => s.startsWith(magic));
   if (type && s.length >= 16 && /^[A-Za-z0-9+/=\s]+$/.test(s.slice(0, 256))) {
     return `data:${type[1]};base64,${s.replace(/\s+/g, '')}`;
   }
-  return s; // a path, a relative URL or anything else: the browser decides
+  if (ANY_SCHEME.test(probe)) {return null;}
+  return s; // a path, a protocol-relative or relative URL
 }
 
 /** A host's cadence from its frames: the median gap, in whole seconds. */

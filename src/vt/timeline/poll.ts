@@ -9,7 +9,7 @@ import type { TimelineState } from './state';
  * re-rendered in place; unchanged cells keep their elements. Sets
  * s.pollTimer; destroy() clears it. */
 export function startPoll(s: TimelineState): void {
-  const steps = s.kiosks.map((k) => s.cards[k.id]?.model.step).filter((x): x is number => !!x);
+  const steps = s.hosts.map((k) => s.cards[k.id]?.model.step).filter((x): x is number => !!x);
   const minStep = steps.length ? Math.min(...steps) : 60e3;
   let busy = false;   // a slow tick (many sources, slow API) must not overlap the next
   s.pollTimer = setInterval(async () => {
@@ -20,7 +20,7 @@ export function startPoll(s: TimelineState): void {
 }
 
 async function pollOnce(s: TimelineState): Promise<void> {
-  for (const k of s.kiosks) {
+  for (const k of s.hosts) {
     const c = s.cards[k.id];
     if (!c) {continue;}
     const m = c.model;

@@ -17,11 +17,13 @@ jest.mock('@grafana/runtime', () => ({
         parents.push([req.scopedVars.__vt_window_from?.value, req.scopedVars.__vt_window_to?.value]);
         limits.push([req.maxDataPoints, req.intervalMs, req.scopedVars.__interval_ms?.value]);
         calls.push({ uid: ref?.uid ?? '', from: req.range.from.valueOf(), to: req.range.to.valueOf(), targets: req.targets.map((t: any) => t.refId), vars: req.scopedVars.__from });
+        // every host's rows for the span, as a SQL query or our folder answers
         const ts = [0, 1, 2, 3, 4].map((m) => T0 + m * MIN).filter((t) => t >= req.range.from.valueOf() && t <= req.range.to.valueOf());
+        const rows = ts.flatMap((t) => [{ t, host: 'cam-a' }, { t, host: 'cam-b' }]);
         const frame = toDataFrame({ refId: req.targets[0].refId, fields: [
-          { name: 'time', type: FieldType.time, values: ts },
-          { name: 'host', type: FieldType.string, values: ts.map(() => 'cam-a') },
-          { name: 'image', type: FieldType.string, values: ts.map((t) => `http://x/${t}.jpg`) },
+          { name: 'time', type: FieldType.time, values: rows.map((x) => x.t) },
+          { name: 'host', type: FieldType.string, values: rows.map((x) => x.host) },
+          { name: 'image', type: FieldType.string, values: rows.map((x) => `http://x/${x.host}/${x.t}.jpg`) },
         ] });
         // one answers as an Observable, the other as a Promise
         return ref?.uid === 'a' ? of({ data: [frame] }) : Promise.resolve({ data: [frame] });
@@ -68,6 +70,32 @@ describe('a slot\'s frames, by running the panel\'s queries again', () => {
     const detail = makeDetail(() => request, () => ({}));
     await detail('', 'cam-a', T0, T0 + MIN);
     await detail('', 'cam-a', T0, T0 + MIN);
+    expect(calls).toHaveLength(2);
+  });
+
+  test('another host\'s strip at the same span reuses the answer, and picks its own host out of it (M4)', async () => {
+    const detail = makeDetail(() => request, () => ({}));
+    const a = await detail('', 'cam-a', T0 + MIN, T0 + 2 * MIN);
+    const b = await detail('', 'cam-b', T0 + MIN, T0 + 2 * MIN);
+    expect(calls).toHaveLength(2);   // one per data source, once
+    expect(a.map((f) => f.url)).toEqual([`http://x/cam-a/${T0 + MIN}.jpg`, `http://x/cam-a/${T0 + 2 * MIN}.jpg`]);
+    expect(b.map((f) => f.url)).toEqual([`http://x/cam-b/${T0 + MIN}.jpg`, `http://x/cam-b/${T0 + 2 * MIN}.jpg`]);
+    // asked at once, before the answer: still once
+    calls.length = 0;
+    const both = await Promise.all([detail('', 'cam-a', T0, T0 + 4 * MIN), detail('', 'cam-b', T0, T0 + 4 * MIN)]);
+    expect(calls).toHaveLength(2);
+    expect(both.map((f) => f.length)).toEqual([5, 5]);
+    // another span, another limit or a new request asks again
+    calls.length = 0;
+    await detail('', 'cam-b', T0, T0 + 4 * MIN, 100);
+    await makeDetail(() => ({ ...request, requestId: 'Q2' }), () => ({}))('', 'cam-b', T0, T0 + 4 * MIN);
+    expect(calls).toHaveLength(4);
+  });
+
+  test('a host the answer lacks: nothing, without asking again', async () => {
+    const detail = makeDetail(() => request, () => ({}));
+    expect(await detail('', 'cam-z', T0, T0 + MIN)).toEqual([]);
+    expect(await detail('', 'cam-a', T0, T0 + MIN)).toHaveLength(2);
     expect(calls).toHaveLength(2);
   });
 

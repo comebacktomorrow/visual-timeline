@@ -45,7 +45,7 @@ const CSS = `
        color:var(--ktl-text); font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif; }
 .ktl * { box-sizing:border-box; margin:0; padding:0; }
 .ktl .cards { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:6px; overflow-y:auto; }
-/* cards share panel height equally (fewer kiosks → taller strips), but
+/* cards share panel height equally (fewer hosts → taller strips), but
    never crush below a usable minimum — past that the list scrolls */
 .ktl .card { flex:1 1 0; min-height:76px; display:flex; flex-direction:column; background:var(--ktl-bg2);
              border:1px solid var(--ktl-border); border-radius:4px; overflow:hidden; transition:opacity 120ms ease;
@@ -106,6 +106,12 @@ const CSS = `
 .ktl .card-head .cad { margin-left:auto; font-size:10px; color:var(--ktl-dim); }
 .ktl .strip { flex:1 1 auto; min-height:0; position:relative; display:flex; align-items:stretch;
               cursor:crosshair; background:var(--ktl-media); }
+/* a strip has focus only from the keyboard (a press doesn't focus it) */
+.ktl .strip:focus { outline:none; }
+/* its keyboard focus ring, drawn over the slots (an outline is painted
+ * under the slot images, out of sight) */
+.ktl .strip:focus-visible::after { content:""; position:absolute; inset:0; border:2px solid var(--ktl-accent);
+  pointer-events:none; z-index:5; }
 .ktl .slot { flex:1 1 0; min-width:0; position:relative; overflow:hidden; }
 /* Frame delineation tints the FRAME: overflow clips the img to the padding
    box, so a border column would expose the #111 strip bg underneath and
@@ -204,6 +210,7 @@ const CSS = `
  * frame: the caption below must be free to overflow the magnifier */
 .ktl .mag img { width:100%; height:100%; object-fit:contain; display:block; background:var(--ktl-mag-bg);
                 clip-path:inset(0); }
+.ktl .mag img:not([src]) { visibility:hidden; }   /* before the cursor first sets it: no broken-image box */
 .ktl.fill .mag img { object-fit:cover; }
 .ktl.fill .tile .t-img img { object-fit:cover; }
 .ktl .mag.gap { border-color:var(--ktl-off);
@@ -305,7 +312,9 @@ const CSS = `
 .ktl-pop img { display:block; max-width:min(560px, 50vw); max-height:55vh; border-radius:2px; }
 .ktl-pop .cap { text-align:center; color:var(--ktl-text); font-size:11px; padding:3px 0 0;
                 font-variant-numeric:tabular-nums; }
-/* the preview as a player (M10): stage, scrubber, controls */
+/* the preview as a player (M10): stage, scrubber, controls. The popup
+ * itself takes focus when it opens: no ring round all of it */
+.ktl-pop.player:focus { outline:none; }
 .ktl-pop.player { cursor:default; padding:6px; width:min(720px, 92vw); max-width:92vw; font:12px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;
                   color:var(--ktl-text); display:flex; flex-direction:column; gap:6px; }
 .ktl-pop.player .stage { position:relative; display:flex; align-items:center; justify-content:center; background:var(--ktl-media);

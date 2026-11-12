@@ -26,7 +26,7 @@ needed: the folder's listing is the index.
 | **Expected every**       | Optional: how often each host takes a frame (`1m`, `30s`), as a promise. A frame missing past it is drawn red, as offline. Empty: no promise; a missing frame is never offline (below).                               |
 | **Time zone**            | The zone the times in names are in. Empty: UTC.                                                                                                                                                                       |
 | **Small / Large images** | With `{variant}`: its value for strips and grids, and for the click-in preview.                                                                                                                                       |
-| **Bearer token**         | Optional; sent by Grafana's server with each listing.                                                                                                                                                                 |
+| **Bearer token**         | Optional; sent by Grafana's server with each listing. Anyone who can query the data source can use it (Security, below).                                                                                              |
 
 ## The path template
 
@@ -97,8 +97,43 @@ with their index first (`ffmpeg -movflags +faststart`).
   Private buckets aren't supported yet.
 
 A listing is reused for a minute, so a dashboard's panels and variables share
-it. A query lists at most 200 folders; past that, the panel shows a notice and
-some hosts or times aren't read.
+it. A date folder whose day, hour or month ended more than 15 minutes ago is
+reused for an hour, so a long range re-lists only its recent folders on each
+refresh. A frame uploaded later than that into a past folder can take up to an
+hour to appear.
+
+A query lists at most 200 folders. It lists the newest first, so past the cap
+the oldest times aren't read, for every host alike, and the panel shows a
+notice. Folders that name no time (a host's folder of every frame it ever took)
+can't be ordered by time, so there the cap can leave out whole hosts.
+
+For long ranges, choose a layout that needs few folders. Each host needs one
+listing per date folder the range touches, plus one for the folder of hosts
+unless the query names them:
+
+- **Day folders:** 30 days is 31 listings per host, so 6 hosts fit.
+- **Month folders** (`{host}/{YYYY}-{MM}/…`): a year is 13 per host, so 15
+  hosts fit.
+- **Hour folders:** a day is 25 per host, so 7 hosts fit. They suit short
+  ranges only.
+- **No date folders** (`{host}/{epoch}.jpg`): one listing per host, whatever
+  the range, but each listing holds every frame the host has.
+
+## Security
+
+Grafana's proxy route for the folder isn't limited to the listings the data
+source builds. Anyone who can query the data source (by default every Viewer)
+can ask Grafana's server to GET any path below the folder URL, and the bearer
+token is sent with it. So:
+
+- **Make the token read-only, and scope it to the folder.** Never use a token
+  that can write, or that reaches other folders, buckets or APIs.
+- **Serve only the frames at the folder URL.** Use a dedicated host or virtual
+  host whose root is the frames' folder, not a path on a server that also
+  serves other files or an API. Don't rely on the folder URL's path to fence
+  the token in.
+
+The token itself never reaches the browser. Only GET is allowed.
 
 ## Missing frames
 
@@ -117,4 +152,6 @@ job: the uploader can post both (as `selfhost/snapshot-uploader.sh` does), a
 bucket event can trigger a small resize job, or an on-the-fly resizer (imgproxy,
 imagor, thumbor, nginx `image_filter`, Cloudflare Image Transformations) can sit
 in front of the folder. Full-size images work, but cost bandwidth and browser
-decoding with many hosts.
+decoding with many hosts: a strip holds an image per slot (a few hundred per
+host), each decoded at its full size, so keep the small size to about 320 px
+wide or less.

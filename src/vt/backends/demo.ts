@@ -42,18 +42,18 @@ export function makeBackend(P: TimeWindow, SPAN: number, tz: string): DemoBacken
   /* An SVG data URL rather than a canvas JPEG: a few hundred bytes, so demo
    * frames can travel in a query result as rows like any source's (#126),
    * and no canvas is needed to make them. */
-  function renderMockFrame(site: string, kiosk: string, ts: number, step: number): string {
-    const dims = DIMS[kiosk] || [384, 216];
+  function renderMockFrame(site: string, host: string, ts: number, step: number): string {
+    const dims = DIMS[host] || [384, 216];
     const w = dims[0], h = dims[1];
-    const hue = HUES[kiosk] != null ? HUES[kiosk] : 130;
-    const own = DEMO_ZONES[kiosk];
+    const hue = HUES[host] != null ? HUES[host] : 130;
+    const own = DEMO_ZONES[host];
     const phase = (ts / step) % 20 / 20;
     const big = Math.round(Math.min(w * 0.16, h * 0.18));
     const svg =
       `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}' viewBox='0 0 ${w} ${h}'>` +
       `<rect width='${w}' height='${h}' fill='hsl(${hue},30%,14%)'/>` +
       `<rect width='${w}' height='${Math.round(h * 0.14)}' fill='hsl(${hue},60%,30%)'/>` +
-      `<text x='8' y='${Math.round(h * 0.10)}' font-family='sans-serif' font-weight='bold' font-size='${Math.round(h * 0.06)}' fill='#fff'>${xml(site)} / ${xml(kiosk)}</text>` +
+      `<text x='8' y='${Math.round(h * 0.10)}' font-family='sans-serif' font-weight='bold' font-size='${Math.round(h * 0.06)}' fill='#fff'>${xml(site)} / ${xml(host)}</text>` +
       `<text x='${w / 2}' y='${Math.round(h * 0.55)}' text-anchor='middle' font-family='monospace' font-weight='bold' font-size='${big}' fill='hsl(${hue},70%,72%)'>${xml(fmtTime(ts, own || tz))}</text>` +
       (own
         ? `<text x='${w / 2}' y='${Math.round(h * 0.655)}' text-anchor='middle' font-family='sans-serif' font-size='${Math.round(Math.min(h * 0.055, w * 0.06))}' fill='hsl(${hue},70%,72%)'>${xml(zoneLabel(own))} local time</text>`
@@ -90,14 +90,14 @@ export function makeBackend(P: TimeWindow, SPAN: number, tz: string): DemoBacken
           return labelPauses(decl);
         }));
     },
-    frames(site, kiosk, from, to, step) {
+    frames(site, host, from, to, step) {
       const out: Frame[] = [];
       const gapA = P.from + SPAN * 0.35, gapB = P.from + SPAN * 0.55;
       const first = Math.ceil(from / step) * step;
       for (let ts = first; ts <= Math.min(to, Date.now()); ts += step) {
-        if (kiosk === 'source-2' && ts > gapA && ts < gapB) {continue;}
-      if (kiosk === 'source-4' && ts > P.from + SPAN * 0.2 && ts < P.from + SPAN * 0.45) {continue;}
-        out.push({ kiosk, ts, url: renderMockFrame(site, kiosk, ts, step) });
+        if (host === 'source-2' && ts > gapA && ts < gapB) {continue;}
+      if (host === 'source-4' && ts > P.from + SPAN * 0.2 && ts < P.from + SPAN * 0.45) {continue;}
+        out.push({ source: host, ts, url: renderMockFrame(site, host, ts, step) });
       }
       return Promise.resolve(out);
     },
