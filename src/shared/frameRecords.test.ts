@@ -110,6 +110,23 @@ describe('imageLocator', () => {
     expect(imageLocator('/9j/4AAQSkZJRgABAQ==')).toBe('data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==');
     expect(imageLocator('iVBORw0KGgoAAAANSUhEUgAAAAE=')).toBe('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAE=');
   });
+  test('protocol-relative and relative URLs, blob: and data:video/ pass too', () => {
+    expect(imageLocator('//cdn.example/x.jpg')).toBe('//cdn.example/x.jpg');
+    expect(imageLocator('frames/x.jpg')).toBe('frames/x.jpg');
+    expect(imageLocator('../x.jpg?v=1')).toBe('../x.jpg?v=1');
+    expect(imageLocator('blob:https://grafana.example/1234')).toBe('blob:https://grafana.example/1234');
+    expect(imageLocator('data:video/mp4;base64,AAAA')).toBe('data:video/mp4;base64,AAAA');
+    expect(imageLocator('HTTPS://W.EXAMPLE/X.JPG')).toBe('HTTPS://W.EXAMPLE/X.JPG');
+  });
+  test('any other scheme is no image (L2)', () => {
+    for (const bad of [
+      'javascript:alert(1)', 'JavaScript:alert(1)', ' javascript:alert(1)', 'java\tscript:alert(1)', 'java\nscript:alert(1)',
+      'file:///etc/passwd', 'vbscript:msgbox(1)', 'data:text/html,<script>alert(1)</script>', 'data:application/octet-stream;base64,AAAA',
+      'data:,hello', 'ftp://example.com/x.jpg', 'about:blank', 'C:/frames/x.jpg',
+    ]) {
+      expect([bad, imageLocator(bad)]).toEqual([bad, null]);
+    }
+  });
   test('empty or non-string values are no image', () => {
     expect(imageLocator('')).toBeNull();
     expect(imageLocator(42)).toBeNull();
