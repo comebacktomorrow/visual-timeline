@@ -1609,6 +1609,9 @@ var VTCore = (() => {
 .ktl-pop.player .stage video { display:none; width:100%; height:100%; object-fit:contain; }
 .ktl-pop.player.video .stage video { display:block; }
 .ktl-pop.player.video .stage img { display:none; }
+.ktl-pop.player.video.no-picture .stage img[src] { display:block; }
+.ktl-pop.player.video.no-picture .stage video { display:none; }
+.ktl-pop.player.video.loading .stage .state { color:var(--ktl-text); font-weight:500; opacity:.85; }
 .ktl-pop.player:not(.has-clip) button[data-a="mute"], .ktl-pop.player:not(.has-clip) button[data-a="hd"],
 .ktl-pop.player:not(.has-hi) button[data-a="hd"] { display:none; }
 .ktl-pop.player.off .stage img { opacity:.35; }
@@ -1624,6 +1627,18 @@ var VTCore = (() => {
 .ktl-pop.player .lane.paused { background:var(--ktl-band, var(--ktl-pause-b)); opacity:.6; }
 .ktl-pop.player .lane.beyond { background:transparent; }
 .ktl-pop.player .lane.clip { background:var(--ktl-link); opacity:.45; }
+.ktl-pop.player .stage video.spare { display:none !important; }
+.ktl-pop.player .tick.clip-start { height:100%; width:2px; background:var(--ktl-link); opacity:.9; }
+.ktl-pop.player .thumb.clip { border-left:2px solid var(--ktl-link); }
+.ktl-pop.player.no-stills button[data-a="style-ticks"], .ktl-pop.player.no-stills button[data-a="style-thumbs"] { display:none; }
+/* video this scale can't show: a bubble over the picture, just above the
+ * timeline; pressed, it zooms the dashboard to the slot as Zoom does */
+.ktl-pop.player .zoom-video { display:none; position:absolute; left:50%; bottom:8px; transform:translateX(-50%); z-index:2;
+  padding:3px 10px; border-radius:12px; border:1px solid var(--ktl-link); background:var(--ktl-float-bg); color:var(--ktl-link);
+  font:500 11px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif; white-space:nowrap; }
+.ktl-pop.player button.zoom-video { cursor:pointer; }
+.ktl-pop.player.video-far .zoom-video { display:block; }
+.ktl-pop.player.video-far .stage .state { bottom:36px; }
 .ktl-pop.player .thumbs { position:absolute; inset:0; pointer-events:none; }
 .ktl-pop.player .thumb { position:absolute; top:0; bottom:0; overflow:hidden; border-right:1px solid rgba(0,0,0,.4); }
 .ktl-pop.player .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
@@ -2059,6 +2074,9 @@ var VTCore = (() => {
        * alike: a timelapse's few, real time's a thousandth), once a clip's
        * length is known; null until then */
       this.ratio = null;
+      /** the most items the view can tell apart (the player's ticks): video is
+       * played only when every clip in the slot is one of them */
+      this.capacity = Infinity;
       this.seq = 0;
       if (seed) {
         this.frames = [seed];
@@ -2128,9 +2146,14 @@ var VTCore = (() => {
       return this.clipSpans().reduce((a, c) => a + (c.to - c.from) * this.ratio, 0);
     }
     /** how fast the slot's video plays to be watched in PLAY_TARGET_S: 1, or
-     * faster, up to MAX_RATE; null when it's longer than that (zoomed out:
-     * the slot is sampled, as frames are). Its length unknown yet, 1. */
+     * faster, up to MAX_RATE; null when it's longer than that, or holds more
+     * clips than the view can show (zoomed out: the slot is sampled, as
+     * frames are; leaving clips out would break the video's flow). Its length
+     * unknown yet, 1. */
     videoRate() {
+      if (this.clipSpans().length > this.capacity) {
+        return null;
+      }
       const v = this.videoSeconds();
       if (v === null || v <= PLAY_TARGET_S) {
         return 1;
@@ -2141,6 +2164,16 @@ var VTCore = (() => {
      * video is short enough to watch; none when it's sampled */
     watched() {
       return this.videoRate() === null ? [] : this.clipSpans();
+    }
+    /** the picture for a clip's part (the still nearest its start, within
+     * it, else the one in force there): our thumbnails are the stills */
+    stillFor(c) {
+      const inside = this.frames.find((f) => f.ts >= c.from && f.ts < c.to);
+      if (inside) {
+        return inside;
+      }
+      const j = frameIndexAt(this.frames, c.from);
+      return j >= 0 ? this.frames[j] : null;
     }
     /** the watched clip's part of the slot in force at t, if any */
     clipAt(t) {
@@ -2326,8 +2359,8 @@ var VTCore = (() => {
   // src/vt/ui/player.ts
   var PREFS_KEY = "ktl-player";
   var FPS = [1, 2, 4, 8, 16];
-  var SPEEDS = [1, 2, 4, 8, 16];
-  var fmtRate = (r) => Math.round(r * 10) / 10 + "\xD7";
+  var SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
+  var fmtRate = (r) => (r === 0.25 ? "\xBC" : r === 0.5 ? "\xBD" : String(Math.round(r * 10) / 10)) + "\xD7";
   function loadPrefs(ctx) {
     const base = { style: ctx.scrubber ?? "ticks", fps: 4, hd: true, muted: true };
     try {
@@ -2349,6 +2382,7 @@ var VTCore = (() => {
     }
   }
   var THUMB_PX = 48;
+  var LOADING_AFTER_MS = 600;
   var MIN_CLIP_S = 0.25;
   var STAGE_H = 405;
   var MIN_W = 400;
@@ -2363,17 +2397,23 @@ var VTCore = (() => {
   }, startTs = start?.ts ?? 0) {
     const prefs = loadPrefs(ctx);
     el.classList.add("player");
-    el.innerHTML = '<div class="top">' + (ctx.onZoom ? btn("zoom", ICON_ZOOM, "Zoom the dashboard to this slot") : "<span></span>") + '<span class="title"></span>' + btn("close", "\u2715", "Close (Esc)") + '</div><div class="stage"><div class="state"></div></div><div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="bar"><span class="time"></span><span class="transport">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame in this slot (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame in this slot (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '</span><span class="opts">' + btn("mute", "", "Sound") + btn("hd", "HD", "Video quality") + btn("style-ticks", ICON_TICKS, "Scrubber: a tick per frame") + btn("style-thumbs", ICON_THUMBS, "Scrubber: the frames as pictures") + btn("fps", "", "Speed") + "</span></div>";
+    el.innerHTML = '<div class="top">' + (ctx.onZoom ? btn("zoom", ICON_ZOOM, "Zoom the dashboard to this slot") : "<span></span>") + '<span class="title"></span>' + btn("close", "\u2715", "Close (Esc)") + '</div><div class="stage"><div class="state"></div>' + (ctx.onZoom ? '<button type="button" class="zoom-video" data-a="zoom-video">\u25B6 Zoom in for the video</button>' : '<span class="zoom-video">\u25B6 Video at a closer zoom</span>') + '</div><div class="scrub" role="slider" tabindex="0" aria-label="The frames in this slot"><div class="lanes"></div><div class="thumbs"></div><div class="ticks"></div><div class="head"></div></div><div class="bar"><span class="time"></span><span class="transport">' + btn("prev-slot", "\u2039\u2039", "Previous slot (Shift+\u2190)") + btn("prev", "\u2039", "Previous frame in this slot (\u2190)") + btn("play", "\u25B6", "Play the frames in this slot (Space)") + btn("next", "\u203A", "Next frame in this slot (\u2192)") + btn("next-slot", "\u203A\u203A", "Next slot (Shift+\u2192)") + '</span><span class="opts">' + btn("mute", "", "Sound") + btn("hd", "HD", "Video quality") + btn("style-ticks", ICON_TICKS, "Scrubber: a tick per frame") + btn("style-thumbs", ICON_THUMBS, "Scrubber: the frames as pictures") + btn("fps", "", "Speed") + "</span></div>";
     const img = document.createElement("img");
     img.alt = "frame";
     if (start) {
       img.src = start.url;
     }
-    const video = document.createElement("video");
-    video.muted = prefs.muted;
-    video.playsInline = true;
-    video.preload = "metadata";
-    el.querySelector(".stage").prepend(img, video);
+    const makeVideo = () => {
+      const v = document.createElement("video");
+      v.muted = prefs.muted;
+      v.playsInline = true;
+      v.preload = "metadata";
+      return v;
+    };
+    let video = makeVideo();
+    let spare = makeVideo();
+    spare.classList.add("spare");
+    el.querySelector(".stage").prepend(img, video, spare);
     const stateEl = el.querySelector(".stage .state");
     const scrub = el.querySelector(".scrub");
     const lanes = el.querySelector(".lanes");
@@ -2391,11 +2431,14 @@ var VTCore = (() => {
     let vidClip = null;
     let vidSrc = "";
     let pendingT = null;
+    let spareClip = null;
+    let spareSrc = "";
+    let spareT = null;
     let driving = false;
     let raf = 0;
     let speed = null;
     const videoMode = () => reel.watched().length > 0;
-    const rateNow = () => speed ?? reel.videoRate() ?? 1;
+    const rateNow = () => speed ?? (ctx.autoSpeed ? reel.videoRate() ?? 1 : 1);
     let hiTimer = null;
     let gone = false;
     const width = () => scrub.clientWidth || 560;
@@ -2407,7 +2450,7 @@ var VTCore = (() => {
     function labels() {
       if (videoMode()) {
         b("fps").textContent = fmtRate(rateNow());
-        b("fps").title = "Video speed" + (speed === null ? " (fits this slot's video into about ten seconds)" : "") + ": click for faster";
+        b("fps").title = "Video speed" + (speed === null && ctx.autoSpeed ? " (fits this slot's video into about ten seconds)" : "") + ": click for faster, round from \xBC\xD7";
       } else {
         b("fps").textContent = prefs.fps + " fps";
         b("fps").title = "Speed";
@@ -2422,7 +2465,10 @@ var VTCore = (() => {
       b("play").title = !can ? "One frame in this slot: nothing to play" : playing ? "Pause (Space)" : "Play this slot (Space)";
       b("prev").disabled = b("next").disabled = n < 2;
       el.classList.toggle("thumbs", prefs.style === "thumbs");
+      reel.capacity = most();
       const clips = reel.clipSpans();
+      el.classList.toggle("no-stills", !reel.frames.length);
+      el.classList.toggle("video-far", clips.length > 0 && reel.videoRate() === null);
       el.classList.toggle("has-clip", clips.length > 0);
       el.classList.toggle("has-hi", clips.some((c) => !!c.clip.hi));
       b("mute").innerHTML = prefs.muted ? ICON_MUTED : ICON_SOUND;
@@ -2432,6 +2478,7 @@ var VTCore = (() => {
       b("hd").title = prefs.hd ? "Playing the larger video: switch to the smaller" : "Playing the smaller video: switch to the larger";
     }
     function drawScrub() {
+      reel.capacity = most();
       lanes.textContent = "";
       for (const iv of reel.gaps()) {
         const d = document.createElement("div");
@@ -2461,15 +2508,22 @@ var VTCore = (() => {
         k.style.left = xOf(f.ts) + "%";
         ticks.appendChild(k);
       }
+      const watched = reel.watched();
+      for (const c of watched) {
+        const k = document.createElement("div");
+        k.className = "tick clip-start";
+        k.style.left = xOf(c.from) + "%";
+        ticks.appendChild(k);
+      }
       thumbs.textContent = "";
       if (prefs.style !== "thumbs") {
         return;
       }
       const fs = reel.shown(Math.max(4, Math.floor(width() / THUMB_PX)));
       const gaps = [...reel.gaps(), ...reel.watched()].sort((a, z) => a.from - z.from);
-      const cell = (f, from, to, prior2 = false) => {
+      const cell = (f, from, to, prior2 = false, clip = false) => {
         const c = document.createElement("div");
-        c.className = "thumb" + (prior2 ? " prior" : "");
+        c.className = "thumb" + (prior2 ? " prior" : "") + (clip ? " clip" : "");
         c.style.left = xOf(from) + "%";
         c.style.width = Math.max(0, xOf(to) - xOf(from)) + "%";
         const ti = document.createElement("img");
@@ -2489,6 +2543,12 @@ var VTCore = (() => {
         const gap = gaps.find((g) => g.from >= f.ts && g.from < next);
         cell(f, f.ts, gap ? gap.from : next);
       });
+      for (const c of watched) {
+        const f = reel.stillFor(c);
+        if (f) {
+          cell(f, c.from, c.to, false, true);
+        }
+      }
     }
     function show() {
       head.style.left = xOf(t) + "%";
@@ -2496,13 +2556,18 @@ var VTCore = (() => {
       if (at.span) {
         el.classList.add("video");
         el.classList.remove("off");
-        stateEl.textContent = "";
+        stateEl.textContent = el.classList.contains("loading") ? "loading video\u2026" : "";
+        if (at.frame && img.getAttribute("src") !== at.frame.url && img.dataset.hiOf !== at.frame.url) {
+          img.src = at.frame.url;
+          delete img.dataset.hiOf;
+        }
         showClip(at.span.clip);
         caption(null);
         return;
       }
       if (el.classList.contains("video")) {
         el.classList.remove("video");
+        waitFor(false);
         stopVideo();
       }
       const f = at.frame;
@@ -2530,14 +2595,19 @@ var VTCore = (() => {
         }, 300);
       }
     }
+    const srcOf = (c) => prefs.hd && c.hi ? c.hi : c.url;
     function showClip(c) {
-      const src = prefs.hd && c.hi ? c.hi : c.url;
+      const src = srcOf(c);
       if (src !== vidSrc) {
-        vidClip = c;
-        vidSrc = src;
-        pendingT = t;
-        video.src = src;
-        return;
+        if (src === spareSrc) {
+          takeSpare();
+        } else {
+          vidClip = c;
+          vidSrc = src;
+          pendingT = t;
+          video.src = src;
+          return;
+        }
       }
       if (driving) {
         return;
@@ -2548,28 +2618,135 @@ var VTCore = (() => {
         pendingT = t;
       }
     }
-    video.addEventListener("loadedmetadata", () => {
-      if (gone) {
+    function preload(c) {
+      if (!c) {
         return;
       }
-      size(video.videoWidth, video.videoHeight);
-      place();
-      if (vidClip) {
-        noteClipLength(vidClip.url, video.duration);
+      const src = srcOf(c.clip);
+      if (src === vidSrc || src === spareSrc) {
+        return;
       }
-      if (vidClip && pendingT !== null && video.duration > 0) {
-        video.currentTime = videoTime(vidClip, pendingT, video.duration);
-      }
+      spareClip = c.clip;
+      spareSrc = src;
+      spareT = c.from;
+      spare.preload = "auto";
+      spare.src = src;
+    }
+    function takeSpare() {
+      video.pause();
+      video.classList.add("spare");
+      spare.classList.remove("spare");
+      [video, spare] = [spare, video];
+      vidClip = spareClip;
+      vidSrc = spareSrc;
       pendingT = null;
-    });
-    video.addEventListener("error", () => {
-      if (gone || !vidClip || !vidClip.hi || vidSrc !== vidClip.hi) {
+      spareClip = null;
+      spareSrc = "";
+      video.muted = prefs.muted;
+      picture();
+      waitFor(video.readyState < 3 && video.seeking);
+    }
+    function wire(v) {
+      v.addEventListener("loadedmetadata", () => {
+        if (gone) {
+          return;
+        }
+        if (v !== video) {
+          if (spareClip) {
+            noteClipLength(spareClip.url, v.duration);
+          }
+          if (spareClip && spareT !== null && v.duration > 0) {
+            v.currentTime = videoTime(spareClip, spareT, v.duration);
+          }
+          return;
+        }
+        size(v.videoWidth, v.videoHeight);
+        place();
+        if (vidClip) {
+          noteClipLength(vidClip.url, v.duration);
+        }
+        if (vidClip && pendingT !== null && v.duration > 0) {
+          v.currentTime = videoTime(vidClip, pendingT, v.duration);
+        }
+        pendingT = null;
+      });
+      v.addEventListener("loadstart", () => {
+        delete v.dataset.pic;
+      });
+      v.addEventListener("loadeddata", () => {
+        v.dataset.pic = "1";
+      });
+      for (const e of ["waiting", "seeking", "loadstart"]) {
+        v.addEventListener(e, () => {
+          if (v === video) {
+            picture();
+            waitFor(v.readyState < 3);
+          }
+        });
+      }
+      for (const e of ["loadeddata", "canplay", "playing", "seeked"]) {
+        v.addEventListener(e, () => {
+          if (v === video) {
+            picture();
+            waitFor(v.readyState < 3 && v.seeking);
+          }
+        });
+      }
+      v.addEventListener("error", () => {
+        if (v !== video) {
+          spareSrc = "";
+          return;
+        }
+        if (gone || !vidClip || !vidClip.hi || vidSrc !== vidClip.hi) {
+          return;
+        }
+        vidSrc = vidClip.url;
+        pendingT = t;
+        v.src = vidClip.url;
+      });
+    }
+    wire(video);
+    wire(spare);
+    function picture() {
+      el.classList.toggle("no-picture", !video.dataset.pic);
+    }
+    let waitTimer = null;
+    function waitFor(on) {
+      if (!on) {
+        if (waitTimer) {
+          clearTimeout(waitTimer);
+          waitTimer = null;
+        }
+        loading(false);
         return;
       }
-      vidSrc = vidClip.url;
-      pendingT = t;
-      video.src = vidClip.url;
-    });
+      if (waitTimer || el.classList.contains("loading")) {
+        return;
+      }
+      waitTimer = setTimeout(() => {
+        waitTimer = null;
+        if (!gone && video.readyState < 3 && !buffered(video, video.currentTime)) {
+          loading(true);
+        }
+      }, LOADING_AFTER_MS);
+    }
+    function buffered(v, s) {
+      for (let i = 0; i < v.buffered.length; i++) {
+        if (v.buffered.start(i) <= s && s < v.buffered.end(i) - 0.1) {
+          return true;
+        }
+      }
+      return false;
+    }
+    function loading(on) {
+      if (el.classList.contains("loading") === on) {
+        return;
+      }
+      el.classList.toggle("loading", on);
+      if (el.classList.contains("video")) {
+        stateEl.textContent = on ? "loading video\u2026" : "";
+      }
+    }
     function caption(f) {
       const shown = reel.shown(most()).length;
       const total = reel.total();
@@ -2683,10 +2860,13 @@ var VTCore = (() => {
         }
         video.muted = prefs.muted;
         video.playbackRate = rateNow();
-        playVideo(video).catch(() => {
-          video.muted = true;
-          return playVideo(video);
+        const v = video;
+        playVideo(v).catch(() => {
+          v.muted = true;
+          return playVideo(v);
         }).catch(() => stop());
+        const ws = reel.watched();
+        preload(ws.find((c) => c.from >= span2.to - 1 && c.clip !== span2.clip) ?? ws.find((c) => c.clip !== span2.clip));
         raf = requestAnimationFrame(follow);
       };
       if (video.readyState >= 1 && pendingT === null) {
@@ -2709,7 +2889,9 @@ var VTCore = (() => {
         return;
       }
       reel = new Reel(ctx, next);
-      speed = null;
+      if (ctx.autoSpeed) {
+        speed = null;
+      }
       const at = next.frameTs !== void 0 && next.frameTs >= next.from && next.frameTs < next.to ? next.frameTs : next.ts;
       drawScrub();
       labels();
@@ -2792,7 +2974,9 @@ var VTCore = (() => {
           show();
           break;
         }
+        // the bubble over video this scale can't show does what Zoom does
         case "zoom":
+        case "zoom-video":
           stop();
           ctx.onZoom?.(slot().from, slot().to);
           close();
@@ -2881,10 +3065,15 @@ var VTCore = (() => {
     return () => {
       gone = true;
       stop();
-      video.removeAttribute("src");
-      video.load();
+      for (const v of [video, spare]) {
+        v.removeAttribute("src");
+        v.load();
+      }
       if (hiTimer) {
         clearTimeout(hiTimer);
+      }
+      if (waitTimer) {
+        clearTimeout(waitTimer);
       }
       document.removeEventListener("keydown", keyH);
     };
@@ -3172,9 +3361,7 @@ var VTCore = (() => {
       if (c.flip?.playing()) {
         continue;
       }
-      const many = !!(slot && slot.frame && !slot.paused && !slot.beyond && slot.count > 1 && c.card.classList.contains("hovered"));
-      const base = shownKey(slot);
-      const key = base === null ? null : base + (many ? ":n" : "");
+      const key = shownKey(slot);
       if (key !== null && key === c.shown) {
         continue;
       }
@@ -3184,7 +3371,7 @@ var VTCore = (() => {
         c.mag.classList.remove("gap", "future", "off");
         clearPauseClasses(c.mag);
         setSrc(c.mag.querySelector("img"), slot.frame.url);
-        setText(c.mag.querySelector(".cap"), tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts) + (many ? " \xB7 " + slot.count + " frames" : ""));
+        setText(c.mag.querySelector(".cap"), tt.time(slot.frame.ts) + tt.sfx(slot.frame.ts));
         setText(c.head, "");
         c.head.classList.remove("stale");
         clearPauseClasses(c.head);
@@ -3408,7 +3595,8 @@ var VTCore = (() => {
       // the timeline's drag-zoom (the grid has none)
       ...onZoom ? { onZoom } : {},
       scrubber: cfg.playerScrubber === "thumbs" ? "thumbs" : cfg.playerScrubber === "ticks" ? "ticks" : void 0,
-      frameWidth: frameWidthOf(cfg)
+      frameWidth: frameWidthOf(cfg),
+      autoSpeed: !!cfg.videoAutoSpeed
     };
   }
 
@@ -3416,7 +3604,7 @@ var VTCore = (() => {
   var DWELL_MS = 3e3;
   var FLIP_FPS = 4;
   var FLIP_MAX = 100;
-  function makeFlipbook(target, anySlot = false, hasClip = (sl) => !!sl.clip) {
+  function makeFlipbook(target, anySlot = false, hasClip = (sl) => !!sl.clip, autoSpeed = false) {
     let current = null;
     let dwell = null;
     let timer = null;
@@ -3442,6 +3630,7 @@ var VTCore = (() => {
     async function start(sl) {
       const mine = ++seq;
       const reel = target.reel({ from: sl.x0, to: sl.x0 + sl.span, ts: sl.ts });
+      reel.capacity = FLIP_MAX;
       const ok = await reel.load(FLIP_MAX);
       if (!ok || mine !== seq || !current || current.x0 !== sl.x0) {
         return;
@@ -3452,14 +3641,17 @@ var VTCore = (() => {
       if (mine !== seq || !current || current.x0 !== sl.x0) {
         return;
       }
+      if (!reel.clips.some((c) => c.hi)) {
+        reel.capacity = 0;
+      }
       const rate = reel.videoRate();
       const all = reel.clipSpans();
       const spans = (rate === null ? all : reel.watched()).sort((a, z) => z.to - z.from - (a.to - a.from));
       const span = all.find((c) => c.from <= sl.ts && sl.ts < c.to) ?? spans[0];
-      if (span && target.clip && (rate !== null || !reel.inSlot().length)) {
+      if (span && span.clip.hi && target.clip && (rate !== null || !reel.inSlot().length)) {
         clipOn = true;
         target.playingChanged(true);
-        target.clip(span, rate ?? MAX_RATE);
+        target.clip(span, rate === null ? MAX_RATE : autoSpeed ? rate : 1);
         return;
       }
       const stops = reel.stops(FLIP_MAX);
@@ -3728,7 +3920,7 @@ var VTCore = (() => {
           setCursor(s, s.cursorT, null, true);
         }
       }
-    }, !!s.backend.detail, (sl) => model.clips.some((c) => c.to > sl.x0 && c.from < sl.x0 + sl.span));
+    }, !!s.backend.detail, (sl) => model.clips.some((c) => c.to > sl.x0 && c.from < sl.x0 + sl.span), !!s.cfg.videoAutoSpeed);
     const hoverAt = (e) => {
       const r = strip.getBoundingClientRect();
       if (!r.width) {

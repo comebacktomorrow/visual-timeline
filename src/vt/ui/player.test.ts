@@ -300,7 +300,9 @@ describe('the preview player', () => {
       teardown = mountPlayer(el, fr(30), clipCtx(), () => {});
       await flush();
       expect(el.querySelectorAll('.lane.clip')).toHaveLength(1);
-      expect(el.querySelectorAll('.tick')).toHaveLength(2);
+      // the stills outside it, and a tick where the clip starts
+      expect(el.querySelectorAll('.tick:not(.clip-start)')).toHaveLength(2);
+      expect(el.querySelectorAll('.tick.clip-start')).toHaveLength(1);
       expect(el.classList.contains('has-clip')).toBe(true);
       expect(el.classList.contains('has-hi')).toBe(true);
       expect(el.classList.contains('video')).toBe(false);
@@ -344,21 +346,101 @@ describe('the preview player', () => {
       expect(times).toEqual([]);
     });
 
-    test('the speed button is the video\'s speed: what fits the slot\'s video in about ten seconds, then faster', async () => {
-      teardown = mountPlayer(el, fr(30), clipCtx([{ from: at(31), to: at(34), url: 'fast.webm' }]), () => {});
+    test('the speed button is the video\'s speed: 1x to start, stepping up to 16x and round from 1/4x', async () => {
+      // a clip on into the next slot
+      noteClipLength('on.webm', 90);
+      teardown = mountPlayer(el, fr(30), clipCtx([{ from: at(31), to: at(40), url: 'on.webm' }]), () => {});
+      await flush();
+      const fps = el.querySelector('button[data-a="fps"]')!;
+      expect(fps.textContent).toBe('1×');
+      press('fps');
+      expect(fps.textContent).toBe('2×');
+      for (let i = 0; i < 4; i++) {press('fps');}
+      expect(fps.textContent).toBe('¼×');
+      press('fps');
+      expect(fps.textContent).toBe('½×');
+      press('next');
+      metadata(el.querySelector('.stage video:not(.spare)')!, 90);
+      press('play');
+      await flush();
+      expect((el.querySelector('.stage video:not(.spare)') as HTMLVideoElement).playbackRate).toBe(0.5);
+      // the viewer's speed stays as the player moves on
+      press('next-slot');
+      await flush();
+      expect(fps.textContent).toBe('½×');
+    });
+
+    test('with Speed up video to fit: what plays the slot\'s video in about ten seconds, refitted per slot', async () => {
+      teardown = mountPlayer(el, fr(30), { ...clipCtx([{ from: at(31), to: at(34), url: 'fast.webm' }]), autoSpeed: true }, () => {});
       await flush();
       const fps = el.querySelector('button[data-a="fps"]')!;
       expect(fps.textContent).toBe('6×');
       press('fps');
       expect(fps.textContent).toBe('8×');
-      press('fps');
-      press('fps');
-      expect(fps.textContent).toBe('1×');
-      press('next');
-      metadata(el.querySelector('video')!, 60);
+    });
+
+    test('several clips in a slot play one after another, the next loading meanwhile; each a tick and a picture', async () => {
+      noteClipLength('s1.webm', 2);
+      noteClipLength('s2.webm', 2);
+      const two = [{ from: at(30), to: at(32), url: 's1.webm' }, { from: at(32), to: at(35), url: 's2.webm' }];
+      teardown = mountPlayer(el, fr(30), clipCtx(two), () => {});
+      await flush();
+      expect(el.querySelectorAll('.tick.clip-start')).toHaveLength(2);
+      press('style-thumbs');
+      expect([...el.querySelectorAll('.thumb.clip img')].map((i) => i.getAttribute('src'))).toEqual(['f30.jpg', 'f32.jpg']);
+      const [shown, spare] = [...el.querySelectorAll('.stage video')] as HTMLVideoElement[];
+      metadata(shown, 2);
       press('play');
       await flush();
-      expect(el.querySelector('video')!.playbackRate).toBe(1);
+      // the second clip loads in the spare while the first plays
+      expect(spare.classList.contains('spare')).toBe(true);
+      expect(spare.getAttribute('src')).toBe('s2.webm');
+      expect(spare.preload).toBe('auto');
+    });
+
+    test('stepping slot to slot through video: each slot\'s clips, at its place in them', async () => {
+      noteClipLength('d1.webm', 7);
+      noteClipLength('d2.webm', 7);
+      // two clips, the second starting mid-slot (10:37)
+      const days = [{ from: at(20), to: at(37), url: 'd1.webm' }, { from: at(37), to: at(60), url: 'd2.webm' }];
+      teardown = mountPlayer(el, fr(30), clipCtx(days), () => {});
+      await flush();
+      const src = () => (el.querySelector('.stage video:not(.spare)') as HTMLVideoElement).getAttribute('src');
+      expect(src()).toBe('d1.webm');
+      expect(el.querySelectorAll('.lane.clip')).toHaveLength(1);
+      press('next-slot');
+      await flush();
+      // 10:35 to 10:40: the end of the first and the start of the second
+      expect(el.querySelectorAll('.lane.clip')).toHaveLength(2);
+      expect(el.querySelectorAll('.tick.clip-start')).toHaveLength(2);
+      expect(src()).toBe('d1.webm');
+      press('next-slot');
+      await flush();
+      expect(el.querySelectorAll('.lane.clip')).toHaveLength(1);
+      expect(src()).toBe('d2.webm');
+      expect(times).toEqual([at(35), at(40)]);
+      press('prev-slot');
+      press('prev-slot');
+      await flush();
+      expect(src()).toBe('d1.webm');
+    });
+
+    test('video it can\'t show at this scale: a bubble over the picture, which zooms to the slot', async () => {
+      const zoomed: Array<[number, number]> = [];
+      const long = [{ from: at(31), to: at(34), url: 'long.webm' }];
+      teardown = mountPlayer(el, fr(30), { ...clipCtx(long), onZoom: (a, z) => zoomed.push([a, z]) }, () => {});
+      await flush();
+      expect(el.classList.contains('video-far')).toBe(true);
+      (el.querySelector('.zoom-video') as HTMLButtonElement).click();
+      expect(zoomed).toEqual([[at(30), at(35)]]);
+    });
+
+    test('a slot of video with no stills: no ticks-or-pictures choice', async () => {
+      const whole = [{ from: at(29), to: at(36), url: 'w.webm' }];
+      teardown = mountPlayer(el, null, { ...clipCtx(whole), fetch: async () => [] }, () => {}, () => {}, at(32));
+      await flush();
+      expect(el.classList.contains('no-stills')).toBe(true);
+      expect(el.classList.contains('video')).toBe(true);
     });
 
     test('zoomed out, more video than plays in a few seconds: the slot\'s stills, as frames are; Zoom to watch it', async () => {

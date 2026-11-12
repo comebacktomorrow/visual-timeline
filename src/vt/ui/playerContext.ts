@@ -38,5 +38,6 @@ export function playerContext(
     ...(onZoom ? { onZoom } : {}),
     scrubber: cfg.playerScrubber === 'thumbs' ? 'thumbs' : cfg.playerScrubber === 'ticks' ? 'ticks' : undefined,
     frameWidth: frameWidthOf(cfg),
+    autoSpeed: !!cfg.videoAutoSpeed,
   };
 }

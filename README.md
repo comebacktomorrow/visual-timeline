@@ -115,9 +115,8 @@ slots on a full-width panel):
   of its frame. Hover for the whole frame in the magnifier; click for the
   preview player (below).
 - **The frames a slot can't show.** A slot zoomed out over many frames shows
-  one. Its magnifier says how many it holds ("· 4 frames"); rest the cursor
-  on it for three seconds and the magnifier plays them. Click it for the
-  preview player.
+  one. Rest the cursor on it for three seconds and the magnifier plays them;
+  click it for the preview player.
 - **Images load newest first.** Across all the hosts in a panel, the
   thumbnails load from the live edge backwards, a few at a time, so on a
   slow connection the most recent frames appear first. Browsers keep the
@@ -151,14 +150,20 @@ stretches the strip draws.
   frames. Its part of the timeline is a plain bar to hover or drag through,
   ▶ plays it (round again at the slot's end), and the bar gains sound
   (muted by default) and HD/SD (when the clip has a larger version), both
-  remembered. The speed button becomes the video's speed: it starts at
-  whatever plays the slot's video in about ten seconds (1× for a short
-  clip, faster for more), and a click steps up through 1×, 2×, 4×, 8×
-  and 16×.
-- **Zoomed out**, a slot can hold more video than plays in ten seconds at
-  16×. It's then played as a slot of many frames is: its frames, as many
-  as fit, with the video as a bar under them, and Zoom highlighted to watch
-  it.
+  remembered. The speed button becomes the video's speed: 1× to start (scrub
+  near, then play), and a click steps up through 2×, 4×, 8× and 16×, then
+  round from ¼× and ½× for short clips. **Speed up video to fit** (a panel
+  option, off by default) starts it instead at whatever plays the slot's
+  video in about ten seconds.
+- **Several clips in a slot** play one after another, the next loading
+  while one plays, like a stream's segments. Each has a tick where it starts
+  and, as thumbnails, the frame nearest its start.
+- **Zoomed out**, video is played whole or not at all: never with clips left
+  out, which would break its flow. A slot holding more video than plays in
+  ten seconds at 16×, or more clips than its timeline can show, plays its
+  frames as a slot of many frames does, with the video as a bar under them.
+  A "Zoom in for the video" bubble over the picture zooms the dashboard to
+  the slot, as Zoom does.
 
 The player asks for one slot's frames when it needs them, by running the
 panel's own query again for just that slot, no finer than it can draw.
@@ -306,7 +311,9 @@ way to set one up.
   strip** (a panel option, off by default) draws a thin line along its foot
   where the host has video.
 - **The preview player plays the clip over the frames** (above). The hover
-  flipbook plays the smaller version in the magnifier, muted.
+  flipbook plays a clip in the magnifier, muted, only when it comes in two
+  sizes (`video` and `video_hi`): the smaller one. A clip of one size isn't
+  loaded for a hover; the flipbook flips the frames instead.
 - **Formats:** whatever the viewer's browser plays: MP4 (H.264) or WebM
   (VP9) are safe. Serve them with range requests, and for MP4 put the index
   at the front (`ffmpeg -movflags +faststart`): a file with it at the end
@@ -412,6 +419,7 @@ set how it draws them.
 | **Hold frames without a promise** | How long a frame from a host that promises nothing is shown when no frame follows soon: Auto (three times the typical gap around it), Until the next frame, or Up to a duration such as `10m`. Past it: neutral "no data".  |
 | **Mark video on the strip**       | Experimental. A thin line along the foot of each strip where its host has video clips. Off by default: only the preview shows them.                                                                                         |
 | **Frame width**                   | The least width a frame gets, in pixels (default 7): the strip's slots, and the ticks in the preview player's timeline of a slot. Smaller shows more detail and loads more images; larger, fewer.                           |
+| **Speed up video to fit**         | Experimental. Video in the preview player starts at the speed that plays a slot's video in about ten seconds (up to 16×). Off (default): it starts at 1×; viewers pick another speed (¼× to 16×) in the player.             |
 | **Scrubber style**                | The preview player's timeline: Ticks (a mark per frame) or Thumbnails (small pictures). Viewers can switch it in the player; their last choice is remembered in their browser.                                              |
 | **Show cadence details**          | Show each host's cadence (the promise, or `~` and "no promise" for a typical gap) and display resolution (for tuning).                                                                                                      |
 | **Header**                        | Bar (a header row per host), Inline (the header floats over the image), or Inline with a gradient behind them for busy frames.                                                                                              |

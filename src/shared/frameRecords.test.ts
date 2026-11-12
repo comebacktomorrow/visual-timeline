@@ -1,6 +1,7 @@
 import { createDataFrame, FieldType } from '@grafana/data';
 
 import { framesPerStep, hostTableFromSeries, imageLocator, inferCadence, isVideoUrl, recordsBackend, recordsFromSeries, resolveClips, thinWithCounts } from './frameRecords';
+import { recordsToFrame } from './sources';
 
 const MIN = 60_000;
 const T0 = Date.UTC(2026, 10, 10, 10);
@@ -427,5 +428,17 @@ describe('a clip with no end, on a host with frames (M10c)', () => {
     expect(recordsFromSeries([t])![0].clips!.map((c) => [(c.from - T0) / MIN, (c.to - T0) / MIN])).toEqual([[0, 1], [10, 11]]);
     // lengths the rows state still win
     expect(resolveClips([{ from: 0, to: 5, url: 'a' }, { from: 100, url: 'b' }], 60, 30).map((c) => c.to)).toEqual([5, 105]);
+  });
+});
+
+describe('clip rows our data source writes (M11)', () => {
+  test('read back as the host\'s clips, beside its frames', () => {
+    const frame = recordsToFrame([
+      { ts: T0, host: 'sun', site: '', url: 'https://img/1.jpg' },
+      { ts: T0 - 3600e3, host: 'sun', site: '', url: null, video: 'https://vid/day.mp4', videoHi: 'https://vid/day-hi.mp4', videoEnd: T0 + 864e5 },
+    ], 'A');
+    const [h] = recordsFromSeries([frame])!;
+    expect(h.frames.map((f) => f.url)).toEqual(['https://img/1.jpg']);
+    expect(h.clips).toEqual([{ from: T0 - 3600e3, to: T0 + 864e5, url: 'https://vid/day.mp4', hi: 'https://vid/day-hi.mp4' }]);
   });
 });

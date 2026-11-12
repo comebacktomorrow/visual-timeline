@@ -315,6 +315,9 @@ const CSS = `
 .ktl-pop.player .stage video { display:none; width:100%; height:100%; object-fit:contain; }
 .ktl-pop.player.video .stage video { display:block; }
 .ktl-pop.player.video .stage img { display:none; }
+.ktl-pop.player.video.no-picture .stage img[src] { display:block; }
+.ktl-pop.player.video.no-picture .stage video { display:none; }
+.ktl-pop.player.video.loading .stage .state { color:var(--ktl-text); font-weight:500; opacity:.85; }
 .ktl-pop.player:not(.has-clip) button[data-a="mute"], .ktl-pop.player:not(.has-clip) button[data-a="hd"],
 .ktl-pop.player:not(.has-hi) button[data-a="hd"] { display:none; }
 .ktl-pop.player.off .stage img { opacity:.35; }
@@ -330,6 +333,18 @@ const CSS = `
 .ktl-pop.player .lane.paused { background:var(--ktl-band, var(--ktl-pause-b)); opacity:.6; }
 .ktl-pop.player .lane.beyond { background:transparent; }
 .ktl-pop.player .lane.clip { background:var(--ktl-link); opacity:.45; }
+.ktl-pop.player .stage video.spare { display:none !important; }
+.ktl-pop.player .tick.clip-start { height:100%; width:2px; background:var(--ktl-link); opacity:.9; }
+.ktl-pop.player .thumb.clip { border-left:2px solid var(--ktl-link); }
+.ktl-pop.player.no-stills button[data-a="style-ticks"], .ktl-pop.player.no-stills button[data-a="style-thumbs"] { display:none; }
+/* video this scale can't show: a bubble over the picture, just above the
+ * timeline; pressed, it zooms the dashboard to the slot as Zoom does */
+.ktl-pop.player .zoom-video { display:none; position:absolute; left:50%; bottom:8px; transform:translateX(-50%); z-index:2;
+  padding:3px 10px; border-radius:12px; border:1px solid var(--ktl-link); background:var(--ktl-float-bg); color:var(--ktl-link);
+  font:500 11px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif; white-space:nowrap; }
+.ktl-pop.player button.zoom-video { cursor:pointer; }
+.ktl-pop.player.video-far .zoom-video { display:block; }
+.ktl-pop.player.video-far .stage .state { bottom:36px; }
 .ktl-pop.player .thumbs { position:absolute; inset:0; pointer-events:none; }
 .ktl-pop.player .thumb { position:absolute; top:0; bottom:0; overflow:hidden; border-right:1px solid rgba(0,0,0,.4); }
 .ktl-pop.player .thumb img { width:100%; height:100%; object-fit:cover; display:block; }

@@ -154,4 +154,23 @@ describe('a slot\'s video, zoomed out (M10c)', () => {
     expect(r.at(at(15))).toMatchObject({ kind: 'clip', span: { clip: { url: 'all.mp4' } } });
     expect(r.clipAt(at(15))).toBeNull();   // not watched: seeked, not played
   });
+
+  test('more clips than the view can show: the stills, never video with clips left out', async () => {
+    const hourly = Array.from({ length: 10 }, (_, i) => ({ from: at(10 + i), to: at(11 + i), url: `h${i}.mp4` }));
+    const r = await loaded(1 / (60 * 1000) / 10, all, hourly);   // a second of video a minute: 10 s in all
+    r.capacity = 20;
+    expect(r.videoRate()).toBe(1);
+    expect(r.watched()).toHaveLength(10);
+    r.capacity = 5;
+    expect(r.videoRate()).toBeNull();
+    expect(r.watched()).toEqual([]);
+    expect(r.at(at(14))).toMatchObject({ kind: 'frame', frame: { url: 'f14' } });
+  });
+
+  test('each clip\'s picture: the still nearest its start, within it, else the one in force there', async () => {
+    const r = await loaded(null, all, [{ from: at(12.5), to: at(13.5), url: 'a' }, { from: at(10.5), to: at(11), url: 'b' }]);
+    const [b, a] = r.clipSpans();
+    expect(r.stillFor(a)!.url).toBe('f13');
+    expect(r.stillFor(b)!.url).toBe('f9');
+  });
 });

@@ -41,14 +41,14 @@ export interface PathInfo {
 const PLACEHOLDER = /\{([A-Za-z_]+)\}/g;
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-function compileSegment(raw: string, seen: Set<string>): Segment {
+function compileSegment(raw: string, seen: Set<string>, label: string): Segment {
   const names: Name[] = [];
   let src = '';
   let last = 0;
   for (const m of raw.matchAll(PLACEHOLDER)) {
     const name = m[1];
     if (!isTime(name) && !(IDENTITY as readonly string[]).includes(name)) {
-      throw new Error(`Unknown placeholder {${name}} in the path template`);
+      throw new Error(`Unknown placeholder {${name}} in the ${label}`);
     }
     src += escape(raw.slice(last, m.index));
     // a repeat of a placeholder seen in this segment must match the same text
@@ -65,16 +65,47 @@ function compileSegment(raw: string, seen: Set<string>): Segment {
 }
 
 /** Compiles a template; throws with a message for the settings page when it
- * can't work (no {host}, no time, an unknown placeholder). */
-export function compileTemplate(raw: string): FolderTemplate {
+ * can't work (no {host}, no time, an unknown placeholder). `label` names it
+ * in those messages (the video path template too). */
+export function compileTemplate(raw: string, label = 'path template'): FolderTemplate {
   const t = raw.trim().replace(/^\/+/, '');
-  if (!t) {throw new Error('Set a path template, such as {host}/{YYYY}{MM}{DD}_{HH}{mm}{ss}.jpg');}
+  if (!t) {throw new Error(`Set a ${label}, such as {host}/{YYYY}{MM}{DD}_{HH}{mm}{ss}.jpg`);}
   const seen = new Set<string>();
-  const segments = t.split('/').map((s) => compileSegment(s, seen));
-  if (!seen.has('host')) {throw new Error('The path template needs {host}');}
-  if (![...seen].some(isTime)) {throw new Error('The path template needs a time: {epoch}, {epoch_ms}, or {YYYY}{MM}{DD} with {HH}{mm}');}
-  if (segments.some((s) => !s.raw)) {throw new Error('The path template has an empty folder (two slashes in a row)');}
+  const segments = t.split('/').map((s) => compileSegment(s, seen, label));
+  const The = label.charAt(0).toUpperCase() + label.slice(1);
+  if (!seen.has('host')) {throw new Error(`The ${label} needs {host}`);}
+  if (![...seen].some(isTime)) {throw new Error(`The ${label} needs a time: {epoch}, {epoch_ms}, or {YYYY}{MM}{DD} with {HH}{mm}`);}
+  if (segments.some((s) => !s.raw)) {throw new Error(`${The} has an empty folder (two slashes in a row)`);}
   return { raw: t, segments };
+}
+
+/** A span of time a template's names can tell apart. */
+export type TimeUnit = 'year' | 'month' | 'day' | 'hour' | 'minute';
+/** Each unit at its longest (ms): how far before a range a clip that
+ * started in the unit can reach. */
+export const UNIT_MS: Record<TimeUnit, number> = { year: 366 * 864e5, month: 31 * 864e5, day: 864e5, hour: 3600e3, minute: 60e3 };
+
+/** The finest time a template names, as the span a video clip it names
+ * covers (M11): {DD} and coarser, the day; {HH}, the hour; {mm}, the
+ * minute. Null when it names seconds or an epoch: a clip that precise says
+ * when it starts, not how long it runs. */
+export function finestUnit(tpl: FolderTemplate): TimeUnit | null {
+  const names = new Set<string>(tpl.segments.flatMap((s) => s.names));
+  if (names.has('ss') || names.has('epoch') || names.has('epoch_ms')) {return null;}
+  return names.has('mm') ? 'minute' : names.has('HH') ? 'hour' : names.has('DD') || names.has('DDD') ? 'day' : names.has('MM') ? 'month' : 'year';
+}
+
+/** The end of the unit that starts at ts, in `tz` (the next day's
+ * midnight, the next hour...): a whole day even across a clock change. */
+export function unitEnd(ts: number, unit: TimeUnit, tz: string): number {
+  const p = zonedParts(ts, tz);
+  switch (unit) {
+    case 'year': return zonedTime({ year: p.year + 1, month: 1, day: 1 }, tz);
+    case 'month': return zonedTime({ year: p.year, month: p.month + 1, day: 1 }, tz);
+    case 'day': return zonedTime({ year: p.year, month: p.month, day: p.day + 1 }, tz);
+    case 'hour': return zonedTime({ year: p.year, month: p.month, day: p.day, hour: p.hour + 1 }, tz);
+    case 'minute': return zonedTime({ year: p.year, month: p.month, day: p.day, hour: p.hour, minute: p.minute + 1 }, tz);
+  }
 }
 
 /** A segment's placeholders as they match in one name, or null. */

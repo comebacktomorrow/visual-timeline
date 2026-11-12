@@ -99,6 +99,9 @@ export class Reel {
    * alike: a timelapse's few, real time's a thousandth), once a clip's
    * length is known; null until then */
   ratio: number | null = null;
+  /** the most items the view can tell apart (the player's ticks): video is
+   * played only when every clip in the slot is one of them */
+  capacity = Infinity;
   private seq = 0;
 
   /** `seed`: a frame to show until the reel loads (the one clicked); it's
@@ -161,9 +164,12 @@ export class Reel {
   }
 
   /** how fast the slot's video plays to be watched in PLAY_TARGET_S: 1, or
-   * faster, up to MAX_RATE; null when it's longer than that (zoomed out:
-   * the slot is sampled, as frames are). Its length unknown yet, 1. */
+   * faster, up to MAX_RATE; null when it's longer than that, or holds more
+   * clips than the view can show (zoomed out: the slot is sampled, as
+   * frames are; leaving clips out would break the video's flow). Its length
+   * unknown yet, 1. */
   videoRate(): number | null {
+    if (this.clipSpans().length > this.capacity) {return null;}
     const v = this.videoSeconds();
     if (v === null || v <= PLAY_TARGET_S) {return 1;}
     return v <= PLAY_TARGET_S * MAX_RATE ? v / PLAY_TARGET_S : null;
@@ -173,6 +179,15 @@ export class Reel {
    * video is short enough to watch; none when it's sampled */
   watched(): ClipSpan[] {
     return this.videoRate() === null ? [] : this.clipSpans();
+  }
+
+  /** the picture for a clip's part (the still nearest its start, within
+   * it, else the one in force there): our thumbnails are the stills */
+  stillFor(c: ClipSpan): Frame | null {
+    const inside = this.frames.find((f) => f.ts >= c.from && f.ts < c.to);
+    if (inside) {return inside;}
+    const j = frameIndexAt(this.frames, c.from);
+    return j >= 0 ? this.frames[j] : null;
   }
 
   /** the watched clip's part of the slot in force at t, if any */

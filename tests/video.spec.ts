@@ -33,7 +33,7 @@ test('a clip plays over the frames in the player, and a host of clips opens on i
     await expect(player).toBeVisible({ timeout: 2000 });
   }).toPass({ timeout: 15000 });
   await expect(player).toHaveClass(/\bvideo\b/);
-  const video = player.locator('.stage video');
+  const video = player.locator('.stage video:not(.spare)');
   // the larger version, muted, and the browser can play it
   await expect(video).toHaveAttribute('src', /clip-a-hi\.webm$/);
   await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 10000 }).toBeGreaterThanOrEqual(1);
@@ -62,7 +62,7 @@ test('a clip plays over the frames in the player, and a host of clips opens on i
     await page.mouse.click(wx, wBox.y + wBox.height / 2);
     await expect(player).toBeVisible({ timeout: 2000 });
   }).toPass({ timeout: 15000 });
-  await expect(player.locator('.stage video')).toHaveAttribute('src', /clip-w1\.webm$/);
+  await expect(player.locator('.stage video:not(.spare)')).toHaveAttribute('src', /clip-w1\.webm$/);
   // no larger version: no HD button
   await expect(player.locator('button[data-a="hd"]')).toBeHidden();
   await expect(player.locator('button[data-a="play"]')).toBeEnabled();
