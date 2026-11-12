@@ -34,8 +34,10 @@ const frameKeys = (days, cadence = MIN, source = 'source-1') => {
   return out;
 };
 globalThis.caches = { default: { match: async () => undefined, put: async () => {} } };
+/* Reads without VIEWER_TOKEN are refused unless OPEN_READS is set; these
+ * tests mostly read an open worker, so it's on unless a test says otherwise. */
 const call = (path, env, init) =>
-  worker.fetch(new Request('https://w.example' + path, init), { ASSETS: { fetch: () => new Response('') }, ...env }, { waitUntil() {} });
+  worker.fetch(new Request('https://w.example' + path, init), { ASSETS: { fetch: () => new Response('') }, OPEN_READS: '1', ...env }, { waitUntil() {} });
 const framesPath = (from, to, step, source = 'source-1') =>
   `/frames?site=site-a&source=${source}&from=${from}&to=${to}&step=${step}`;
 
@@ -140,6 +142,29 @@ test('a VIEWER_TOKEN entry whose sites are missing, empty, a string or misspelle
     assert.equal(warns.filter((w) => JSON.parse(w).consumer === name).length, 1, name);
   }
   assert.ok(warns.every((w) => !/"t-/.test(w) && !w.includes("'t-")), 'no token in the log');
+});
+
+test('without VIEWER_TOKEN, reads are refused unless OPEN_READS opens them', async () => {
+  const FRAMES = indexedR2(keysFor('site-a', 'cam-1', MIN, 1), { 'site-a': { 'cam-1': { cadence: MIN } } });
+  const paths = ['/sources', '/states', framesPath(NOW - 3600e3, NOW, MIN, 'cam-1'), `/frame/lo/site-a/cam-1/${NOW}.jpg`];
+  const warns = [];
+  const orig = console.warn; console.warn = (m) => warns.push(m);
+  try {
+    for (const OPEN_READS of [undefined, '', '0', 'false', 'no']) {
+      for (const p of paths) {assert.equal((await call(p, { FRAMES, OPEN_READS })).status, 401, `${p} OPEN_READS=${OPEN_READS}`);}
+    }
+  } finally { console.warn = orig; }
+  for (const OPEN_READS of ['1', 'true', 'YES']) {
+    for (const p of paths) {assert.equal((await call(p, { FRAMES, OPEN_READS })).status, 200, `${p} OPEN_READS=${OPEN_READS}`);}
+  }
+  // a token, once set, is required whatever OPEN_READS says
+  assert.equal((await call('/sources', { FRAMES, OPEN_READS: '1', VIEWER_TOKEN: 'v' })).status, 401);
+  // writes never depended on it
+  const up = await call('/upload', { FRAMES: storeR2(), OPEN_READS: undefined, UPLOAD_TOKENS: JSON.stringify({ 'site-a': 'tok' }) }, {
+    method: 'POST', body: 'jpeg',
+    headers: { authorization: 'Bearer tok', 'x-site': 'site-a', 'x-source': 'cam', 'x-cadence': '60', 'content-length': '4' },
+  });
+  assert.equal(up.status, 200);
 });
 
 test('?k= carries the viewer token on /frame/ image URLs only, never on API calls', async () => {
@@ -307,7 +332,7 @@ const DAY = 864e5;
 async function callAndSettle(path, env, init) {
   const pending = [];
   const res = await worker.fetch(new Request('https://w.example' + path, init),
-    { ASSETS: { fetch: () => new Response('') }, ...env }, { waitUntil: (p) => pending.push(p) });
+    { ASSETS: { fetch: () => new Response('') }, OPEN_READS: '1', ...env }, { waitUntil: (p) => pending.push(p) });
   await Promise.all(pending);
   return res;
 }

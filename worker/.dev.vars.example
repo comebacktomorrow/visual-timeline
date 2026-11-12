@@ -3,3 +3,6 @@
 # Throwaway values: web/sim.html and the curl examples in docs/API.md use
 # them. Production sets secrets with `wrangler secret put` instead.
 UPLOAD_TOKENS='{"site-a":"dev-token","site-b":"dev-token"}'
+# Without VIEWER_TOKEN the worker refuses reads unless OPEN_READS is set.
+# Open them locally, so sim.html, app.html and a local Grafana need no key.
+OPEN_READS=1

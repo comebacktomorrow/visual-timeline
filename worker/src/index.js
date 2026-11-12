@@ -116,7 +116,7 @@ export default {
       if (isData && request.method === 'GET') {
         // viewer auth: when VIEWER_TOKEN is set, all data reads require it
         // (Bearer for API calls; ?k= accepted on /frame/ image URLs only).
-        // Unset = open (dev/demo).
+        // Unset = closed, unless OPEN_READS=1 opens reads (dev/demo).
         const viewer = await viewerFor(request, env, url);
         if (!viewer) {return json({ error: 'unauthorized' }, 401);}
         if (url.pathname === '/frames') {return await handleFrames(url, env, ctx, viewer);}
@@ -164,7 +164,7 @@ async function viewerFor(request, env, url) {
       return { sites: [m[1]] };   // the signature already binds the site
     }
   }
-  if (!env.VIEWER_TOKEN) {return { sites: null };}
+  if (!env.VIEWER_TOKEN) {return openReads(env) ? { sites: null } : null;}
   // ?k= only on image routes, where <img> can't send a header; anywhere else
   // a key in the URL would only end up in logs and Referer headers
   const got = (url.pathname.startsWith('/frame/') && url.searchParams.get('k')) ||
@@ -181,6 +181,20 @@ async function viewerFor(request, env, url) {
     if (consumer && (await timingSafeEqual(consumer.token, got))) {return { sites: consumer.sites };}
   }
   return null;
+}
+
+/* Without VIEWER_TOKEN, reads are refused unless OPEN_READS is set (1, true
+ * or yes): a deployment that forgot the secret fails closed instead of
+ * publishing every frame. Said once per isolate, so the 401s have a cause in
+ * the logs. With VIEWER_TOKEN set, OPEN_READS is ignored. */
+let closedWarned = false;
+function openReads(env) {
+  if (/^(1|true|yes)$/i.test(String(env.OPEN_READS || '').trim())) {return true;}
+  if (!closedWarned) {
+    closedWarned = true;
+    console.warn(JSON.stringify({ msg: 'reads refused: set VIEWER_TOKEN, or OPEN_READS=1 to let anyone read the frames' }));
+  }
+  return false;
 }
 
 /* One VIEWER_TOKEN map entry as {token, sites}, or null when it grants
