@@ -1,5 +1,5 @@
 import { listingPath, parseHtmlListing, parseJsonListing, parseS3Listing } from './listings';
-import { compileTemplate, finestUnit, parsePath, startAfterName, unitEnd } from './template';
+import { compileTemplate, fillSegment, finestUnit, matchSegment, parsePath, startAfterName, unitEnd } from './template';
 import { Lister, walkFrames } from './walk';
 
 const T = (iso: string) => Date.parse(iso);
@@ -77,6 +77,27 @@ describe('listings', () => {
     expect(() => parseS3Listing('<Error><Code>AccessDenied</Code></Error>', '')).toThrow('AccessDenied');
   });
 
+  test('dot segments and slashes are no entry, once decoded, in all three formats (L1)', () => {
+    // HTML: the parent spelled with escapes, "." spelled so, and names that
+    // decode to a slash or a backslash
+    const html = '<a href="%2E%2E/">up</a><a href="%2e%2E/">up</a><a href="%2E/">here</a><a href="a%2Fb.jpg">x</a><a href="a%5Cb.jpg">x</a>' +
+      '<a href="..%2F..%2Fetc/">x</a><a href="cam-1/">cam-1/</a><a href="ok.jpg">ok</a>';
+    expect(parseHtmlListing(html)).toEqual({ dirs: ['cam-1'], files: ['ok.jpg'] });
+    // JSON
+    const json = JSON.stringify([
+      { name: '..', type: 'directory' }, { name: './', is_dir: true }, { name: 'a/b', type: 'directory' },
+      { name: 'a\\b.jpg', type: 'file' }, { name: '../x.jpg', type: 'file' }, { name: 'cam-1', type: 'directory' }, { name: 'ok.jpg', type: 'file' },
+    ]);
+    expect(parseJsonListing(json)).toEqual({ dirs: ['cam-1'], files: ['ok.jpg'] });
+    // S3: a "../" prefix, at the root and below one; keys that climb
+    const xml = '<ListBucketResult><Prefix>thumbnail/</Prefix>' +
+      '<Contents><Key>thumbnail/../x.jpg</Key></Contents><Contents><Key>thumbnail/a\\b.jpg</Key></Contents><Contents><Key>thumbnail/ok.jpg</Key></Contents>' +
+      '<CommonPrefixes><Prefix>thumbnail/../</Prefix></CommonPrefixes><CommonPrefixes><Prefix>thumbnail/./</Prefix></CommonPrefixes>' +
+      '<CommonPrefixes><Prefix>thumbnail/AK/</Prefix></CommonPrefixes></ListBucketResult>';
+    expect(parseS3Listing(xml, 'thumbnail/')).toEqual({ dirs: ['AK'], files: ['ok.jpg'] });
+    expect(parseS3Listing('<ListBucketResult><CommonPrefixes><Prefix>../</Prefix></CommonPrefixes></ListBucketResult>', '')).toEqual({ dirs: [], files: [] });
+  });
+
   test('listing URLs: a folder\'s own for JSON and HTML, a ListObjectsV2 query for S3', () => {
     expect(listingPath('html', '2026/11/10')).toBe('/2026/11/10/');
     expect(listingPath('json', '')).toBe('/');
@@ -151,6 +172,44 @@ describe('walking a folder tree for a time range', () => {
     const { list } = treeLister({ '': hosts });
     const { truncated } = await walkFrames(tpl, list, { from: 0, to: 1, tz: 'UTC', maxListings: 3 });
     expect(truncated).toBe(true);
+  });
+});
+
+describe('no placeholder is "." or ".." (L1)', () => {
+  test('matching: a host or any other placeholder never takes a dot segment', () => {
+    const [host] = compileTemplate('{host}/{epoch_ms}.jpg').segments;
+    expect(matchSegment(host, '..')).toBeNull();
+    expect(matchSegment(host, '.')).toBeNull();
+    expect(matchSegment(host, 'a\\b')).toBeNull();
+    expect(matchSegment(host, 'cam-1')).toEqual({ host: 'cam-1' });
+    // a placeholder inside a longer name
+    const [dotted] = compileTemplate('{site}.d/{host}/{epoch_ms}.jpg').segments;
+    expect(matchSegment(dotted, '...d')).toBeNull();
+    expect(matchSegment(dotted, 'x.d')).toEqual({ site: 'x' });
+    expect(parsePath(compileTemplate('{host}/{epoch_ms}.jpg'), '../1794300000000.jpg', 'UTC')).toBeNull();
+  });
+
+  test('filling: a host asked for as "..", or with a slash, makes no folder', () => {
+    const [host] = compileTemplate('{host}/{epoch_ms}.jpg').segments;
+    expect(fillSegment(host, { host: '..' })).toBeNull();
+    expect(fillSegment(host, { host: 'a/../b' })).toBeNull();
+    expect(fillSegment(host, { host: 'cam-1' })).toBe('cam-1');
+  });
+
+  test('a template can\'t name a dot folder itself', () => {
+    expect(() => compileTemplate('../{host}/{epoch_ms}.jpg')).toThrow('".."');
+    expect(() => compileTemplate('{host}/./{epoch_ms}.jpg')).toThrow('".."');
+  });
+
+  test('walking: a hostile listing\'s ".." is never listed or drawn, nor a host asked for as ".."', async () => {
+    const tpl = compileTemplate('{host}/{epoch_ms}.jpg');
+    const { list, calls } = treeLister({ '': ['../', './', 'cam-1/'], 'cam-1': ['1794300000000.jpg'], '..': ['1794300000000.jpg'] });
+    const { frames } = await walkFrames(tpl, list, { from: 0, to: 2e12, tz: 'UTC' });
+    expect(frames.map((f) => [f.host, f.path])).toEqual([['cam-1', 'cam-1/1794300000000.jpg']]);
+    expect(calls.map((c) => c.folder)).toEqual(['', 'cam-1']);
+    const asked = treeLister({ '..': ['1794300000000.jpg'] });
+    expect((await walkFrames(tpl, asked.list, { from: 0, to: 2e12, tz: 'UTC', hosts: ['..', '.'] })).frames).toEqual([]);
+    expect(asked.calls).toEqual([]);
   });
 });
 
